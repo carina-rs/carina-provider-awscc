@@ -177,6 +177,8 @@ pub(super) struct EmissionContext<'a> {
     /// Collection suffixes come from actual emitter decisions, never lookahead.
     paths: RefCell<BTreeMap<Vec<String>, String>>,
     sites: RefCell<BTreeMap<Vec<String>, EmittedSite>>,
+    /// Cached struct identities follow the CFN tree before type overrides.
+    definition_identity_paths: BTreeMap<String, Vec<String>>,
     enum_discovery: bool,
 }
 
@@ -225,8 +227,13 @@ impl<'a> EmissionContext<'a> {
             classified_sources: RefCell::new(BTreeMap::new()),
             paths: RefCell::new(BTreeMap::new()),
             sites: RefCell::new(BTreeMap::new()),
+            definition_identity_paths: super::collect_definition_identity_paths(schema),
             enum_discovery: false,
         })
+    }
+
+    pub(super) fn definition_identity_path(&self, name: &str) -> Option<&[String]> {
+        self.definition_identity_paths.get(name).map(Vec::as_slice)
     }
 
     pub(super) fn for_enum_discovery(&self) -> Result<Self> {

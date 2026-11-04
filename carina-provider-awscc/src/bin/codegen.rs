@@ -121,9 +121,9 @@ thread_local! {
     #[allow(clippy::missing_const_for_thread_local)]
     static BACK_REFERENCED_DEFS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
     /// Collected `(def_name, AttributeType-rendered Rust code)` for the
-    /// resource currently being generated. Populated by the recursion
-    /// guard in `cfn_type_to_carina_type_with_enum`; consumed by the
-    /// resource emitter to populate `ResourceSchema.defs`.
+    /// resource currently being generated. Populated by named local overrides
+    /// and the recursion guard; consumed by the resource emitter to populate
+    /// `ResourceSchema.defs`.
     #[allow(clippy::missing_const_for_thread_local)]
     static EMITTED_DEFS: RefCell<BTreeMap<String, String>> = RefCell::new(BTreeMap::new());
     /// Provider paths whose generated `AttributeSchema` or `StructField`
@@ -191,7 +191,7 @@ fn reset_property_mode_emission_state() {
 }
 
 /// Take the defs collected during the current resource pass and
-/// return them as a sorted `BTreeMap`. Empty for non-cyclic resources.
+/// return them as a sorted `BTreeMap`.
 fn take_emitted_defs() -> BTreeMap<String, String> {
     EMITTED_DEFS.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
@@ -250,6 +250,13 @@ enum TypeOverride {
         display: OverrideTypeDisplay,
         block_name: Option<&'static str>,
         default: Option<AttributeTypeOverrideDefault>,
+    },
+    /// Declare a reusable local type once in ResourceSchema.defs and reference
+    /// it from every use, retaining one defining site for its enum identities.
+    NamedAttributeType {
+        name: &'static str,
+        expression: &'static str,
+        display: OverrideTypeDisplay,
     },
     /// Override an array's item type while retaining the CFN array constraints.
     /// Display, block name, and default describe the complete attribute.
@@ -319,9 +326,9 @@ impl TypeOverride {
 
     fn attribute_type_expression(&self) -> Option<&'static str> {
         match self {
-            Self::StringType(expression) | Self::AttributeType { expression, .. } => {
-                Some(expression)
-            }
+            Self::StringType(expression)
+            | Self::AttributeType { expression, .. }
+            | Self::NamedAttributeType { expression, .. } => Some(expression),
             _ => None,
         }
     }
@@ -335,9 +342,9 @@ impl TypeOverride {
 
     fn display(&self) -> Option<OverrideTypeDisplay> {
         match self.item_override() {
-            Self::AttributeType { display, .. } | Self::ArrayItemType { display, .. } => {
-                Some(*display)
-            }
+            Self::AttributeType { display, .. }
+            | Self::NamedAttributeType { display, .. }
+            | Self::ArrayItemType { display, .. } => Some(*display),
             _ => None,
         }
     }
@@ -361,6 +368,7 @@ impl TypeOverride {
     fn owner_name(&self) -> Option<&'static str> {
         match self {
             Self::AttributeType { .. } => Some("resource_type_overrides AttributeType"),
+            Self::NamedAttributeType { .. } => Some("resource_type_overrides NamedAttributeType"),
             Self::ArrayItemType { .. } => Some("resource_type_overrides ArrayItemType"),
             Self::Array { .. } => Some("resource_type_overrides Array"),
             _ => None,
@@ -377,7 +385,7 @@ impl TypeOverride {
             Self::ArrayItemType { .. } | Self::Array { .. } => {
                 self.array_source(schema, path, property)?;
             }
-            Self::AttributeType { .. } => {
+            Self::AttributeType { .. } | Self::NamedAttributeType { .. } => {
                 anyhow::ensure!(
                     !has_constrained_array_source(property, schema, false, &mut HashSet::new()),
                     "{}.{}: AttributeType would discard CFN array constraints (uniqueItems, minItems, or maxItems); use ArrayItemType",
@@ -2890,6 +2898,144 @@ fn namespace_with_struct_path(namespace: &str, struct_path: &[String]) -> String
     }
 }
 
+/// Reserve the first source path of each cached `$ref` struct before overrides
+/// replace subtrees. List-item structs remain inline and keep their enclosing
+/// context; only their cached descendants share a definition identity.
+fn collect_definition_identity_paths(schema: &CfnSchema) -> BTreeMap<String, Vec<String>> {
+    fn visit(
+        schema: &CfnSchema,
+        prop_name: &str,
+        prop: &CfnProperty,
+        structural: &[String],
+        state: RefGenerationState<'_>,
+        visiting: &mut HashSet<String>,
+        identities: &mut BTreeMap<String, Vec<String>>,
+    ) {
+        match property_shape(prop, schema) {
+            PropertyShape::Reference {
+                path,
+                resolved: Some(resolved),
+            } => {
+                if is_tag_map_ref(schema, path) || !visiting.insert(resolved.name.to_string()) {
+                    return;
+                }
+                if state.context == RefContext::Normal
+                    && property_generates_struct(resolved.property, schema)
+                {
+                    if identities.contains_key(resolved.name) {
+                        visiting.remove(resolved.name);
+                        return;
+                    }
+                    identities.insert(
+                        resolved.name.to_string(),
+                        extend_struct_path(structural, resolved.name),
+                    );
+                }
+                visit(
+                    schema,
+                    prop_name,
+                    resolved.property,
+                    structural,
+                    RefGenerationState {
+                        definition_name: Some(resolved.name),
+                        ..state
+                    },
+                    visiting,
+                    identities,
+                );
+                visiting.remove(resolved.name);
+            }
+            PropertyShape::Array { variant, .. } => {
+                visit(
+                    schema, prop_name, variant, structural, state, visiting, identities,
+                );
+            }
+            shape @ (PropertyShape::Direct(_) | PropertyShape::Merged(_)) => {
+                let properties = match &shape {
+                    PropertyShape::Direct(properties) => *properties,
+                    PropertyShape::Merged(properties) => properties,
+                    _ => unreachable!(),
+                };
+                let name = state.definition_name.unwrap_or(prop_name);
+                let structural = extend_struct_path(structural, name);
+                for (field_name, field) in properties {
+                    if is_deprecated_property(field)
+                        || should_omit_property(
+                            &schema.type_name,
+                            CfnPropertyPath::new(Some(name), field_name),
+                        )
+                    {
+                        continue;
+                    }
+                    visit(
+                        schema,
+                        field_name,
+                        field,
+                        &structural,
+                        RefGenerationState {
+                            definition_name: None,
+                            context: RefContext::Normal,
+                        },
+                        visiting,
+                        identities,
+                    );
+                }
+            }
+            PropertyShape::Inline => {
+                if let Some(items) = prop
+                    .items
+                    .as_deref()
+                    .filter(|_| inline_property_type(prop) == Some("array"))
+                {
+                    visit(
+                        schema,
+                        prop_name,
+                        items,
+                        structural,
+                        RefGenerationState {
+                            definition_name: None,
+                            context: RefContext::ListItem,
+                        },
+                        visiting,
+                        identities,
+                    );
+                } else if let Some(value) = direct_object_map_value(prop) {
+                    visit(
+                        schema,
+                        prop_name,
+                        value,
+                        structural,
+                        RefGenerationState {
+                            definition_name: None,
+                            context: RefContext::Normal,
+                        },
+                        visiting,
+                        identities,
+                    );
+                }
+            }
+            PropertyShape::Reference { resolved: None, .. } | PropertyShape::Unresolved => {}
+        }
+    }
+
+    let mut identities = BTreeMap::new();
+    for (name, prop) in documented_top_level_properties(schema) {
+        visit(
+            schema,
+            name,
+            prop,
+            &[],
+            RefGenerationState {
+                definition_name: None,
+                context: RefContext::Normal,
+            },
+            &mut HashSet::new(),
+            &mut identities,
+        );
+    }
+    identities
+}
+
 fn is_deprecated_property(prop: &CfnProperty) -> bool {
     prop.description
         .as_deref()
@@ -3780,6 +3926,7 @@ fn register_markdown_enum(
 }
 
 fn collect_markdown_enums(
+    schema: &EmissionContext<'_>,
     namespace: &str,
     property_enums: &BTreeMap<String, EnumInfo>,
     struct_field_enums: &BTreeMap<MarkdownStructFieldKey, EnumInfo>,
@@ -3810,9 +3957,14 @@ fn collect_markdown_enums(
         let field_path =
             extend_property_path(&def_info.first_property_path, &source_key.field_name);
         let heading_path = markdown_section_heading_path(&field_path, struct_defs, None);
+        let identity_path = match &source_key.struct_key {
+            MarkdownStructKey::Definition(name) => schema.definition_identity_path(name),
+            MarkdownStructKey::Inline(_) => None,
+        }
+        .unwrap_or(&def_info.struct_path);
         let key = register_markdown_enum(
             &mut markdown_enums,
-            namespace_with_struct_path(namespace, &def_info.struct_path),
+            namespace_with_struct_path(namespace, identity_path),
             heading_path,
             source_key.field_name.clone(),
             info,
@@ -4063,6 +4215,7 @@ fn render_markdown(
     reset_recursion_guard();
 
     let (markdown_enums, enum_targets) = collect_markdown_enums(
+        schema,
         &namespace,
         &property_enums,
         &struct_field_enums,
@@ -4737,6 +4890,33 @@ fn generate_attribute_type(
     let property_path = CfnPropertyPath::new(paths.cfn_parent, prop_name);
     let override_type = checked_resource_type_override(schema, property_path, prop);
 
+    if let Some(TypeOverride::NamedAttributeType {
+        name, expression, ..
+    }) = override_type
+    {
+        assert!(
+            !schema
+                .definitions
+                .as_ref()
+                .is_some_and(|definitions| definitions.contains_key(*name)),
+            "{}.{}: local type {name} conflicts with a CFN definition",
+            schema.type_name,
+            property_path
+        );
+        EMITTED_DEFS.with(|definitions| {
+            let mut definitions = definitions.borrow_mut();
+            let body = definitions
+                .entry((*name).to_string())
+                .or_insert_with(|| (*expression).to_string());
+            assert_eq!(
+                body.as_str(),
+                *expression,
+                "conflicting local type definition {name}"
+            );
+        });
+        return format!("AttributeType::ref_({}.to_string())", rust_lit(name));
+    }
+
     if let Some(expression) = override_type.and_then(TypeOverride::attribute_type_expression) {
         return if matches!(override_type, Some(TypeOverride::StringType(_))) {
             // StringType replaces a leaf; existing top-level uses include
@@ -5340,13 +5520,9 @@ pub fn {}() -> AwsccSchemaConfig {{
         body.push_str("    schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);\n");
     }
 
-    // carina#3340: drain any cyclic-struct definitions that the
-    // `$ref` recursion guard accumulated during attribute emission
-    // and attach them to the schema via `.with_def(...)`. Non-cyclic
-    // resources contribute nothing here; the map is empty and no
-    // calls are emitted. The Rust string in `def_body` is already a
-    // valid `AttributeType` expression (the same string the inline
-    // attribute emitter would have produced).
+    // Drain named local types and struct definitions accumulated during
+    // attribute emission and attach them via `.with_def(...)`. Each `def_body`
+    // is already a valid `AttributeType` expression.
     let defs = take_emitted_defs();
     for (def_index, (def_name, def_body)) in defs.iter().enumerate() {
         body.push_str(&format!(
@@ -7456,6 +7632,281 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::S3::Bucket", "Account"),
             TypeOverride::StringType("carina_aws_types::aws_account_id()"),
         );
+
+        // S3 #525: keep DomainName, RegionalDomainName, DualStackDomainName and
+        // WebsiteURL as String, following carina-rs/carina-provider-aws#512.
+        // Pre-March-2018 us-east-1 bucket names can contain underscores and be
+        // up to 255 characters long; stricter output types would break reads
+        // of imported legacy buckets. WebsiteURL embeds the same bucket name.
+        // https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
+        // All refinements below use raw CFN definition keys so inline copies
+        // and emitted definitions pass through generate_attribute_type alike.
+
+        // Lifecycle rules: one or more, at most 1000 (not adjustable).
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketLifecycleConfiguration.html
+        m.insert(
+            ("AWS::S3::Bucket", "LifecycleConfiguration.Rules"),
+            TypeOverride::Array {
+                items: None,
+                min_items: Some(1),
+                max_items: Some(1000),
+            },
+        );
+        // Expiration days are nonzero positive integers. The deprecated scalar
+        // receives the same override without restoring it to generated schemas.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_LifecycleExpiration.html
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_NoncurrentVersionExpiration.html
+        for key in [
+            "Rule.ExpirationInDays",
+            "Rule.NoncurrentVersionExpirationInDays",
+            "NoncurrentVersionExpiration.NoncurrentDays",
+        ] {
+            m.insert(
+                ("AWS::S3::Bucket", key),
+                TypeOverride::AttributeType {
+                    expression: "carina_core::schema::types::positive_int()",
+                    display: const { OverrideTypeDisplay::new("PositiveInt") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
+        // Both actions allow up to 100 newer noncurrent versions. The scoped
+        // API pages do not give a minimum, so do not invent one.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_NoncurrentVersionExpiration.html
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_NoncurrentVersionTransition.html
+        for key in [
+            "NoncurrentVersionExpiration.NewerNoncurrentVersions",
+            "NoncurrentVersionTransition.NewerNoncurrentVersions",
+        ] {
+            m.insert(
+                ("AWS::S3::Bucket", key),
+                TypeOverride::AttributeType {
+                    expression: "AttributeType::refined_int(None, Some((None, Some(100))))",
+                    display: const { OverrideTypeDisplay::new("Int (..=100)") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
+        // Current-version transitions accept zero or positive days. Minimums
+        // dependent on StorageClass, and noncurrent transition days, stay as-is.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_Transition.html
+        m.insert(
+            ("AWS::S3::Bucket", "Transition.TransitionInDays"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_int(None, Some((Some(0), None)))",
+                display: const { OverrideTypeDisplay::new("Int (0..)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Valid calendar dates at midnight UTC, covering both iso8601UTC uses.
+        // Cloud Control read, carina-test-001, ap-northeast-1, 2026-11-04:
+        // ExpirationDate = "2030-01-01T00:00:00Z", without fractional seconds.
+        // The AWSCC-local callback also retains the existing .000Z spelling.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_LifecycleExpiration.html
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_Transition.html
+        for key in ["Rule.ExpirationDate", "Transition.TransitionDate"] {
+            m.insert(
+                ("AWS::S3::Bucket", key),
+                TypeOverride::AttributeType {
+                    expression: "crate::schemas::catalog::s3_lifecycle_date()",
+                    display: const { OverrideTypeDisplay::new("aws.s3.Bucket.LifecycleDate") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
+        // CFN carries these API Longs as canonical decimal strings, capped at
+        // 20 characters. The same live read returned "128" and "1048576".
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_LifecycleRuleFilter.html
+        for key in ["Rule.ObjectSizeGreaterThan", "Rule.ObjectSizeLessThan"] {
+            m.insert(
+                ("AWS::S3::Bucket", key),
+                TypeOverride::AttributeType {
+                    expression: "crate::schemas::awscc_types::s3_object_size()",
+                    display: const {
+                        OverrideTypeDisplay::new(
+                            r"String (length: ..=20, pattern: ^(?:0|[1-9][0-9]*)\z)",
+                        )
+                    },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
+        // Replication has 1..=1000 rules. CFN mistakenly puts these bounds on
+        // items; the override bounds the list and preserves its item schema.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_ReplicationConfiguration.html
+        m.insert(
+            ("AWS::S3::Bucket", "ReplicationConfiguration.Rules"),
+            TypeOverride::Array {
+                items: None,
+                min_items: Some(1),
+                max_items: Some(1000),
+            },
+        );
+        // Both RTC Time and Metrics.EventThreshold use this definition.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_ReplicationTimeValue.html
+        m.insert(
+            ("AWS::S3::Bucket", "ReplicationTimeValue.Minutes"),
+            TypeOverride::IntRange(15, 15),
+        );
+        // CORS: at most 100 rules; allowed origins require one or more elements.
+        // Exposed headers stay unbounded: the field is optional and the S3 User
+        // Guide CORS examples use an empty `ExposeHeaders` list.
+        // https://docs.aws.amazon.com/AmazonS3/latest/userguide/ManageCorsUsing.html
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CORSConfiguration.html
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CORSRule.html
+        m.insert(
+            ("AWS::S3::Bucket", "CorsConfiguration.CorsRules"),
+            TypeOverride::Array {
+                items: None,
+                min_items: None,
+                max_items: Some(100),
+            },
+        );
+        m.insert(
+            ("AWS::S3::Bucket", "CorsRule.AllowedOrigins"),
+            TypeOverride::Array {
+                items: None,
+                min_items: Some(1),
+                max_items: None,
+            },
+        );
+        // Fixed per-bucket limits, not List API page sizes. The live read kept
+        // MetricsConfigurations and IntelligentTieringConfigurations as lists;
+        // notification destinations read as empty lists. Add no minimum.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketAnalyticsConfiguration.html
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketInventoryConfiguration.html
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketMetricsConfiguration.html
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketIntelligentTieringConfiguration.html
+        for key in [
+            "AnalyticsConfigurations",
+            "InventoryConfigurations",
+            "MetricsConfigurations",
+            "IntelligentTieringConfigurations",
+        ] {
+            m.insert(
+                ("AWS::S3::Bucket", key),
+                TypeOverride::Array {
+                    items: None,
+                    min_items: None,
+                    max_items: Some(1000),
+                },
+            );
+        }
+        // Metrics alone documents this alphabet and 64-character cap.
+        // The live read returned Id "m-1.x_y".
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_MetricsConfiguration.html
+        m.insert(
+            ("AWS::S3::Bucket", "MetricsConfiguration.Id"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some(r"^[A-Za-z0-9._-]+\z".to_string()), Some((None, Some(64))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: ..=64, pattern: ^[A-Za-z0-9._-]+\z)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Archive Access starts at 90 days (also observed in the live read).
+        // Deep Archive's 180-day minimum is conditional on AccessTier.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_Tiering.html
+        m.insert(
+            ("AWS::S3::Bucket", "Tiering.Days"),
+            TypeOverride::IntRange(90, 730),
+        );
+        // Only analytics uses DataExport. Its distinct local destination shape
+        // restricts Format to CSV without narrowing shared Destination.Format
+        // (CSV/ORC/Parquet) used by InventoryConfiguration.Destination.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_AnalyticsS3BucketDestination.html
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_InventoryS3BucketDestination.html
+        m.insert(
+            ("AWS::S3::Bucket", "DataExport.Destination"),
+            TypeOverride::AttributeType {
+                expression: "crate::schemas::awscc_types::s3_analytics_destination()",
+                display: const { OverrideTypeDisplay::new("Struct(AnalyticsDestination)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // InventoryConfiguration.OptionalFields stays at the cached 16 values:
+        // ObjectLockEventHoldStatus/Duration are absent from this CFN schema.
+        // Widen only after a schema refresh confirms Cloud Control accepts them.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_InventoryConfiguration.html
+
+        // One scalar CFN Event per destination; exact API spellings and explicit
+        // collision-free aliases live in the AWSCC-local constructor. Aggregate
+        // notification counts and S3Key rule uniqueness are collection checks.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_LambdaFunctionConfiguration.html
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_QueueConfiguration.html
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_TopicConfiguration.html
+        for key in [
+            "LambdaConfiguration.Event",
+            "QueueConfiguration.Event",
+            "TopicConfiguration.Event",
+        ] {
+            m.insert(
+                ("AWS::S3::Bucket", key),
+                TypeOverride::NamedAttributeType {
+                    name: "S3NotificationEvent",
+                    expression: "crate::schemas::awscc_types::s3_notification_event()",
+                    display: const {
+                        OverrideTypeDisplay::new("aws.s3.Bucket.NotificationConfiguration.Event")
+                    },
+                },
+            );
+        }
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_FilterRule.html
+        m.insert(
+            ("AWS::S3::Bucket", "FilterRule.Name"),
+            TypeOverride::Enum(vec!["prefix", "suffix"]),
+        );
+        // Website document names: IndexDocument is nonempty and forbids '/';
+        // ErrorDocument has only a minimum length. No undocumented maximums.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_IndexDocument.html
+        m.insert(
+            ("AWS::S3::Bucket", "WebsiteConfiguration.IndexDocument"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some(r"^[^/]+\z".to_string()), None, None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (pattern: ^[^/]+\z)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_ErrorDocument.html
+        m.insert(
+            ("AWS::S3::Bucket", "WebsiteConfiguration.ErrorDocument"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((Some(1), None)), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 1..)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketWebsite.html
+        m.insert(
+            ("AWS::S3::Bucket", "WebsiteConfiguration.RoutingRules"),
+            TypeOverride::Array {
+                items: None,
+                min_items: None,
+                max_items: Some(50),
+            },
+        );
+        // Journal record retention is 7..=2147483647 days.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_RecordExpiration.html
+        m.insert(
+            ("AWS::S3::Bucket", "RecordExpiration.Days"),
+            TypeOverride::IntRange(7, 2147483647),
+        );
+        // Only the V1 output is constant. Do not copy this singleton to
+        // MetadataDestination.TableNamespace in MetadataConfiguration.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/API_S3TablesDestinationResult.html
+        m.insert(
+            ("AWS::S3::Bucket", "S3TablesDestination.TableNamespace"),
+            TypeOverride::Enum(vec!["aws_s3_metadata"]),
+        );
+
         // VPC CidrBlockAssociations are association IDs (vpc-cidr-assoc-xxx), not CIDRs
         m.insert(
             ("AWS::EC2::VPC", "CidrBlockAssociations"),
@@ -10759,6 +11210,17 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 definitions.borrow_mut().insert(def_name.to_string());
             });
             let array = resolved_array_property(prop, schema, &mut HashSet::new());
+            let paths = if ref_context == RefContext::Normal
+                && property_generates_struct(resolved.property, schema)
+                && let Some(identity_path) = schema.definition_identity_path(def_name)
+            {
+                CfnTypeGenerationPaths {
+                    structural: &identity_path[..identity_path.len() - 1],
+                    ..paths
+                }
+            } else {
+                paths
+            };
             let (body, enum_info) = cfn_type_to_carina_type_with_enum_resolved(
                 schema.property_at(property_path, array.as_deref().unwrap_or(resolved.property)),
                 namespace,
@@ -14792,6 +15254,490 @@ mod tests {
         assert!(markdown.contains("use awscc.sns.Subscription instead"));
     }
 
+    const S3_SLICE_OVERRIDE_KEYS: &[&str] = &[
+        "LifecycleConfiguration.Rules",
+        "Rule.ExpirationInDays",
+        "Rule.NoncurrentVersionExpirationInDays",
+        "NoncurrentVersionExpiration.NoncurrentDays",
+        "NoncurrentVersionExpiration.NewerNoncurrentVersions",
+        "NoncurrentVersionTransition.NewerNoncurrentVersions",
+        "Transition.TransitionInDays",
+        "Rule.ExpirationDate",
+        "Transition.TransitionDate",
+        "Rule.ObjectSizeGreaterThan",
+        "Rule.ObjectSizeLessThan",
+        "ReplicationConfiguration.Rules",
+        "ReplicationTimeValue.Minutes",
+        "CorsConfiguration.CorsRules",
+        "CorsRule.AllowedOrigins",
+        "AnalyticsConfigurations",
+        "InventoryConfigurations",
+        "MetricsConfigurations",
+        "IntelligentTieringConfigurations",
+        "MetricsConfiguration.Id",
+        "Tiering.Days",
+        "DataExport.Destination",
+        "LambdaConfiguration.Event",
+        "QueueConfiguration.Event",
+        "TopicConfiguration.Event",
+        "FilterRule.Name",
+        "WebsiteConfiguration.IndexDocument",
+        "WebsiteConfiguration.ErrorDocument",
+        "WebsiteConfiguration.RoutingRules",
+        "RecordExpiration.Days",
+        "S3TablesDestination.TableNamespace",
+    ];
+
+    #[test]
+    fn test_s3_overrides_match_exact_raw_cfn_paths_and_preserve_deferred_fields() {
+        let schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
+        let actual = resource_type_overrides()
+            .for_resource(&schema.type_name)
+            .map(|(path, _)| path.to_string())
+            .collect::<BTreeSet<_>>();
+        let expected = S3_SLICE_OVERRIDE_KEYS
+            .iter()
+            .copied()
+            .chain([
+                "Function",
+                "Queue",
+                "Topic",
+                "Role",
+                "Account",
+                "ReplaceKeyPrefixWith",
+            ])
+            .map(str::to_string)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(actual, expected);
+        for key in S3_SLICE_OVERRIDE_KEYS {
+            let path = key.split_once('.').map_or_else(
+                || CfnPropertyPath::new(None, key),
+                |(parent, property)| CfnPropertyPath::new(Some(parent), property),
+            );
+            let source = cfn_override_property(&schema, path)
+                .unwrap_or_else(|| panic!("missing cached S3 path {key}"));
+            resource_type_overrides()
+                .get_path(&schema.type_name, path)
+                .unwrap()
+                .validate_source_shape(&schema, path, source)
+                .unwrap();
+        }
+        assert!(
+            resource_type_overrides()
+                .for_resource("AWS::S3::BucketPolicy")
+                .next()
+                .is_none()
+        );
+        let optional = &schema.definitions.as_ref().unwrap()["InventoryConfiguration"]
+            .properties
+            .as_ref()
+            .unwrap()["OptionalFields"];
+        let values = optional
+            .items
+            .as_ref()
+            .unwrap()
+            .enum_values
+            .as_ref()
+            .unwrap();
+        for missing in ["ObjectLockEventHoldStatus", "ObjectLockEventHoldDuration"] {
+            assert!(
+                !values
+                    .iter()
+                    .any(|value| value.to_string_value() == missing),
+                "refresh the cached CFN schema before widening {missing}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_s3_refinements_reach_every_inline_and_emitted_definition() {
+        let schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        // These list item structs are emitted only inline at their real S3 paths.
+        assert_all_generated_struct_fields(
+            generated_dynamodb_field(inline, "MetricsConfigurations"),
+            "MetricsConfiguration.Id",
+            r#"AttributeType::refined_string(None, Some(r"^[A-Za-z0-9._-]+\z".to_string()), Some((None, Some(64))), None)"#,
+        );
+        let tierings = generated_budgets_field(
+            generated_dynamodb_field(inline, "IntelligentTieringConfigurations"),
+            "IntelligentTieringConfiguration.Tierings",
+        );
+        assert_all_generated_struct_fields(
+            tierings,
+            "Tiering.Days",
+            "AttributeType::refined_int(None, Some((Some(90), Some(730))))",
+        );
+        for code in [inline, definitions] {
+            for (path, expected) in [
+                (
+                    "Rule.ExpirationInDays",
+                    "carina_core::schema::types::positive_int()",
+                ),
+                (
+                    "NoncurrentVersionExpiration.NoncurrentDays",
+                    "carina_core::schema::types::positive_int()",
+                ),
+                (
+                    "NoncurrentVersionExpiration.NewerNoncurrentVersions",
+                    "AttributeType::refined_int(None, Some((None, Some(100))))",
+                ),
+                (
+                    "NoncurrentVersionTransition.NewerNoncurrentVersions",
+                    "AttributeType::refined_int(None, Some((None, Some(100))))",
+                ),
+                (
+                    "Transition.TransitionInDays",
+                    "AttributeType::refined_int(None, Some((Some(0), None)))",
+                ),
+                (
+                    "Rule.ExpirationDate",
+                    "crate::schemas::catalog::s3_lifecycle_date()",
+                ),
+                (
+                    "Transition.TransitionDate",
+                    "crate::schemas::catalog::s3_lifecycle_date()",
+                ),
+                (
+                    "Rule.ObjectSizeGreaterThan",
+                    "crate::schemas::awscc_types::s3_object_size()",
+                ),
+                (
+                    "Rule.ObjectSizeLessThan",
+                    "crate::schemas::awscc_types::s3_object_size()",
+                ),
+                (
+                    "ReplicationTimeValue.Minutes",
+                    "AttributeType::refined_int(None, Some((Some(15), Some(15))))",
+                ),
+                (
+                    "DataExport.Destination",
+                    "crate::schemas::awscc_types::s3_analytics_destination()",
+                ),
+                (
+                    "LambdaConfiguration.Event",
+                    "AttributeType::ref_(\"S3NotificationEvent\".to_string())",
+                ),
+                (
+                    "QueueConfiguration.Event",
+                    "AttributeType::ref_(\"S3NotificationEvent\".to_string())",
+                ),
+                (
+                    "TopicConfiguration.Event",
+                    "AttributeType::ref_(\"S3NotificationEvent\".to_string())",
+                ),
+                ("FilterRule.Name", "AttributeType::enum_("),
+                (
+                    "WebsiteConfiguration.IndexDocument",
+                    r#"AttributeType::refined_string(None, Some(r"^[^/]+\z".to_string()), None, None)"#,
+                ),
+                (
+                    "WebsiteConfiguration.ErrorDocument",
+                    "AttributeType::refined_string(None, None, Some((Some(1), None)), None)",
+                ),
+                (
+                    "RecordExpiration.Days",
+                    "AttributeType::refined_int(None, Some((Some(7), Some(2147483647))))",
+                ),
+                (
+                    "S3TablesDestination.TableNamespace",
+                    "AttributeType::enum_(",
+                ),
+            ] {
+                assert_all_generated_struct_fields(code, path, expected);
+            }
+            assert_all_generated_struct_fields(code, "Destination.Format", "AttributeType::enum_(");
+            let inventory_format = generated_budgets_field(code, "Destination.Format");
+            assert_budgets_enum_values(
+                inventory_format,
+                "Destination.Format",
+                &[("CSV", "csv"), ("ORC", "orc"), ("Parquet", "parquet")],
+            );
+            assert_budgets_enum_values(
+                generated_budgets_field(code, "FilterRule.Name"),
+                "FilterRule.Name",
+                &[("prefix", "prefix"), ("suffix", "suffix")],
+            );
+            assert_budgets_enum_values(
+                generated_budgets_field(code, "S3TablesDestination.TableNamespace"),
+                "S3TablesDestination.TableNamespace",
+                &[("aws_s3_metadata", "aws_s3_metadata")],
+            );
+        }
+        assert_eq!(
+            generated
+                .matches("crate::schemas::awscc_types::s3_notification_event()")
+                .count(),
+            1,
+            "all notification destinations must share one enum declaration"
+        );
+        assert_eq!(
+            generated
+                .matches("schema = schema.with_def(\"S3NotificationEvent\",")
+                .count(),
+            1
+        );
+        assert!(
+            !generated.contains("StructField::optional(\"noncurrent_version_expiration_in_days\"")
+        );
+        for deprecated in ["Transition", "NoncurrentVersionTransition"] {
+            assert!(!generated.contains(&format!(".with_provider_name(\"{deprecated}\")")));
+        }
+    }
+
+    #[test]
+    fn test_s3_inventory_format_preserves_source_identity_in_rust_and_docs() {
+        let schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let namespace =
+            "aws.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination";
+        let expected = format!("enum_identity(\"Format\", Some(\"{namespace}\"))");
+        let identities = Regex::new(r#"enum_identity\("Format", Some\("[^"]+"\)\)"#).unwrap();
+        let emitted: Vec<_> = identities.find_iter(&generated).collect();
+        assert!(!emitted.is_empty());
+        for identity in emitted {
+            assert_eq!(identity.as_str(), expected);
+        }
+        for (wire, dsl) in [("CSV", "csv"), ("ORC", "orc"), ("Parquet", "parquet")] {
+            assert!(
+                markdown.contains(&format!("| `{wire}` | `{namespace}.Format.{dsl}` |")),
+                "inventory documentation must use the schema's source identity"
+            );
+        }
+        assert!(generated.contains("crate::schemas::awscc_types::s3_analytics_destination()"));
+        assert!(markdown.contains("| `destination` | `Struct(AnalyticsDestination)` |"));
+    }
+
+    #[test]
+    fn test_list_item_enum_identities_keep_their_enclosing_context() {
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::ListContexts",
+            "properties": {
+                "Left": {"type": "object", "properties": {
+                    "Entries": {"type": "array", "items": {"$ref": "#/definitions/Entry"}}
+                }},
+                "Right": {"type": "object", "properties": {
+                    "Entries": {"type": "array", "items": {"$ref": "#/definitions/Entry"}}
+                }}
+            },
+            "definitions": {
+                "Entry": {"type": "object", "properties": {
+                    "Mode": {"type": "string", "enum": ["a", "b"]}
+                }}
+            }
+        }))
+        .unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        for parent in ["Left", "Right"] {
+            assert!(generated.contains(&format!(
+                "enum_identity(\"Mode\", Some(\"aws.ec2.Route.{parent}.Entry\"))"
+            )));
+        }
+        assert!(!collect_definition_identity_paths(&schema).contains_key("Entry"));
+    }
+
+    #[test]
+    fn test_s3_count_only_overrides_keep_cfn_items_order_uniqueness_and_docs() {
+        let schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        for (key, item, minimum, maximum, elements) in [
+            (
+                "LifecycleConfiguration.Rules",
+                "Rule",
+                Some(1),
+                Some(1000),
+                "Unique",
+            ),
+            (
+                "ReplicationConfiguration.Rules",
+                "ReplicationRule",
+                Some(1),
+                Some(1000),
+                "Unique",
+            ),
+            (
+                "CorsConfiguration.CorsRules",
+                "CorsRule",
+                None,
+                Some(100),
+                "Unique",
+            ),
+            ("CorsRule.AllowedOrigins", "String", Some(1), None, "Unique"),
+            (
+                "AnalyticsConfigurations",
+                "AnalyticsConfiguration",
+                None,
+                Some(1000),
+                "Unique",
+            ),
+            (
+                "InventoryConfigurations",
+                "InventoryConfiguration",
+                None,
+                Some(1000),
+                "Unique",
+            ),
+            (
+                "MetricsConfigurations",
+                "MetricsConfiguration",
+                None,
+                Some(1000),
+                "Unique",
+            ),
+            (
+                "IntelligentTieringConfigurations",
+                "IntelligentTieringConfiguration",
+                None,
+                Some(1000),
+                "Unique",
+            ),
+            (
+                "WebsiteConfiguration.RoutingRules",
+                "RoutingRule",
+                None,
+                Some(50),
+                "AllowDuplicates",
+            ),
+        ] {
+            assert_eq!(
+                resource_type_overrides().get(&("AWS::S3::Bucket", key)),
+                Some(&TypeOverride::Array {
+                    items: None,
+                    min_items: minimum,
+                    max_items: maximum
+                })
+            );
+            let prefix = if item == "String" {
+                "AttributeType::refined_list(AttributeType::string()".to_string()
+            } else {
+                format!("AttributeType::refined_list(AttributeType::struct_(\"{item}\"")
+            };
+            let suffix = format!(
+                ", true, Some(({minimum:?}, {maximum:?})), carina_core::schema::ListElements::{elements})"
+            );
+            if key.contains('.') {
+                for code in [inline, definitions] {
+                    assert_all_generated_struct_fields(code, key, &prefix);
+                    let (parent, _) = key.split_once('.').unwrap();
+                    let marker = format!("AttributeType::struct_(\"{parent}\".to_string(), vec![");
+                    for (index, _) in code.match_indices(&marker) {
+                        assert!(
+                            generated_budgets_field(&code[index..], key).contains(&suffix),
+                            "{key}"
+                        );
+                    }
+                }
+            } else {
+                let field = generated_dynamodb_field(inline, key);
+                assert!(
+                    field.starts_with(&prefix) && field.contains(&suffix),
+                    "{key}: {field}"
+                );
+            }
+            let property = key
+                .split_once('.')
+                .map_or(key, |(_, property)| property)
+                .to_snake_case();
+            let bound = range_display_string(minimum, maximum);
+            assert!(
+                markdown.contains(&format!("items: {bound}")),
+                "{property}: missing S3 count docs"
+            );
+        }
+        assert!(markdown.contains("AnalyticsDestination"));
+        assert!(markdown.contains("LifecycleDate"));
+        carina_docgen::check_page(&markdown).unwrap();
+    }
+
+    #[test]
+    fn test_s3_cors_exposed_headers_keep_the_unbounded_cfn_shape() {
+        let schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
+        assert!(
+            resource_type_overrides()
+                .get(&("AWS::S3::Bucket", "CorsRule.ExposedHeaders"))
+                .is_none()
+        );
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        for code in [inline, definitions] {
+            assert_all_generated_struct_fields(
+                code,
+                "CorsRule.ExposedHeaders",
+                "AttributeType::refined_list(AttributeType::string(), true, None, carina_core::schema::ListElements::Unique)",
+            );
+        }
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(markdown.contains("| `exposed_headers` | `List<String>` | No |"));
+    }
+
+    #[test]
+    fn test_s3_bounds_only_override_preserves_uniqueness_from_every_source_layer() {
+        for unique_layer in ["none", "property", "wrapper", "alias", "array"] {
+            let mut schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
+            schema.edit_json(|source| {
+                let array = source["definitions"]["WebsiteConfiguration"]["properties"]
+                    ["RoutingRules"]
+                    .clone();
+                // The cached property is a direct array without uniqueItems.
+                // Conflicting false siblings must never erase a true layer.
+                assert_eq!(array["type"], "array");
+                assert!(array.get("uniqueItems").is_none());
+                assert!(array.get("$ref").is_none());
+                assert!(array.get("oneOf").is_none());
+                source["definitions"]["RoutingRulesArrayForTest"] = array;
+                source["definitions"]["RoutingRulesArrayForTest"]["uniqueItems"] =
+                    serde_json::json!(unique_layer == "array");
+                source["definitions"]["RoutingRulesAliasForTest"] = serde_json::json!({
+                    "$ref": "#/definitions/RoutingRulesArrayForTest",
+                    "uniqueItems": unique_layer == "alias"
+                });
+                source["definitions"]["RoutingRulesWrapperForTest"] = serde_json::json!({
+                    "uniqueItems": unique_layer == "wrapper",
+                    "oneOf": [
+                        {"$ref": "#/definitions/RoutingRulesAliasForTest"},
+                        {"type": "object"}
+                    ]
+                });
+                source["definitions"]["WebsiteConfiguration"]["properties"]["RoutingRules"] =
+                    serde_json::json!({
+                        "$ref": "#/definitions/RoutingRulesWrapperForTest",
+                        "uniqueItems": unique_layer == "property"
+                    });
+            });
+            let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+            let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+            let elements = if unique_layer == "none" {
+                "AllowDuplicates"
+            } else {
+                "Unique"
+            };
+            let suffix = format!(
+                ", true, Some((None, Some(50))), carina_core::schema::ListElements::{elements})"
+            );
+            for code in [inline, definitions] {
+                let field = generated_budgets_field(code, "WebsiteConfiguration.RoutingRules");
+                assert!(
+                    field.starts_with(
+                        "AttributeType::refined_list(AttributeType::struct_(\"RoutingRule\""
+                    ) && field.contains(&suffix),
+                    "{unique_layer}: {field}"
+                );
+            }
+            let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            assert!(
+                markdown
+                    .lines()
+                    .any(|row| row.starts_with("| `routing_rules` |")
+                        && row.contains("items: ..=50")),
+                "{unique_layer}: routing rule count docs must survive aliases and wrappers"
+            );
+        }
+    }
+
     const DYNAMODB_OVERRIDE_KEYS: &[&str] = &[
         "TableName",
         "AttributeDefinition.AttributeName",
@@ -17812,12 +18758,13 @@ mod tests {
                     .next()
             })
             .expect("generated S3 schema should contain S3TablesDestination");
-        for field in ["table_namespace", "table_arn"] {
+        for (field, field_type) in [
+            ("table_namespace", "AttributeType::enum_("),
+            ("table_arn", "carina_aws_types::arn()"),
+        ] {
             assert!(
                 s3_tables_destination.contains(&format!(
-                    r#"StructField::provider_populated("{field}", carina_aws_types::arn())"#
-                )) || s3_tables_destination.contains(&format!(
-                    r#"StructField::provider_populated("{field}", AttributeType::string())"#
+                    r#"StructField::provider_populated("{field}", {field_type}"#
                 )),
                 "S3TablesDestination.{field} must be provider-populated: {s3_tables_destination}"
             );

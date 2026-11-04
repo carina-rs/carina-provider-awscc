@@ -51,7 +51,7 @@ This is a legacy property, and it is not recommended for most use cases. A major
 
 ### `analytics_configurations`
 
-- **Type:** List\<[Struct(AnalyticsConfiguration)](#analytics_configurations-1)\>
+- **Type:** List\<[Struct(AnalyticsConfiguration)](#analytics_configurations-1)\> (items: ..=1000)
 - **Required:** No
 
 Specifies the configuration and any analyses for the analytics filter of an Amazon S3 bucket.
@@ -80,14 +80,14 @@ Describes the cross-origin access configuration for objects in an Amazon S3 buck
 
 ### `intelligent_tiering_configurations`
 
-- **Type:** List\<[Struct(IntelligentTieringConfiguration)](#intelligent_tiering_configurations-1)\>
+- **Type:** List\<[Struct(IntelligentTieringConfiguration)](#intelligent_tiering_configurations-1)\> (items: ..=1000)
 - **Required:** No
 
 Defines how Amazon S3 handles Intelligent-Tiering storage.
 
 ### `inventory_configurations`
 
-- **Type:** List\<[Struct(InventoryConfiguration)](#inventory_configurations-1)\>
+- **Type:** List\<[Struct(InventoryConfiguration)](#inventory_configurations-1)\> (items: ..=1000)
 - **Required:** No
 
 Specifies the S3 Inventory configuration for an Amazon S3 bucket. For more information, see [GET Bucket inventory](https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGETInventoryConfig.html) in the *Amazon S3 API Reference*.
@@ -122,7 +122,7 @@ The metadata table configuration of an S3 general purpose bucket.
 
 ### `metrics_configurations`
 
-- **Type:** List\<[Struct(MetricsConfiguration)](#metrics_configurations-1)\>
+- **Type:** List\<[Struct(MetricsConfiguration)](#metrics_configurations-1)\> (items: ..=1000)
 - **Required:** No
 
 Specifies a metrics configuration for the CloudWatch request metrics (specified by the metrics configuration ID) from an Amazon S3 bucket. If you're updating an existing metrics configuration, note that this is a full replacement of the existing metrics configuration. If you don't include the elements you want to keep, they are erased. For more information, see [PutBucketMetricsConfiguration](https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketPUTMetricConfiguration.html).
@@ -413,6 +413,14 @@ Shorthand formats: `enabled` or `ConfigurationState.enabled`
 
 Shorthand formats: `enabled` or `Expiration.enabled`
 
+### metadata_table_configuration.s3_tables_destination.table_namespace (TableNamespace)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `aws_s3_metadata` | `aws.s3.Bucket.MetadataTableConfiguration.S3TablesDestination.TableNamespace.aws_s3_metadata` |
+
+Shorthand formats: `aws_s3_metadata` or `TableNamespace.aws_s3_metadata`
+
 ### metadata_table_encryption_configuration.sse_algorithm (SseAlgorithm)
 
 | Value | DSL Identifier |
@@ -421,6 +429,15 @@ Shorthand formats: `enabled` or `Expiration.enabled`
 | `AES256` | `aws.s3.Bucket.MetadataConfiguration.InventoryTableConfiguration.MetadataTableEncryptionConfiguration.SseAlgorithm.aes256` |
 
 Shorthand formats: `aws_kms` or `SseAlgorithm.aws_kms`
+
+### notification_filter.s3_key.rules.name (Name)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `prefix` | `aws.s3.Bucket.NotificationConfiguration.LambdaConfiguration.NotificationFilter.S3KeyFilter.FilterRule.Name.prefix` |
+| `suffix` | `aws.s3.Bucket.NotificationConfiguration.LambdaConfiguration.NotificationFilter.S3KeyFilter.FilterRule.Name.suffix` |
+
+Shorthand formats: `prefix` or `Name.prefix`
 
 ### object_lock_configuration.object_lock_enabled (ObjectLockEnabled)
 
@@ -580,7 +597,7 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `destination` | [Struct(Destination)](#destination) | Yes | The place to store the data for an analysis. |
+| `destination` | `Struct(AnalyticsDestination)` | Yes | The place to store the data for an analysis. |
 | `output_schema_version` | [Enum (OutputSchemaVersion)](#analytics_configurationsstorage_class_analysisdata_exportoutput_schema_version-outputschemaversion) | Yes | The version of the output schema to use when exporting data. Must be ``V_1``. |
 
 ### bucket_encryption
@@ -614,7 +631,7 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cors_rules` | List\<[Struct(CorsRule)](#cors_configurationcors_rules)\> | Yes | A set of origins and methods (cross-origin access that you want to allow). You can add up to 100 rules to the configuration. |
+| `cors_rules` | List\<[Struct(CorsRule)](#cors_configurationcors_rules)\> (items: ..=100) | Yes | A set of origins and methods (cross-origin access that you want to allow). You can add up to 100 rules to the configuration. |
 
 ### cors_configuration.cors_rules
 
@@ -622,7 +639,7 @@ Shorthand formats: `http` or `Protocol.http`
 |-------|------|----------|-------------|
 | `allowed_headers` | `List<String>` | No | Headers that are specified in the ``Access-Control-Request-Headers`` header. These headers are allowed in a preflight OPTIONS request. In response to any preflight OPTIONS request, Amazon S3 returns any requested headers that are allowed. |
 | `allowed_methods` | List\<[Enum (AllowedMethods)](#cors_configurationcors_rulesallowed_methods-allowedmethods)\> | Yes | An HTTP method that you allow the origin to run. *Allowed values*: ``GET`` \| ``PUT`` \| ``HEAD`` \| ``POST`` \| ``DELETE`` |
-| `allowed_origins` | `List<String>` | Yes | One or more origins you want customers to be able to access the bucket from. |
+| `allowed_origins` | `List<String>` (items: 1..) | Yes | One or more origins you want customers to be able to access the bucket from. |
 | `exposed_headers` | `List<String>` | No | One or more headers in the response that you want customers to be able to access from their applications (for example, from a JavaScript ``XMLHttpRequest`` object). |
 | `id` | String(len: ..=255) | No | A unique identifier for this rule. The value must be no more than 255 characters. |
 | `max_age` | Int(0..) | No | The time in seconds that your browser is to cache the preflight response for the specified resource. |
@@ -653,7 +670,7 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `access_tier` | [Enum (AccessTier)](#intelligent_tiering_configurationstieringsaccess_tier-accesstier) | Yes | S3 Intelligent-Tiering access tier. See [Storage class for automatically optimizing frequently and infrequently accessed objects](https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html#sc-dynamic-data-access) for a list of access tiers in the S3 Intelligent-Tiering storage class. |
-| `days` | Int | Yes | The number of consecutive days of no access after which an object will be eligible to be transitioned to the corresponding tier. The minimum number of days specified for Archive Access tier must be at least 90 days and Deep Archive Access tier must be at least 180 days. The maximum can be up to 2 years (730 days). |
+| `days` | Int(90..=730) | Yes | The number of consecutive days of no access after which an object will be eligible to be transitioned to the corresponding tier. The minimum number of days specified for Archive Access tier must be at least 90 days and Deep Archive Access tier must be at least 180 days. The maximum can be up to 2 years (730 days). |
 
 ### inventory_configurations
 
@@ -671,7 +688,7 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `rules` | List\<[Struct(Rule)](#lifecycle_configurationrules)\> | Yes | A lifecycle rule for individual objects in an Amazon S3 bucket. |
+| `rules` | List\<[Struct(Rule)](#lifecycle_configurationrules)\> (items: 1..=1000) | Yes | A lifecycle rule for individual objects in an Amazon S3 bucket. |
 | `transition_default_minimum_object_size` | [Enum (TransitionDefaultMinimumObjectSize)](#lifecycle_configurationtransition_default_minimum_object_size-transitiondefaultminimumobjectsize) | No | Indicates which default minimum object size behavior is applied to the lifecycle configuration. This parameter applies to general purpose buckets only. It isn't supported for directory bucket lifecycle configurations. + ``all_storage_classes_128K`` - Objects smaller than 128 KB will not transition to any storage class by default. + ``varies_by_storage_class`` - Objects smaller than 128 KB will transition to Glacier Flexible Retrieval or Glacier Deep Archive storage classes. By default, all other storage classes will prevent transitions smaller than 128 KB. To customize the minimum object size for any transition you can add a filter that specifies a custom ``ObjectSizeGreaterThan`` or ``ObjectSizeLessThan`` in the body of your transition rule. Custom filters always take precedence over the default transition behavior. |
 
 ### lifecycle_configuration.rules
@@ -679,14 +696,14 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `abort_incomplete_multipart_upload` | [Struct(AbortIncompleteMultipartUpload)](#lifecycle_configurationrulesabort_incomplete_multipart_upload) | No | Specifies a lifecycle rule that stops incomplete multipart uploads to an Amazon S3 bucket. |
-| `expiration_date` | String | No | Indicates when objects are deleted from Amazon S3 and Amazon S3 Glacier. The date value must be in ISO 8601 format. The time is always midnight UTC. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time. |
-| `expiration_in_days` | Int | No | Indicates the number of days after creation when objects are deleted from Amazon S3 and Amazon S3 Glacier. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time. |
+| `expiration_date` | `aws.s3.Bucket.LifecycleDate` | No | Indicates when objects are deleted from Amazon S3 and Amazon S3 Glacier. The date value must be in ISO 8601 format. The time is always midnight UTC. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time. |
+| `expiration_in_days` | `PositiveInt` | No | Indicates the number of days after creation when objects are deleted from Amazon S3 and Amazon S3 Glacier. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time. |
 | `expired_object_delete_marker` | Bool | No | Indicates whether Amazon S3 will remove a delete marker without any noncurrent versions. If set to true, the delete marker will be removed if there are no noncurrent versions. This cannot be specified with ``ExpirationInDays``, ``ExpirationDate``, or ``TagFilters``. |
 | `id` | String(len: ..=255) | No | Unique identifier for the rule. The value can't be longer than 255 characters. |
 | `noncurrent_version_expiration` | [Struct(NoncurrentVersionExpiration)](#lifecycle_configurationrulesnoncurrent_version_expiration) | No | Specifies when noncurrent object versions expire. Upon expiration, S3 permanently deletes the noncurrent object versions. You set this lifecycle configuration action on a bucket that has versioning enabled (or suspended) to request that S3 delete noncurrent object versions at a specific period in the object's lifetime. |
 | `noncurrent_version_transitions` | List\<[Struct(NoncurrentVersionTransition)](#lifecycle_configurationrulesnoncurrent_version_transitions)\> | No | For buckets with versioning enabled (or suspended), one or more transition rules that specify when non-current objects transition to a specified storage class. If you specify a transition and expiration time, the expiration time must be later than the transition time. If you specify this property, don't specify the ``NoncurrentVersionTransition`` property. |
-| `object_size_greater_than` | NumericString(len: ..=20) | No | Specifies the minimum object size in bytes for this rule to apply to. Objects must be larger than this value in bytes. For more information about size based rules, see [Lifecycle configuration using size-based rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-configuration-examples.html#lc-size-rules) in the *Amazon S3 User Guide*. |
-| `object_size_less_than` | NumericString(len: ..=20) | No | Specifies the maximum object size in bytes for this rule to apply to. Objects must be smaller than this value in bytes. For more information about sized based rules, see [Lifecycle configuration using size-based rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-configuration-examples.html#lc-size-rules) in the *Amazon S3 User Guide*. |
+| `object_size_greater_than` | `String (length: ..=20, pattern: ^(?:0\|[1-9][0-9]*)\z)` | No | Specifies the minimum object size in bytes for this rule to apply to. Objects must be larger than this value in bytes. For more information about size based rules, see [Lifecycle configuration using size-based rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-configuration-examples.html#lc-size-rules) in the *Amazon S3 User Guide*. |
+| `object_size_less_than` | `String (length: ..=20, pattern: ^(?:0\|[1-9][0-9]*)\z)` | No | Specifies the maximum object size in bytes for this rule to apply to. Objects must be smaller than this value in bytes. For more information about sized based rules, see [Lifecycle configuration using size-based rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-configuration-examples.html#lc-size-rules) in the *Amazon S3 User Guide*. |
 | `prefix` | String | No | Object key prefix that identifies one or more objects to which this rule applies. Replacement must be made for object keys containing special characters (such as carriage returns) when using XML requests. For more information, see [XML related object key constraints](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-xml-related-constraints). |
 | `status` | [Enum (Status)](#lifecycle_configurationrulesstatus-status) | Yes | If ``Enabled``, the rule is currently being applied. If ``Disabled``, the rule is not currently being applied. |
 | `tag_filters` | `List<Map<String, String>>` | No | Tags to use to identify a subset of objects to which the lifecycle rule applies. |
@@ -702,14 +719,14 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `newer_noncurrent_versions` | Int | No | Specifies how many noncurrent versions S3 will retain. If there are this many more recent noncurrent versions, S3 will take the associated action. For more information about noncurrent versions, see [Lifecycle configuration elements](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intro-lifecycle-rules.html) in the *Amazon S3 User Guide*. |
-| `noncurrent_days` | Int | Yes | Specifies the number of days an object is noncurrent before S3 can perform the associated action. For information about the noncurrent days calculations, see [How Amazon S3 Calculates When an Object Became Noncurrent](https://docs.aws.amazon.com/AmazonS3/latest/dev/intro-lifecycle-rules.html#non-current-days-calculations) in the *Amazon S3 User Guide*. |
+| `newer_noncurrent_versions` | `Int (..=100)` | No | Specifies how many noncurrent versions S3 will retain. If there are this many more recent noncurrent versions, S3 will take the associated action. For more information about noncurrent versions, see [Lifecycle configuration elements](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intro-lifecycle-rules.html) in the *Amazon S3 User Guide*. |
+| `noncurrent_days` | `PositiveInt` | Yes | Specifies the number of days an object is noncurrent before S3 can perform the associated action. For information about the noncurrent days calculations, see [How Amazon S3 Calculates When an Object Became Noncurrent](https://docs.aws.amazon.com/AmazonS3/latest/dev/intro-lifecycle-rules.html#non-current-days-calculations) in the *Amazon S3 User Guide*. |
 
 ### lifecycle_configuration.rules.noncurrent_version_transitions
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `newer_noncurrent_versions` | Int | No | Specifies how many noncurrent versions S3 will retain. If there are this many more recent noncurrent versions, S3 will take the associated action. For more information about noncurrent versions, see [Lifecycle configuration elements](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intro-lifecycle-rules.html) in the *Amazon S3 User Guide*. |
+| `newer_noncurrent_versions` | `Int (..=100)` | No | Specifies how many noncurrent versions S3 will retain. If there are this many more recent noncurrent versions, S3 will take the associated action. For more information about noncurrent versions, see [Lifecycle configuration elements](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intro-lifecycle-rules.html) in the *Amazon S3 User Guide*. |
 | `storage_class` | [Enum (StorageClass)](#lifecycle_configurationrulesnoncurrent_version_transitionsstorage_class-storageclass) | Yes | The class of storage used to store the object. |
 | `transition_in_days` | Int | Yes | Specifies the number of days an object is noncurrent before Amazon S3 can perform the associated action. For information about the noncurrent days calculations, see [How Amazon S3 Calculates How Long an Object Has Been Noncurrent](https://docs.aws.amazon.com/AmazonS3/latest/dev/intro-lifecycle-rules.html#non-current-days-calculations) in the *Amazon S3 User Guide*. |
 
@@ -718,8 +735,8 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `storage_class` | [Enum (StorageClass)](#lifecycle_configurationrulestransitionsstorage_class-storageclass) | Yes | The storage class to which you want the object to transition. |
-| `transition_date` | String | No | Indicates when objects are transitioned to the specified storage class. The date value must be in ISO 8601 format. The time is always midnight UTC. |
-| `transition_in_days` | Int | No | Indicates the number of days after creation when objects are transitioned to the specified storage class. If the specified storage class is ``INTELLIGENT_TIERING``, ``GLACIER_IR``, ``GLACIER``, or ``DEEP_ARCHIVE``, valid values are ``0`` or positive integers. If the specified storage class is ``STANDARD_IA`` or ``ONEZONE_IA``, valid values are positive integers greater than ``30``. Be aware that some storage classes have a minimum storage duration and that you're charged for transitioning objects before their minimum storage duration. For more information, see [Constraints and considerations for transitions](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-transition-general-considerations.html#lifecycle-configuration-constraints) in the *Amazon S3 User Guide*. |
+| `transition_date` | `aws.s3.Bucket.LifecycleDate` | No | Indicates when objects are transitioned to the specified storage class. The date value must be in ISO 8601 format. The time is always midnight UTC. |
+| `transition_in_days` | `Int (0..)` | No | Indicates the number of days after creation when objects are transitioned to the specified storage class. If the specified storage class is ``INTELLIGENT_TIERING``, ``GLACIER_IR``, ``GLACIER``, or ``DEEP_ARCHIVE``, valid values are ``0`` or positive integers. If the specified storage class is ``STANDARD_IA`` or ``ONEZONE_IA``, valid values are positive integers greater than ``30``. Be aware that some storage classes have a minimum storage duration and that you're charged for transitioning objects before their minimum storage duration. For more information, see [Constraints and considerations for transitions](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-transition-general-considerations.html#lifecycle-configuration-constraints) in the *Amazon S3 User Guide*. |
 
 ### logging_configuration
 
@@ -780,7 +797,7 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `days` | Int | No | If you enable journal table record expiration, you can set the number of days to retain your journal table records. Journal table records must be retained for a minimum of 7 days. To set this value, specify any whole number from ``7`` to ``2147483647``. For example, to retain your journal table records for one year, set this value to ``365``. |
+| `days` | Int(7..=2147483647) | No | If you enable journal table record expiration, you can set the number of days to retain your journal table records. Journal table records must be retained for a minimum of 7 days. To set this value, specify any whole number from ``7`` to ``2147483647``. For example, to retain your journal table records for one year, set this value to ``365``. |
 | `expiration` | [Enum (Expiration)](#metadata_configurationjournal_table_configurationrecord_expirationexpiration-expiration) | Yes | Specifies whether journal table record expiration is enabled or disabled. |
 
 ### metadata_table_configuration
@@ -796,7 +813,7 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 | `table_arn` | Arn | No | The Amazon Resource Name (ARN) for the metadata table in the metadata table configuration. The specified metadata table name must be unique within the ``aws_s3_metadata`` namespace in the destination table bucket. Provider-populated; cannot be set. |
 | `table_bucket_arn` | Arn | Yes | The Amazon Resource Name (ARN) for the table bucket that's specified as the destination in the metadata table configuration. The destination table bucket must be in the same Region and AWS-account as the general purpose bucket. |
 | `table_name` | String | Yes | The name for the metadata table in your metadata table configuration. The specified metadata table name must be unique within the ``aws_s3_metadata`` namespace in the destination table bucket. |
-| `table_namespace` | String | No | The table bucket namespace for the metadata table in your metadata table configuration. This value is always ``aws_s3_metadata``. Provider-populated; cannot be set. |
+| `table_namespace` | [Enum (TableNamespace)](#metadata_table_configurations3_tables_destinationtable_namespace-tablenamespace) | No | The table bucket namespace for the metadata table in your metadata table configuration. This value is always ``aws_s3_metadata``. Provider-populated; cannot be set. |
 
 ### metadata_table_encryption_configuration
 
@@ -812,7 +829,7 @@ Used by: `metadata_configuration.inventory_table_configuration.encryption_config
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `access_point_arn` | Arn | No | The access point that was used while performing operations on the object. The metrics configuration only includes objects that meet the filter's criteria. |
-| `id` | String | Yes | The ID used to identify the metrics configuration. This can be any value you choose that helps you identify your metrics configuration. |
+| `id` | `String (length: ..=64, pattern: ^[A-Za-z0-9._-]+\z)` | Yes | The ID used to identify the metrics configuration. This can be any value you choose that helps you identify your metrics configuration. |
 | `prefix` | String | No | The prefix that an object must have to be included in the metrics results. |
 | `tag_filters` | `List<Map<String, String>>` | No | Specifies a list of tag filters to use as a metrics configuration filter. The metrics configuration includes only objects that meet the filter's criteria. |
 
@@ -835,7 +852,7 @@ Used by: `metadata_configuration.inventory_table_configuration.encryption_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `event` | String | Yes | The Amazon S3 bucket event for which to invoke the LAMlong function. For more information, see [Supported Event Types](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
+| `event` | `aws.s3.Bucket.NotificationConfiguration.Event` | Yes | The Amazon S3 bucket event for which to invoke the LAMlong function. For more information, see [Supported Event Types](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
 | `filter` | [Struct(NotificationFilter)](#notification_filter) | No | The filtering rules that determine which objects invoke the AWS Lambda function. For example, you can create a filter so that only image files with a ``.jpg`` extension invoke the function when they are added to the Amazon S3 bucket. |
 | `function` | Arn | Yes | The Amazon Resource Name (ARN) of the LAMlong function that Amazon S3 invokes when the specified event type occurs. |
 
@@ -843,7 +860,7 @@ Used by: `metadata_configuration.inventory_table_configuration.encryption_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `event` | String | Yes | The Amazon S3 bucket event about which you want to publish messages to Amazon SQS. For more information, see [Supported Event Types](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
+| `event` | `aws.s3.Bucket.NotificationConfiguration.Event` | Yes | The Amazon S3 bucket event about which you want to publish messages to Amazon SQS. For more information, see [Supported Event Types](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
 | `filter` | [Struct(NotificationFilter)](#notification_filter) | No | The filtering rules that determine which objects trigger notifications. For example, you can create a filter so that Amazon S3 sends notifications only when image files with a ``.jpg`` extension are added to the bucket. For more information, see [Configuring event notifications using object key name filtering](https://docs.aws.amazon.com/AmazonS3/latest/user-guide/notification-how-to-filtering.html) in the *Amazon S3 User Guide*. |
 | `queue` | Arn | Yes | The Amazon Resource Name (ARN) of the Amazon SQS queue to which Amazon S3 publishes a message when it detects events of the specified type. FIFO queues are not allowed when enabling an SQS queue as the event notification destination. |
 
@@ -851,7 +868,7 @@ Used by: `metadata_configuration.inventory_table_configuration.encryption_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `event` | String | Yes | The Amazon S3 bucket event about which to send notifications. For more information, see [Supported Event Types](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
+| `event` | `aws.s3.Bucket.NotificationConfiguration.Event` | Yes | The Amazon S3 bucket event about which to send notifications. For more information, see [Supported Event Types](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
 | `filter` | [Struct(NotificationFilter)](#notification_filter) | No | The filtering rules that determine for which objects to send notifications. For example, you can create a filter so that Amazon S3 sends notifications only when image files with a ``.jpg`` extension are added to the bucket. |
 | `topic` | Arn | Yes | The Amazon Resource Name (ARN) of the Amazon SNS topic to which Amazon S3 publishes a message when it detects events of the specified type. |
 
@@ -873,7 +890,7 @@ Used by: `notification_configuration.lambda_configurations.filter`, `notificatio
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String(len: ..=1024) | Yes | The object key name prefix or suffix identifying one or more objects to which the filtering rule applies. The maximum length is 1,024 characters. Overlapping prefixes and suffixes are not supported. For more information, see [Configuring Event Notifications](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
+| `name` | [Enum (Name)](#notification_filters3_keyrulesname-name) | Yes | The object key name prefix or suffix identifying one or more objects to which the filtering rule applies. The maximum length is 1,024 characters. Overlapping prefixes and suffixes are not supported. For more information, see [Configuring Event Notifications](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
 | `value` | String | Yes | The value that the filter searches for in object key names. |
 
 ### object_lock_configuration
@@ -923,7 +940,7 @@ Used by: `notification_configuration.lambda_configurations.filter`, `notificatio
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `role` | IamRoleArn | Yes | The Amazon Resource Name (ARN) of the IAMlong (IAM) role that Amazon S3 assumes when replicating objects. For more information, see [How to Set Up Replication](https://docs.aws.amazon.com/AmazonS3/latest/dev/replication-how-setup.html) in the *Amazon S3 User Guide*. |
-| `rules` | List\<[Struct(ReplicationRule)](#replication_configurationrules)\> | Yes | A container for one or more replication rules. A replication configuration must have at least one rule and can contain a maximum of 1,000 rules. |
+| `rules` | List\<[Struct(ReplicationRule)](#replication_configurationrules)\> (items: 1..=1000) | Yes | A container for one or more replication rules. A replication configuration must have at least one rule and can contain a maximum of 1,000 rules. |
 
 ### replication_configuration.rules
 
@@ -1022,7 +1039,7 @@ Used by: `replication_configuration.rules.destination.metrics.event_threshold`, 
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `minutes` | Int | Yes | Contains an integer specifying time in minutes. Valid value: 15 |
+| `minutes` | Int(15..=15) | Yes | Contains an integer specifying time in minutes. Valid value: 15 |
 
 ### versioning_configuration
 
@@ -1034,10 +1051,10 @@ Used by: `replication_configuration.rules.destination.metrics.event_threshold`, 
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `error_document` | String | No | The name of the error document for the website. |
-| `index_document` | String | No | The name of the index document for the website. |
+| `error_document` | `String (length: 1..)` | No | The name of the error document for the website. |
+| `index_document` | `String (pattern: ^[^/]+\z)` | No | The name of the index document for the website. |
 | `redirect_all_requests_to` | [Struct(RedirectAllRequestsTo)](#website_configurationredirect_all_requests_to) | No | The redirect behavior for every request to this bucket's website endpoint. If you specify this property, you can't specify any other property. |
-| `routing_rules` | List\<[Struct(RoutingRule)](#website_configurationrouting_rules)\> | No | Rules that define when a redirect is applied and the redirect behavior. |
+| `routing_rules` | List\<[Struct(RoutingRule)](#website_configurationrouting_rules)\> (items: ..=50) | No | Rules that define when a redirect is applied and the redirect behavior. |
 
 ### website_configuration.redirect_all_requests_to
 

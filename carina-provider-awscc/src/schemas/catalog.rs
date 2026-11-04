@@ -93,6 +93,66 @@ fn validated_int_enum(identity: TypeIdentity, valid_values: &'static [i64]) -> A
     )
 }
 
+fn validated_s3_lifecycle_date(identity: TypeIdentity) -> AttributeType {
+    // Both actions require a calendar date at midnight UTC.
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_LifecycleExpiration.html
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_Transition.html
+    // Cloud Control GetResource, carina-test-001, ap-northeast-1, 2026-11-04:
+    // ExpirationDate was "2030-01-01T00:00:00Z" without fractional seconds.
+    // Retain the .000Z spelling accepted by the cached iso8601UTC pattern too.
+    AttributeType::refined_string_with_validator(
+        identity,
+        Some(
+            r"^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T00:00:00(?:\.000)?Z\z"
+                .to_string(),
+        ),
+        None,
+        legacy_validator(|value| {
+            let Value::Concrete(ConcreteValue::String(value)) = value else {
+                return Err("Expected string".to_string());
+            };
+            let value = value.expose_plaintext();
+            let invalid = || {
+                format!(
+                    "Invalid S3 lifecycle date '{value}': expected a valid calendar date at midnight UTC (YYYY-MM-DDT00:00:00Z or YYYY-MM-DDT00:00:00.000Z)"
+                )
+            };
+            // Validate the entire spelling here as well as in the pattern:
+            // SDK custom-type dispatch invokes this callback directly.
+            let (date, time) = value.split_once('T').ok_or_else(invalid)?;
+            if !matches!(time, "00:00:00Z" | "00:00:00.000Z")
+                || date.len() != 10
+                || !date.bytes().enumerate().all(|(index, byte)| {
+                    if matches!(index, 4 | 7) {
+                        byte == b'-'
+                    } else {
+                        byte.is_ascii_digit()
+                    }
+                })
+            {
+                return Err(invalid());
+            }
+            // The spelling checks above guarantee ASCII and these boundaries.
+            let year = date[..4].parse::<u32>().map_err(|_| invalid())?;
+            let month = date[5..7].parse::<u32>().map_err(|_| invalid())?;
+            let day = date[8..].parse::<u32>().map_err(|_| invalid())?;
+            let days_in_month = match month {
+                4 | 6 | 9 | 11 => 30,
+                2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+                2 => 28,
+                1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+                _ => return Err(invalid()),
+            };
+            if (1..=days_in_month).contains(&day) {
+                Ok(())
+            } else {
+                Err(invalid())
+            }
+        }),
+        None,
+    )
+}
+
 fn validated_scheduler_schedule_group_name(identity: TypeIdentity) -> AttributeType {
     // Measured with carina-test-008 in ap-northeast-1 on 2026-10-30: creating
     // AWS::Scheduler::Schedule in a non-default group succeeded, but Carina's
@@ -295,6 +355,15 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "default",
             constructor: validated_scheduler_schedule_group_name,
         },
+        /// AWSCC lifecycle calendar date at midnight UTC, including CFN's .000Z form.
+        /// This identity is local to AWSCC, distinct from the existing shared
+        /// aws.s3.BucketLifecycleConfiguration.LifecycleDate identity.
+        S3LifecycleDate => s3_lifecycle_date {
+            segments: ["s3", "Bucket"],
+            kind: "LifecycleDate",
+            valid_sample: "2030-01-01T00:00:00Z",
+            constructor: validated_s3_lifecycle_date,
+        },
         }
     }
 }
@@ -436,7 +505,8 @@ OrganizationsAccountArn|aws|organizations/Account|Arn|Some(OrganizationsAccountA
 OrganizationsOrganizationArn|aws|organizations/Organization|Arn|Some(OrganizationsOrganizationArn)|arn:aws:organizations::123456789012:organization/o-example|None|crate::schemas::catalog::organizations_organization_arn()
 S3BucketArn|aws|s3/Bucket|Arn|Some(S3BucketArn)|arn:aws:s3:::example-bucket|None|crate::schemas::catalog::s3_bucket_arn()
 Ec2FlowLogMaxAggregationInterval|aws|ec2/FlowLog|MaxAggregationInterval|None|60|Some([60, 600])|crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()
-SchedulerScheduleGroupName|aws|scheduler/Schedule|GroupName|None|default|None|crate::schemas::catalog::scheduler_schedule_group_name()"#;
+SchedulerScheduleGroupName|aws|scheduler/Schedule|GroupName|None|default|None|crate::schemas::catalog::scheduler_schedule_group_name()
+S3LifecycleDate|aws|s3/Bucket|LifecycleDate|None|2030-01-01T00:00:00Z|None|crate::schemas::catalog::s3_lifecycle_date()"#;
 
         let snapshot = AwsccType::ALL
             .iter()
