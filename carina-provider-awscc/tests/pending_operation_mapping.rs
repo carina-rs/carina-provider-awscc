@@ -2008,8 +2008,8 @@ async fn invalid_resume_tags_are_rejected_before_dispatch() {
     assert_eq!(key, "env");
     assert!(matches!(
         inner.as_ref(),
-        carina_core::schema::TypeError::TypeMismatch { expected, got }
-            if expected == "String" && got == "Bool"
+        carina_core::schema::TypeError::TypeMismatch { types }
+            if types.expected() == "String" && types.actual() == "Bool"
     ));
     assert_eq!(service.calls("CreateResource"), 0);
 }

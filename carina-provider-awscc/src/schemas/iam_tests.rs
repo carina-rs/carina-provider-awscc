@@ -377,7 +377,6 @@ fn literal_lets_validate_at_each_name_sink() {
 }
 
 #[test]
-#[ignore = "carina-core drops declaration bounds when lifting named argument annotations (carina#4248)"]
 fn named_module_arguments_validate_at_each_name_sink() {
     for (site, identity) in NAME_IDENTITIES.iter().enumerate() {
         let mut names = LITERAL_NAMES;
