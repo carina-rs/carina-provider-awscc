@@ -27,12 +27,12 @@ fn log_group_name_rejects_the_reserved_prefix_and_accepts_infra_names() {
         "/aws/lambda/carina-registry-publish-api",
         "/aws/ecs/carina-registry-publish-api",
         "name#1",
-        "AWS/x",
+        "/AWS/x",
         "my-aws/x",
     ] {
         assert!(name.validate(&string(value)).is_ok(), "{value:?}");
     }
-    for value in ["aws/x", "aws/"] {
+    for value in ["aws/x", "aws/", "AWS/x", "Aws/x", "aWs/x"] {
         assert!(name.validate(&string(value)).is_err(), "{value:?}");
     }
 }
@@ -64,9 +64,13 @@ fn log_group_name_preserves_pattern_and_bounds_in_direct_callback_dispatch() {
         ("".to_string(), false),
         ("AZaz09.-_/#".to_string(), true),
         ("/aws/lambda/example".to_string(), true),
+        ("/AWS/x".to_string(), true),
         ("name#1".to_string(), true),
         ("aws/x".to_string(), false),
         ("aws/".to_string(), false),
+        ("AWS/x".to_string(), false),
+        ("Aws/x".to_string(), false),
+        ("aWs/x".to_string(), false),
         ("bad name".to_string(), false),
         ("name!".to_string(), false),
         ("name\n".to_string(), false),

@@ -94,8 +94,10 @@ fn validated_int_enum(identity: TypeIdentity, valid_values: &'static [i64]) -> A
 }
 
 fn validated_logs_log_group_name(identity: TypeIdentity) -> AttributeType {
-    // Preserve CFN's pattern and bounds; the reserved prefix needs a callback.
+    // Preserve CFN's pattern and bounds; check the reserved prefix case-insensitively.
     // https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_CreateLogGroup.html
+    // Live CreateLogGroup, carina-test-001, 2026-11-05: InvalidParameterException:
+    // "Log groups starting with AWS/ are reserved for AWS."
     AttributeType::refined_string_with_validator(
         identity,
         Some(r"^[.\-_/#A-Za-z0-9]{1,512}\z".to_string()),
@@ -116,7 +118,11 @@ fn validated_logs_log_group_name(identity: TypeIdentity) -> AttributeType {
                         .to_string(),
                 );
             }
-            if value.starts_with("aws/") {
+            if value
+                .as_bytes()
+                .get(..4)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"aws/"))
+            {
                 return Err(
                     "CloudWatch Logs log group name must not start with the reserved prefix aws/"
                         .to_string(),
