@@ -1875,6 +1875,35 @@ mod tests {
     }
 
     #[test]
+    fn s3_lifecycle_calendar_callback_dispatches_through_the_witness_and_sdk_bridge() {
+        let cache = ProviderSchemaCache::from_provider(&AwsccProcessProvider::new()).unwrap();
+        // The catalog supplies valid_bridge_sample automatically, while the
+        // aggregate witness registers the callback at both lifecycle sinks.
+        let identity = schemas::catalog::AwsccType::S3LifecycleDate.identity();
+        assert_eq!(valid_bridge_sample(&identity), "2030-01-01T00:00:00Z");
+        for value in [
+            "2030-01-01T00:00:00Z",
+            "2030-01-01T00:00:00.000Z",
+            "2000-02-29T00:00:00Z",
+        ] {
+            dispatch_custom_type_validation(&cache, &wire_identity(&identity), value)
+                .unwrap_or_else(|error| panic!("{value}: {error}"));
+        }
+        for value in [
+            "1900-02-29T00:00:00Z",
+            "2030-04-31T00:00:00Z",
+            "2030-01-01T00:00:01Z",
+            "2030-01-01T00:00:00.001Z",
+            "2030-01-01T00:00:00Z\n",
+        ] {
+            assert!(
+                dispatch_custom_type_validation(&cache, &wire_identity(&identity), value).is_err(),
+                "{value:?}: SDK dispatch must retain the calendar/midnight callback"
+            );
+        }
+    }
+
+    #[test]
     fn provider_config_attribute_types_declares_assume_role_struct() {
         // Mirrors the in-process Provider's assume_role declaration over
         // the WASM/proto boundary. If the proto declaration goes missing

@@ -30,6 +30,9 @@ mod elasticloadbalancingv2_tests;
 mod iam_tests;
 
 #[cfg(test)]
+mod s3_tests;
+
+#[cfg(test)]
 mod sns_tests;
 
 use carina_core::provider::ProviderFactory;

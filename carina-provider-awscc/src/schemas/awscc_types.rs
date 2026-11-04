@@ -23,6 +23,130 @@ fn string_enum(name: &str, namespace: &str, values_and_aliases: &[(&str, &str)])
     )
 }
 
+/// S3 lifecycle size thresholds retain CloudFormation's decimal-string wire type.
+pub fn s3_object_size() -> AttributeType {
+    // The API Long is represented as a string by CFN, with a 20-character cap.
+    // Cloud Control GetResource, carina-test-001, ap-northeast-1, 2026-11-04,
+    // returned ObjectSizeGreaterThan/LessThan as "128" / "1048576".
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_LifecycleRuleFilter.html
+    AttributeType::refined_string(
+        None,
+        Some(r"^(?:0|[1-9][0-9]*)\z".to_string()),
+        Some((None, Some(20))),
+        None,
+    )
+}
+
+/// S3 notification events, shared locally by Lambda, SQS and SNS destinations.
+/// The generator declares this body once as `S3NotificationEvent`; destination
+/// fields reference that definition instead of redeclaring the enum.
+pub fn s3_notification_event() -> AttributeType {
+    // Explicit aliases preserve the s3: prefix, case and wildcards on the wire.
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_LambdaFunctionConfiguration.html
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_QueueConfiguration.html
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_TopicConfiguration.html
+    string_enum(
+        "Event",
+        "aws.s3.Bucket.NotificationConfiguration",
+        &[
+            ("s3:ObjectCreated:*", "object_created_all"),
+            ("s3:ObjectCreated:Put", "object_created_put"),
+            ("s3:ObjectCreated:Post", "object_created_post"),
+            ("s3:ObjectCreated:Copy", "object_created_copy"),
+            (
+                "s3:ObjectCreated:CompleteMultipartUpload",
+                "object_created_complete_multipart_upload",
+            ),
+            ("s3:ObjectRemoved:*", "object_removed_all"),
+            ("s3:ObjectRemoved:Delete", "object_removed_delete"),
+            (
+                "s3:ObjectRemoved:DeleteMarkerCreated",
+                "object_removed_delete_marker_created",
+            ),
+            ("s3:ObjectRestore:*", "object_restore_all"),
+            ("s3:ObjectRestore:Post", "object_restore_post"),
+            ("s3:ObjectRestore:Completed", "object_restore_completed"),
+            ("s3:ObjectRestore:Delete", "object_restore_delete"),
+            ("s3:Replication:*", "replication_all"),
+            (
+                "s3:Replication:OperationFailedReplication",
+                "replication_operation_failed_replication",
+            ),
+            (
+                "s3:Replication:OperationNotTracked",
+                "replication_operation_not_tracked",
+            ),
+            (
+                "s3:Replication:OperationMissedThreshold",
+                "replication_operation_missed_threshold",
+            ),
+            (
+                "s3:Replication:OperationReplicatedAfterThreshold",
+                "replication_operation_replicated_after_threshold",
+            ),
+            ("s3:LifecycleTransition", "lifecycle_transition"),
+            ("s3:IntelligentTiering", "intelligent_tiering"),
+            ("s3:ObjectAcl:Put", "object_acl_put"),
+            ("s3:LifecycleExpiration:*", "lifecycle_expiration_all"),
+            (
+                "s3:LifecycleExpiration:Delete",
+                "lifecycle_expiration_delete",
+            ),
+            (
+                "s3:LifecycleExpiration:DeleteMarkerCreated",
+                "lifecycle_expiration_delete_marker_created",
+            ),
+            ("s3:ObjectTagging:*", "object_tagging_all"),
+            ("s3:ObjectTagging:Put", "object_tagging_put"),
+            ("s3:ObjectTagging:Delete", "object_tagging_delete"),
+            ("s3:ObjectAnnotation:*", "object_annotation_all"),
+            ("s3:ObjectAnnotation:Put", "object_annotation_put"),
+            ("s3:ObjectAnnotation:Delete", "object_annotation_delete"),
+            ("s3:ObjectRetention:Put", "object_retention_put"),
+            (
+                "s3:ReducedRedundancyLostObject",
+                "reduced_redundancy_lost_object",
+            ),
+        ],
+    )
+}
+
+/// Analytics exports only CSV; inventory retains the cached Destination shape.
+pub fn s3_analytics_destination() -> AttributeType {
+    // Give the contextual shape its own name so it cannot redefine inventory's
+    // Destination.Format enum under the same identity in the provider witness.
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_AnalyticsS3BucketDestination.html
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_InventoryS3BucketDestination.html
+    AttributeType::struct_(
+        "AnalyticsDestination".to_string(),
+        vec![
+            StructField::required("bucket_arn", carina_aws_types::arn())
+                .with_description("ARN of the bucket to which analytics data is exported.")
+                .with_provider_name("BucketArn")
+                .build(),
+            StructField::optional("bucket_account_id", carina_aws_types::aws_account_id())
+                .with_description("Account ID that owns the destination bucket.")
+                .with_provider_name("BucketAccountId")
+                .build(),
+            StructField::required(
+                "format",
+                string_enum(
+                    "Format",
+                    "aws.s3.Bucket.AnalyticsDestination",
+                    &[("CSV", "csv")],
+                ),
+            )
+            .with_description("Analytics export format (CSV).")
+            .with_provider_name("Format")
+            .build(),
+            StructField::optional("prefix", AttributeType::string())
+                .with_description("Prefix prepended to all analytics results.")
+                .with_provider_name("Prefix")
+                .build(),
+        ],
+    )
+}
+
 /// Amazon SNS subscription dead-letter queue policy.
 pub fn sns_subscription_redrive_policy() -> AttributeType {
     AttributeType::struct_(
