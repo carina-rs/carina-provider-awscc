@@ -7609,7 +7609,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             TypeOverride::IntRange(15, 15),
         );
         // CORS: at most 100 rules; allowed origins require one or more elements.
-        // Keep unconstrained String items and the CFN shape for exposed headers.
+        // Exposed headers stay unbounded: the field is optional and the S3 User
+        // Guide CORS examples use an empty `ExposeHeaders` list.
+        // https://docs.aws.amazon.com/AmazonS3/latest/userguide/ManageCorsUsing.html
         // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CORSConfiguration.html
         // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CORSRule.html
         m.insert(
