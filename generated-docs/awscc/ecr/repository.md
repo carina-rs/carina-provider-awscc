@@ -147,7 +147,7 @@ Shorthand formats: `wildcard` or `ImageTagMutabilityExclusionFilterType.wildcard
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `image_tag_mutability_exclusion_filter_type` | [Enum (ImageTagMutabilityExclusionFilterType)](#image_tag_mutability_exclusion_filtersimage_tag_mutability_exclusion_filter_type-imagetagmutabilityexclusionfiltertype) | Yes |  |
-| `image_tag_mutability_exclusion_filter_value` | String(pattern, len: 1..=128) | Yes |  |
+| `image_tag_mutability_exclusion_filter_value` | `String (length: 1..=128, pattern: ^[0-9a-zA-Z._*-]{1,128}\z)` | Yes |  |
 
 ### lifecycle_policy
 

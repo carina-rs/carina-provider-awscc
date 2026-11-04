@@ -7717,6 +7717,29 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             .with_array_bounds(None, Some(1)),
         );
 
+        // ECR #525: CFN omits the filter's end anchor. Use the raw definition
+        // key for both inline copies and emitted definitions; \z rejects a
+        // trailing newline. Live CreateRepository (2026-11-05, ap-northeast-1)
+        // rejected "release/*" and "a!" with InvalidParameterException for
+        // the documented pattern.
+        // https://docs.aws.amazon.com/AmazonECR/latest/APIReference/API_ImageTagMutabilityExclusionFilter.html
+        m.insert(
+            (
+                "AWS::ECR::Repository",
+                "ImageTagMutabilityExclusionFilter.ImageTagMutabilityExclusionFilterValue",
+            ),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some(r"^[0-9a-zA-Z._*-]{1,128}\z".to_string()), Some((Some(1), Some(128))), None)"#,
+                display: const {
+                    OverrideTypeDisplay::new(
+                        r"String (length: 1..=128, pattern: ^[0-9a-zA-Z._*-]{1,128}\z)",
+                    )
+                },
+                block_name: None,
+                default: None,
+            },
+        );
+
         // S3 #525: keep DomainName, RegionalDomainName, DualStackDomainName and
         // WebsiteURL as String, following carina-rs/carina-provider-aws#512.
         // Pre-March-2018 us-east-1 bucket names can contain underscores and be
