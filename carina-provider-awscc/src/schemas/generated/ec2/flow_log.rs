@@ -126,7 +126,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_resource_type_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
                 .with_description("The tags to apply to the flow logs.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

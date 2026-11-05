@@ -172,7 +172,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_subnets_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
                 .with_description("The tags to assign to the load balancer.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

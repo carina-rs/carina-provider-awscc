@@ -121,7 +121,7 @@ A name to identify the function.
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(pattern, len: 1..=128), String(pattern, len: ..=256)>`
 - **Required:** No
 
 A complex type that contains zero or more ``Tag`` elements.

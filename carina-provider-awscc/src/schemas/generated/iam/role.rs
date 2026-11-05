@@ -104,7 +104,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_role_name_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
                 .with_description("A list of tags that are attached to the role. For more information about tagging, see [Tagging IAM resources](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_tags.html) in the *IAM User Guide*.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

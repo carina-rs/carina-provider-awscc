@@ -29,7 +29,7 @@ awscc.iam.OidcProvider {
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: 1..=128), String(len: 1..=256)>`
 - **Required:** No
 
 ### `thumbprint_list`

@@ -190,12 +190,18 @@ fn pattern_audit_requires_the_exception_schema_path() {
 fn all_registered_provider_schema_patterns_are_whole_anchored_or_registered_exceptions() {
     let mut failures = Vec::new();
     let mut count = 0;
+    let mut tag_patterns = 0;
     let configs = super::generated::configs();
     assert!(!configs.is_empty());
     for config in configs {
         let schema = config.schema.as_schema();
         for (name, attr) in schema.attributes() {
-            count += audit_patterns(config.aws_type_name, name, attr.attr_type(), &mut failures);
+            let inspected =
+                audit_patterns(config.aws_type_name, name, attr.attr_type(), &mut failures);
+            count += inspected;
+            if name == "tags" {
+                tag_patterns += inspected;
+            }
         }
         for (name, attr) in schema.defs() {
             count += audit_patterns(
@@ -207,6 +213,10 @@ fn all_registered_provider_schema_patterns_are_whole_anchored_or_registered_exce
         }
     }
     assert!(count > 0, "audit must inspect emitted patterns");
+    assert!(
+        tag_patterns >= 9,
+        "audit must inspect Tag key/value patterns, including SSM map keys"
+    );
     assert!(
         failures.is_empty(),
         "unapproved provider patterns:\n{}",

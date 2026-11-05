@@ -70,7 +70,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_allocation_min_netmask_length_attribute());
     #[inline(never)]
     fn build_allocation_resource_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("allocation_resource_tags", AttributeType::refined_list(carina_aws_types::tags_type(), false, None, carina_core::schema::ListElements::Unique))
+        AttributeSchema::optional("allocation_resource_tags", AttributeType::refined_list(AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((Some(1), Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("When specified, an allocation will not be allowed unless a resource has a matching set of tags.")
                 .with_provider_name("AllocationResourceTags")
                 .with_block_name("allocation_resource_tag")
@@ -232,7 +232,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_state_message_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((Some(1), Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_description("An array of key-value pairs to apply to this resource.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

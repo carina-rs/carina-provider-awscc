@@ -76,7 +76,7 @@ pub fn ssm_parameter_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_policies_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, Some("^([\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*)$".to_string()), None, None), AttributeType::string()))
                 .with_description("Optional metadata that you assign to a resource in the form of an arbitrary set of tags (key-value pairs). Tags enable you to categorize a resource in different ways, such as by purpose, owner, or environment. For example, you might want to tag a SYS parameter to identify the type of resource to which it applies, the environment, or the type of configuration data referenced by the parameter.")
                 .with_provider_name("Tags")
             .build()

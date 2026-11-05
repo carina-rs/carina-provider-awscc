@@ -293,7 +293,7 @@ pub fn cloudwatch_alarm_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_statistic_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((Some(1), Some(128))), None), AttributeType::refined_string(None, None, Some((Some(1), Some(256))), None)))
                 .with_description("A list of key-value pairs to associate with the alarm. You can associate as many as 50 tags with an alarm. To be able to associate tags with the alarm when you create the alarm, you must have the ``cloudwatch:TagResource`` permission. Tags can help you organize and categorize your resources. You can also use them to scope user permissions by granting a user permission to access or change only resources with certain tag values.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

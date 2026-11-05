@@ -171,7 +171,7 @@ Configuration for replicating objects in an S3 bucket. To enable replication, yo
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: 1..=128), String(len: ..=256)>`
 - **Required:** No
 
 An arbitrary set of tags (key-value pairs) for this S3 bucket.
