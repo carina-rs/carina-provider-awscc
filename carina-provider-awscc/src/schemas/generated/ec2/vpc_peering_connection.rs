@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::schema::{AttributeSchema, ResourceSchema};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 /// Returns the schema config for ec2_vpc_peering_connection (AWS::EC2::VPCPeeringConnection)
 #[rustfmt::skip]
@@ -68,7 +68,7 @@ pub fn ec2_vpc_peering_connection_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_peer_vpc_id_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
                 .with_provider_name("Tags")
                 .with_block_name("tag")
             .build()

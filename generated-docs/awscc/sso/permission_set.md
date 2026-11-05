@@ -95,7 +95,7 @@ The length of time that a user can be signed in to an AWS account.
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(pattern, len: 1..=128), String(pattern, len: ..=256)>`
 - **Required:** No
 
 ## Struct Definitions

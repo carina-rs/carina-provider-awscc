@@ -86,7 +86,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_security_group_ingress_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
                 .with_description("Any tags assigned to the security group.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

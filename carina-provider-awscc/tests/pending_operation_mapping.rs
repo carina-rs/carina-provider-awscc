@@ -2006,11 +2006,25 @@ async fn invalid_resume_tags_are_rejected_before_dispatch() {
         panic!("expected one invalid tag value: {errors}");
     };
     assert_eq!(key, "env");
-    assert!(matches!(
-        inner.as_ref(),
-        carina_core::schema::TypeError::TypeMismatch { types }
-            if types.expected() == "String" && types.actual() == "Bool"
-    ));
+    let config =
+        carina_provider_awscc::schemas::generated::get_config_by_type("s3.Bucket").unwrap();
+    let expected = config
+        .schema
+        .effective_attribute("tags")
+        .unwrap()
+        .value_type()
+        .map_value()
+        .unwrap()
+        .as_type()
+        .type_name();
+    assert!(
+        matches!(
+            inner.as_ref(),
+            carina_core::schema::TypeError::TypeMismatch { types }
+                if types.expected() == expected && types.actual() == "Bool"
+        ),
+        "{errors}"
+    );
     assert_eq!(service.calls("CreateResource"), 0);
 }
 

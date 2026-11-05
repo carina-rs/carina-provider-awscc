@@ -56,7 +56,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_status_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:[\\w+=,.@-]+)\\z".to_string()), Some((Some(1), Some(128))), None), AttributeType::refined_string(None, Some("^(?:[\\w+=,.@-]+)\\z".to_string()), Some((None, Some(256))), None)))
                 .with_provider_name("Tags")
                 .with_block_name("tag")
             .build()

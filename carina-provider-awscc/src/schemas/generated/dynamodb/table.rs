@@ -230,7 +230,7 @@ pub fn dynamodb_table_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_table_name_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
                 .with_description("An array of key-value pairs to apply to this resource. For more information, see [Tag](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-resource-tags.html).")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

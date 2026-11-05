@@ -59,7 +59,7 @@ The name of an IAM role that AWS Organizations automatically preconfigures in th
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(pattern, len: 1..=128), String(pattern, len: ..=256)>`
 - **Required:** No
 
 A list of tags that you want to attach to the newly created account. For each tag in the list, you must specify both a tag key and a value.

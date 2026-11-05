@@ -122,7 +122,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_status_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:[\\s\\S]*)\\z".to_string()), Some((Some(1), Some(128))), None), AttributeType::refined_string(None, Some("^(?:[\\s\\S]*)\\z".to_string()), Some((None, Some(256))), None)))
                 .with_description("A list of tags that you want to attach to the newly created account. For each tag in the list, you must specify both a tag key and a value.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

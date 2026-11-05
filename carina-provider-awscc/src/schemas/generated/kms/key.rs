@@ -161,7 +161,7 @@ pub fn kms_key_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_rotation_period_in_days_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((Some(1), Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_description("Assigns one or more tags to the replica key. Tagging or untagging a KMS key can allow or deny permission to the KMS key. For details, see [ABAC for](https://docs.aws.amazon.com/kms/latest/developerguide/abac.html) in the *Developer Guide*. For information about tags in KMS, see [Tagging keys](https://docs.aws.amazon.com/kms/latest/developerguide/tagging-keys.html) in the *Developer Guide*. For information about tags in CloudFormation, see [Tag](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-resource-tags.html).")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

@@ -103,7 +103,7 @@ Collection of Rules.
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: 1..=128), String(len: ..=256)>`
 - **Required:** No
 
 ### `token_domains`

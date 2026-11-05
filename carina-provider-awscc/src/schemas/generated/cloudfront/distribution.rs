@@ -237,7 +237,7 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_id_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
                 .with_description("A complex type that contains zero or more ``Tag`` elements.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

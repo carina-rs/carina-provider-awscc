@@ -1149,7 +1149,7 @@ struct GeneratedTagsProperty {
 }
 
 /// Whether this CloudFormation property is generated as the canonical DSL
-/// `tags: Map<String, String>` attribute.
+/// `tags` string-map attribute, including schema-derived entry refinements.
 fn is_dsl_tags_property(schema: &CfnSchema, provider_name: &str) -> bool {
     let Some(tagging) = schema.tagging.as_ref().filter(|tagging| tagging.taggable) else {
         return false;
@@ -1161,6 +1161,43 @@ fn is_dsl_tags_property(schema: &CfnSchema, provider_name: &str) -> bool {
 
     tag_property.strip_prefix("/properties/") == Some(provider_name)
         && provider_name.to_snake_case() == "tags"
+}
+
+/// The source leaves of one of Carina's canonical tag-map shapes.
+enum TagMapShape<'a> {
+    KeyValue {
+        key: &'a CfnProperty,
+        value: &'a CfnProperty,
+    },
+    Pattern {
+        pattern: &'a str,
+        value: &'a CfnProperty,
+    },
+}
+
+/// Share shape admission with projection so empty `properties` cannot hide a
+/// pattern map, and unsupported shapes never reach unchecked field indexing.
+fn tag_map_shape<'a>(schema: &CfnSchema, property: &'a CfnProperty) -> Option<TagMapShape<'a>> {
+    if inline_property_type(property) != Some("object") {
+        return None;
+    }
+    if let Some(properties) = &property.properties
+        && properties.len() == 2
+        && let (Some(key), Some(value)) = (properties.get("Key"), properties.get("Value"))
+        && is_string_property(schema, key)
+        && is_string_property(schema, value)
+    {
+        return Some(TagMapShape::KeyValue { key, value });
+    }
+    if property.properties.as_ref().is_none_or(BTreeMap::is_empty)
+        && let Some(patterns) = &property.pattern_properties
+        && patterns.len() == 1
+        && let Some((pattern, value)) = patterns.iter().next()
+        && is_string_property(schema, value)
+    {
+        return Some(TagMapShape::Pattern { pattern, value });
+    }
+    None
 }
 
 /// Whether a definition uses one of Carina's canonical tag-map shapes.
@@ -1175,32 +1212,89 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
     let Some(resolved) = resolve_ref(schema, ref_path) else {
         return false;
     };
-    let definition = resolved.property;
-    let is_direct_string = |property: &CfnProperty| {
-        property
-            .prop_type
-            .as_ref()
-            .and_then(TypeValue::effective_type)
-            == Some("string")
-    };
-    let is_key_value_object = definition.properties.as_ref().is_some_and(|properties| {
-        properties.len() == 2
-            && properties.get("Key").is_some_and(is_direct_string)
-            && properties.get("Value").is_some_and(is_direct_string)
-    });
-    let is_single_pattern_string_map = definition.properties.is_none()
-        && definition
-            .pattern_properties
-            .as_ref()
-            .is_some_and(|patterns| patterns.len() == 1 && patterns.values().all(is_direct_string));
+    resolved.name.starts_with("Tag") && tag_map_shape(schema, resolved.property).is_some()
+}
 
-    resolved.name.starts_with("Tag")
-        && definition
-            .prop_type
-            .as_ref()
-            .and_then(TypeValue::effective_type)
-            == Some("object")
-        && (is_key_value_object || is_single_pattern_string_map)
+/// Project the source Tag shape into a DSL map without inferring named types
+/// or enums from free-form Key/Value descriptions. Both Rust and Markdown use
+/// these leaves, so patterns pass through the same approval/compilation gate.
+struct TagMapType {
+    key: StringLeaf<'static>,
+    value: StringLeaf<'static>,
+}
+
+impl TagMapType {
+    fn emit(self, cfn_type: &str) -> String {
+        format!(
+            "AttributeType::map_with_key({}, {})",
+            self.key.emit(cfn_type, "Key").0,
+            self.value.emit(cfn_type, "Value").0,
+        )
+    }
+
+    fn display(&self) -> String {
+        format!("Map<{}, {}>", self.key.display(), self.value.display())
+    }
+}
+
+fn tag_map_type(classified: EmissionProperty<'_>, cfn_path: CfnPropertyPath<'_>) -> TagMapType {
+    fn resolve<'a>(
+        schema: &'a CfnSchema,
+        property: &'a CfnProperty,
+        source: String,
+    ) -> (&'a CfnProperty, String) {
+        match property.ref_path.as_deref() {
+            Some(reference) => {
+                let resolved = resolve_ref(schema, reference).unwrap_or_else(|| {
+                    panic!(
+                        "{}#{source}: unresolved Tag reference {reference}",
+                        schema.type_name
+                    )
+                });
+                let name = resolved.name.replace('~', "~0").replace('/', "~1");
+                (resolved.property, format!("/definitions/{name}"))
+            }
+            None => (property, source),
+        }
+    }
+
+    let schema = classified.schema();
+    let prop = classified.property();
+    let source = schema.pattern_source_path(classified.path(), prop.pattern.as_deref(), cfn_path);
+    let (mut tag, mut source) = resolve(schema, prop, source);
+    if let Some(items) = tag.items.as_deref() {
+        (tag, source) = resolve(schema, items, format!("{source}/items"));
+    }
+    let leaf = |property: &CfnProperty, source: String| {
+        let (property, source) = resolve(schema, property, source);
+        StringLeaf::Refined {
+            constraints: string_constraints(property, &schema.type_name, cfn_path, &source),
+            format: None,
+            to_dsl: None,
+        }
+    };
+    match tag_map_shape(schema, tag)
+        .unwrap_or_else(|| panic!("{}#{source}: unsupported Tag map shape", schema.type_name))
+    {
+        TagMapShape::KeyValue { key, value } => TagMapType {
+            key: leaf(key, format!("{source}/properties/Key")),
+            value: leaf(value, format!("{source}/properties/Value")),
+        },
+        TagMapShape::Pattern { pattern, value } => {
+            let source = format!(
+                "{source}/patternProperties/{}",
+                pattern.replace('~', "~0").replace('/', "~1"),
+            );
+            let key = CfnProperty {
+                pattern: Some(pattern.to_string()),
+                ..Default::default()
+            };
+            TagMapType {
+                key: leaf(&key, source.clone()),
+                value: leaf(value, source),
+            }
+        }
+    }
 }
 
 /// Type can be a string or an array of strings in JSON Schema
@@ -3416,11 +3510,11 @@ fn type_display_at_resolved(
     if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
         return TypeDisplay::Plain("PolicyDocument".to_string());
     }
-    if prop_name == "Tags" {
+    if is_dsl_tags_property(schema, prop_name) {
         schema
             .classify_tag_value(provider_path)
             .unwrap_or_else(|error| panic!("{error}"));
-        return TypeDisplay::Code("Map<String, String>".to_string());
+        return TypeDisplay::Code(tag_map_type(classified, cfn_property_path).display());
     }
     if property_is_bare_object(prop, schema) {
         return match classify_bare_object_or_panic(&schema.type_name, cfn_property_path) {
@@ -3447,7 +3541,7 @@ fn type_display_at_resolved(
                 schema
                     .classify_tag_value(provider_path)
                     .unwrap_or_else(|error| panic!("{error}"));
-                TypeDisplay::Code("Map<String, String>".to_string())
+                TypeDisplay::Code(tag_map_type(classified, cfn_property_path).display())
             } else if let Some(resolved) = resolved {
                 let array = resolved_array_property(prop, schema, &mut HashSet::new());
                 type_display_at_resolved(
@@ -3663,6 +3757,9 @@ fn markdown_struct_def(
     schema: &CfnSchema,
     property_path: &[String],
 ) -> Option<MarkdownStructDef> {
+    if is_dsl_tags_property(schema, prop_name) {
+        return None;
+    }
     let key = MarkdownStructKey::Inline(property_path.to_vec());
     let name = prop_name.to_string();
     match property_shape(prop, schema) {
@@ -3744,6 +3841,9 @@ fn markdown_link_type(
     property_path: &[String],
     cfn_parent: Option<&str>,
 ) -> Option<MarkdownLinkedType> {
+    if is_dsl_tags_property(schema, prop_name) {
+        return None;
+    }
     if let Some(key) = enum_target {
         return Some(markdown_enum_type(prop, schema, key));
     }
@@ -11915,7 +12015,10 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         schema
             .classify_tag_value(property_path)
             .unwrap_or_else(|error| panic!("{error}"));
-        return ("carina_aws_types::tags_type()".to_string(), None);
+        return (
+            tag_map_type(classified, cfn_property_path).emit(&schema.type_name),
+            None,
+        );
     }
 
     // Preserve non-string const precedence over $ref/oneOf resolution;
@@ -11935,7 +12038,10 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 schema
                     .classify_tag_value(property_path)
                     .unwrap_or_else(|error| panic!("{error}"));
-                return ("carina_aws_types::tags_type()".to_string(), None);
+                return (
+                    tag_map_type(classified, cfn_property_path).emit(&schema.type_name),
+                    None,
+                );
             }
 
             let Some(resolved) = resolved else {
@@ -12326,17 +12432,6 @@ fn compute_block_name(name: &str) -> Option<String> {
     } else {
         Some(singular)
     }
-}
-
-/// Tags type helper (to be included in generated module)
-#[allow(dead_code)]
-fn tags_type_helper() -> &'static str {
-    r#"
-/// Tags type for AWS resources
-pub fn tags_type() -> AttributeType {
-    AttributeType::map(AttributeType::string())
-}
-"#
 }
 
 fn collapse_whitespace(s: &str) -> String {
@@ -13986,7 +14081,7 @@ mod tests {
                 // independently against the fixture, then compare the rest.
                 ordered: Option<bool>,
             },
-            Map(Box<Shape>),
+            Map(Box<Shape>, Box<Shape>),
             Enum(BTreeSet<String>),
             IntEnum(BTreeSet<i64>),
             Struct(BTreeMap<String, Shape>),
@@ -13999,7 +14094,7 @@ mod tests {
                     Self::String { .. } => "string".to_string(),
                     Self::Int { .. } => "int".to_string(),
                     Self::List { item, .. } => format!("list<{}>", item.summary()),
-                    Self::Map(value) => format!("map<{}>", value.summary()),
+                    Self::Map(key, value) => format!("map<{}, {}>", key.summary(), value.summary()),
                     Self::Enum(_) | Self::IntEnum(_) => "enum".to_string(),
                     Self::Struct(_) => "struct".to_string(),
                 }
@@ -14011,7 +14106,10 @@ mod tests {
                         *ordered = None;
                         **item = item.clone().without_ordering();
                     }
-                    Self::Map(value) => **value = value.clone().without_ordering(),
+                    Self::Map(key, value) => {
+                        **key = key.clone().without_ordering();
+                        **value = value.clone().without_ordering();
+                    }
                     Self::Struct(fields) => {
                         for field in fields.values_mut() {
                             *field = field.clone().without_ordering();
@@ -14029,7 +14127,7 @@ mod tests {
                         orders.extend(item.list_ordering());
                         orders
                     }
-                    Self::Map(value) => value.list_ordering(),
+                    Self::Map(_, value) => value.list_ordering(),
                     Self::Struct(fields) => fields.values().flat_map(Self::list_ordering).collect(),
                     _ => vec![],
                 }
@@ -14062,7 +14160,9 @@ mod tests {
                             && ordered == other_ordered
                             && item.agrees_with(other_item)
                     }
-                    (Self::Map(value), Self::Map(other_value)) => value.agrees_with(other_value),
+                    (Self::Map(key, value), Self::Map(other_key, other_value)) => {
+                        key.agrees_with(other_key) && value.agrees_with(other_value)
+                    }
                     (Self::Struct(fields), Self::Struct(other_fields)) => {
                         fields.len() == other_fields.len()
                             && fields.iter().all(|(name, field)| {
@@ -14203,12 +14303,17 @@ mod tests {
                 }
             }
             if code.starts_with("AttributeType::map(") {
-                return Shape::Map(Box::new(schema_shape(
-                    call_arguments(code, "AttributeType::map")[0],
-                )));
+                return Shape::Map(
+                    Box::new(schema_shape("AttributeType::string()")),
+                    Box::new(schema_shape(call_arguments(code, "AttributeType::map")[0])),
+                );
             }
-            if code.starts_with("carina_aws_types::tags_type()") {
-                return Shape::Map(Box::new(schema_shape("AttributeType::string()")));
+            if code.starts_with("AttributeType::map_with_key(") {
+                let args = call_arguments(code, "AttributeType::map_with_key");
+                return Shape::Map(
+                    Box::new(schema_shape(args[0])),
+                    Box::new(schema_shape(args[1])),
+                );
             }
             if code.starts_with("AttributeType::struct_(") {
                 let args = call_arguments(code, "AttributeType::struct_");
@@ -14343,9 +14448,13 @@ mod tests {
                     rest,
                 );
             }
-            if let Some(value) = text.strip_prefix("Map<String, ") {
-                let (value, rest) = docs_shape_at(value, page);
-                return (Shape::Map(Box::new(value)), rest.strip_prefix('>').unwrap());
+            if let Some(entries) = text.strip_prefix("Map<") {
+                let (key, rest) = docs_shape_at(entries, page);
+                let (value, rest) = docs_shape_at(rest.strip_prefix(", ").unwrap(), page);
+                return (
+                    Shape::Map(Box::new(key), Box::new(value)),
+                    rest.strip_prefix('>').unwrap(),
+                );
             }
             if let Some(link) = text.strip_prefix('[') {
                 let (label, target) = link.split_once("](#").unwrap();
@@ -15150,7 +15259,7 @@ mod tests {
                 &BTreeMap::new(),
             )
             .0,
-            "carina_aws_types::tags_type()"
+            "AttributeType::map_with_key(AttributeType::string(), AttributeType::string())"
         );
 
         let misleading_tag_alias = alias("TagAlias");
@@ -18052,7 +18161,7 @@ mod tests {
             generated.contains(
                 "StructField::optional(\"tags\", AttributeType::struct_(\"TagValues\".to_string()"
             ) && !generated
-                .contains("StructField::optional(\"tags\", carina_aws_types::tags_type())"),
+                .contains("StructField::optional(\"tags\", AttributeType::map_with_key("),
             "Expression.Tags is a Budgets filter expression, not a Key/Value tag map: {generated}"
         );
         assert!(
@@ -26984,19 +27093,11 @@ mod tests {
 
     #[test]
     fn test_type_display_string_tags_shows_map_string() {
-        let prop = CfnProperty {
-            prop_type: None,
-            ref_path: Some("#/definitions/Tag".to_string()),
-            ..Default::default()
-        };
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::EC2::VPC".to_string(),
-            "properties": {}
-        }))
-        .unwrap();
+        let schema = cfn_schema_for_codegen_tests("AWS::EC2::VPC");
+        let prop = &schema.properties["Tags"];
         // Tags property should display Map<String, String>
         assert_eq!(
-            type_display_string("Tags", &prop, &schema),
+            type_display_string("Tags", prop, &schema),
             "`Map<String, String>`"
         );
     }
@@ -30081,6 +30182,211 @@ mod tests {
     }
 
     #[test]
+    fn tags_type_is_derived_from_the_resource_cfn_tag_definition() {
+        for inline in [false, true] {
+            let tag = serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "Key": {"type": "string", "minLength": 2, "maxLength": 17, "pattern": "[a-z]+"},
+                    "Value": {"type": "string", "maxLength": 23, "pattern": "[A-Z]*"}
+                },
+                "required": ["Key", "Value"]
+            });
+            let mut schema = tag_schema(
+                r##"{"type": "array", "items": {"$ref": "#/definitions/TagAlias"}, "uniqueItems": true, "maxItems": 50}"##,
+            );
+            schema.edit_json(|source| {
+                source["definitions"] = serde_json::json!({
+                    "TagAlias": {"$ref": "#/definitions/Tag"},
+                    "Tag": tag
+                });
+                if inline {
+                    source["properties"]["Tags"]["items"] = tag;
+                }
+            });
+            let emit = |schema: &ParsedCfnSchema| {
+                cfn_type_to_carina_type_with_enum(
+                    &schema.properties["Tags"],
+                    "Tags",
+                    schema,
+                    "aws.test.Resource",
+                    &BTreeMap::new(),
+                )
+                .0
+            };
+            let generated = emit(&schema);
+            assert_eq!(
+                generated,
+                concat!(
+                    "AttributeType::map_with_key(",
+                    "AttributeType::refined_string(None, Some(\"^(?:[a-z]+)\\\\z\".to_string()), Some((Some(2), Some(17))), None), ",
+                    "AttributeType::refined_string(None, Some(\"^(?:[A-Z]*)\\\\z\".to_string()), Some((None, Some(23))), None))",
+                )
+            );
+            schema.edit_json(|source| {
+                let tag = if inline {
+                    &mut source["properties"]["Tags"]["items"]
+                } else {
+                    &mut source["definitions"]["Tag"]
+                };
+                tag["properties"]["Key"]["maxLength"] = serde_json::json!(19);
+            });
+            assert!(emit(&schema).contains("Some((Some(2), Some(19)))"));
+            let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            assert!(
+                markdown.contains("Map<String(pattern, len: 2..=19), String(pattern, len: ..=23)>"),
+                "{markdown}"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_tag_pattern_is_rejected_with_its_cfn_source_path() {
+        for inline in [false, true] {
+            let tag = serde_json::json!({"type": "object", "properties": {
+                "Key": {"type": "string", "pattern": "(?=x)x"},
+                "Value": {"type": "string"}
+            }});
+            let mut schema =
+                tag_schema(r##"{"type": "array", "items": {"$ref": "#/definitions/Tag"}}"##);
+            schema.edit_json(|source| {
+                source["definitions"] = serde_json::json!({"Tag": tag});
+                if inline {
+                    source["properties"]["Tags"]["items"] = tag;
+                }
+            });
+            let panic = std::panic::catch_unwind(|| generate_synthetic_schema_code(&schema))
+                .expect_err("Tag patterns must pass the same compilation gate as other strings");
+            let message = panic.downcast_ref::<String>().unwrap();
+            let path = if inline {
+                "/properties/Tags/items/properties/Key"
+            } else {
+                "/definitions/Tag/properties/Key"
+            };
+            for expected in ["AWS::Test::Resource", path, "(?=x)x"] {
+                assert!(message.contains(expected), "{message}");
+            }
+        }
+    }
+
+    #[test]
+    fn referenced_tag_maps_share_schema_constraints_with_their_docs() {
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource",
+            "properties": {"Labels": {"$ref": "#/definitions/Tag"}},
+            "definitions": {"Tag": {"type": "object", "properties": {
+                "Key": {"type": "string", "minLength": 1, "maxLength": 17},
+                "Value": {"type": "string", "maxLength": 23}
+            }}}
+        }))
+        .unwrap();
+        assert_eq!(
+            type_display_string("Labels", &schema.properties["Labels"], &schema),
+            "`Map<String(len: 1..=17), String(len: ..=23)>`",
+        );
+    }
+
+    fn assert_tag_pattern_map_with_empty_properties(inline: bool) {
+        let tag = serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "patternProperties": {
+                "[a-z]+": {"type": "string", "minLength": 2, "maxLength": 17, "pattern": "[A-Z]+"}
+            },
+            "additionalProperties": false
+        });
+        let prop_name = if inline { "Tags" } else { "Labels" };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::RouteTable",
+            "properties": {(prop_name): if inline { tag.clone() } else {
+                serde_json::json!({"$ref": "#/definitions/TagMap"})
+            }},
+            "definitions": {"TagMap": tag},
+            "tagging": {"taggable": inline, "tagProperty": "/properties/Tags"}
+        }))
+        .unwrap();
+        if !inline {
+            assert!(
+                is_tag_map_ref(&schema, "#/definitions/TagMap"),
+                "empty properties must not hide the patternProperties tag-map shape"
+            );
+        }
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let expected = concat!(
+            "AttributeType::map_with_key(",
+            "AttributeType::refined_string(None, Some(\"^(?:[a-z]+)\\\\z\".to_string()), None, None), ",
+            "AttributeType::refined_string(None, Some(\"^(?:[A-Z]+)\\\\z\".to_string()), Some((Some(2), Some(17))), None))",
+        );
+        assert!(
+            generated.contains(&format!(
+                "AttributeSchema::optional({}, {expected})",
+                rust_lit(&prop_name.to_snake_case()),
+            )),
+            "{generated}"
+        );
+    }
+
+    #[test]
+    fn inline_tag_pattern_map_with_empty_properties_preserves_constraints() {
+        assert_tag_pattern_map_with_empty_properties(true);
+    }
+
+    #[test]
+    fn referenced_tag_pattern_map_with_empty_properties_preserves_constraints() {
+        assert_tag_pattern_map_with_empty_properties(false);
+    }
+
+    #[test]
+    fn unsupported_tag_map_shapes_report_resource_and_cfn_source_path() {
+        for inline in [false, true] {
+            for tag in [
+                serde_json::json!({"type": "object", "properties": {
+                    "Key": {"type": "string"}
+                }}),
+                serde_json::json!({"type": "object", "properties": {
+                    "Key": {"type": "string"}, "Value": {"type": "number"}
+                }}),
+                serde_json::json!({"type": "object", "patternProperties": {
+                    ".+": {"type": "number"}
+                }}),
+            ] {
+                let mut schema =
+                    tag_schema(r##"{"type": "array", "items": {"$ref": "#/definitions/Tag"}}"##);
+                schema.edit_json(|source| {
+                    source["definitions"] = serde_json::json!({"Tag": tag});
+                    if inline {
+                        source["properties"]["Tags"]["items"] = tag;
+                    }
+                });
+                let panic = std::panic::catch_unwind(|| {
+                    cfn_type_to_carina_type_with_enum(
+                        &schema.properties["Tags"],
+                        "Tags",
+                        &schema,
+                        "aws.test.Resource",
+                        &BTreeMap::new(),
+                    )
+                })
+                .expect_err("unsupported Tag shapes must fail with source context");
+                let message = panic
+                    .downcast_ref::<String>()
+                    .map(String::as_str)
+                    .or_else(|| panic.downcast_ref::<&str>().copied())
+                    .expect("panic should carry a diagnostic");
+                let source = if inline {
+                    "/properties/Tags/items"
+                } else {
+                    "/definitions/Tag"
+                };
+                assert!(
+                    message.contains(&format!("AWS::Test::Resource#{source}")),
+                    "{message}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn taggable_object_map_uses_map_wire_shape() {
         let schema = tag_schema(
             r#"{
@@ -30101,7 +30407,10 @@ mod tests {
             "aws.test.Resource",
             &BTreeMap::new(),
         );
-        assert_eq!(attribute_type, "carina_aws_types::tags_type()");
+        assert_eq!(
+            attribute_type,
+            r#"AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:.*)\\z".to_string()), None, None), AttributeType::string())"#
+        );
         assert!(enum_info.is_none());
     }
 

@@ -219,12 +219,14 @@ fn inline_tag_pairs_render_in_rust_and_markdown() {
     schema["properties"]["Tags"]["items"] = json!({"type": "object", "properties": {
         "Key": {"type": "string"}, "Value": {"type": "string"}
     }, "required": ["Key", "Value"]});
-    assert!(rendered(&schema, "rust").contains("carina_aws_types::tags_type()"));
+    assert!(
+        rendered(&schema, "rust").contains(
+            "AttributeType::map_with_key(AttributeType::string(), AttributeType::string())"
+        )
+    );
     let markdown = rendered(&schema, "markdown");
-    assert!(markdown.contains("List\\<[Struct(Tags)]"), "{markdown}");
-    // Main also documents the source inline struct; keep those classified paths.
-    assert!(markdown.contains("| `key` |"), "{markdown}");
-    assert!(markdown.contains("| `value` |"), "{markdown}");
+    assert!(markdown.contains("`Map<String, String>`"), "{markdown}");
+    assert!(!markdown.contains("Struct(Tags)"), "{markdown}");
 }
 
 #[test]

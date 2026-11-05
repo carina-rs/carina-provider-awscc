@@ -100,7 +100,7 @@ pub fn sns_topic_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_signature_version_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
                 .with_description("The list of tags to add to a new topic. To be able to tag a topic on creation, you must have the ``sns:CreateTopic`` and ``sns:TagResource`` permissions.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

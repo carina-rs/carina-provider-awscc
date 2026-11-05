@@ -41,7 +41,7 @@ pub fn ec2_transit_gateway_attachment_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_subnet_ids_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
                 .with_provider_name("Tags")
                 .with_block_name("tag")
             .build()

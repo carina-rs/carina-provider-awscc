@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::schema::{AttributeSchema, ResourceSchema};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 /// Returns the schema config for ec2_route_table (AWS::EC2::RouteTable)
 #[rustfmt::skip]
@@ -22,7 +22,7 @@ pub fn ec2_route_table_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_route_table_id_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
                 .with_description("Any tags assigned to the route table.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")
