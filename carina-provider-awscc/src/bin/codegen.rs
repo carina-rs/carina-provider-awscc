@@ -9518,6 +9518,20 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "carina_aws_types::sso_permission_set_arn()",
             )),
         );
+        // DisplayName: retain CFN's exact pattern and 1..=1024 character bounds,
+        // adding a callback that rejects only the two case-sensitive reserved names.
+        // https://docs.aws.amazon.com/singlesignon/latest/IdentityStoreAPIReference/API_CreateGroup.html#IdentityStore-CreateGroup-request-DisplayName
+        m.insert(
+            ("AWS::IdentityStore::Group", "DisplayName"),
+            TypeOverride::AttributeType {
+                expression: OverrideTypeExpression::raw(
+                    "crate::schemas::catalog::identitystore_group_display_name()",
+                ),
+                display: const { OverrideTypeDisplay::new("aws.identitystore.Group.DisplayName") },
+                block_name: None,
+                default: None,
+            },
+        );
         m.insert(
             ("AWS::IdentityStore::Group", "GroupId"),
             TypeOverride::StringType(OverrideTypeExpression::raw(
@@ -27254,6 +27268,50 @@ mod tests {
             markdown
                 .contains("### `log_group_name`\n\n- **Type:** `aws.logs.LogGroup.LogGroupName`\n"),
             "LogGroupName docs must name the local refinement: {markdown}"
+        );
+    }
+
+    #[test]
+    fn test_identitystore_overrides_use_only_the_approved_raw_cfn_paths() {
+        let schema = cfn_schema_for_codegen_tests("AWS::IdentityStore::Group");
+        // GroupId and IdentityStoreId retain their existing shared identities.
+        let expected = ["DisplayName", "GroupId", "IdentityStoreId"]
+            .map(str::to_string)
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let actual = resource_type_overrides()
+            .for_resource(&schema.type_name)
+            .map(|(path, _)| path.to_string())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(actual, expected);
+        for key in &expected {
+            let path = CfnPropertyPath::new(None, key);
+            let source = cfn_override_property(&schema, path)
+                .unwrap_or_else(|| panic!("missing cached IdentityStore path {key}"));
+            resource_type_overrides()
+                .get_path(&schema.type_name, path)
+                .unwrap()
+                .validate_source_shape(&schema, path, source)
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_identitystore_group_display_name_uses_local_refinement_in_schema_and_docs() {
+        let schema = cfn_schema_for_codegen_tests("AWS::IdentityStore::Group");
+        let code = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert!(
+            code.contains(
+                "AttributeSchema::required(\"display_name\", crate::schemas::catalog::identitystore_group_display_name())"
+            ),
+            "DisplayName must use the AWSCC-local refinement: {code}"
+        );
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(
+            markdown.contains(
+                "### `display_name`\n\n- **Type:** `aws.identitystore.Group.DisplayName`\n"
+            ),
+            "DisplayName docs must name the local refinement: {markdown}"
         );
     }
 
