@@ -115,6 +115,8 @@ pub fn is_whole_anchored(source: &str) -> bool {
 pub struct SubstringPatternException {
     pub resource_type: &'static str,
     pub source_path: &'static str,
+    /// Exact paths in the registered schema tree, including definition expansions.
+    pub schema_paths: &'static [&'static str],
     pub source: &'static str,
     pub emitted: &'static str,
     pub reason: &'static str,
@@ -124,6 +126,11 @@ pub const SUBSTRING_PATTERN_EXCEPTIONS: &[SubstringPatternException] = &[
     SubstringPatternException {
         resource_type: "AWS::Scheduler::Schedule",
         source_path: "/definitions/EventBridgeParameters/properties/Source",
+        schema_paths: &[
+            "target.event_bridge_parameters.source",
+            "def:EventBridgeParameters.source",
+            "def:Target.event_bridge_parameters.source",
+        ],
         source: r"^(?=[/\.\-_A-Za-z0-9]+)((?!aws\.).*)|(\$(\.[\w_-]+(\[(\d+|\*)\])*)*)$",
         // Preserve ^A|B$ precedence and search semantics. A only requires an
         // allowed first character and excludes the fixed prefix `aws.`; its .*

@@ -100,7 +100,9 @@ fn audit_patterns(
                 count += 1;
                 if !is_whole_anchored(pattern)
                     && !SUBSTRING_PATTERN_EXCEPTIONS.iter().any(|exception| {
-                        exception.resource_type == resource && exception.emitted == pattern
+                        exception.resource_type == resource
+                            && exception.schema_paths.contains(&path)
+                            && exception.emitted == pattern
                     })
                 {
                     failures.push(format!("{resource} {path}: {pattern:?}"));
@@ -144,6 +146,44 @@ fn audit_patterns(
         RawShape::Int { .. } | RawShape::Float { .. } | RawShape::Bool | RawShape::Duration => {}
     }
     count
+}
+
+#[test]
+fn pattern_audit_requires_the_exception_schema_path() {
+    let exception = &SUBSTRING_PATTERN_EXCEPTIONS[0];
+    let config = super::generated::get_config_by_type("scheduler.Schedule").unwrap();
+    let source = field(&config.schema, "target.event_bridge_parameters.source");
+    let mut failures = Vec::new();
+    for path in exception.schema_paths {
+        assert_eq!(
+            audit_patterns(
+                exception.resource_type,
+                path,
+                source.as_type(),
+                &mut failures
+            ),
+            1
+        );
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+
+    let unrelated_path = "target.input";
+    assert_eq!(
+        audit_patterns(
+            exception.resource_type,
+            unrelated_path,
+            source.as_type(),
+            &mut failures,
+        ),
+        1
+    );
+    assert_eq!(
+        failures,
+        vec![format!(
+            "{} {unrelated_path}: {:?}",
+            exception.resource_type, exception.emitted
+        )]
+    );
 }
 
 #[test]
