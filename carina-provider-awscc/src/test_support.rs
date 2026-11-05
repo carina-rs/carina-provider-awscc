@@ -8,7 +8,7 @@ use carina_core::binding_index::{BindingIndex, ResolvedBindings};
 use carina_core::config_loader::load_buffer_configuration;
 use carina_core::executor::{ModuleConstraintGate, ProviderPreparationContext};
 use carina_core::parser::{
-    LoadedProviderContext, ProviderContext, ProviderCustomTypes, parse_file,
+    LoadedProviderContext, ProviderConfig, ProviderContext, ProviderCustomTypes, parse_file,
 };
 use carina_core::provider::{ProviderFactory, provider_custom_types_from_factories};
 use carina_core::resource::{ConcreteValue, Value};
@@ -144,6 +144,17 @@ pub(crate) async fn with_preparation<T>(
     resource_type: &str,
     run: impl for<'a> AsyncFnOnce(&'a ProviderPreparationContext<'a>) -> T,
 ) -> T {
+    with_preparation_and_configs(resource_type, &[], run).await
+}
+
+pub(crate) async fn with_preparation_and_configs<T>(
+    resource_type: &str,
+    configs: &[ProviderConfig<
+        carina_core::resource::NoPlaceholder,
+        carina_core::resource::AbsoluteBindingAddress,
+    >],
+    run: impl for<'a> AsyncFnOnce(&'a ProviderPreparationContext<'a>) -> T,
+) -> T {
     carina_core::validation::deferred_types::with_session_for_test_async(
         &carina_core::parser::LoadedProviderContext::empty_for_test(),
         async |type_checks| {
@@ -158,7 +169,7 @@ pub(crate) async fn with_preparation<T>(
             let preparation = ProviderPreparationContext::new(
                 &bindings,
                 &gate,
-                &[],
+                configs,
                 &crate::AwsccNormalizer,
                 &factories,
                 &schemas,

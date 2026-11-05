@@ -987,9 +987,25 @@ mod tests {
             }),
             schema: ResourceSchema::new("test.Resource")
                 .attribute(
-                    AttributeSchema::optional("tags", carina_aws_types::tags_type())
-                        .with_provider_name("ResourceTags")
-                        .build(),
+                    AttributeSchema::optional(
+                        "tags",
+                        AttributeType::map_with_key(
+                            AttributeType::refined_string(
+                                None,
+                                None,
+                                Some((Some(1), Some(128))),
+                                None,
+                            ),
+                            AttributeType::refined_string(
+                                None,
+                                None,
+                                Some((None, Some(256))),
+                                None,
+                            ),
+                        ),
+                    )
+                    .with_provider_name("ResourceTags")
+                    .build(),
                 )
                 .validate()
                 .expect("test schema must pass admission"),

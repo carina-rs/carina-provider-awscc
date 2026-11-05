@@ -61,7 +61,7 @@ The regions IPAM is enabled for. Allows pools to be created in these regions, as
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: 1..=128), String(len: ..=256)>`
 - **Required:** No
 
 An array of key-value pairs to apply to this resource.

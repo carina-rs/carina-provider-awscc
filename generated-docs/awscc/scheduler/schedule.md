@@ -264,7 +264,7 @@ Shorthand formats: `task_definition` or `PropagateTags.task_definition`
 | `platform_version` | String(len: 1..=64) | No | Specifies the platform version for the task. Specify only the numeric portion of the platform version, such as 1.1.0. |
 | `propagate_tags` | [Enum (PropagateTags)](#targetecs_parameterspropagate_tags-propagatetags) | No |  |
 | `reference_id` | String(len: ..=1024) | No | The reference ID to use for the task. |
-| `tags` | `Map<String, String>` | No | The metadata that you apply to the task to help you categorize and organize them. Each tag consists of a key and an optional value, both of which you define. To learn more, see RunTask in the Amazon ECS API Reference. |
+| `tags` | `List<Map<String, String(len: 1..=256)>>` (items: 0..=50) | No | The metadata that you apply to the task to help you categorize and organize them. Each tag consists of a key and an optional value, both of which you define. To learn more, see RunTask in the Amazon ECS API Reference. |
 | `task_count` | Int(1..=10) | No | The number of tasks to create based on TaskDefinition. The default is 1. |
 | `task_definition_arn` | Arn | Yes | The ARN of the task definition to use if the event target is an Amazon ECS task. |
 

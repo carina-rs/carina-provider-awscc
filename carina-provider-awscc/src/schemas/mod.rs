@@ -51,6 +51,9 @@ mod s3_tests;
 #[cfg(test)]
 mod sns_tests;
 
+#[cfg(test)]
+mod tags_tests;
+
 use carina_core::provider::ProviderFactory;
 use carina_core::schema::{
     AssignabilityEdge, SchemaRegistry, ValidatedProviderSchemaWitness, ValidatedResourceSchema,

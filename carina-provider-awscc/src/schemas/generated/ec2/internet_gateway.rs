@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::schema::{AttributeSchema, ResourceSchema};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 /// Returns the schema config for ec2_internet_gateway (AWS::EC2::InternetGateway)
 #[rustfmt::skip]
@@ -22,7 +22,7 @@ pub fn ec2_internet_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_internet_gateway_id_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((Some(1), Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_description("Any tags to assign to the internet gateway.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

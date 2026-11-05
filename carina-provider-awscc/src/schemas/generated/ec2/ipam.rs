@@ -129,7 +129,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_scope_count_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((Some(1), Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_description("An array of key-value pairs to apply to this resource.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

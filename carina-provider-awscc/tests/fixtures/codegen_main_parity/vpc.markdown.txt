@@ -15,7 +15,7 @@
 
 ### `tags`
 
-- **Type:** List\<[Struct(Tags)](#tags-1)\>
+- **Type:** `Map<String, String>`
 - **Required:** No
 
 The tags for the VPC.
@@ -25,13 +25,6 @@ The tags for the VPC.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `association_id` | String | No |  |
-
-### tags
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `key` | String | Yes |  |
-| `value` | String | Yes |  |
 
 ### `cidr_block_associations`
 
