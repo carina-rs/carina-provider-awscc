@@ -7978,6 +7978,16 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "carina_aws_types::route53_hosted_zone_id()",
             )),
         );
+        // VPCs: "Minimum: 1"; omit the property for public hosted zones.
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-route53-hostedzone.html#cfn-route53-hostedzone-vpcs
+        m.insert(
+            ("AWS::Route53::HostedZone", "VPCs"),
+            TypeOverride::Array {
+                items: None,
+                min_items: Some(1),
+                max_items: None,
+            },
+        );
         // EIP Address and TransferAddress are IPv4 addresses
         m.insert(
             ("AWS::EC2::EIP", "Address"),
@@ -29602,7 +29612,10 @@ mod tests {
 
     #[test]
     fn test_non_standard_tag_definition_keeps_declarative_lengths() {
+        let cached = cfn_schema_for_codegen_tests("AWS::Route53::HostedZone");
         let mut properties = BTreeMap::new();
+        // Keep the source shape consumed by the HostedZone VPCs bounds override.
+        properties.insert("VPCs".to_string(), cached.properties["VPCs"].clone());
         properties.insert(
             "HostedZoneTags".to_string(),
             CfnProperty {
@@ -29618,6 +29631,10 @@ mod tests {
         );
 
         let mut definitions = BTreeMap::new();
+        definitions.insert(
+            "VPC".to_string(),
+            cached.definitions.as_ref().unwrap()["VPC"].clone(),
+        );
         let mut tag_props = BTreeMap::new();
         tag_props.insert(
             "Key".to_string(),
@@ -29685,6 +29702,35 @@ mod tests {
         assert!(
             !generated.contains(r#"AttributeSchema::optional("name", AttributeType::enum_"#),
             "Route53 HostedZone.Name must not be emitted as a pseudo enum: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_route53_hosted_zone_vpcs_override_adds_only_documented_minimum() {
+        let path = CfnPropertyPath::new(None, "VPCs");
+        assert_eq!(path.source_pointer(), "/properties/VPCs");
+        assert_eq!(
+            resource_type_overrides().get_path("AWS::Route53::HostedZone", path),
+            Some(&TypeOverride::Array {
+                items: None,
+                min_items: Some(1),
+                max_items: None,
+            })
+        );
+
+        let schema = cfn_schema_for_codegen_tests("AWS::Route53::HostedZone");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert!(
+            generated.contains(
+                r#"AttributeSchema::optional("vp_cs", AttributeType::refined_list(AttributeType::struct_("VPC""#
+            ),
+            "VPCs must retain its optional VPC struct list: {generated}"
+        );
+        assert!(
+            generated.contains(
+                "]), false, Some((Some(1), None)), carina_core::schema::ListElements::Unique))"
+            ),
+            "VPCs must remain unordered and unique with only a minimum of 1: {generated}"
         );
     }
 
