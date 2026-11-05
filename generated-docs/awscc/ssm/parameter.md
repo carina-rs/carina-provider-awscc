@@ -29,7 +29,7 @@ awscc.ssm.Parameter {
 
 ### `allowed_pattern`
 
-- **Type:** String
+- **Type:** `String(len: ..=1024)`
 - **Required:** No
 - **Write-only:** Yes
 
@@ -60,7 +60,7 @@ The name of the parameter. The reported maximum length of 2048 characters for a 
 
 ### `policies`
 
-- **Type:** String
+- **Type:** `String(len: 1..=4096)`
 - **Required:** No
 - **Write-only:** Yes
 
