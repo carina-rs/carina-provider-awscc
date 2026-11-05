@@ -1,6 +1,6 @@
 //! Override expressions with typed pattern emission, including union members.
 
-use super::{ApprovedPattern, emit_pattern_option};
+use super::{ApprovedPattern, catalog_type_display, emit_pattern_option};
 use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,8 +86,13 @@ impl OverrideTypeExpression {
     /// Explicit regex displays consume the same normalized pattern as Rust.
     /// Compact labels such as String(pattern, len: ...) contain no regex.
     pub(super) fn normalized_display(&self, display: &'static str) -> Cow<'static, str> {
-        // Calls to runtime constructors keep their existing displays. Their
-        // patterns are approved inside catalog.rs/awscc_types.rs instead.
+        // A catalog constructor's identity wins over even a stale explicit
+        // label, so every override variant follows the same metadata rule.
+        if let Some(identity) = catalog_type_display(self.as_str()) {
+            return Cow::Borrowed(identity);
+        }
+        // Other runtime constructors keep their existing displays. Their
+        // patterns are approved inside awscc_types.rs instead.
         if self.patterns.is_empty() {
             return Cow::Borrowed(display);
         }

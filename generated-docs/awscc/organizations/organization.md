@@ -43,7 +43,7 @@ Shorthand formats: `all` or `FeatureSet.all`
 
 ### `arn`
 
-- **Type:** Arn
+- **Type:** `aws.organizations.Organization.Arn`
 
 The Amazon Resource Name (ARN) of an organization.
 

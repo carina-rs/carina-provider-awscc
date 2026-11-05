@@ -85,7 +85,7 @@ The name of a new or existing CloudWatch Logs log group where Amazon EC2 publish
 
 ### `max_aggregation_interval`
 
-- **Type:** IntEnum([60, 600])
+- **Type:** `aws.ec2.FlowLog.MaxAggregationInterval`
 - **Required:** No
 - **Create-only:** Yes
 

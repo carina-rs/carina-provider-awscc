@@ -82,7 +82,7 @@ The description of the schedule.
 
 ### `end_date`
 
-- **Type:** String(date-time)
+- **Type:** `String(yyyy-MM-ddTHH:mm:ss.SSSZ)`
 - **Required:** No
 
 The date, in UTC, before which the schedule can invoke its target. Depending on the schedule's recurrence expression, invocations might stop on, or before, the EndDate you specify.
@@ -94,7 +94,7 @@ The date, in UTC, before which the schedule can invoke its target. Depending on 
 
 ### `group_name`
 
-- **Type:** SchedulerScheduleGroupName
+- **Type:** `aws.scheduler.Schedule.GroupName`
 - **Required:** No
 
 The name of the schedule group to associate with this schedule. If you omit this, the default schedule group is used. Carina requires group_name to be omitted or set to the literal 'default'. Cloud Control identifies schedules by Name only and reads them in the default group, so a schedule in another group can be created but never read or tracked.
@@ -114,7 +114,7 @@ The ARN for a KMS Key that will be used to encrypt customer data.
 
 ### `schedule_expression`
 
-- **Type:** String(len: 1..=256)
+- **Type:** `aws.scheduler.Schedule.ScheduleExpression`
 - **Required:** Yes
 
 The scheduling expression.
@@ -128,7 +128,7 @@ The timezone in which the scheduling expression is evaluated.
 
 ### `start_date`
 
-- **Type:** String(date-time)
+- **Type:** `String(yyyy-MM-ddTHH:mm:ss.SSSZ)`
 - **Required:** No
 
 The date, in UTC, after which the schedule can begin invoking its target. Depending on the schedule's recurrence expression, invocations might occur on, or after, the StartDate you specify.

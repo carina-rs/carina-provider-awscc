@@ -225,7 +225,7 @@ Shorthand formats: `create_in_progress` or `State.create_in_progress`
 
 ### `arn`
 
-- **Type:** Arn
+- **Type:** `aws.ec2.IpamPool.Arn`
 
 The Amazon Resource Name (ARN) of the IPAM Pool.
 

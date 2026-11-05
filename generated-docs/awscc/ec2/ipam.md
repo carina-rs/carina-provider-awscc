@@ -111,7 +111,7 @@ Shorthand formats: `free` or `Tier.free`
 
 ### `arn`
 
-- **Type:** Arn
+- **Type:** `aws.ec2.Ipam.Arn`
 
 The Amazon Resource Name (ARN) of the IPAM.
 

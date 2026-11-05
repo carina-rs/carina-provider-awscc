@@ -47,7 +47,7 @@ awscc.iam.OidcProvider {
 
 ### `arn`
 
-- **Type:** IamOidcProviderArn
+- **Type:** `aws.iam.OidcProvider.Arn`
 
 Amazon Resource Name (ARN) of the OIDC provider
 

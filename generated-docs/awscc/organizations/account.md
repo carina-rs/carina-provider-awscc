@@ -107,7 +107,7 @@ If the account was created successfully, the unique identifier (ID) of the new a
 
 ### `arn`
 
-- **Type:** Arn
+- **Type:** `aws.organizations.Account.Arn`
 
 The Amazon Resource Name (ARN) of the account.
 

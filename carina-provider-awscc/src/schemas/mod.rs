@@ -5,6 +5,7 @@ pub mod catalog;
 pub mod config;
 pub mod generated;
 pub mod pattern;
+mod scheduler;
 
 #[cfg(test)]
 mod kms_reference_tests;
@@ -50,6 +51,9 @@ mod region_domains_tests;
 
 #[cfg(test)]
 mod route53_tests;
+
+#[cfg(test)]
+mod scheduler_tests;
 
 #[cfg(test)]
 mod s3_tests;

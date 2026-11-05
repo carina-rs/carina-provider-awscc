@@ -109,7 +109,7 @@ Shorthand formats: `standard` or `LogGroupClass.standard`
 
 ### `arn`
 
-- **Type:** Arn
+- **Type:** `aws.logs.LogGroup.Arn`
 
 
 
