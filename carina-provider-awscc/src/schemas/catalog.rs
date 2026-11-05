@@ -295,6 +295,21 @@ fn validated_s3_lifecycle_date(identity: TypeIdentity) -> AttributeType {
     )
 }
 
+fn validated_scheduler_schedule_expression(identity: TypeIdentity) -> AttributeType {
+    refined_string_with_validator(
+        identity,
+        None,
+        Some((Some(1), Some(256))),
+        legacy_validator(|value| {
+            let Value::Concrete(ConcreteValue::String(value)) = value else {
+                return Err("Expected string".to_string());
+            };
+            super::scheduler::validate_schedule_expression(value.expose_plaintext())
+        }),
+        None,
+    )
+}
+
 fn validated_scheduler_schedule_group_name(identity: TypeIdentity) -> AttributeType {
     // Measured with carina-test-008 in ap-northeast-1 on 2026-10-30: creating
     // AWS::Scheduler::Schedule in a non-default group succeeded, but Carina's
@@ -521,6 +536,13 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "default",
             constructor: validated_scheduler_schedule_group_name,
         },
+        /// AWSCC-local Scheduler rate, cron, or one-time expression.
+        SchedulerScheduleExpression => scheduler_schedule_expression {
+            segments: ["scheduler", "Schedule"],
+            kind: "ScheduleExpression",
+            valid_sample: "rate(6 hours)",
+            constructor: validated_scheduler_schedule_expression,
+        },
         /// AWSCC lifecycle calendar date at midnight UTC, including CFN's .000Z form.
         /// This identity is local to AWSCC, distinct from the existing shared
         /// aws.s3.BucketLifecycleConfiguration.LifecycleDate identity.
@@ -681,6 +703,7 @@ OrganizationsOrganizationArn|aws|organizations/Organization|Arn|Some(Organizatio
 S3BucketArn|aws|s3/Bucket|Arn|Some(S3BucketArn)|arn:aws:s3:::example-bucket|None|crate::schemas::catalog::s3_bucket_arn()
 Ec2FlowLogMaxAggregationInterval|aws|ec2/FlowLog|MaxAggregationInterval|Some(Ec2FlowLogMaxAggregationInterval)|60|Some([60, 600])|crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()
 SchedulerScheduleGroupName|aws|scheduler/Schedule|GroupName|None|default|None|crate::schemas::catalog::scheduler_schedule_group_name()
+SchedulerScheduleExpression|aws|scheduler/Schedule|ScheduleExpression|None|rate(6 hours)|None|crate::schemas::catalog::scheduler_schedule_expression()
 S3LifecycleDate|aws|s3/Bucket|LifecycleDate|None|2030-01-01T00:00:00Z|None|crate::schemas::catalog::s3_lifecycle_date()"#;
 
         let snapshot = AwsccType::ALL

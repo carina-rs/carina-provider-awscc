@@ -683,7 +683,7 @@ Used by: `distribution_config.cache_behaviors.lambda_function_associations`, `di
 
 ### `arn`
 
-- **Type:** String
+- **Type:** `aws.cloudfront.Distribution.Arn`
 
 The ARN of the CloudFront distribution. Synthesized by the provider from the distribution id; CloudFront's CloudFormation type does not expose ARN through the Cloud Control API.
 

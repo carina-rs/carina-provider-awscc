@@ -1091,7 +1091,7 @@ Used by: `replication_configuration.rules.destination.metrics.event_threshold`, 
 
 ### `arn`
 
-- **Type:** Arn
+- **Type:** `aws.s3.Bucket.Arn`
 
 
 

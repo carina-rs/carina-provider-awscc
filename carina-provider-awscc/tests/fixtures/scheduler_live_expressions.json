@@ -1,0 +1,650 @@
+[
+  {
+    "probe": 2,
+    "line": 1,
+    "expression": "rate(1 minute)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 2,
+    "expression": "rate(1 minutes)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 3,
+    "expression": "rate(5 minute)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 4,
+    "expression": "rate(5 minutes)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 5,
+    "expression": "rate(1 days)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 6,
+    "expression": "rate(2 hour)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 7,
+    "expression": "rate(0 minutes)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 8,
+    "expression": "rate(-1 minutes)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 9,
+    "expression": "rate(5 seconds)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 10,
+    "expression": "rate(5 Minutes)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 11,
+    "expression": "rate( 5 minutes)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 12,
+    "expression": "rate(5  minutes)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 13,
+    "expression": "rate(05 minutes)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 14,
+    "expression": "rate(1.5 hours)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 15,
+    "expression": "rate(5)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 16,
+    "expression": "cron(0 12 * * ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 17,
+    "expression": "cron(0 12 * * *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 18,
+    "expression": "cron(0 12 * * ? * *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 19,
+    "expression": "cron(0 12 * * * *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 20,
+    "expression": "cron(0 12 ? * ? *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 21,
+    "expression": "cron(0 12 ? * MON *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 22,
+    "expression": "cron(0 12 1 * MON *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 23,
+    "expression": "cron(0 12 L * ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 24,
+    "expression": "cron(0 12 15W * ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 25,
+    "expression": "cron(0 12 LW * ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 26,
+    "expression": "cron(0 12 ? * 6#3 *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 27,
+    "expression": "cron(0 12 ? * 6L *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 28,
+    "expression": "cron(0 12 ? * MON-FRI *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 29,
+    "expression": "cron(0/15 * * * ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 30,
+    "expression": "cron(0 12 * JAN-MAR ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 31,
+    "expression": "cron(60 12 * * ? *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 32,
+    "expression": "cron(0 24 * * ? *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 33,
+    "expression": "cron(0 12 32 * ? *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 34,
+    "expression": "cron(0 12 * 13 ? *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 35,
+    "expression": "cron(0 12 ? * 8 *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 36,
+    "expression": "cron(0 12 * * ? 2199)",
+    "outcome": "NEVER"
+  },
+  {
+    "probe": 2,
+    "line": 37,
+    "expression": "cron(0 12 * * ? 2200)",
+    "outcome": "NEVER"
+  },
+  {
+    "probe": 2,
+    "line": 38,
+    "expression": "cron(0 12 * * ? 1969)",
+    "outcome": "NEVER"
+  },
+  {
+    "probe": 2,
+    "line": 39,
+    "expression": "cron(0 12 L * ? 2030)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 40,
+    "expression": "cron(0 12 ? * mon *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 41,
+    "expression": "cron(0 12 * * ? */2)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 42,
+    "expression": "cron(0  12 * * ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 43,
+    "expression": "cron(0 12 * * ?  *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 44,
+    "expression": "at(2030-01-01T00:00:00)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 45,
+    "expression": "at(2030-02-30T00:00:00)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 46,
+    "expression": "at(2030-02-28T24:00:00)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 47,
+    "expression": "at(2030-01-01T00:00:00Z)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 48,
+    "expression": "at(2030-01-01T00:00:00.000)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 49,
+    "expression": "at(2030-01-01 00:00:00)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 50,
+    "expression": "at(2030-01-01T00:00)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 51,
+    "expression": "at(2030-1-1T00:00:00)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 52,
+    "expression": "at(2020-01-01T00:00:00)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 53,
+    "expression": "at(2299-12-31T23:59:59)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 54,
+    "expression": "at(2032-02-29T00:00:00)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 55,
+    "expression": "at(2030-02-29T00:00:00)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 56,
+    "expression": "AT(2030-01-01T00:00:00)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 57,
+    "expression": "Rate(5 minutes)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 2,
+    "line": 58,
+    "expression": " rate(5 minutes)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 2,
+    "line": 59,
+    "expression": "rate(5 minutes) ",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 3,
+    "line": 1,
+    "expression": "cron(0 12 * * ? 2199)",
+    "outcome": "NEVER"
+  },
+  {
+    "probe": 3,
+    "line": 2,
+    "expression": "cron(0 12 * * ? 2200)",
+    "outcome": "NEVER"
+  },
+  {
+    "probe": 3,
+    "line": 3,
+    "expression": "cron(0 12 * * ? 1969)",
+    "outcome": "NEVER"
+  },
+  {
+    "probe": 3,
+    "line": 4,
+    "expression": "cron(0 12 * * ? 2100)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 3,
+    "line": 5,
+    "expression": "cron(0 12 * * ? 2030-2199)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 3,
+    "line": 6,
+    "expression": "cron(0 12 * * ? 2026)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 3,
+    "line": 7,
+    "expression": "cron(0 12 * * ? 2027)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 3,
+    "line": 8,
+    "expression": "at(2030-13-01T00:00:00)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 3,
+    "line": 9,
+    "expression": "at(2030-01-32T00:00:00)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 3,
+    "line": 10,
+    "expression": "at(2030-01-01T25:00:00)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 3,
+    "line": 11,
+    "expression": "at(2030-01-01T00:60:00)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 3,
+    "line": 12,
+    "expression": "at(2030-01-01T00:00:60)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 3,
+    "line": 13,
+    "expression": "at(10000-01-01T00:00:00)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 3,
+    "line": 14,
+    "expression": "rate(1 Day)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 3,
+    "line": 15,
+    "expression": "rate(1 MINUTE)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 3,
+    "line": 16,
+    "expression": "rate(1 week)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 3,
+    "line": 17,
+    "expression": "rate(+5 minutes)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 1,
+    "expression": "at(2030-00-01T00:00:00)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 2,
+    "expression": "at(2030-01-00T00:00:00)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 3,
+    "expression": "at(2030-01-01T24:30:00)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 4,
+    "expression": "at(2030-04-31T00:00:00)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 5,
+    "expression": "at(0999-01-01T00:00:00)",
+    "outcome": "NEVER"
+  },
+  {
+    "probe": 4,
+    "line": 6,
+    "expression": "at(2030-01-01T0:00:00)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 7,
+    "expression": "at(2030-01-01T00:00:00 )",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 8,
+    "expression": "at( 2030-01-01T00:00:00)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 9,
+    "expression": "cron(0 12 0 * ? *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 10,
+    "expression": "cron(? 12 * * ? *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 11,
+    "expression": "cron(0 L * * ? *)",
+    "outcome": "OTHER"
+  },
+  {
+    "probe": 4,
+    "line": 12,
+    "expression": "cron(0 12 ? * MONW *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 13,
+    "expression": "cron(0 12 1#2 * ? *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 14,
+    "expression": "cron(0 12 L-2 * ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 15,
+    "expression": "cron(0,30 12 * * ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 16,
+    "expression": "cron(0-59/5 * * * ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 17,
+    "expression": "cron(*/5 * * * ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 18,
+    "expression": "cron(0 12 * * ? 2030,2031)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 19,
+    "expression": "cron(0 12 ? * SUN-SAT *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 20,
+    "expression": "cron(0 12 ? * 0 *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 21,
+    "expression": "cron(0 12 ? JAN,FEB MON *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 22,
+    "expression": "cron(0 12 ? * MON#5 *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 23,
+    "expression": "cron(0 12 ? * 2#6 *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 24,
+    "expression": "cron(0 12 31W * ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 25,
+    "expression": "cron(0 12 32W * ? *)",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 26,
+    "expression": "cron(0 12 * * ?)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 27,
+    "expression": "cron( 0 12 * * ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 28,
+    "expression": "CRON(0 12 * * ? *)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 29,
+    "expression": "cron(0 12 * * ? *) ",
+    "outcome": "REJECT"
+  },
+  {
+    "probe": 4,
+    "line": 30,
+    "expression": "rate(1000000 minutes)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 31,
+    "expression": "rate(99999999999 minutes)",
+    "outcome": "ACCEPT"
+  },
+  {
+    "probe": 4,
+    "line": 32,
+    "expression": "rate(1minutes)",
+    "outcome": "ACCEPT"
+  }
+]

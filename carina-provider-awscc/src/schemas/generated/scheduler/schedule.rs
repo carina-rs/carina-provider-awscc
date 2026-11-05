@@ -50,7 +50,7 @@ pub fn scheduler_schedule_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_description_attribute());
     #[inline(never)]
     fn build_end_date_attribute() -> AttributeSchema {
-        AttributeSchema::optional("end_date", AttributeType::refined_string(None, None, None, None))
+        AttributeSchema::optional("end_date", AttributeType::refined_string(None, Some("^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z\\z".to_string()), None, None))
                 .with_description("The date, in UTC, before which the schedule can invoke its target. Depending on the schedule's recurrence expression, invocations might stop on, or before, the EndDate you specify.")
                 .with_provider_name("EndDate")
             .build()
@@ -90,7 +90,7 @@ pub fn scheduler_schedule_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_name_attribute());
     #[inline(never)]
     fn build_schedule_expression_attribute() -> AttributeSchema {
-        AttributeSchema::required("schedule_expression", AttributeType::refined_string(None, None, Some((Some(1), Some(256))), None))
+        AttributeSchema::required("schedule_expression", crate::schemas::catalog::scheduler_schedule_expression())
                 .with_description("The scheduling expression.")
                 .with_provider_name("ScheduleExpression")
             .build()
@@ -106,7 +106,7 @@ pub fn scheduler_schedule_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_schedule_expression_timezone_attribute());
     #[inline(never)]
     fn build_start_date_attribute() -> AttributeSchema {
-        AttributeSchema::optional("start_date", AttributeType::refined_string(None, None, None, None))
+        AttributeSchema::optional("start_date", AttributeType::refined_string(None, Some("^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z\\z".to_string()), None, None))
                 .with_description("The date, in UTC, after which the schedule can begin invoking its target. Depending on the schedule's recurrence expression, invocations might occur on, or after, the StartDate you specify.")
                 .with_provider_name("StartDate")
             .build()

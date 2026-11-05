@@ -1199,7 +1199,7 @@ Used by: `rules.visibility_config`, `visibility_config`
 
 ### `arn`
 
-- **Type:** Arn
+- **Type:** `aws.wafv2.WebAcl.Arn`
 
 ### `capacity`
 

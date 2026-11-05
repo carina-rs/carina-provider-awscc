@@ -236,6 +236,13 @@ mod override_type_display {
             Self(text)
         }
 
+        pub fn catalog(row: super::AwsccType) -> Self {
+            Self::new(
+                super::catalog_type_display(row.constructor_path())
+                    .expect("every AWSCC catalog row must have an identity display"),
+            )
+        }
+
         pub const fn as_str(self) -> &'static str {
             self.0
         }
@@ -351,6 +358,9 @@ impl TypeOverride {
 
     fn display(&self) -> Option<String> {
         match self.item_override() {
+            Self::StringType(expression) => {
+                catalog_type_display(expression.as_str()).map(str::to_string)
+            }
             Self::AttributeType {
                 expression,
                 display,
@@ -3359,18 +3369,63 @@ fn infer_string_type_display(prop_name: &str, resource_type: &str) -> String {
     }
 }
 
-/// Convert an override type string to a display name
-/// e.g., "carina_aws_types::security_group_id()" -> "SecurityGroupId"
+/// Catalog constructors and their generated ARN forwarding helpers derive
+/// their display from the same identity used in validation errors.
+fn catalog_type_display(constructor: &str) -> Option<&'static str> {
+    static DISPLAYS: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+        let mut displays = HashMap::new();
+        for row in AwsccType::ALL {
+            let identity = row.identity();
+            let display = identity.to_string();
+            displays.insert(row.constructor_path().to_string(), display.clone());
+            if identity.kind == "Arn"
+                && let [service, resource] = identity.segments.as_slice()
+            {
+                displays.insert(
+                    format!(
+                        "super::super::{service}::{}::arn()",
+                        resource.to_snake_case()
+                    ),
+                    display,
+                );
+            }
+        }
+        displays
+    });
+    DISPLAYS.get(constructor).map(String::as_str)
+}
+
+fn resource_arn_catalog_display(type_name: &str) -> Result<Option<&'static str>> {
+    let dsl_resource = dsl_resource_name_from_type(type_name)?;
+    let Some((service, resource)) = resource_identity_parts(&dsl_resource) else {
+        return Ok(None);
+    };
+    // Resolve the same constructor as the emitted arn() helper, including
+    // AWSCC refinements. Shared constructors retain their existing labels.
+    Ok(catalog_type_display(&arn_constructor(service, resource)?))
+}
+
+fn top_level_arn_catalog_display(classified: &EmissionProperty<'_>) -> Option<&'static str> {
+    if classified.name() != "Arn" || classified.path().len() != 1 {
+        return None;
+    }
+    resource_arn_catalog_display(&classified.schema().type_name)
+        .unwrap_or_else(|error| panic!("{}.Arn: {error:#}", classified.schema().type_name))
+}
+
+/// AWSCC-local constructors use catalog identities. Shared AWS/core types
+/// retain their established public short aliases, such as Region and Arn.
 fn override_type_to_display_name(override_type: &str) -> &str {
+    if let Some(identity) = catalog_type_display(override_type) {
+        return identity;
+    }
     match override_type {
         "carina_aws_types::security_group_id()" => "SecurityGroupId",
         "carina_aws_types::route53_hosted_zone_id()" => "Route53HostedZoneId",
         "carina_aws_types::aws_resource_id()" => "AwsResourceId",
         "carina_aws_types::iam_role_arn()" | "super::super::iam::role::arn()" => "IamRoleArn",
         "carina_aws_types::iam_policy_arn()" | "super::super::iam::policy::arn()" => "IamPolicyArn",
-        "carina_aws_types::iam_oidc_provider_arn()" | "super::super::iam::oidc_provider::arn()" => {
-            "IamOidcProviderArn"
-        }
+        "carina_aws_types::iam_oidc_provider_arn()" => "IamOidcProviderArn",
         "carina_aws_types::kms_key_arn()" | "super::super::kms::key::arn()" => "KmsKeyArn",
         "carina_aws_types::kms_key_id()" => "KmsKeyId",
         "carina_aws_types::gateway_id()" => "GatewayId",
@@ -3402,7 +3457,6 @@ fn override_type_to_display_name(override_type: &str) -> &str {
         "types::cidr()" => "Cidr",
         "types::email()" => "Email",
         "carina_core::schema::types::https_url()" => "HttpsUrl",
-        "crate::schemas::catalog::scheduler_schedule_group_name()" => "SchedulerScheduleGroupName",
         "AttributeType::string()" => "String",
         _ => "String",
     }
@@ -3433,6 +3487,13 @@ enum TypeDisplay {
 }
 
 impl TypeDisplay {
+    fn from_constructor(constructor: &str, fallback: String) -> Self {
+        match catalog_type_display(constructor) {
+            Some(identity) => Self::Code(identity.to_string()),
+            None => Self::Plain(fallback),
+        }
+    }
+
     fn item_limits(min: Option<i64>, max: Option<i64>) -> String {
         if min.is_some() || max.is_some() {
             format!(" (items: {})", range_display_string(min, max))
@@ -3514,6 +3575,9 @@ fn type_display_at_resolved(
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> TypeDisplay {
+    if let Some(identity) = top_level_arn_catalog_display(&classified) {
+        return TypeDisplay::Code(identity.to_string());
+    }
     if let Some(reference) = emission_reference(&classified, cfn_property_path) {
         return TypeDisplay::Plain(reference.display());
     }
@@ -3639,77 +3703,50 @@ fn type_display_at_resolved(
             schema.type_name, cfn_property_path
         );
     }
-    TypeDisplay::Plain(scalar_type_display_string_at(
+    scalar_type_display_at(
         prop_name,
         prop,
         schema,
         provider_path,
         cfn_property_path,
         definition_name,
-    ))
+    )
 }
 
-fn scalar_type_display_string_at(
+fn scalar_type_display_at(
     prop_name: &str,
     prop: &CfnProperty,
     schema: &EmissionContext<'_>,
     provider_path: &[String],
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
-) -> String {
+) -> TypeDisplay {
     if inline_property_type(prop) == Some("string") {
         return string_leaf(
             schema.property_at(provider_path, prop),
             cfn_property_path,
             definition_name,
         )
-        .display();
+        .type_display(&schema.type_name, prop_name);
     }
-    match inline_property_type(prop) {
+    if let Some(EnumLeaf::Integer(values)) = enum_leaf(prop, prop_name, definition_name) {
+        let constructor = int_enum_type(&schema.type_name, prop_name, &values);
+        return int_enum_type_display(&constructor, &values);
+    }
+    let display = match inline_property_type(prop) {
         Some("boolean") => "Bool".to_string(),
         Some("integer") => {
             // Check resource-scoped overrides first
             let res_override = resource_type_override(&schema.type_name, cfn_property_path);
             if let Some(TypeOverride::IntEnum(values)) = res_override {
-                let observed_values = prop
-                    .enum_values
-                    .as_ref()
-                    .and_then(|enum_values| {
-                        enum_values
-                            .iter()
-                            .map(|value| match value {
-                                EnumValue::Int(value) => Some(*value),
-                                _ => None,
-                            })
-                            .collect::<Option<Vec<_>>>()
-                    })
-                    .filter(|values| !values.is_empty());
-                let _ = int_enum_type(
-                    &schema.type_name,
-                    prop_name,
-                    observed_values.as_deref().unwrap_or(values),
-                );
-                let values_str = values
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                return format!("IntEnum([{}])", values_str);
+                let constructor = int_enum_type(&schema.type_name, prop_name, values);
+                return int_enum_type_display(&constructor, values);
             }
             if let Some(TypeOverride::IntRange(min, max)) = res_override {
-                return format!("Int({})", range_display_string(Some(*min), Some(*max)));
-            }
-            // Check for integer enum values from schema
-            if let Some(enum_values) = &prop.enum_values {
-                let all_ints = enum_values.iter().all(|v| matches!(v, EnumValue::Int(_)));
-                if all_ints && !enum_values.is_empty() {
-                    let values_str = enum_values
-                        .iter()
-                        .map(|v| v.to_string_value())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    return format!("IntEnum([{}])", values_str);
-                }
+                return TypeDisplay::Plain(format!(
+                    "Int({})",
+                    range_display_string(Some(*min), Some(*max))
+                ));
             }
             let range: Option<(Option<i64>, Option<i64>)> =
                 if prop.minimum.is_some() || prop.maximum.is_some() {
@@ -3736,7 +3773,10 @@ fn scalar_type_display_string_at(
             // Check resource-scoped overrides first
             let res_override = resource_type_override(&schema.type_name, cfn_property_path);
             if let Some(TypeOverride::IntRange(min, max)) = res_override {
-                return format!("Float({})", range_display_string(Some(*min), Some(*max)));
+                return TypeDisplay::Plain(format!(
+                    "Float({})",
+                    range_display_string(Some(*min), Some(*max))
+                ));
             }
             let range: Option<(Option<i64>, Option<i64>)> =
                 if prop.minimum.is_some() || prop.maximum.is_some() {
@@ -3760,7 +3800,8 @@ fn scalar_type_display_string_at(
             }
         }
         _ => "String".to_string(),
-    }
+    };
+    TypeDisplay::Plain(display)
 }
 
 struct MarkdownStructDef {
@@ -3926,6 +3967,9 @@ fn markdown_type(
     enum_target: Option<&MarkdownEnumKey>,
     cfn_parent: Option<&str>,
 ) -> MarkdownType {
+    if let Some(identity) = top_level_arn_catalog_display(&classified) {
+        return MarkdownType::Plain(TypeDisplay::Code(identity.to_string()).markdown());
+    }
     if let Some(reference) = emission_reference(
         &classified,
         CfnPropertyPath::new(cfn_parent, classified.name()),
@@ -4765,7 +4809,16 @@ fn render_markdown(
 
         for synth in synth_for_type {
             page.heading(Heading::code(3, synth.attr_name))?;
-            page.push_str("- **Type:** String\n\n");
+            let identity = if has_arn_helper && synth.attr_name == "arn" {
+                resource_arn_catalog_display(type_name)?
+            } else {
+                catalog_type_display(synth.attr_type)
+            };
+            let display = identity.map_or_else(
+                || TypeDisplay::Plain("String".to_string()),
+                |identity| TypeDisplay::Code(identity.to_string()),
+            );
+            page.push_str(&format!("- **Type:** {}\n\n", display.markdown()));
             page.push_str(&format!(
                 "{}\n\n",
                 collapse_whitespace(&synth.description.replace('\n', " "))
@@ -7051,7 +7104,25 @@ fn string_constraints(
             exception.source,
         );
     }
-    let mut normalized = source_pattern;
+    // CFN's date-time format is RFC 3339, including a mandatory offset,
+    // optional fractional seconds, lowercase t/z and leap-second spelling.
+    // This is a string refinement; the wire value is never converted.
+    // https://www.rfc-editor.org/rfc/rfc3339#section-5.6
+    let format_pattern = if prop.format.as_deref() == Some("date-time") {
+        // No cached date-time property also has a pattern. Core exposes one
+        // regex per string and no pattern intersection; do not silently lose
+        // either constraint if a future schema introduces that combination.
+        assert!(
+            source_pattern.is_none(),
+            "{cfn_type}.{property_path}#{source_path}: date-time with an explicit pattern requires a reviewed intersection"
+        );
+        Some(
+            r"^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:(?:[0-5][0-9]|60)(?:\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\z",
+        )
+    } else {
+        None
+    };
+    let mut normalized = source_pattern.or(format_pattern);
     if let Some(rewrite) = STRING_PATTERN_REWRITES
         .iter()
         .find(|rewrite| rewrite.cfn_type == cfn_type && source_pattern == Some(rewrite.source))
@@ -7223,10 +7294,28 @@ impl StringLeaf<'_> {
         }
     }
 
+    fn type_display(&self, cfn_type: &str, prop_name: &str) -> TypeDisplay {
+        match self {
+            Self::Enum(EnumLeaf::Integer(values)) => {
+                int_enum_type_display(&int_enum_type(cfn_type, prop_name, values), values)
+            }
+            Self::Inferred {
+                rust_type,
+                display_type,
+            } => TypeDisplay::from_constructor(rust_type, display_type.clone()),
+            _ => TypeDisplay::Plain(self.display()),
+        }
+    }
+
     fn display(&self) -> String {
         match self {
             Self::Enum(leaf) => leaf.display(),
-            Self::Inferred { display_type, .. } => display_type.clone(),
+            Self::Inferred {
+                rust_type,
+                display_type,
+            } => catalog_type_display(rust_type)
+                .unwrap_or(display_type)
+                .to_string(),
             Self::Refined {
                 constraints,
                 format,
@@ -7469,6 +7558,20 @@ fn int_enum_type(resource_type: &str, prop_name: &str, values: &[i64]) -> String
         .collect::<Vec<_>>()
         .join(", ");
     format!("AttributeType::union(vec![{members}])")
+}
+
+fn int_enum_type_display(constructor: &str, values: &[i64]) -> TypeDisplay {
+    TypeDisplay::from_constructor(
+        constructor,
+        format!(
+            "IntEnum([{}])",
+            values
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+    )
 }
 
 fn refined_float_type(identity: &str, range: &str) -> String {
@@ -8039,7 +8142,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: OverrideTypeExpression::raw(
                     "crate::schemas::catalog::logs_log_group_name()",
                 ),
-                display: const { OverrideTypeDisplay::new("aws.logs.LogGroup.LogGroupName") },
+                display: OverrideTypeDisplay::catalog(AwsccType::LogsLogGroupName),
                 block_name: None,
                 default: None,
             },
@@ -8055,7 +8158,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: OverrideTypeExpression::raw(
                     "crate::schemas::catalog::organizations_account_email()",
                 ),
-                display: const { OverrideTypeDisplay::new("aws.organizations.Account.Email") },
+                display: OverrideTypeDisplay::catalog(AwsccType::OrganizationsAccountEmail),
                 block_name: None,
                 default: None,
             },
@@ -8088,7 +8191,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: OverrideTypeExpression::raw(
                     "crate::schemas::catalog::organizations_account_role_name()",
                 ),
-                display: const { OverrideTypeDisplay::new("aws.organizations.Account.RoleName") },
+                display: OverrideTypeDisplay::catalog(AwsccType::OrganizationsAccountRoleName),
                 block_name: None,
                 default: None,
             },
@@ -8228,7 +8331,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                     expression: OverrideTypeExpression::raw(
                         "crate::schemas::catalog::s3_lifecycle_date()",
                     ),
-                    display: const { OverrideTypeDisplay::new("aws.s3.Bucket.LifecycleDate") },
+                    display: OverrideTypeDisplay::catalog(AwsccType::S3LifecycleDate),
                     block_name: None,
                     default: None,
                 },
@@ -9742,7 +9845,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: OverrideTypeExpression::raw(
                     "crate::schemas::catalog::identitystore_group_display_name()",
                 ),
-                display: const { OverrideTypeDisplay::new("aws.identitystore.Group.DisplayName") },
+                display: OverrideTypeDisplay::catalog(AwsccType::IdentityStoreGroupDisplayName),
                 block_name: None,
                 default: None,
             },
@@ -10984,6 +11087,40 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ),
             TypeOverride::Enum(ssl_protocols),
         );
+
+        // CreateSchedule probes, carina-test-008, ap-northeast-1, 2026-11-05:
+        // accepted rate/cron/at syntax differs from the documented grammar.
+        // Keep CFN's 1..=256 bounds in the named callback-bearing type.
+        // https://github.com/carina-rs/carina-provider-awscc/issues/525#issuecomment-6655771279
+        m.insert(
+            ("AWS::Scheduler::Schedule", "ScheduleExpression"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "crate::schemas::catalog::scheduler_schedule_expression()",
+            )),
+        );
+        // Cloud Control CreateResource/GetResource, carina-test-008,
+        // ap-northeast-1, 2026-11-05: only the millisecond UTC spelling was
+        // accepted and read back unchanged. No fraction, .1Z, +09:00 and
+        // .000+09:00 failed: "needs to follow the format yyyy-MM-ddTHH:mm:ss.SSSZ".
+        // A missing offset failed CFN model validation before the handler.
+        // https://github.com/carina-rs/carina-provider-awscc/issues/525#issuecomment-6655771279
+        for path in ["StartDate", "EndDate"] {
+            m.insert(
+                ("AWS::Scheduler::Schedule", path),
+                TypeOverride::AttributeType {
+                    expression: OverrideTypeExpression::string(
+                        Some(ApprovedPattern::whole(
+                            r"^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\.[0-9]{3}Z\z",
+                        )),
+                        None,
+                        PatternLiteral::Quoted,
+                    ),
+                    display: const { OverrideTypeDisplay::new("String(yyyy-MM-ddTHH:mm:ss.SSSZ)") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
 
         // Cloud Control's Schedule identifier omits GroupName and reads
         // Name in the default group. The catalog validator records the
@@ -18964,6 +19101,303 @@ mod tests {
     }
 
     #[test]
+    fn catalog_constructor_display_names_are_derived_from_catalog_identities() {
+        let mut failures = Vec::new();
+        for row in AwsccType::ALL {
+            let constructor = row.constructor_path();
+            let actual = override_type_to_display_name(constructor);
+            let expected = row.identity().to_string();
+            // Retain the complete table for before/after verification, including
+            // catalog constructors that previously fell through to String.
+            println!("CATALOG_DISPLAY\t{constructor}\t{actual}\t{expected}");
+            if actual != expected {
+                failures.push(format!("{constructor}: {actual:?}, expected {expected:?}"));
+            }
+            let identity = row.identity();
+            if identity.kind == "Arn"
+                && let [service, resource] = identity.segments.as_slice()
+            {
+                let forwarding_helper = format!(
+                    "super::super::{service}::{}::arn()",
+                    resource.to_snake_case()
+                );
+                assert_eq!(
+                    override_type_to_display_name(&forwarding_helper),
+                    expected,
+                    "{forwarding_helper} must use its catalog constructor's display",
+                );
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    fn documented_attribute_type<'a>(markdown: &'a str, attribute: &str) -> &'a str {
+        let heading = format!("### `{attribute}`\n");
+        let (_, section) = markdown
+            .split_once(&heading)
+            .unwrap_or_else(|| panic!("missing Markdown attribute {attribute}"));
+        section
+            .split("\n### ")
+            .next()
+            .unwrap()
+            .lines()
+            .find_map(|line| line.strip_prefix("- **Type:** "))
+            .unwrap_or_else(|| panic!("missing Markdown type for {attribute}"))
+    }
+
+    #[test]
+    fn catalog_displays_in_synthetic_arn_markdown() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudFront::Distribution");
+        assert!(!schema.properties.contains_key("Arn"));
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert_eq!(
+            documented_attribute_type(&markdown, "arn"),
+            format!("`{}`", AwsccType::CloudFrontDistributionArn.identity()),
+            "the synthesized ARN must display the catalog type used by its Rust helper",
+        );
+    }
+
+    #[test]
+    fn catalog_displays_in_ordinary_arn_markdown() {
+        let schemas: Vec<_> = cached_schema_paths()
+            .into_iter()
+            .map(|path| {
+                let source = std::fs::read_to_string(&path).unwrap();
+                ParsedCfnSchema::from_json(serde_json::from_str(&source).unwrap()).unwrap()
+            })
+            .collect();
+        let mut failures = Vec::new();
+        for row in AwsccType::ALL {
+            let identity = row.identity();
+            if identity.kind != "Arn" {
+                continue;
+            }
+            let schema = schemas
+                .iter()
+                .find(|schema| {
+                    dsl_resource_name_from_type(&schema.type_name).unwrap()
+                        == identity.segments.join(".")
+                })
+                .unwrap_or_else(|| panic!("missing cached resource for {identity}"));
+            if !schema.properties.contains_key("Arn") {
+                // Synthetic ARNs have a separate generation regression test.
+                continue;
+            }
+            let markdown = generate_test_markdown(schema, &schema.type_name).unwrap();
+            let actual = documented_attribute_type(&markdown, "arn");
+            let expected = format!("`{identity}`");
+            if actual != expected {
+                failures.push(format!(
+                    "{}.arn: {actual}, expected {expected}",
+                    schema.type_name
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn catalog_displays_in_integer_enum_markdown() {
+        let schema = cfn_schema_for_codegen_tests("AWS::EC2::FlowLog");
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert_eq!(
+            documented_attribute_type(&markdown, "max_aggregation_interval"),
+            format!(
+                "`{}`",
+                AwsccType::Ec2FlowLogMaxAggregationInterval.identity()
+            ),
+            "catalog-selected integer enums must display their identity too",
+        );
+    }
+
+    #[test]
+    fn catalog_displays_in_number_backed_integer_enum_markdown() {
+        let cached = cfn_schema_for_codegen_tests("AWS::EC2::FlowLog");
+        let mut source = cached.source().clone();
+        // Integer enum values are valid for a JSON Schema number too. Rust
+        // selects the enum constructor before dispatching on the base type.
+        source["properties"]["MaxAggregationInterval"]["type"] = serde_json::json!("number");
+        source["properties"]["MaxAggregationInterval"]["enum"] = serde_json::json!(
+            AwsccType::Ec2FlowLogMaxAggregationInterval
+                .allowed_int_values()
+                .unwrap()
+        );
+        let schema = ParsedCfnSchema::from_json(source).unwrap();
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert!(generated.contains(&format!(
+            "AttributeSchema::optional(\"max_aggregation_interval\", {})",
+            AwsccType::Ec2FlowLogMaxAggregationInterval.constructor_path(),
+        )));
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert_eq!(
+            documented_attribute_type(&markdown, "max_aggregation_interval"),
+            format!(
+                "`{}`",
+                AwsccType::Ec2FlowLogMaxAggregationInterval.identity()
+            ),
+            "enum selection must take precedence over the numeric base type in Markdown too",
+        );
+    }
+
+    #[test]
+    fn catalog_displays_in_inferred_arn_struct_fields() {
+        let cached = cfn_schema_for_codegen_tests("AWS::IAM::OIDCProvider");
+        let mut source = cached.source().clone();
+        source["properties"]["ProviderReference"] = serde_json::json!({
+            "type": "object",
+            "properties": {"Arn": {"type": "string"}},
+            "additionalProperties": false,
+        });
+        let schema = ParsedCfnSchema::from_json(source).unwrap();
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert!(
+            generated.contains(
+                "StructField::optional(\"arn\", super::super::iam::oidc_provider::arn())"
+            )
+        );
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(
+            markdown.contains(&format!(
+                "| `arn` | `{}` |",
+                AwsccType::IamOidcProviderArn.identity(),
+            )),
+            "an inferred module helper must display its catalog identity in struct tables: {markdown}",
+        );
+    }
+
+    #[test]
+    fn catalog_displays_in_markdown_preserve_shared_type_labels() {
+        for (cfn_type, attribute, expected) in [
+            ("AWS::IAM::Role", "arn", "IamRoleArn"),
+            ("AWS::KMS::Key", "arn", "Arn"),
+            ("AWS::Scheduler::Schedule", "arn", "Arn"),
+        ] {
+            let schema = cfn_schema_for_codegen_tests(cfn_type);
+            let markdown = generate_test_markdown(&schema, cfn_type).unwrap();
+            assert_eq!(
+                documented_attribute_type(&markdown, attribute),
+                expected,
+                "{cfn_type}"
+            );
+        }
+        let schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let values = carina_aws_types::AwsType::LogsLogGroupRetentionInDays
+            .allowed_int_values()
+            .unwrap()
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        assert_eq!(
+            documented_attribute_type(&markdown, "retention_in_days"),
+            format!("IntEnum([{values}])"),
+        );
+    }
+
+    #[test]
+    fn catalog_expression_displays_cannot_keep_stale_manual_labels() {
+        for row in AwsccType::ALL {
+            let expression = OverrideTypeExpression::raw(row.constructor_path());
+            assert_eq!(
+                expression.normalized_display("StaleShortName"),
+                row.identity().to_string(),
+                "{} must derive its identity even with a stale explicit display",
+                row.constructor_path(),
+            );
+        }
+    }
+
+    #[test]
+    fn catalog_string_overrides_use_identities_while_shared_aliases_stay_unchanged() {
+        for row in AwsccType::ALL {
+            let override_type =
+                TypeOverride::StringType(OverrideTypeExpression::raw(row.constructor_path()));
+            assert_eq!(
+                override_type.display(),
+                Some(row.identity().to_string()),
+                "{} must use the identity code-span display path",
+                row.constructor_path(),
+            );
+        }
+        for (constructor, alias) in [
+            ("carina_aws_types::aws_region()", "Region"),
+            ("carina_aws_types::security_group_id()", "SecurityGroupId"),
+            ("carina_aws_types::arn()", "Arn"),
+            ("carina_aws_types::kms_key_id()", "KmsKeyId"),
+            ("carina_aws_types::iam_role_arn()", "IamRoleArn"),
+        ] {
+            assert_eq!(override_type_to_display_name(constructor), alias);
+            assert_eq!(
+                TypeOverride::StringType(OverrideTypeExpression::raw(constructor)).display(),
+                None,
+                "shared aliases keep the existing plain-text rendering path",
+            );
+        }
+    }
+
+    #[test]
+    fn test_scheduler_expression_and_dates_use_exact_raw_cfn_override_paths() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Scheduler::Schedule");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let expression =
+            OverrideTypeExpression::raw("crate::schemas::catalog::scheduler_schedule_expression()");
+        assert_eq!(
+            resource_type_override(
+                &schema.type_name,
+                CfnPropertyPath::new(None, "ScheduleExpression")
+            ),
+            Some(&TypeOverride::StringType(expression.clone()))
+        );
+        assert!(generated.contains(&format!(
+            "AttributeSchema::required(\"schedule_expression\", {expression})"
+        )));
+        assert!(markdown.contains("- **Type:** `aws.scheduler.Schedule.ScheduleExpression`"));
+
+        for (raw, dsl) in [("StartDate", "start_date"), ("EndDate", "end_date")] {
+            assert_eq!(schema.properties[raw].format.as_deref(), Some("date-time"));
+            let Some(TypeOverride::AttributeType {
+                expression,
+                display,
+                ..
+            }) = resource_type_override(&schema.type_name, CfnPropertyPath::new(None, raw))
+            else {
+                panic!("{raw} must have an anonymous per-attribute format override");
+            };
+            assert_eq!(display.as_str(), "String(yyyy-MM-ddTHH:mm:ss.SSSZ)");
+            assert_eq!(expression.patterns().len(), 1);
+            assert!(is_whole_anchored(expression.patterns()[0].as_str()));
+            assert!(generated.contains(&format!(
+                "AttributeSchema::optional(\"{dsl}\", {expression})"
+            )));
+            assert!(markdown.contains("- **Type:** `String(yyyy-MM-ddTHH:mm:ss.SSSZ)`"));
+        }
+        for path in [
+            "schedule_expression",
+            "start_date",
+            "end_date",
+            "ScheduleExpressionTimezone",
+        ] {
+            assert!(
+                resource_type_override(&schema.type_name, CfnPropertyPath::new(None, path))
+                    .is_none(),
+                "overrides must use raw CFN spelling: {path}"
+            );
+        }
+        for name in ["CreationDate", "LastModificationDate"] {
+            assert!(
+                resource_type_override(
+                    "AWS::Scheduler::ScheduleGroup",
+                    CfnPropertyPath::new(None, name)
+                )
+                .is_none(),
+                "group outputs must use the generic date-time mapping"
+            );
+        }
+    }
+
+    #[test]
     fn test_scheduler_api_integer_fields_are_integer_shaped() {
         let schema = cfn_schema_for_codegen_tests("AWS::Scheduler::Schedule");
         let generated = generate_schema_code(&schema, "AWS::Scheduler::Schedule")
@@ -19071,7 +19505,7 @@ mod tests {
         let markdown = generate_test_markdown(&schema, "AWS::Scheduler::Schedule")
             .expect("Scheduler Schedule markdown generation should succeed");
         assert!(
-            markdown.contains("- **Type:** SchedulerScheduleGroupName"),
+            markdown.contains("- **Type:** `aws.scheduler.Schedule.GroupName`"),
             "Schedule.GroupName docs must expose the restricted type: {markdown}"
         );
         assert!(
@@ -23069,7 +23503,7 @@ mod tests {
         );
         assert_eq!(
             override_type_to_display_name("super::super::iam::oidc_provider::arn()"),
-            "IamOidcProviderArn"
+            AwsccType::IamOidcProviderArn.identity().to_string()
         );
     }
 
@@ -24612,7 +25046,7 @@ mod tests {
         );
         assert_eq!(
             infer_string_type_display("Arn", "AWS::IAM::OIDCProvider"),
-            "IamOidcProviderArn"
+            AwsccType::IamOidcProviderArn.identity().to_string()
         );
     }
 
@@ -29941,6 +30375,84 @@ mod tests {
         assert!(
             display.contains("int64"),
             "int64 format should appear in display: {display}"
+        );
+    }
+
+    #[test]
+    fn test_string_format_date_time_maps_to_an_approved_anonymous_pattern_generically() {
+        // A synthetic unrelated resource proves this is not a Scheduler branch.
+        let schema = empty_schema("AWS::Test::Timestamp");
+        let prop = CfnProperty {
+            prop_type: Some(TypeValue::Single("string".to_string())),
+            format: Some("date-time".to_string()),
+            min_length: Some(20),
+            max_length: Some(64),
+            ..Default::default()
+        };
+        let constraints = string_constraints(
+            &prop,
+            &schema.type_name,
+            CfnPropertyPath::new(None, "ObservedAt"),
+            "/properties/ObservedAt",
+        );
+        let pattern = constraints
+            .pattern
+            .expect("date-time must become an ApprovedPattern");
+        assert!(is_whole_anchored(pattern.as_str()));
+        let compiled = carina_core::schema::CompiledPattern::try_new(pattern.as_str()).unwrap();
+        for value in [
+            "2026-11-05T10:32:55Z",
+            "2030-01-01T00:00:00.123Z",
+            "2030-01-01T00:00:00+09:00",
+            "2030-01-01T00:00:00.123456-05:30",
+            "2030-01-01t00:00:00z",
+            "2030-01-01T00:00:00-00:00",
+            "2016-12-31T23:59:60Z",
+        ] {
+            assert!(compiled.is_match(value), "{value}");
+        }
+        for value in [
+            "2030-01-01T00:00:00",
+            "2030-01-01T00:00Z",
+            "2030-01-01T00:00:00+0900",
+            "2030-01-01T00:00:00+24:00",
+            "2030-01-01T00:00:00Z ",
+            "2030-01-01T00:00:00Z\n",
+        ] {
+            assert!(!compiled.is_match(value), "{value}");
+        }
+        assert_eq!(constraints.min_length, Some(20));
+        assert_eq!(constraints.max_length, Some(64));
+        let (code, _) =
+            cfn_type_to_carina_type_with_enum(&prop, "ObservedAt", &schema, "", &BTreeMap::new());
+        assert!(
+            code.starts_with("AttributeType::refined_string(None,"),
+            "{code}"
+        );
+        assert_eq!(emitted_patterns(&code), vec![pattern.as_str()]);
+        assert!(code.contains("Some((Some(20), Some(64)))"));
+        assert_eq!(
+            type_display_string("ObservedAt", &prop, &schema),
+            "String(pattern, len: 20..=64)"
+        );
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "date-time with an explicit pattern requires a reviewed intersection"
+    )]
+    fn test_date_time_does_not_silently_discard_an_explicit_pattern() {
+        let prop = CfnProperty {
+            prop_type: Some(TypeValue::Single("string".to_string())),
+            format: Some("date-time".to_string()),
+            pattern: Some("^2030-.*Z$".to_string()),
+            ..Default::default()
+        };
+        string_constraints(
+            &prop,
+            "AWS::Test::Timestamp",
+            CfnPropertyPath::new(None, "ObservedAt"),
+            "/properties/ObservedAt",
         );
     }
 

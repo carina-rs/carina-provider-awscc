@@ -457,7 +457,7 @@ Used by: `global_secondary_indexes.warm_throughput`, `warm_throughput`
 
 ### `arn`
 
-- **Type:** Arn
+- **Type:** `aws.dynamodb.Table.Arn`
 
 
 
