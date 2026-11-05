@@ -21,6 +21,9 @@ mod cloudwatch_tests;
 mod dynamodb_tests;
 
 #[cfg(test)]
+mod ecr_tests;
+
+#[cfg(test)]
 mod ecs_tests;
 
 #[cfg(test)]
