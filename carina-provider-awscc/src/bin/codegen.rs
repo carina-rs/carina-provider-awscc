@@ -7897,8 +7897,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             },
         );
 
-        // Organizations Account email: core validation plus 6..=64 characters,
-        // under an AWSCC-local identity. Creation-only character rules are not
+        // Organizations Account email: core validation plus 6..=64 characters, as an
+        // AWSCC refinement of AwsType::OrganizationsAccountEmail. Creation-only rules are not
         // applied to historical read values.
         // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-Email
         m.insert(
@@ -29064,7 +29064,7 @@ mod tests {
             generated.contains(
                 "AttributeSchema::required(\"email\", crate::schemas::catalog::organizations_account_email())"
             ),
-            "Expected the AWSCC-local bounded email in generated code: {generated}"
+            "Expected the AWSCC bounded email refinement in generated code: {generated}"
         );
         assert!(
             !generated.contains("types::email()"),

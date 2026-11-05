@@ -58,7 +58,7 @@ aws-smithy-runtime = { version = "1", features = ["client"] }
 aws-smithy-runtime-api = { version = "1", features = ["test-util"] }
 fancy-regex = "=0.16.2"
 carina-aws-types = { workspace = true, features = ["test-utils"] }
-carina-core = { workspace = true, features = ["test-support", "test-utils"] }
+carina-core = { workspace = true, features = ["test-utils"] }
 carina-plugin-host = { workspace = true }
 carina-provider-resolver = { workspace = true, features = ["test-utils"] }
 tokio = { version = "1", features = ["test-util"] }
