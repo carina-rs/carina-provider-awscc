@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use carina_core::binding_index::BindingIndex;
+use carina_core::config_loader::load_buffer_configuration;
 use carina_core::parser::{ProviderContext, parse_file};
 use carina_core::provider::{
     ProviderFactory, collect_schemas, provider_custom_types_from_factories,
@@ -113,7 +114,8 @@ fn validate_scheduler(source: &str) -> Result<(), String> {
     validate_resources(&parsed, &schemas, &known_providers, &context)?;
 
     let bindings = BindingIndex::from_parsed(&parsed, &schemas, &context);
-    validate_resource_ref_types(&parsed, &schemas, &HashSet::new(), &bindings)
+    let configuration = load_buffer_configuration(&parsed, &schemas, &context);
+    validate_resource_ref_types(configuration.judged(), &HashSet::new(), &bindings)
         .map_err(|error| error.to_string())
 }
 

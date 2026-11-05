@@ -1,10 +1,23 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use carina_aws_types::AwsType;
+use carina_core::binding_index::{LivePreApplyInputs, ResolvedBindings};
+use carina_core::config_loader::load_buffer_configuration;
+use carina_core::data_source_value::DataSourceValues;
+use carina_core::parser::{
+    LoadedProviderContext, ProviderContext, RelativeBindingName, parse_file,
+};
+use carina_core::provider::{ProviderFactory, provider_custom_types_from_factories};
+use carina_core::resolver::resolve_ref_value_with_config;
+use carina_core::resource::{AuthoredConcreteValue, AuthoredResource, AuthoredValue};
 use carina_core::schema::{
     RawShape, SchemaKind, TypeAssignability, TypeIdentity, ValidatedResourceSchema,
     builtin_type_registry,
+};
+use carina_core::validation::{
+    deferred_types::with_session_for_test, typecheck::check_type_expr_value,
 };
 
 use crate::test_support::{
@@ -422,9 +435,8 @@ fn named_iam_names_reject_plain_string_references_even_with_valid_literal_defaul
 
 #[test]
 fn direct_interpolations_validate_and_defer_name_constraints_until_the_value_resolves() {
-    // carina 207e751: visit_refs_with_sink gives interpolation operands a String
-    // sink, and schema validation defers the resulting interpolation. It does
-    // not require the operands to carry the destination's named identity.
+    // A string construction retains its interpolation judgement and defers
+    // destination constraints. Its operands need not carry the named identity.
     for site in 0..LITERAL_NAMES.len() {
         let mut names = LITERAL_NAMES;
         names[site] = r#""${x}-inline""#;
@@ -437,37 +449,171 @@ fn direct_interpolations_validate_and_defer_name_constraints_until_the_value_res
     }
     // Fully concrete interpolation folds to a literal; validate its value now.
     for site in 0..LITERAL_NAMES.len() {
-        let mut names = LITERAL_NAMES;
-        names[site] = r#""${x}-inline""#;
-        validate_fixtures(&[(
-            "iam_constant_name.crn",
-            &name_fixture("let x = 'ValidName'", names),
-        )]);
-        assert!(
-            try_validate_fixtures(&[(
-                "iam_invalid_constant_name.crn",
-                &name_fixture("let x = 'bad name'", names)
-            )])
-            .is_err()
-        );
+        for interpolation in [r#""${x}""#, r#""${x}-inline""#] {
+            let mut names = LITERAL_NAMES;
+            names[site] = interpolation;
+            validate_fixtures(&[(
+                "iam_constant_name.crn",
+                &name_fixture("let x = 'ValidName'", names),
+            )]);
+            assert!(
+                try_validate_fixtures(&[(
+                    "iam_invalid_constant_name.crn",
+                    &name_fixture("let x = 'bad name'", names)
+                )])
+                .is_err(),
+                "site {site}, {interpolation}: invalid concrete names must be rejected"
+            );
+        }
     }
 }
 
 #[test]
-fn let_bound_deferred_interpolations_are_plain_string_references() {
-    // A bare let reference takes the inference path, where a still-deferred
-    // interpolation has type String. This differs from authoring it inline.
-    let declarations = [PLAIN_STRING_OUTPUT, r#"let interpolated = "${x}-inline""#].join("\n");
+fn bare_interpolations_preserve_reference_types_at_each_name_sink() {
+    // A bare interpolation preserves its operand's declared type, including
+    // through a let. String constructions instead defer the value constraints.
     for (site, identity) in NAME_IDENTITIES.iter().enumerate() {
+        for (rhs, alias) in [
+            (r#""${x}""#, ""),
+            ("interpolated", r#"let interpolated = "${x}""#),
+        ] {
+            let mut names = LITERAL_NAMES;
+            names[site] = rhs;
+            for fixture in [
+                name_fixture(&format!("{PLAIN_STRING_OUTPUT}\n{alias}"), names),
+                module_name_fixture(
+                    &format!("arguments {{ x: String = 'ValidName' }}\n{alias}"),
+                    names,
+                ),
+            ] {
+                let error = try_validate_fixtures(&[("iam_bare_interpolation.crn", &fixture)])
+                    .expect_err("a bare interpolation cannot turn String into a named IAM type");
+                assert!(
+                    error.contains(&format!("expected {identity}, got String")),
+                    "site {site}, {rhs}: {error}"
+                );
+            }
+            validate_fixtures(&[(
+                "iam_named_bare_interpolation.crn",
+                &module_name_fixture(
+                    &format!("arguments {{ x: {identity} = 'ValidName' }}\n{alias}"),
+                    names,
+                ),
+            )]);
+        }
+    }
+}
+
+#[test]
+fn deferred_interpolated_role_names_validate_constraints_after_resolution() {
+    let factories: Arc<Vec<Box<dyn ProviderFactory>>> =
+        Arc::new(vec![Box::new(crate::AwsccProviderFactory)]);
+    let schemas = super::schema_registry();
+    let context = LoadedProviderContext::for_test(ProviderContext {
+        custom_types: provider_custom_types_from_factories(factories),
+        resource_types: ProviderContext::resource_types_from_schema_registry(&schemas),
+        ..ProviderContext::new(carina_core::EnvironmentSnapshot::empty())
+    });
+    for (interpolation, suffix) in [(r#""${x}""#, ""), (r#""${x}-inline""#, "-inline")] {
+        let fixture = format!(
+            "{}\nlet x = role.role_name\nlet interpolated = {interpolation}",
+            name_fixture("", LITERAL_NAMES)
+        );
+        let parsed = parse_file(
+            &fixture,
+            Path::new("iam_resolved_interpolation.crn"),
+            &context,
+        )
+        .unwrap();
+        let configuration = load_buffer_configuration(&parsed, &schemas, &context);
+        let report = configuration.judged().report();
+        // Derive the exact destination declaration from the registered IAM field.
+        let expected = report
+            .binding(&RelativeBindingName::new("x"))
+            .unwrap()
+            .static_type()
+            .unwrap();
+        assert_eq!(expected.to_string(), NAME_IDENTITIES[0]);
+        let expression = report
+            .binding(&RelativeBindingName::new("interpolated"))
+            .unwrap();
+        let authored = parsed.variables["interpolated"]
+            .clone()
+            .resolve_root_for_test()
+            .into_expanded()
+            .unwrap();
+        assert!(!authored.is_fully_resolved());
+        assert!(
+            check_type_expr_value(expected, &authored, &context, expression)
+                .require_provider_schemas()
+                .is_ok()
+        );
+
+        // Match core's resolution-time constraint test: resolve pre-apply
+        // bindings, then check the known value with the retained judgement.
+        for (value, accepted) in [
+            ("ValidName".to_string(), true),
+            ("a".repeat(64 - suffix.len()), true),
+            ("a".repeat(65 - suffix.len()), false),
+            ("bad name".to_string(), false),
+        ] {
+            let source = AuthoredResource::with_provider("awscc", "iam.Role", "role", None)
+                .with_binding("role")
+                .with_attribute(
+                    "role_name",
+                    AuthoredValue::Concrete(AuthoredConcreteValue::String(value.clone().into())),
+                )
+                .resolve_root_for_test()
+                .into_expanded(&schemas)
+                .unwrap();
+            let bindings = ResolvedBindings::pre_apply_live(LivePreApplyInputs {
+                managed: &[source],
+                compositions: &[],
+                managed_current: &HashMap::new(),
+                data_source_values: &DataSourceValues::empty(),
+                remote_bindings: &HashMap::new(),
+                wait_aliases: &[],
+            });
+            let resolved = with_session_for_test(&context, |session| {
+                resolve_ref_value_with_config(&authored, &bindings, session)
+            })
+            .unwrap();
+            assert_eq!(resolved, string(&format!("{value}{suffix}")));
+            let checked = check_type_expr_value(expected, &resolved, &context, expression)
+                .require_provider_schemas();
+            assert_eq!(
+                checked.is_ok(),
+                accepted,
+                "{interpolation}, {value:?}: {checked:?}"
+            );
+            if let Err(error) = checked {
+                assert!(
+                    error.to_string().contains(NAME_IDENTITIES[0]),
+                    "{interpolation}, {value:?}: {error}"
+                );
+            }
+        }
+        assert!(!authored.is_fully_resolved());
+    }
+}
+
+#[test]
+fn let_bound_deferred_string_constructions_validate_at_each_name_sink() {
+    // The retained judgement follows string constructions through let bindings;
+    // their eventual values face the same constraints as inline constructions.
+    let alias = r#"let interpolated = "${x}-inline""#;
+    for site in 0..LITERAL_NAMES.len() {
         let mut names = LITERAL_NAMES;
         names[site] = "interpolated";
-        let fixture = name_fixture(&declarations, names);
-        let error = try_validate_fixtures(&[("iam_let_interpolation.crn", &fixture)])
-            .expect_err("a deferred interpolation bound to a let is inferred as String");
-        assert!(
-            error.contains(&format!("expected {identity}, got String")),
-            "site {site}: {error}"
-        );
+        for fixture in [
+            name_fixture(&format!("{PLAIN_STRING_OUTPUT}\n{alias}"), names),
+            module_name_fixture(
+                &format!("arguments {{ x: String = 'ValidName' }}\n{alias}"),
+                names,
+            ),
+        ] {
+            validate_fixtures(&[("iam_let_interpolation.crn", &fixture)]);
+        }
     }
 }
 

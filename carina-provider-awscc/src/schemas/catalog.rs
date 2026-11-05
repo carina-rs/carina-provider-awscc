@@ -175,7 +175,7 @@ fn validated_logs_log_group_name(identity: TypeIdentity) -> AttributeType {
 }
 
 fn validated_organizations_account_email(identity: TypeIdentity) -> AttributeType {
-    // Use a separate AWSCC identity so core Email stays unbounded. Preserve
+    // Use the shared AWS identity so core Email stays unbounded. Preserve
     // core's grammar for historical reads, without CreateAccount-only rules.
     // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-Email
     refined_string_with_validator(
@@ -471,9 +471,7 @@ carina_aws_types::define_aws_type_catalog! {
         },
         /// Organizations Account email, with core email validation and API bounds.
         OrganizationsAccountEmail => organizations_account_email {
-            segments: ["organizations", "Account"],
-            kind: "Email",
-            valid_sample: "admin+registry-dev@example.com",
+            refines: AwsType::OrganizationsAccountEmail,
             constructor: validated_organizations_account_email,
         },
         /// Organizations-created role name, excluding the service-linked role prefix.
@@ -507,9 +505,7 @@ carina_aws_types::define_aws_type_catalog! {
         },
         /// Cloud Control FlowLog aggregation interval enum.
         Ec2FlowLogMaxAggregationInterval => ec2_flow_log_max_aggregation_interval {
-            segments: ["ec2", "FlowLog"],
-            kind: "MaxAggregationInterval",
-            valid_sample: "60",
+            refines: AwsType::Ec2FlowLogMaxAggregationInterval,
             values: [60, 600],
             constructor: validated_int_enum,
         },
@@ -630,13 +626,18 @@ mod tests {
 
         for awscc_type in refinements {
             let attribute_type = awscc_type.attribute_type();
-            let RawShape::String {
-                identity: Some(identity),
-                validate: Some(_),
-                ..
-            } = attribute_type.raw_shape()
-            else {
-                panic!("AWSCC shared-identity refinement must retain its callback")
+            let identity = match attribute_type.raw_shape() {
+                RawShape::String {
+                    identity: Some(identity),
+                    validate: Some(_),
+                    ..
+                }
+                | RawShape::Int {
+                    identity: Some(identity),
+                    validate: Some(_),
+                    ..
+                } => identity,
+                _ => panic!("AWSCC shared-identity refinement must retain its callback"),
             };
             assert_eq!(identity, &awscc_type.refines().unwrap().identity());
         }
@@ -673,12 +674,12 @@ LogsLogGroupArn|aws|logs/LogGroup|Arn|None|arn:aws:logs:ap-northeast-1:123456789
 LogsLogGroupName|aws|logs/LogGroup|LogGroupName|None|/aws/lambda/example|None|crate::schemas::catalog::logs_log_group_name()
 Wafv2WebAclArn|aws|wafv2/WebAcl|Arn|None|arn:aws:wafv2:ap-northeast-1:123456789012:regional/webacl/example/12345678-1234-1234-1234-123456789abc|None|crate::schemas::catalog::wafv2_web_acl_arn()
 IamOidcProviderArn|aws|iam/OidcProvider|Arn|Some(IamOidcProviderArn)|arn:aws:iam::123456789012:oidc-provider/example.com|None|crate::schemas::catalog::iam_oidc_provider_arn()
-OrganizationsAccountArn|aws|organizations/Account|Arn|Some(OrganizationsAccountArn)|arn:aws:organizations::123456789012:account/o-example/123456789012|None|crate::schemas::catalog::organizations_account_arn()
-OrganizationsAccountEmail|aws|organizations/Account|Email|None|admin+registry-dev@example.com|None|crate::schemas::catalog::organizations_account_email()
+OrganizationsAccountArn|aws|organizations/Account|Arn|Some(OrganizationsAccountArn)|arn:aws:organizations::123456789012:account/o-exampleorgid/123456789012|None|crate::schemas::catalog::organizations_account_arn()
+OrganizationsAccountEmail|aws|organizations/Account|Email|Some(OrganizationsAccountEmail)|user@example.com|None|crate::schemas::catalog::organizations_account_email()
 OrganizationsAccountRoleName|aws|organizations/Account|RoleName|None|OrganizationAccountAccessRole|None|crate::schemas::catalog::organizations_account_role_name()
-OrganizationsOrganizationArn|aws|organizations/Organization|Arn|Some(OrganizationsOrganizationArn)|arn:aws:organizations::123456789012:organization/o-example|None|crate::schemas::catalog::organizations_organization_arn()
+OrganizationsOrganizationArn|aws|organizations/Organization|Arn|Some(OrganizationsOrganizationArn)|arn:aws:organizations::123456789012:organization/o-exampleorgid|None|crate::schemas::catalog::organizations_organization_arn()
 S3BucketArn|aws|s3/Bucket|Arn|Some(S3BucketArn)|arn:aws:s3:::example-bucket|None|crate::schemas::catalog::s3_bucket_arn()
-Ec2FlowLogMaxAggregationInterval|aws|ec2/FlowLog|MaxAggregationInterval|None|60|Some([60, 600])|crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()
+Ec2FlowLogMaxAggregationInterval|aws|ec2/FlowLog|MaxAggregationInterval|Some(Ec2FlowLogMaxAggregationInterval)|60|Some([60, 600])|crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()
 SchedulerScheduleGroupName|aws|scheduler/Schedule|GroupName|None|default|None|crate::schemas::catalog::scheduler_schedule_group_name()
 S3LifecycleDate|aws|s3/Bucket|LifecycleDate|None|2030-01-01T00:00:00Z|None|crate::schemas::catalog::s3_lifecycle_date()"#;
 

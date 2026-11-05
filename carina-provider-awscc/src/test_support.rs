@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use carina_core::binding_index::{BindingIndex, ResolvedBindings};
+use carina_core::config_loader::load_buffer_configuration;
 use carina_core::executor::{ModuleConstraintGate, ProviderPreparationContext};
 use carina_core::parser::{
     LoadedProviderContext, ProviderContext, ProviderCustomTypes, parse_file,
@@ -102,10 +103,12 @@ pub(crate) fn try_validate_fixtures(cases: &[(&str, &str)]) -> Result<(), String
     for (path, source) in cases {
         let mut parsed = parse_file(source, Path::new(path), context)
             .map_err(|error| format!("{path}: {error}"))?;
-        let binding_uses = check_bare_binding_uses(
-            &parsed,
-            &ValidationTypeContext::new(&parsed, &schemas, &loaded_context, &signatures),
-        );
+        let configuration = load_buffer_configuration(&parsed, &schemas, context);
+        let binding_uses = check_bare_binding_uses(&ValidationTypeContext::new(
+            configuration.judged(),
+            &loaded_context,
+            &signatures,
+        ));
         if !binding_uses.is_ready() {
             return Err(format!("{path}: {binding_uses}"));
         }
@@ -130,7 +133,8 @@ pub(crate) fn try_validate_fixtures(cases: &[(&str, &str)]) -> Result<(), String
         )
         .map_err(|error| format!("{path}: {error}"))?;
         let bindings = BindingIndex::from_parsed(&parsed, &schemas, context);
-        validate_resource_ref_types(&parsed, &schemas, &HashSet::new(), &bindings)
+        let configuration = load_buffer_configuration(&parsed, &schemas, context);
+        validate_resource_ref_types(configuration.judged(), &HashSet::new(), &bindings)
             .map_err(|error| format!("{path}: {error}"))?;
     }
     Ok(())
