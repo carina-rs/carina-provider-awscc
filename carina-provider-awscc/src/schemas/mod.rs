@@ -46,6 +46,9 @@ mod organizations_tests;
 mod pattern_tests;
 
 #[cfg(test)]
+mod region_domains_tests;
+
+#[cfg(test)]
 mod route53_tests;
 
 #[cfg(test)]

@@ -103,7 +103,7 @@ The Id of the scope this pool is a part of.
 
 ### `locale`
 
-- **Type:** Region
+- **Type:** String
 - **Required:** No
 - **Create-only:** Yes
 

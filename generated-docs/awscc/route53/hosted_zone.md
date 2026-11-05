@@ -84,6 +84,60 @@ Creates a configuration for DNS query logging. After you create a query logging 
 
 *Private hosted zones:* A complex type that contains information about the VPCs that are associated with the specified hosted zone. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``.
 
+## Enum Values
+
+### vp_cs.vpc_region (VPCRegion)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `us-east-1` | `aws.route53.HostedZone.VPCRegion.us_east_1` |
+| `us-east-2` | `aws.route53.HostedZone.VPCRegion.us_east_2` |
+| `us-west-1` | `aws.route53.HostedZone.VPCRegion.us_west_1` |
+| `us-west-2` | `aws.route53.HostedZone.VPCRegion.us_west_2` |
+| `eu-west-1` | `aws.route53.HostedZone.VPCRegion.eu_west_1` |
+| `eu-west-2` | `aws.route53.HostedZone.VPCRegion.eu_west_2` |
+| `eu-west-3` | `aws.route53.HostedZone.VPCRegion.eu_west_3` |
+| `eu-central-1` | `aws.route53.HostedZone.VPCRegion.eu_central_1` |
+| `eu-central-2` | `aws.route53.HostedZone.VPCRegion.eu_central_2` |
+| `ap-east-1` | `aws.route53.HostedZone.VPCRegion.ap_east_1` |
+| `me-south-1` | `aws.route53.HostedZone.VPCRegion.me_south_1` |
+| `us-gov-west-1` | `aws.route53.HostedZone.VPCRegion.us_gov_west_1` |
+| `us-gov-east-1` | `aws.route53.HostedZone.VPCRegion.us_gov_east_1` |
+| `us-iso-east-1` | `aws.route53.HostedZone.VPCRegion.us_iso_east_1` |
+| `us-iso-west-1` | `aws.route53.HostedZone.VPCRegion.us_iso_west_1` |
+| `us-isob-east-1` | `aws.route53.HostedZone.VPCRegion.us_isob_east_1` |
+| `me-central-1` | `aws.route53.HostedZone.VPCRegion.me_central_1` |
+| `ap-southeast-1` | `aws.route53.HostedZone.VPCRegion.ap_southeast_1` |
+| `ap-southeast-2` | `aws.route53.HostedZone.VPCRegion.ap_southeast_2` |
+| `ap-southeast-3` | `aws.route53.HostedZone.VPCRegion.ap_southeast_3` |
+| `ap-south-1` | `aws.route53.HostedZone.VPCRegion.ap_south_1` |
+| `ap-south-2` | `aws.route53.HostedZone.VPCRegion.ap_south_2` |
+| `ap-northeast-1` | `aws.route53.HostedZone.VPCRegion.ap_northeast_1` |
+| `ap-northeast-2` | `aws.route53.HostedZone.VPCRegion.ap_northeast_2` |
+| `ap-northeast-3` | `aws.route53.HostedZone.VPCRegion.ap_northeast_3` |
+| `eu-north-1` | `aws.route53.HostedZone.VPCRegion.eu_north_1` |
+| `sa-east-1` | `aws.route53.HostedZone.VPCRegion.sa_east_1` |
+| `ca-central-1` | `aws.route53.HostedZone.VPCRegion.ca_central_1` |
+| `cn-north-1` | `aws.route53.HostedZone.VPCRegion.cn_north_1` |
+| `cn-northwest-1` | `aws.route53.HostedZone.VPCRegion.cn_northwest_1` |
+| `af-south-1` | `aws.route53.HostedZone.VPCRegion.af_south_1` |
+| `eu-south-1` | `aws.route53.HostedZone.VPCRegion.eu_south_1` |
+| `eu-south-2` | `aws.route53.HostedZone.VPCRegion.eu_south_2` |
+| `ap-southeast-4` | `aws.route53.HostedZone.VPCRegion.ap_southeast_4` |
+| `il-central-1` | `aws.route53.HostedZone.VPCRegion.il_central_1` |
+| `ca-west-1` | `aws.route53.HostedZone.VPCRegion.ca_west_1` |
+| `ap-southeast-5` | `aws.route53.HostedZone.VPCRegion.ap_southeast_5` |
+| `mx-central-1` | `aws.route53.HostedZone.VPCRegion.mx_central_1` |
+| `us-isof-south-1` | `aws.route53.HostedZone.VPCRegion.us_isof_south_1` |
+| `us-isof-east-1` | `aws.route53.HostedZone.VPCRegion.us_isof_east_1` |
+| `ap-southeast-7` | `aws.route53.HostedZone.VPCRegion.ap_southeast_7` |
+| `ap-east-2` | `aws.route53.HostedZone.VPCRegion.ap_east_2` |
+| `eu-isoe-west-1` | `aws.route53.HostedZone.VPCRegion.eu_isoe_west_1` |
+| `ap-southeast-6` | `aws.route53.HostedZone.VPCRegion.ap_southeast_6` |
+| `us-isob-west-1` | `aws.route53.HostedZone.VPCRegion.us_isob_west_1` |
+
+Shorthand formats: `us_east_1` or `VPCRegion.us_east_1`
+
 ## Struct Definitions
 
 ### hosted_zone_config
@@ -116,7 +170,7 @@ Creates a configuration for DNS query logging. After you create a query logging 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `vpc_id` | VpcId | Yes | *Private hosted zones only:* The ID of an Amazon VPC. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
-| `vpc_region` | Region | Yes | *Private hosted zones only:* The region that an Amazon VPC was created in. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
+| `vpc_region` | [Enum (VPCRegion)](#vp_csvpc_region-vpcregion) | Yes | *Private hosted zones only:* The region that an Amazon VPC was created in. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
 
 ## Attribute Reference
 

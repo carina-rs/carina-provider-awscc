@@ -152,7 +152,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipam_scope_type_attribute());
     #[inline(never)]
     fn build_locale_attribute() -> AttributeSchema {
-        AttributeSchema::optional("locale", carina_aws_types::aws_region())
+        AttributeSchema::optional("locale", AttributeType::string())
                 .create_only()
                 .with_description("The region of this pool. If not set, this will default to \"None\" which will disable non-custom allocations. If the locale has been specified for the source pool, this value must match.")
                 .with_provider_name("Locale")

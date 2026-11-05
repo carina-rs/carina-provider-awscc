@@ -8,7 +8,7 @@ fn hosted_zone_vpcs_are_optional_but_cannot_be_explicitly_empty() {
             "single",
             r#"vp_cs = [{
   vpc_id = 'vpc-0123456789abcdef0'
-  vpc_region = aws.Region.ap_northeast_1
+  vpc_region = ap_northeast_1
 }]"#,
             true,
         ),
