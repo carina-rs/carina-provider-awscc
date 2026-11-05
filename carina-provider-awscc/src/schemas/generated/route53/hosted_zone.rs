@@ -7,6 +7,54 @@
 use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
+const VALID_VPC_VPC_REGION: &[&str] = &[
+    "us-east-1",
+    "us-east-2",
+    "us-west-1",
+    "us-west-2",
+    "eu-west-1",
+    "eu-west-2",
+    "eu-west-3",
+    "eu-central-1",
+    "eu-central-2",
+    "ap-east-1",
+    "me-south-1",
+    "us-gov-west-1",
+    "us-gov-east-1",
+    "us-iso-east-1",
+    "us-iso-west-1",
+    "us-isob-east-1",
+    "me-central-1",
+    "ap-southeast-1",
+    "ap-southeast-2",
+    "ap-southeast-3",
+    "ap-south-1",
+    "ap-south-2",
+    "ap-northeast-1",
+    "ap-northeast-2",
+    "ap-northeast-3",
+    "eu-north-1",
+    "sa-east-1",
+    "ca-central-1",
+    "cn-north-1",
+    "cn-northwest-1",
+    "af-south-1",
+    "eu-south-1",
+    "eu-south-2",
+    "ap-southeast-4",
+    "il-central-1",
+    "ca-west-1",
+    "ap-southeast-5",
+    "mx-central-1",
+    "us-isof-south-1",
+    "us-isof-east-1",
+    "ap-southeast-7",
+    "ap-east-2",
+    "eu-isoe-west-1",
+    "ap-southeast-6",
+    "us-isob-west-1",
+];
+
 /// Returns the schema config for route53_hosted_zone (AWS::Route53::HostedZone)
 #[rustfmt::skip]
 pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
@@ -74,7 +122,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_vp_cs_attribute() -> AttributeSchema {
         AttributeSchema::optional("vp_cs", AttributeType::refined_list(AttributeType::struct_("VPC".to_string(), vec![StructField::required("vpc_id", carina_aws_types::vpc_id()).with_description("*Private hosted zones only:* The ID of an Amazon VPC. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``.").with_provider_name("VPCId").build(),
-                    StructField::required("vpc_region", carina_aws_types::aws_region()).with_description("*Private hosted zones only:* The region that an Amazon VPC was created in. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``.").with_provider_name("VPCRegion").build()]), false, None, carina_core::schema::ListElements::Unique))
+                    StructField::required("vpc_region", AttributeType::enum_(carina_core::schema::enum_identity("VPCRegion", Some("aws.route53.HostedZone")), Some(vec!["us-east-1".to_string(), "us-east-2".to_string(), "us-west-1".to_string(), "us-west-2".to_string(), "eu-west-1".to_string(), "eu-west-2".to_string(), "eu-west-3".to_string(), "eu-central-1".to_string(), "eu-central-2".to_string(), "ap-east-1".to_string(), "me-south-1".to_string(), "us-gov-west-1".to_string(), "us-gov-east-1".to_string(), "us-iso-east-1".to_string(), "us-iso-west-1".to_string(), "us-isob-east-1".to_string(), "me-central-1".to_string(), "ap-southeast-1".to_string(), "ap-southeast-2".to_string(), "ap-southeast-3".to_string(), "ap-south-1".to_string(), "ap-south-2".to_string(), "ap-northeast-1".to_string(), "ap-northeast-2".to_string(), "ap-northeast-3".to_string(), "eu-north-1".to_string(), "sa-east-1".to_string(), "ca-central-1".to_string(), "cn-north-1".to_string(), "cn-northwest-1".to_string(), "af-south-1".to_string(), "eu-south-1".to_string(), "eu-south-2".to_string(), "ap-southeast-4".to_string(), "il-central-1".to_string(), "ca-west-1".to_string(), "ap-southeast-5".to_string(), "mx-central-1".to_string(), "us-isof-south-1".to_string(), "us-isof-east-1".to_string(), "ap-southeast-7".to_string(), "ap-east-2".to_string(), "eu-isoe-west-1".to_string(), "ap-southeast-6".to_string(), "us-isob-west-1".to_string()]), vec![("us-east-1".to_string(), "us_east_1".to_string()), ("us-east-2".to_string(), "us_east_2".to_string()), ("us-west-1".to_string(), "us_west_1".to_string()), ("us-west-2".to_string(), "us_west_2".to_string()), ("eu-west-1".to_string(), "eu_west_1".to_string()), ("eu-west-2".to_string(), "eu_west_2".to_string()), ("eu-west-3".to_string(), "eu_west_3".to_string()), ("eu-central-1".to_string(), "eu_central_1".to_string()), ("eu-central-2".to_string(), "eu_central_2".to_string()), ("ap-east-1".to_string(), "ap_east_1".to_string()), ("me-south-1".to_string(), "me_south_1".to_string()), ("us-gov-west-1".to_string(), "us_gov_west_1".to_string()), ("us-gov-east-1".to_string(), "us_gov_east_1".to_string()), ("us-iso-east-1".to_string(), "us_iso_east_1".to_string()), ("us-iso-west-1".to_string(), "us_iso_west_1".to_string()), ("us-isob-east-1".to_string(), "us_isob_east_1".to_string()), ("me-central-1".to_string(), "me_central_1".to_string()), ("ap-southeast-1".to_string(), "ap_southeast_1".to_string()), ("ap-southeast-2".to_string(), "ap_southeast_2".to_string()), ("ap-southeast-3".to_string(), "ap_southeast_3".to_string()), ("ap-south-1".to_string(), "ap_south_1".to_string()), ("ap-south-2".to_string(), "ap_south_2".to_string()), ("ap-northeast-1".to_string(), "ap_northeast_1".to_string()), ("ap-northeast-2".to_string(), "ap_northeast_2".to_string()), ("ap-northeast-3".to_string(), "ap_northeast_3".to_string()), ("eu-north-1".to_string(), "eu_north_1".to_string()), ("sa-east-1".to_string(), "sa_east_1".to_string()), ("ca-central-1".to_string(), "ca_central_1".to_string()), ("cn-north-1".to_string(), "cn_north_1".to_string()), ("cn-northwest-1".to_string(), "cn_northwest_1".to_string()), ("af-south-1".to_string(), "af_south_1".to_string()), ("eu-south-1".to_string(), "eu_south_1".to_string()), ("eu-south-2".to_string(), "eu_south_2".to_string()), ("ap-southeast-4".to_string(), "ap_southeast_4".to_string()), ("il-central-1".to_string(), "il_central_1".to_string()), ("ca-west-1".to_string(), "ca_west_1".to_string()), ("ap-southeast-5".to_string(), "ap_southeast_5".to_string()), ("mx-central-1".to_string(), "mx_central_1".to_string()), ("us-isof-south-1".to_string(), "us_isof_south_1".to_string()), ("us-isof-east-1".to_string(), "us_isof_east_1".to_string()), ("ap-southeast-7".to_string(), "ap_southeast_7".to_string()), ("ap-east-2".to_string(), "ap_east_2".to_string()), ("eu-isoe-west-1".to_string(), "eu_isoe_west_1".to_string()), ("ap-southeast-6".to_string(), "ap_southeast_6".to_string()), ("us-isob-west-1".to_string(), "us_isob_west_1".to_string())], None, None)).with_description("*Private hosted zones only:* The region that an Amazon VPC was created in. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``.").with_provider_name("VPCRegion").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("*Private hosted zones:* A complex type that contains information about the VPCs that are associated with the specified hosted zone. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``.")
                 .with_provider_name("VPCs")
                 .with_block_name("vp_c")
@@ -108,7 +156,10 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("route53.HostedZone", &[])
+    (
+        "route53.HostedZone",
+        &[("vpc_region", VALID_VPC_VPC_REGION)],
+    )
 }
 
 /// Returns the IAM permissions declared by the CloudFormation handler for this operation.

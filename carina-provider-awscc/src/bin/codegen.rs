@@ -3064,6 +3064,28 @@ fn namespace_with_struct_path(namespace: &str, struct_path: &[String]) -> String
     }
 }
 
+fn property_enum_identity(
+    cfn_type: &str,
+    path: CfnPropertyPath<'_>,
+    namespace: &str,
+    struct_path: &[String],
+    info: &EnumInfo,
+) -> (String, String) {
+    // #588 owns this enum at resource scope, retaining the documented acronym
+    // instead of deriving Vpc.VpcRegion from its enclosing VPC definition.
+    // Keep schema emission and Markdown enum references on the same identity.
+    if cfn_type == "AWS::Route53::HostedZone"
+        && path == CfnPropertyPath::new(Some("VPC"), "VPCRegion")
+    {
+        ("VPCRegion".to_string(), namespace.to_string())
+    } else {
+        (
+            info.type_name.clone(),
+            namespace_with_struct_path(namespace, struct_path),
+        )
+    }
+}
+
 /// Reserve the first source path of each cached `$ref` struct before overrides
 /// replace subtrees. List-item structs remain inline and keep their enclosing
 /// context; only their cached descendants share a definition identity.
@@ -4132,12 +4154,23 @@ fn collect_markdown_enums(
             MarkdownStructKey::Inline(_) => None,
         }
         .unwrap_or(&def_info.struct_path);
+        let (type_name, enum_namespace) = property_enum_identity(
+            &schema.type_name,
+            CfnPropertyPath::new(Some(&def_info.def_name), &source_key.field_name),
+            namespace,
+            identity_path,
+            info,
+        );
+        let info = EnumInfo {
+            type_name,
+            values: info.values.clone(),
+        };
         let key = register_markdown_enum(
             &mut markdown_enums,
-            namespace_with_struct_path(namespace, identity_path),
+            enum_namespace,
             heading_path,
             source_key.field_name.clone(),
-            info,
+            &info,
         )?;
         targets.struct_fields.insert(source_key.clone(), key);
     }
@@ -5113,7 +5146,13 @@ fn generate_attribute_type(
         let aliases = known_enum_aliases();
         let prop_aliases = aliases.get(prop_name);
         let dsl_aliases_code = dsl_aliases_code(&enum_info.values, prop_aliases);
-        let enum_namespace = namespace_with_struct_path(namespace, paths.structural);
+        let (enum_kind, enum_namespace) = property_enum_identity(
+            &schema.type_name,
+            property_path,
+            namespace,
+            paths.structural,
+            enum_info,
+        );
         let values_str = enum_info
             .values
             .iter()
@@ -5122,7 +5161,7 @@ fn generate_attribute_type(
             .join(", ");
         let enum_type = format!(
             r#"AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), Some(vec![{}]), {}, None, None)"#,
-            rust_lit(&enum_info.type_name),
+            rust_lit(&enum_kind),
             rust_lit(&enum_namespace),
             values_str,
             dsl_aliases_code
@@ -7536,7 +7575,6 @@ fn known_string_type_overrides() -> &'static HashMap<&'static str, &'static str>
         m.insert("ReplicaKmsKeyID", "carina_aws_types::kms_key_id()");
         m.insert("KmsKeyArn", "super::super::kms::key::arn()");
         m.insert("IpamId", "carina_aws_types::ipam_id()");
-        m.insert("Locale", "carina_aws_types::aws_region()");
         m.insert("BucketAccountId", "carina_aws_types::aws_account_id()");
         m
     });
@@ -8424,6 +8462,73 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::EC2::IPAMPool", "Cidr"),
             TypeOverride::StringType(OverrideTypeExpression::raw("types::cidr()")),
+        );
+        // Locale also accepts an AWS Local Zone's network border group. The
+        // CFN and EC2 request/response docs specify String without length or
+        // pattern constraints. IPAMPool is the only Locale in the cached schemas.
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-ipampool.html#cfn-ec2-ipampool-locale
+        // https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateIpamPool.html
+        // https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_IpamPool.html
+        m.insert(
+            ("AWS::EC2::IPAMPool", "Locale"),
+            TypeOverride::StringType(OverrideTypeExpression::raw("AttributeType::string()")),
+        );
+        // Copy the 45 VPCRegion values verbatim, in documentation order. This
+        // belongs to HostedZone's VPC definition, reached through VPCs items,
+        // rather than the shared aws.Region domain (awscc#588 / #572).
+        // The normal closed enum retains ap_northeast_1; quoted API strings
+        // and the old Region / aws.Region qualifiers require DSL migration.
+        // https://docs.aws.amazon.com/Route53/latest/APIReference/API_VPC.html
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-route53-hostedzone-vpc.html
+        m.insert(
+            ("AWS::Route53::HostedZone", "VPC.VPCRegion"),
+            TypeOverride::Enum(vec![
+                "us-east-1",
+                "us-east-2",
+                "us-west-1",
+                "us-west-2",
+                "eu-west-1",
+                "eu-west-2",
+                "eu-west-3",
+                "eu-central-1",
+                "eu-central-2",
+                "ap-east-1",
+                "me-south-1",
+                "us-gov-west-1",
+                "us-gov-east-1",
+                "us-iso-east-1",
+                "us-iso-west-1",
+                "us-isob-east-1",
+                "me-central-1",
+                "ap-southeast-1",
+                "ap-southeast-2",
+                "ap-southeast-3",
+                "ap-south-1",
+                "ap-south-2",
+                "ap-northeast-1",
+                "ap-northeast-2",
+                "ap-northeast-3",
+                "eu-north-1",
+                "sa-east-1",
+                "ca-central-1",
+                "cn-north-1",
+                "cn-northwest-1",
+                "af-south-1",
+                "eu-south-1",
+                "eu-south-2",
+                "ap-southeast-4",
+                "il-central-1",
+                "ca-west-1",
+                "ap-southeast-5",
+                "mx-central-1",
+                "us-isof-south-1",
+                "us-isof-east-1",
+                "ap-southeast-7",
+                "ap-east-2",
+                "eu-isoe-west-1",
+                "ap-southeast-6",
+                "us-isob-west-1",
+            ]),
         );
         // S3 ReplaceKeyPrefixWith is a free-form string, not an enum
         m.insert(
@@ -13611,6 +13716,68 @@ mod tests {
         let raw = std::fs::read_to_string(path).expect("cached CFN schema");
         let source: serde_json::Value = serde_json::from_str(&raw).expect("cached CFN schema JSON");
         ParsedCfnSchema::from_json(source).expect("cached CFN schema parses")
+    }
+
+    #[test]
+    fn test_region_domains_have_field_specific_cached_cfn_path_overrides() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Route53::HostedZone");
+        let path = CfnPropertyPath::new(Some("VPC"), "VPCRegion");
+        assert!(cfn_override_property(&schema, path).is_some());
+        assert_eq!(
+            schema.source()["properties"]["VPCs"]["items"]["$ref"],
+            "#/definitions/VPC"
+        );
+        let override_type =
+            resource_type_overrides().get(&("AWS::Route53::HostedZone", "VPC.VPCRegion"));
+        let Some(TypeOverride::Enum(values)) = override_type else {
+            panic!("HostedZone VPC.VPCRegion must have a resource-specific enum override");
+        };
+        assert_eq!(values.len(), 45);
+        for iso in [
+            "us-iso-east-1",
+            "us-iso-west-1",
+            "us-isob-east-1",
+            "us-isob-west-1",
+            "us-isof-east-1",
+            "us-isof-south-1",
+            "eu-isoe-west-1",
+        ] {
+            assert!(values.contains(&iso), "{iso}");
+        }
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let field = generated_budgets_field(&generated, "VPC.VPCRegion");
+        assert!(field.starts_with("AttributeType::enum_(carina_core::schema::enum_identity(\"VPCRegion\", Some(\"aws.route53.HostedZone\"))"));
+        assert!(!generated.contains("carina_aws_types::aws_region()"));
+        assert!(
+            generate_test_markdown(&schema, &schema.type_name)
+                .unwrap()
+                .contains("aws.route53.HostedZone.VPCRegion.us_isob_east_1")
+        );
+    }
+
+    #[test]
+    fn test_region_domains_locale_override_is_scoped_to_ipam_pool_string() {
+        assert!(!known_string_type_overrides().contains_key("Locale"));
+        assert_eq!(
+            resource_type_overrides().get(&("AWS::EC2::IPAMPool", "Locale")),
+            Some(&TypeOverride::StringType(OverrideTypeExpression::raw(
+                "AttributeType::string()"
+            )))
+        );
+        let schema = cfn_schema_for_codegen_tests("AWS::EC2::IPAMPool");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert!(
+            generated.contains("AttributeSchema::optional(\"locale\", AttributeType::string())")
+        );
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let locale_docs = markdown
+            .split_once("### `locale`")
+            .unwrap()
+            .1
+            .split("###")
+            .next()
+            .unwrap();
+        assert!(locale_docs.contains("- **Type:** String"));
     }
 
     #[test]
