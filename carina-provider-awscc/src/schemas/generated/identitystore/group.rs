@@ -22,7 +22,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_description_attribute());
     #[inline(never)]
     fn build_display_name_attribute() -> AttributeSchema {
-        AttributeSchema::required("display_name", AttributeType::refined_string(None, Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  ]+$".to_string()), Some((Some(1), Some(1024))), None))
+        AttributeSchema::required("display_name", crate::schemas::catalog::identitystore_group_display_name())
                 .with_description("A string containing the name of the group. This value is commonly displayed when the group is referenced.")
                 .with_provider_name("DisplayName")
             .build()

@@ -8,7 +8,7 @@
 use super::pattern::{ApprovedPattern, refined_string_with_validator};
 use carina_aws_types::AwsType;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, TypeIdentity, legacy_validator};
+use carina_core::schema::{AttributeType, CompiledPattern, TypeIdentity, legacy_validator};
 
 fn overlay_identity(segments: &[&str], kind: &str) -> TypeIdentity {
     TypeIdentity {
@@ -91,6 +91,45 @@ fn validated_int_enum(identity: TypeIdentity, valid_values: &'static [i64]) -> A
                 Err("Expected integer".to_string())
             }
         }),
+    )
+}
+
+fn validated_identitystore_group_display_name(identity: TypeIdentity) -> AttributeType {
+    // Preserve CFN's exact pattern and character bounds; reserved names are case-sensitive.
+    // https://docs.aws.amazon.com/singlesignon/latest/IdentityStoreAPIReference/API_CreateGroup.html#IdentityStore-CreateGroup-request-DisplayName
+    let pattern = ApprovedPattern::whole(r"^[\p{L}\p{M}\p{S}\p{N}\p{P}\t\n\r  ]+$");
+    let compiled_pattern = CompiledPattern::try_new(pattern.as_str())
+        .expect("IdentityStore Group.DisplayName pattern must compile");
+    refined_string_with_validator(
+        identity,
+        Some(pattern),
+        Some((Some(1), Some(1024))),
+        legacy_validator(move |value| {
+            let Value::Concrete(ConcreteValue::String(value)) = value else {
+                return Err("Expected string".to_string());
+            };
+            let value = value.expose_plaintext();
+            // SDK custom-type dispatch invokes the callback directly.
+            if !(1..=1024).contains(&value.chars().count()) {
+                return Err(
+                    "IdentityStore group display name must be between 1 and 1024 characters"
+                        .to_string(),
+                );
+            }
+            if !compiled_pattern.is_match(value) {
+                return Err(
+                    "IdentityStore group display name contains unsupported characters".to_string(),
+                );
+            }
+            if matches!(value, "Administrator" | "AWSAdministrators") {
+                return Err(
+                    "IdentityStore group display name must not be the reserved name Administrator or AWSAdministrators"
+                        .to_string(),
+                );
+            }
+            Ok(())
+        }),
+        None,
     )
 }
 
@@ -369,6 +408,13 @@ carina_aws_types::define_aws_type_catalog! {
                 "ecs",
             ),
         },
+        /// IdentityStore group display name, excluding the two reserved names.
+        IdentityStoreGroupDisplayName => identitystore_group_display_name {
+            segments: ["identitystore", "Group"],
+            kind: "DisplayName",
+            valid_sample: "admins",
+            constructor: validated_identitystore_group_display_name,
+        },
         /// CloudWatch Logs log-group ARN.
         LogsLogGroupArn => logs_log_group_arn {
             segments: ["logs", "LogGroup"],
@@ -622,6 +668,7 @@ DynamoDbTableArn|aws|dynamodb/Table|Arn|None|arn:aws:dynamodb:ap-northeast-1:123
 Ec2IpamPoolArn|aws|ec2/IpamPool|Arn|None|arn:aws:ec2:ap-northeast-1:123456789012:ipam-pool/ipam-pool-12345678|None|crate::schemas::catalog::ec2_ipam_pool_arn()
 Ec2IpamArn|aws|ec2/Ipam|Arn|None|arn:aws:ec2:ap-northeast-1:123456789012:ipam/ipam-12345678|None|crate::schemas::catalog::ec2_ipam_arn()
 EcsClusterArn|aws|ecs/Cluster|Arn|None|arn:aws:ecs:ap-northeast-1:123456789012:cluster/example|None|crate::schemas::catalog::ecs_cluster_arn()
+IdentityStoreGroupDisplayName|aws|identitystore/Group|DisplayName|None|admins|None|crate::schemas::catalog::identitystore_group_display_name()
 LogsLogGroupArn|aws|logs/LogGroup|Arn|None|arn:aws:logs:ap-northeast-1:123456789012:log-group:example|None|crate::schemas::catalog::logs_log_group_arn()
 LogsLogGroupName|aws|logs/LogGroup|LogGroupName|None|/aws/lambda/example|None|crate::schemas::catalog::logs_log_group_name()
 Wafv2WebAclArn|aws|wafv2/WebAcl|Arn|None|arn:aws:wafv2:ap-northeast-1:123456789012:regional/webacl/example/12345678-1234-1234-1234-123456789abc|None|crate::schemas::catalog::wafv2_web_acl_arn()

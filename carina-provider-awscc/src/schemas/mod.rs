@@ -34,6 +34,9 @@ mod elasticloadbalancingv2_tests;
 mod iam_tests;
 
 #[cfg(test)]
+mod identitystore_tests;
+
+#[cfg(test)]
 mod logs_tests;
 
 #[cfg(test)]

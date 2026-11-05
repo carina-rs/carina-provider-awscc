@@ -29,7 +29,7 @@ A string containing the description of the group.
 
 ### `display_name`
 
-- **Type:** String(pattern, len: 1..=1024)
+- **Type:** `aws.identitystore.Group.DisplayName`
 - **Required:** Yes
 
 A string containing the name of the group. This value is commonly displayed when the group is referenced.
