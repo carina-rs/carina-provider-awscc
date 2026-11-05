@@ -4,6 +4,7 @@
 #[allow(dead_code)]
 mod classification;
 
+use super::pattern::ApprovedPattern;
 use carina_aws_types::AwsType;
 use carina_core::schema::{CompiledAttributeType, CompiledResourceSchema, Shape, ShapeWalkBudget};
 use classification::{

@@ -27,7 +27,15 @@ fn repository_exclusion_filter_values_reject_invalid_characters_and_lengths() {
     let schema = schema();
     let filter = field(&schema, FILTER_VALUE_PATH);
     let too_long = "a".repeat(129);
-    for value in ["release/*", "a!", "release-*\n", "", &too_long] {
+    for value in [
+        "release/*",
+        "a!",
+        "!release-*",
+        " release-*",
+        "release-*\n",
+        "",
+        &too_long,
+    ] {
         assert!(filter.validate(&string(value)).is_err(), "{value:?}");
     }
 }

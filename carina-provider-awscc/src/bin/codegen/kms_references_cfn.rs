@@ -232,6 +232,38 @@ impl<'a> EmissionContext<'a> {
         })
     }
 
+    /// Keep pattern diagnostics and registry lookups tied to the exact JSON
+    /// leaf, through $refs, arrays, maps and merged/inline object traversal.
+    pub(super) fn pattern_source_path(
+        &self,
+        path: &[String],
+        source: Option<&str>,
+        cfn_path: CfnPropertyPath<'_>,
+    ) -> String {
+        if let Some(site) = self.sites.borrow().get(path)
+            && let Some(pointer) = site.sources.iter().find(|pointer| {
+                self.source
+                    .pointer(pointer)
+                    .and_then(|node| node.get("pattern"))
+                    .and_then(Value::as_str)
+                    .is_some_and(|pattern| Some(pattern) == source)
+            })
+        {
+            return pointer.clone();
+        }
+        // Isolated leaf tests and synthetic overlays may have no source site.
+        // The canonical CFN key still identifies the leaf in that case.
+        let mut pointer = cfn_path.source_pointer();
+        for _ in path
+            .iter()
+            .rev()
+            .take_while(|segment| segment.as_str() == "*")
+        {
+            pointer.push_str("/items");
+        }
+        pointer
+    }
+
     pub(super) fn definition_identity_path(&self, name: &str) -> Option<&[String]> {
         self.definition_identity_paths.get(name).map(Vec::as_slice)
     }
@@ -243,22 +275,43 @@ impl<'a> EmissionContext<'a> {
         })
     }
 
+    pub(super) fn begin_definition_enum_discovery(&self, definition: &str) {
+        assert!(self.enum_discovery);
+        // Definition pre-scans reuse paths such as [Name] for different
+        // definitions. Seed each scan at its actual source, not at resource
+        // properties with the same names, and discard the previous paths.
+        self.paths.borrow_mut().clear();
+        let sources = self.same_site_sources([pointer_child("/definitions", definition)]);
+        let mut sites = self.sites.borrow_mut();
+        sites.clear();
+        sites.insert(
+            Vec::new(),
+            EmittedSite {
+                sources,
+                evidence: Evidence::default(),
+            },
+        );
+    }
+
     pub(super) fn property_at<'b>(
         &'b self,
         path: &'b [String],
         property: &'b CfnProperty,
     ) -> EmissionProperty<'b> {
-        if !self.enum_discovery && !self.sites.borrow().contains_key(path) {
+        if !self.sites.borrow().contains_key(path) {
             let (name, parent_path) = path.split_last().expect("property path");
-            let parents = if parent_path.is_empty() {
-                self.same_site_sources([String::new()])
-            } else {
-                self.sites
-                    .borrow()
-                    .get(parent_path)
-                    .map(|site| site.sources.clone())
-                    .unwrap_or_default()
-            };
+            let parents = self
+                .sites
+                .borrow()
+                .get(parent_path)
+                .map(|site| site.sources.clone())
+                .unwrap_or_else(|| {
+                    if parent_path.is_empty() {
+                        self.same_site_sources([String::new()])
+                    } else {
+                        Vec::new()
+                    }
+                });
             let mut sources = Vec::new();
             let mut inherited = Evidence::default();
             for parent in parents {
@@ -345,10 +398,8 @@ impl<'a> EmissionContext<'a> {
         segment: PathSegment<'_>,
     ) -> Vec<String> {
         let path = super::extend_property_path(parent, "*");
-        if !self.enum_discovery {
-            let dsl_path = property_path(&self.dsl_path(parent), segment);
-            self.paths.borrow_mut().insert(path.clone(), dsl_path);
-        }
+        let dsl_path = property_path(&self.dsl_path(parent), segment);
+        self.paths.borrow_mut().insert(path.clone(), dsl_path);
         path
     }
 
@@ -439,14 +490,22 @@ impl<'a> EmissionContext<'a> {
         let entry = kms_references::entry(&self.resource, &self.dsl_path(path))
             .expect("classified reference");
         let Some(pattern) = entry.cfn_pattern else {
-            return kind.constructor(entry.cfn_length);
+            let pattern =
+                super::ApprovedPattern::whole(carina_aws_types::KMS_KEY_REFERENCE_PATTERN);
+            return kind.constructor(entry.cfn_length, &pattern);
         };
         let property = CfnProperty {
             pattern: Some(pattern.to_string()),
             ..Default::default()
         };
-        let constraints = string_constraints(&property, &self.schema.type_name, cfn_property_path);
-        let pattern = emit_pattern_option(constraints.pattern);
+        let source_path = self.pattern_source_path(path, Some(pattern), cfn_property_path);
+        let constraints = string_constraints(
+            &property,
+            &self.schema.type_name,
+            cfn_property_path,
+            &source_path,
+        );
+        let pattern = emit_pattern_option(constraints.pattern.as_ref());
         format!(
             "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), {pattern}, {:?})",
             entry.cfn_length
@@ -837,6 +896,56 @@ mod tests {
         );
         assert!(property.classify().unwrap().is_some());
         context.finish().unwrap();
+    }
+
+    #[test]
+    fn enum_discovery_pattern_provenance_tracks_definitions_maps_and_list_items() {
+        let mapping = json!({"type": "object", "patternProperties": {"x/y": {
+            "type": "object", "properties": {"Values": {
+                "type": "array", "items": {"type": "string", "pattern": "[a-z]+"}
+            }}
+        }}});
+        let schema = ParsedCfnSchema::from_json(json!({
+            "typeName": "AWS::Test::Resource",
+            "properties": {"Mapping": mapping},
+            "definitions": {
+                "First": {"type": "object", "properties": {"Mapping": mapping}},
+                "Second": {"type": "object", "properties": {"Mapping": mapping}}
+            }
+        }))
+        .unwrap();
+        let context = EmissionContext::from_source(&schema)
+            .unwrap()
+            .for_enum_discovery()
+            .unwrap();
+        for definition in ["First", "Second"] {
+            context.begin_definition_enum_discovery(definition);
+            let mapping = &schema.definitions.as_ref().unwrap()[definition]
+                .properties
+                .as_ref()
+                .unwrap()["Mapping"];
+            let root = ["Mapping".to_string()];
+            context.property_at(&root, mapping);
+            let value_path = context.collection_path(&root, PathSegment::MapValue);
+            let value = &mapping.pattern_properties.as_ref().unwrap()["x/y"];
+            context.property_at(&value_path, value);
+            let values_path = super::super::extend_property_path(&value_path, "Values");
+            let values = &value.properties.as_ref().unwrap()["Values"];
+            context.property_at(&values_path, values);
+            let item_path = context.collection_path(&values_path, PathSegment::ListElement);
+            let item = values.items.as_ref().unwrap();
+            context.property_at(&item_path, item);
+            assert_eq!(
+                context.pattern_source_path(
+                    &item_path,
+                    item.pattern.as_deref(),
+                    CfnPropertyPath::new(Some("Mapping"), "Values"),
+                ),
+                format!(
+                    "/definitions/{definition}/properties/Mapping/patternProperties/x~1y/properties/Values/items"
+                ),
+            );
+        }
     }
 
     #[test]

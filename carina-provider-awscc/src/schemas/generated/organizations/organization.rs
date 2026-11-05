@@ -54,7 +54,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_management_account_arn_attribute());
     #[inline(never)]
     fn build_management_account_email_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("management_account_email", AttributeType::refined_string(None, Some("[^\\s@]+@[^\\s@]+\\.[^\\s@]+".to_string()), Some((Some(6), Some(64))), None))
+        AttributeSchema::provider_populated("management_account_email", AttributeType::refined_string(None, Some("^(?:[^\\s@]+@[^\\s@]+\\.[^\\s@]+)\\z".to_string()), Some((Some(6), Some(64))), None))
                 .with_description("The email address that is associated with the AWS account that is designated as the management account for the organization. (read-only)")
                 .with_provider_name("ManagementAccountEmail")
             .build()

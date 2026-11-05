@@ -4,6 +4,7 @@
 //! `$ref` names never replace the use site's path. The final-registry coverage
 //! test imports this same module, including its path and candidate rules.
 
+use super::ApprovedPattern;
 use anyhow::{Result, bail};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,12 +29,23 @@ impl ReferenceKind {
         length
     }
 
-    pub fn constructor(self, cfn_length: Option<(Option<u64>, Option<u64>)>) -> String {
+    pub fn constructor(
+        self,
+        cfn_length: Option<(Option<u64>, Option<u64>)>,
+        pattern: &ApprovedPattern,
+    ) -> String {
         if cfn_length.is_none() || cfn_length == self.default_length() {
             return "carina_aws_types::kms_key_reference()".to_string();
         }
+        let pattern = if pattern.as_str() == carina_aws_types::KMS_KEY_REFERENCE_PATTERN {
+            // Retain the shared symbol in generated output after approving
+            // its exact value, avoiding unrelated generated-resource diffs.
+            "Some(carina_aws_types::KMS_KEY_REFERENCE_PATTERN.to_string())".to_string()
+        } else {
+            format!("Some({:?}.to_string())", pattern.as_str())
+        };
         format!(
-            "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some(carina_aws_types::KMS_KEY_REFERENCE_PATTERN.to_string()), {cfn_length:?})"
+            "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), {pattern}, {cfn_length:?})"
         )
     }
 

@@ -3,6 +3,7 @@
 //! These types live here, instead of in `carina_aws_types`, until another
 //! provider needs the same Cloud Control document shapes.
 
+use super::pattern::{ApprovedPattern, refined_string};
 use carina_core::schema::{AttributeType, StructField, enum_identity};
 
 fn string_enum(name: &str, namespace: &str, values_and_aliases: &[(&str, &str)]) -> AttributeType {
@@ -28,9 +29,11 @@ pub fn organizations_account_parent_id() -> AttributeType {
     // Group the alternatives so both anchors apply to root and OU IDs alike.
     // The 100-character cap is an item limit, not a list count.
     // https://docs.aws.amazon.com/organizations/latest/APIReference/API_Parent.html#organizations-Type-Parent-Id
-    AttributeType::refined_string(
+    refined_string(
         None,
-        Some(r"^(?:r-[0-9a-z]{4,32}|ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})\z".to_string()),
+        Some(ApprovedPattern::whole(
+            r"^(?:r-[0-9a-z]{4,32}|ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})\z",
+        )),
         Some((None, Some(100))),
         None,
     )
@@ -42,9 +45,9 @@ pub fn s3_object_size() -> AttributeType {
     // Cloud Control GetResource, carina-test-001, ap-northeast-1, 2026-11-04,
     // returned ObjectSizeGreaterThan/LessThan as "128" / "1048576".
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_LifecycleRuleFilter.html
-    AttributeType::refined_string(
+    refined_string(
         None,
-        Some(r"^(?:0|[1-9][0-9]*)\z".to_string()),
+        Some(ApprovedPattern::whole(r"^(?:0|[1-9][0-9]*)\z")),
         Some((None, Some(20))),
         None,
     )
