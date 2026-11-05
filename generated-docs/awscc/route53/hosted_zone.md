@@ -79,7 +79,7 @@ Creates a configuration for DNS query logging. After you create a query logging 
 
 ### `vp_cs`
 
-- **Type:** List\<[Struct(VPC)](#vp_cs-1)\>
+- **Type:** List\<[Struct(VPC)](#vp_cs-1)\> (items: 1..)
 - **Required:** No
 
 *Private hosted zones:* A complex type that contains information about the VPCs that are associated with the specified hosted zone. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``.

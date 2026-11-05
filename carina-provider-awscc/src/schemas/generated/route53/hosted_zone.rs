@@ -74,7 +74,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_vp_cs_attribute() -> AttributeSchema {
         AttributeSchema::optional("vp_cs", AttributeType::refined_list(AttributeType::struct_("VPC".to_string(), vec![StructField::required("vpc_id", carina_aws_types::vpc_id()).with_description("*Private hosted zones only:* The ID of an Amazon VPC. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``.").with_provider_name("VPCId").build(),
-                    StructField::required("vpc_region", carina_aws_types::aws_region()).with_description("*Private hosted zones only:* The region that an Amazon VPC was created in. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``.").with_provider_name("VPCRegion").build()]), false, None, carina_core::schema::ListElements::Unique))
+                    StructField::required("vpc_region", carina_aws_types::aws_region()).with_description("*Private hosted zones only:* The region that an Amazon VPC was created in. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``.").with_provider_name("VPCRegion").build()]), false, Some((Some(1), None)), carina_core::schema::ListElements::Unique))
                 .with_description("*Private hosted zones:* A complex type that contains information about the VPCs that are associated with the specified hosted zone. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``.")
                 .with_provider_name("VPCs")
                 .with_block_name("vp_c")
