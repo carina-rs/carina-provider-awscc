@@ -4,6 +4,7 @@ pub mod awscc_types;
 pub mod catalog;
 pub mod config;
 pub mod generated;
+pub mod pattern;
 
 #[cfg(test)]
 mod kms_reference_tests;
@@ -37,6 +38,9 @@ mod logs_tests;
 
 #[cfg(test)]
 mod organizations_tests;
+
+#[cfg(test)]
+mod pattern_tests;
 
 #[cfg(test)]
 mod s3_tests;

@@ -5,6 +5,7 @@
 //! refinements that add AWSCC-specific validation. Its rows use the exported
 //! `carina_aws_types::define_aws_type_catalog` grammar shared with `AwsType`.
 
+use super::pattern::{ApprovedPattern, refined_string_with_validator};
 use carina_aws_types::AwsType;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeType, TypeIdentity, legacy_validator};
@@ -22,7 +23,7 @@ fn overlay_identity(segments: &[&str], kind: &str) -> TypeIdentity {
 
 fn validated_service_arn(
     identity: TypeIdentity,
-    pattern: &'static str,
+    pattern: ApprovedPattern,
     service: &'static str,
     resource_prefix: Option<&'static str>,
     label: &'static str,
@@ -32,9 +33,9 @@ fn validated_service_arn(
     // overlay identities and for callback-bearing refinements of shared rows.
     // Keep `label` to preserve the established `Invalid <service> ARN ...`
     // diagnostic emitted by the pre-catalog generated schemas.
-    AttributeType::refined_string_with_validator(
+    refined_string_with_validator(
         identity,
-        Some(pattern.to_string()),
+        Some(pattern),
         None,
         legacy_validator(move |value| {
             if let Value::Concrete(ConcreteValue::String(value)) = value {
@@ -51,16 +52,16 @@ fn validated_service_arn(
 
 fn validated_iam_arn(
     identity: TypeIdentity,
-    pattern: &'static str,
+    pattern: ApprovedPattern,
     resource_prefix: &'static str,
     label: &'static str,
 ) -> AttributeType {
     // The shared `iam_arn` AttributeType constructor is private as well. The
     // explicit label preserves AWSCC's `Invalid IAM OIDC Provider ARN ...`
     // prefix while the public shared validator supplies the detailed reason.
-    AttributeType::refined_string_with_validator(
+    refined_string_with_validator(
         identity,
-        Some(pattern.to_string()),
+        Some(pattern),
         None,
         legacy_validator(move |value| {
             if let Value::Concrete(ConcreteValue::String(value)) = value {
@@ -98,9 +99,9 @@ fn validated_logs_log_group_name(identity: TypeIdentity) -> AttributeType {
     // https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_CreateLogGroup.html
     // Live CreateLogGroup, carina-test-001, 2026-11-05: InvalidParameterException:
     // "Log groups starting with AWS/ are reserved for AWS."
-    AttributeType::refined_string_with_validator(
+    refined_string_with_validator(
         identity,
-        Some(r"^[.\-_/#A-Za-z0-9]{1,512}\z".to_string()),
+        Some(ApprovedPattern::whole(r"^[.\-_/#A-Za-z0-9]{1,512}\z")),
         Some((Some(1), Some(512))),
         legacy_validator(|value| {
             let Value::Concrete(ConcreteValue::String(value)) = value else {
@@ -138,7 +139,7 @@ fn validated_organizations_account_email(identity: TypeIdentity) -> AttributeTyp
     // Use a separate AWSCC identity so core Email stays unbounded. Preserve
     // core's grammar for historical reads, without CreateAccount-only rules.
     // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-Email
-    AttributeType::refined_string_with_validator(
+    refined_string_with_validator(
         identity,
         None,
         Some((Some(6), Some(64))),
@@ -164,9 +165,9 @@ fn validated_organizations_account_role_name(identity: TypeIdentity) -> Attribut
     // The reserved prefix is a callback check; the pattern needs no lookaround.
     // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-RoleName
     // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#API_CreateAccount_Errors
-    AttributeType::refined_string_with_validator(
+    refined_string_with_validator(
         identity,
-        Some(r"^[\w+=,.@-]+\z".to_string()),
+        Some(ApprovedPattern::whole(r"^[\w+=,.@-]+\z")),
         Some((Some(1), Some(64))),
         legacy_validator(|value| {
             let Value::Concrete(ConcreteValue::String(value)) = value else {
@@ -203,12 +204,11 @@ fn validated_s3_lifecycle_date(identity: TypeIdentity) -> AttributeType {
     // Cloud Control GetResource, carina-test-001, ap-northeast-1, 2026-11-04:
     // ExpirationDate was "2030-01-01T00:00:00Z" without fractional seconds.
     // Retain the .000Z spelling accepted by the cached iso8601UTC pattern too.
-    AttributeType::refined_string_with_validator(
+    refined_string_with_validator(
         identity,
-        Some(
-            r"^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T00:00:00(?:\.000)?Z\z"
-                .to_string(),
-        ),
+        Some(ApprovedPattern::whole(
+            r"^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T00:00:00(?:\.000)?Z\z",
+        )),
         None,
         legacy_validator(|value| {
             let Value::Concrete(ConcreteValue::String(value)) = value else {
@@ -272,7 +272,7 @@ fn validated_scheduler_schedule_group_name(identity: TypeIdentity) -> AttributeT
     // Deleting the group cascaded to the schedule; direct schedule deletion
     // through Cloud Control was not measured. Require a statically provable
     // default group so Carina never creates a resource it cannot read/track.
-    AttributeType::refined_string_with_validator(
+    refined_string_with_validator(
         identity,
         None,
         Some((Some(1), Some(64))),
@@ -311,7 +311,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:cloudfront::123456789012:distribution/E1234567890ABC",
             constructor: |identity| validated_service_arn(
                 identity,
-                "^arn:(aws|aws-cn|aws-us-gov):cloudfront::[^:]*:distribution/.+$",
+                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):cloudfront::[^:]*:distribution/.+$"),
                 "cloudfront",
                 Some("distribution/"),
                 "cloudfront",
@@ -324,7 +324,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:dynamodb:ap-northeast-1:123456789012:table/example",
             constructor: |identity| validated_service_arn(
                 identity,
-                "^arn:(aws|aws-cn|aws-us-gov):dynamodb:[^:]*:[^:]*:table/.+$",
+                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):dynamodb:[^:]*:[^:]*:table/.+$"),
                 "dynamodb",
                 Some("table/"),
                 "dynamodb",
@@ -337,7 +337,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:ec2:ap-northeast-1:123456789012:ipam-pool/ipam-pool-12345678",
             constructor: |identity| validated_service_arn(
                 identity,
-                "^arn:(aws|aws-cn|aws-us-gov):ec2:.*$",
+                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):ec2:.*$"),
                 "ec2",
                 None,
                 "ec2",
@@ -350,7 +350,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:ec2:ap-northeast-1:123456789012:ipam/ipam-12345678",
             constructor: |identity| validated_service_arn(
                 identity,
-                "^arn:(aws|aws-cn|aws-us-gov):ec2:.*$",
+                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):ec2:.*$"),
                 "ec2",
                 None,
                 "ec2",
@@ -363,7 +363,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:ecs:ap-northeast-1:123456789012:cluster/example",
             constructor: |identity| validated_service_arn(
                 identity,
-                "^arn:(aws|aws-cn|aws-us-gov):ecs:[^:]*:[^:]*:cluster/.+$",
+                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):ecs:[^:]*:[^:]*:cluster/.+$"),
                 "ecs",
                 Some("cluster/"),
                 "ecs",
@@ -376,7 +376,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:logs:ap-northeast-1:123456789012:log-group:example",
             constructor: |identity| validated_service_arn(
                 identity,
-                "^arn:(aws|aws-cn|aws-us-gov):logs:[^:]*:[^:]*:log-group:.+$",
+                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):logs:[^:]*:[^:]*:log-group:.+$"),
                 "logs",
                 Some("log-group:"),
                 "logs",
@@ -396,7 +396,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:wafv2:ap-northeast-1:123456789012:regional/webacl/example/12345678-1234-1234-1234-123456789abc",
             constructor: |identity| validated_service_arn(
                 identity,
-                "^arn:(aws|aws-cn|aws-us-gov):wafv2:.*$",
+                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):wafv2:.*$"),
                 "wafv2",
                 None,
                 "wafv2",
@@ -407,7 +407,7 @@ carina_aws_types::define_aws_type_catalog! {
             refines: AwsType::IamOidcProviderArn,
             constructor: |identity| validated_iam_arn(
                 identity,
-                "^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:oidc-provider/.+$",
+                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:oidc-provider/.+$"),
                 "oidc-provider/",
                 "IAM OIDC Provider",
             ),
@@ -417,7 +417,7 @@ carina_aws_types::define_aws_type_catalog! {
             refines: AwsType::OrganizationsAccountArn,
             constructor: |identity| validated_service_arn(
                 identity,
-                "^arn:(aws|aws-cn|aws-us-gov):organizations:.*$",
+                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):organizations:.*$"),
                 "organizations",
                 None,
                 "organizations",
@@ -442,7 +442,7 @@ carina_aws_types::define_aws_type_catalog! {
             refines: AwsType::OrganizationsOrganizationArn,
             constructor: |identity| validated_service_arn(
                 identity,
-                "^arn:(aws|aws-cn|aws-us-gov):organizations:.*$",
+                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):organizations:.*$"),
                 "organizations",
                 None,
                 "organizations",
@@ -453,7 +453,7 @@ carina_aws_types::define_aws_type_catalog! {
             refines: AwsType::S3BucketArn,
             constructor: |identity| validated_service_arn(
                 identity,
-                "^arn:(aws|aws-cn|aws-us-gov):s3:::.+$",
+                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):s3:::.+$"),
                 "s3",
                 None,
                 "s3",

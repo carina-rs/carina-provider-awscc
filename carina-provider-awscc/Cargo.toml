@@ -42,6 +42,7 @@ thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
 heck = "0.5"
 regex = "1"
+regex-syntax = "0.8"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 log = "0.4"

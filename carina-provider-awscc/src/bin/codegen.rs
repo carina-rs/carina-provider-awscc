@@ -18,6 +18,9 @@ use carina_core::schema::ListElements;
 use carina_docgen::example::{self, DocExample, ExampleKind};
 use carina_docgen::{Heading, PageBuilder, TableCell};
 use carina_provider_awscc::schemas::catalog::AwsccType;
+use carina_provider_awscc::schemas::pattern::{
+    ApprovedPattern, SUBSTRING_PATTERN_EXCEPTIONS, is_whole_anchored,
+};
 use clap::{Parser, ValueEnum};
 use heck::{ToPascalCase, ToSnakeCase};
 use regex::Regex;
@@ -37,8 +40,11 @@ mod kms_references;
 mod kms_references_cfn;
 use kms_references::PathSegment;
 use kms_references_cfn::{EmissionContext, EmissionProperty};
+#[path = "codegen/override_type_expression.rs"]
+mod override_type_expression;
 #[path = "codegen/parsed_cfn_schema.rs"]
 mod parsed_cfn_schema;
+use override_type_expression::{OverrideTypeExpression, PatternLiteral};
 use parsed_cfn_schema::ParsedCfnSchema;
 
 // carina#3340: in-progress recursion guard for cyclic CFN $ref
@@ -241,12 +247,12 @@ use override_type_display::OverrideTypeDisplay;
 #[derive(Debug, Clone, PartialEq)]
 enum TypeOverride {
     /// Override to a specific string type (e.g., "super::super::iam::role::arn()")
-    StringType(&'static str),
+    StringType(OverrideTypeExpression),
     /// Replace the whole generated attribute type and its Markdown display.
     /// Used when the CFN schema omits enough shape information that normal
     /// inference cannot express the provider API type.
     AttributeType {
-        expression: &'static str,
+        expression: OverrideTypeExpression,
         display: OverrideTypeDisplay,
         block_name: Option<&'static str>,
         default: Option<AttributeTypeOverrideDefault>,
@@ -255,14 +261,14 @@ enum TypeOverride {
     /// it from every use, retaining one defining site for its enum identities.
     NamedAttributeType {
         name: &'static str,
-        expression: &'static str,
+        expression: OverrideTypeExpression,
         display: OverrideTypeDisplay,
     },
     /// Override an array's item type while retaining the CFN array constraints.
     /// Omitted item-count bounds retain CFN's limits; explicit bounds may only tighten.
     /// Display, block name, and default describe the complete attribute.
     ArrayItemType {
-        expression: &'static str,
+        expression: OverrideTypeExpression,
         display: OverrideTypeDisplay,
         block_name: Option<&'static str>,
         default: Option<AttributeTypeOverrideDefault>,
@@ -327,27 +333,39 @@ impl TypeOverride {
         matches!(self, Self::Array { .. } | Self::ArrayItemType { .. })
     }
 
-    fn attribute_type_expression(&self) -> Option<&'static str> {
+    fn attribute_type_expression(&self) -> Option<&str> {
         match self {
-            Self::StringType(expression)
-            | Self::AttributeType { expression, .. }
-            | Self::NamedAttributeType { expression, .. } => Some(expression),
+            Self::StringType(expression) => Some(expression.as_str()),
+            Self::AttributeType { expression, .. }
+            | Self::NamedAttributeType { expression, .. } => Some(expression.as_str()),
             _ => None,
         }
     }
 
-    fn array_item_type_expression(&self) -> Option<&'static str> {
+    fn array_item_type_expression(&self) -> Option<&str> {
         match self.item_override() {
-            Self::ArrayItemType { expression, .. } => Some(expression),
+            Self::ArrayItemType { expression, .. } => Some(expression.as_str()),
             _ => None,
         }
     }
 
-    fn display(&self) -> Option<OverrideTypeDisplay> {
+    fn display(&self) -> Option<String> {
         match self.item_override() {
-            Self::AttributeType { display, .. }
-            | Self::NamedAttributeType { display, .. }
-            | Self::ArrayItemType { display, .. } => Some(*display),
+            Self::AttributeType {
+                expression,
+                display,
+                ..
+            }
+            | Self::NamedAttributeType {
+                expression,
+                display,
+                ..
+            }
+            | Self::ArrayItemType {
+                expression,
+                display,
+                ..
+            } => Some(expression.normalized_display(display.as_str()).into_owned()),
             _ => None,
         }
     }
@@ -378,12 +396,43 @@ impl TypeOverride {
         }
     }
 
+    fn validate_patterns(&self, schema: &CfnSchema, path: CfnPropertyPath<'_>) -> Result<()> {
+        let expression = match self.item_override() {
+            Self::StringType(expression)
+            | Self::AttributeType { expression, .. }
+            | Self::NamedAttributeType { expression, .. }
+            | Self::ArrayItemType { expression, .. } => expression,
+            _ => return Ok(()),
+        };
+        let mut source_path = path.source_pointer();
+        if self.requires_array_source() {
+            source_path.push_str("/items");
+        }
+        for pattern in expression.patterns() {
+            carina_core::schema::CompiledPattern::try_new(pattern.as_str()).with_context(|| {
+                format!(
+                    "Invalid override string pattern for {}#{source_path}: {}",
+                    schema.type_name,
+                    pattern.as_str(),
+                )
+            })?;
+            anyhow::ensure!(
+                is_whole_anchored(pattern.as_str()),
+                "Unapproved override string pattern for {}#{source_path}: {}",
+                schema.type_name,
+                pattern.as_str(),
+            );
+        }
+        Ok(())
+    }
+
     fn validate_source_shape(
         &self,
         schema: &CfnSchema,
         path: CfnPropertyPath<'_>,
         property: &CfnProperty,
     ) -> Result<()> {
+        self.validate_patterns(schema, path)?;
         match self {
             Self::ArrayItemType { .. } | Self::Array { .. } => {
                 self.array_source(schema, path, property)?;
@@ -1201,6 +1250,18 @@ impl<'a> CfnPropertyPath<'a> {
     fn owned_key(self) -> (Option<String>, String) {
         (self.parent.map(str::to_string), self.property.to_string())
     }
+
+    fn source_pointer(self) -> String {
+        let escape = |segment: &str| segment.replace('~', "~0").replace('/', "~1");
+        match self.parent {
+            Some(parent) => format!(
+                "/definitions/{}/properties/{}",
+                escape(parent),
+                escape(self.property),
+            ),
+            None => format!("/properties/{}", escape(self.property)),
+        }
+    }
 }
 
 impl std::fmt::Display for CfnPropertyPath<'_> {
@@ -1703,7 +1764,7 @@ fn classify_bare_object(
     }) = resource_type_override(cfn_type, property_path)
     {
         matches.push(BareObjectClassification::TypedOverride {
-            expression,
+            expression: expression.as_str(),
             display: *display,
         });
     }
@@ -2361,6 +2422,7 @@ fn main() -> Result<()> {
     let source: serde_json::Value =
         serde_json::from_str(&schema_json).context("Failed to parse CloudFormation schema JSON")?;
     let schema = ParsedCfnSchema::from_json(source)?;
+    validate_pattern_registry_sources(&schema)?;
 
     if !schema.is_cloud_control_provisionable() {
         eprintln!(
@@ -3112,7 +3174,7 @@ fn infer_string_type_display(prop_name: &str, resource_type: &str) -> String {
     if let Some(TypeOverride::StringType(override_type)) =
         resource_type_override(resource_type, CfnPropertyPath::new(None, prop_name))
     {
-        return override_type_to_display_name(override_type).to_string();
+        return override_type_to_display_name(override_type.as_str()).to_string();
     }
     // Check known string type overrides
     let string_overrides = known_string_type_overrides();
@@ -3811,7 +3873,7 @@ fn override_type_display(
     override_type: Option<&TypeOverride>,
 ) -> Option<String> {
     let override_type = override_type?;
-    let display = override_type.display()?.as_str();
+    let display = override_type.display()?;
     let limits = if override_type.requires_array_source() {
         let array = override_type
             .array_source(schema, path, property)
@@ -4918,7 +4980,7 @@ fn generate_attribute_type(
                 .or_insert_with(|| (*expression).to_string());
             assert_eq!(
                 body.as_str(),
-                *expression,
+                expression.as_str(),
                 "conflicting local type definition {name}"
             );
         });
@@ -5143,6 +5205,7 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
     if let Some(definitions) = &schema.definitions {
         for (def_name, def) in definitions {
             if let Some(props) = &def.properties {
+                enum_schema.begin_definition_enum_discovery(def_name);
                 for (field_name, field_prop) in props {
                     if is_deprecated_property(field_prop) {
                         continue;
@@ -6581,6 +6644,10 @@ fn range_display_string(min: Option<i64>, max: Option<i64>) -> String {
 /// Check if a regex pattern represents a numeric string (digits only).
 /// Matches patterns like "[0-9]+", "^[0-9]+$", "^\d+$", etc.
 fn is_numeric_string_pattern(pattern: &str) -> bool {
+    let pattern = pattern
+        .strip_prefix("^(?:")
+        .and_then(|pattern| pattern.strip_suffix(r")\z"))
+        .unwrap_or(pattern);
     matches!(
         pattern,
         "[0-9]+" | "^[0-9]+$" | "\\d+" | "^\\d+$" | "[0-9]*" | "^[0-9]*$"
@@ -6650,7 +6717,7 @@ fn string_length_display(min: Option<u64>, max: Option<u64>) -> String {
 
 struct StringPatternRewrite {
     cfn_type: &'static str,
-    property_path: CfnPropertyPath<'static>,
+    source_paths: &'static [&'static str],
     source: &'static str,
     pattern: &'static str,
     length: Option<(u64, u64)>,
@@ -6658,29 +6725,30 @@ struct StringPatternRewrite {
 
 #[cfg(test)]
 thread_local! {
-    static USED_STRING_PATTERN_REWRITES: RefCell<BTreeSet<(&'static str, CfnPropertyPath<'static>)>> =
+    static USED_STRING_PATTERN_REWRITES: RefCell<BTreeSet<(&'static str, &'static str)>> =
         const { RefCell::new(BTreeSet::new()) };
 }
 
-/// Exact CFN paths and sources: an upstream change must be reviewed rather
-/// than inheriting a rewrite reviewed for another regex.
+/// Registered CFN pointers detect upstream changes. Translate an exact source
+/// wherever it is emitted in the resource, including through refs and items.
 const STRING_PATTERN_REWRITES: &[StringPatternRewrite] = &[
     StringPatternRewrite {
         cfn_type: "AWS::Scheduler::Schedule",
-        property_path: CfnPropertyPath::new(Some("EventBridgeParameters"), "Source"),
+        source_paths: &["/definitions/EventBridgeParameters/properties/Source"],
         source: r"^(?=[/\.\-_A-Za-z0-9]+)((?!aws\.).*)|(\$(\.[\w_-]+(\[(\d+|\*)\])*)*)$",
-        // Preserve ^A|B$ precedence and search semantics. A only requires an
-        // allowed *first* character and excludes the fixed prefix `aws.`;
-        // its .* may match zero characters. Enumerate the first mismatch
-        // against that prefix, including the shorter strings a/aw/aws.
-        // B remains an unanchored JSON-path suffix, including a bare `$`.
-        // Spell out ECMAScript's ASCII \w and \d for Rust's Unicode engine.
-        pattern: r"^(?:[/.\-_A-Zb-z0-9]|a(?:\z|[^w])|aw(?:\z|[^s])|aws(?:\z|[^.]))|(\$(\.[0-9A-Za-z_-]+(\[([0-9]+|\*)\])*)*)$",
+        // At whole-value sites, keep the first branch's full match, including
+        // its .* suffix. Prefix mismatch classes exclude LF, which that suffix
+        // cannot consume. Only the exact exception site below retains the
+        // reviewed search language instead of these complete matches.
+        pattern: concat!(
+            r"^(?:[/.\-_A-Zb-z0-9].*|a(?:[^w\n].*)?|aw(?:[^s\n].*)?|aws(?:[^.\n].*)?",
+            r"|\$(\.[0-9A-Za-z_-]+(\[([0-9]+|\*)\])*)*)\z",
+        ),
         length: None,
     },
     StringPatternRewrite {
         cfn_type: "AWS::Logs::LogGroup",
-        property_path: CfnPropertyPath::new(None, "LogGroupName"),
+        source_paths: &["/properties/LogGroupName"],
         source: r"^[.\-_/#A-Za-z0-9]{1,512}\Z",
         // Deliberately read \Z as the intended strict end of text (\z).
         // This is not dialect equivalence: ECMAScript reads \Z as literal Z.
@@ -6689,7 +6757,7 @@ const STRING_PATTERN_REWRITES: &[StringPatternRewrite] = &[
     },
     StringPatternRewrite {
         cfn_type: "AWS::Logs::LogGroup",
-        property_path: CfnPropertyPath::new(None, "KmsKeyId"),
+        source_paths: &["/properties/KmsKeyId"],
         source: r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\Z",
         // Use the same strict end-of-text interpretation as LogGroupName.
         pattern: r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z",
@@ -6697,7 +6765,7 @@ const STRING_PATTERN_REWRITES: &[StringPatternRewrite] = &[
     },
     StringPatternRewrite {
         cfn_type: "AWS::SSO::PermissionSet",
-        property_path: CfnPropertyPath::new(None, "SessionDuration"),
+        source_paths: &["/properties/SessionDuration"],
         source: r"^(-?)P(?=\d|T\d)(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)([DW]))?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$",
         // Choose the first present date component, or a time-only duration
         // with a required first time component. A date may still end in a
@@ -6713,44 +6781,143 @@ const STRING_PATTERN_REWRITES: &[StringPatternRewrite] = &[
     },
     StringPatternRewrite {
         cfn_type: "AWS::ECR::Repository",
-        property_path: CfnPropertyPath::new(None, "RepositoryName"),
+        source_paths: &["/properties/RepositoryName"],
         source: r"^(?=.{2,256}$)([a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*(\/[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*)*)$",
         // The remaining anchored language is ASCII and contains no newline,
         // so the look-ahead is exactly a total string length constraint.
         pattern: r"^([a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*(\/[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*)*)$",
         length: Some((2, 256)),
     },
+    StringPatternRewrite {
+        cfn_type: "AWS::WAFv2::WebACL",
+        source_paths: &[
+            "/definitions/RateLimitCookie/properties/Name",
+            "/definitions/RateLimitHeader/properties/Name",
+            "/definitions/RateLimitQueryArgument/properties/Name",
+            "/definitions/ManagedRuleGroupConfig/properties/LoginPath",
+            "/definitions/ResponseInspectionHeader/properties/Name",
+            "/definitions/ResponseInspectionHeader/properties/SuccessValues/items",
+            "/definitions/ResponseInspectionHeader/properties/FailureValues/items",
+            "/definitions/ResponseInspectionBodyContains/properties/SuccessStrings/items",
+            "/definitions/ResponseInspectionBodyContains/properties/FailureStrings/items",
+            "/definitions/ResponseInspectionJson/properties/Identifier",
+            "/definitions/ResponseInspectionJson/properties/SuccessValues/items",
+            "/definitions/ResponseInspectionJson/properties/FailureValues/items",
+            "/definitions/FieldIdentifier/properties/Identifier",
+            "/definitions/HeaderMatchPattern/properties/IncludedHeaders/items",
+            "/definitions/HeaderMatchPattern/properties/ExcludedHeaders/items",
+            "/definitions/CookieMatchPattern/properties/IncludedCookies/items",
+            "/definitions/CookieMatchPattern/properties/ExcludedCookies/items",
+        ],
+        source: r".*\S.*",
+        // Both languages accept iff the value contains a \S character:
+        // the original search can match just that character (both .* empty),
+        // and [\s\S]* consumes any prefix/suffix in the whole-value form.
+        // Newlines anywhere are accepted in both iff a \S exists; empty and
+        // whitespace-only values are rejected in both. Blindly wrapping the
+        // original would instead reject LF because . cannot consume it.
+        pattern: r"^[\s\S]*\S[\s\S]*\z",
+        length: None,
+    },
 ];
 
-struct StringConstraints<'a> {
-    pattern: Option<&'a str>,
+/// Check the original JSON even when an override replaces the CFN type. Run
+/// before either CLI output mode, so stale rows cannot silently become unused.
+fn validate_pattern_registry_sources(schema: &ParsedCfnSchema) -> Result<()> {
+    let check = |path: &str, expected: &str, kind: &str| -> Result<()> {
+        let actual = schema
+            .source()
+            .pointer(path)
+            .and_then(|node| node.get("pattern"));
+        anyhow::ensure!(
+            actual.and_then(serde_json::Value::as_str) == Some(expected),
+            "stale {kind} for {}#{path}: expected regex {expected}; found {actual:?}",
+            schema.type_name,
+        );
+        Ok(())
+    };
+    for rewrite in STRING_PATTERN_REWRITES
+        .iter()
+        .filter(|row| row.cfn_type == schema.type_name)
+    {
+        for &path in rewrite.source_paths {
+            check(path, rewrite.source, "string pattern rewrite")?;
+            #[cfg(test)]
+            USED_STRING_PATTERN_REWRITES.with(|used| {
+                used.borrow_mut().insert((rewrite.cfn_type, path));
+            });
+        }
+    }
+    for exception in SUBSTRING_PATTERN_EXCEPTIONS
+        .iter()
+        .filter(|row| row.resource_type == schema.type_name)
+    {
+        check(
+            exception.source_path,
+            exception.source,
+            "substring pattern exception",
+        )?;
+    }
+    Ok(())
+}
+
+struct StringConstraints {
+    pattern: Option<ApprovedPattern>,
     min_length: Option<u64>,
     max_length: Option<u64>,
 }
 
 /// The single CFN-to-emitted-pattern seam, shared by Rust and Markdown.
 /// Never strip unsupported regex syntax: preserve its constraint explicitly
-/// and compile the result with Carina's schema-pattern dialect before emission.
-fn string_constraints<'a>(
-    prop: &'a CfnProperty,
+/// and compile the normalized result in Carina's schema-pattern dialect.
+fn string_constraints(
+    prop: &CfnProperty,
     cfn_type: &str,
     property_path: CfnPropertyPath<'_>,
-) -> StringConstraints<'a> {
+    source_path: &str,
+) -> StringConstraints {
     let mut constraints = StringConstraints {
-        pattern: prop.pattern.as_deref(),
+        pattern: None,
         min_length: prop.min_length,
         max_length: prop.max_length,
     };
+    let source_pattern = prop.pattern.as_deref();
+    let canonical_source_path = property_path.source_pointer();
+    // Source provenance may move through refs, oneOf and collection items.
+    // Retain the logical property check as well as the exact source-site check,
+    // before normalization can accept a changed but compilable source.
+    for rewrite in STRING_PATTERN_REWRITES.iter().filter(|rewrite| {
+        rewrite.cfn_type == cfn_type
+            && (rewrite.source_paths.contains(&source_path)
+                || rewrite
+                    .source_paths
+                    .contains(&canonical_source_path.as_str()))
+    }) {
+        assert_eq!(
+            source_pattern,
+            Some(rewrite.source),
+            "CloudFormation pattern changed for {cfn_type}.{property_path}#{source_path}; expected regex {}; review the string pattern rewrite",
+            rewrite.source,
+        );
+    }
+    for exception in SUBSTRING_PATTERN_EXCEPTIONS.iter().filter(|exception| {
+        exception.resource_type == cfn_type
+            && (exception.source_path == source_path
+                || exception.source_path == canonical_source_path)
+    }) {
+        assert_eq!(
+            source_pattern,
+            Some(exception.source),
+            "CloudFormation pattern changed for {cfn_type}.{property_path}#{source_path}; expected regex {}; review the substring pattern exception",
+            exception.source,
+        );
+    }
+    let mut normalized = source_pattern;
     if let Some(rewrite) = STRING_PATTERN_REWRITES
         .iter()
-        .find(|rewrite| rewrite.cfn_type == cfn_type && rewrite.property_path == property_path)
+        .find(|rewrite| rewrite.cfn_type == cfn_type && source_pattern == Some(rewrite.source))
     {
-        assert_eq!(
-            constraints.pattern,
-            Some(rewrite.source),
-            "CloudFormation pattern changed for {cfn_type}.{property_path}; review the string pattern rewrite"
-        );
-        constraints.pattern = Some(rewrite.pattern);
+        normalized = Some(rewrite.pattern);
         if let Some((min, max)) = rewrite.length {
             let min = prop.min_length.map_or(min, |n| n.max(min));
             let max = prop.max_length.map_or(max, |n| n.min(max));
@@ -6758,19 +6925,33 @@ fn string_constraints<'a>(
             constraints.max_length = Some(max);
             assert!(
                 min <= max,
-                "Invalid string length bounds for {cfn_type}.{property_path}: {min} > {max}"
+                "Invalid string length bounds for {cfn_type}.{property_path}#{source_path}: {min} > {max}"
             );
         }
-        #[cfg(test)]
-        USED_STRING_PATTERN_REWRITES.with(|used| {
-            used.borrow_mut()
-                .insert((rewrite.cfn_type, rewrite.property_path));
-        });
     }
-    if let Some(pattern) = constraints.pattern {
+    if let Some(source) = normalized {
+        let approved = source_pattern
+            .and_then(|source| ApprovedPattern::substring_exception(cfn_type, source_path, source))
+            .unwrap_or_else(|| ApprovedPattern::whole(source));
+        let pattern = approved.as_str();
         carina_core::schema::CompiledPattern::try_new(pattern).unwrap_or_else(|error| {
-            panic!("Invalid string pattern for {cfn_type}.{property_path}: {error}")
+            panic!(
+                "Invalid string pattern for {cfn_type}.{property_path}#{source_path}, source regex {:?}, emitted {pattern:?}: {error}",
+                prop.pattern,
+            )
         });
+        assert!(
+            is_whole_anchored(pattern)
+                || SUBSTRING_PATTERN_EXCEPTIONS.iter().any(|exception| {
+                    exception.resource_type == cfn_type
+                        && exception.source_path == source_path
+                        && prop.pattern.as_deref() == Some(exception.source)
+                        && pattern == exception.emitted
+                }),
+            "Unapproved string pattern for {cfn_type}.{property_path}#{source_path}, source regex {:?}, emitted {pattern:?}",
+            prop.pattern,
+        );
+        constraints.pattern = Some(approved);
     }
     constraints
 }
@@ -6866,7 +7047,7 @@ enum StringLeaf<'a> {
         display_type: String,
     },
     Refined {
-        constraints: StringConstraints<'a>,
+        constraints: StringConstraints,
         format: Option<&'a str>,
         to_dsl: Option<&'static str>,
     },
@@ -6893,7 +7074,7 @@ impl StringLeaf<'_> {
                 (
                     refined_string_type(
                         "None",
-                        &emit_pattern_option(constraints.pattern),
+                        constraints.pattern.as_ref(),
                         &length,
                         to_dsl.unwrap_or("None"),
                     ),
@@ -6912,7 +7093,7 @@ impl StringLeaf<'_> {
                 format,
                 ..
             } => string_refinement_display(
-                constraints.pattern,
+                constraints.pattern.as_ref().map(ApprovedPattern::as_str),
                 constraints.min_length,
                 constraints.max_length,
                 *format,
@@ -7020,7 +7201,16 @@ fn string_leaf<'a>(
         None
     };
     StringLeaf::Refined {
-        constraints: string_constraints(prop, cfn_type, property_path),
+        constraints: string_constraints(
+            prop,
+            cfn_type,
+            property_path,
+            &classified.schema().pattern_source_path(
+                classified.path(),
+                prop.pattern.as_deref(),
+                property_path,
+            ),
+        ),
         format: prop.format.as_deref(),
         to_dsl,
     }
@@ -7061,10 +7251,10 @@ fn string_refinement_display(
 
 /// Format a validated pattern from `string_constraints` as a Rust literal.
 /// Escape quotes and backslashes without changing the regex itself.
-fn emit_pattern_option(pattern: Option<&str>) -> String {
+fn emit_pattern_option(pattern: Option<&ApprovedPattern>) -> String {
     match pattern {
         Some(p) => {
-            let escaped = p.replace('\\', "\\\\").replace('"', "\\\"");
+            let escaped = p.as_str().replace('\\', "\\\\").replace('"', "\\\"");
             format!("Some(\"{}\".to_string())", escaped) // rust-lit-guard: allow (already escaped; pattern text is not escape_default-normalized)
         }
         None => "None".to_string(),
@@ -7089,7 +7279,13 @@ fn emit_length_option(min: Option<u64>, max: Option<u64>) -> String {
     format!("Some(({}, {}))", min_str, max_str)
 }
 
-fn refined_string_type(identity: &str, pattern: &str, length: &str, to_dsl: &str) -> String {
+fn refined_string_type(
+    identity: &str,
+    pattern: Option<&ApprovedPattern>,
+    length: &str,
+    to_dsl: &str,
+) -> String {
+    let pattern = emit_pattern_option(pattern);
     format!("AttributeType::refined_string({identity}, {pattern}, {length}, {to_dsl})")
 }
 
@@ -7322,6 +7518,7 @@ impl ResourceTypeOverrides {
 
     fn validate_sources(&self, schema: &CfnSchema) -> Result<()> {
         for (path, override_type) in self.for_resource(&schema.type_name) {
+            override_type.validate_patterns(schema, path)?;
             if override_type.owner_name().is_none() {
                 continue;
             }
@@ -7447,17 +7644,23 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // IAM Role's Arn is always an IAM Role ARN
         m.insert(
             ("AWS::IAM::Role", "Arn"),
-            TypeOverride::StringType("super::super::iam::role::arn()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "super::super::iam::role::arn()",
+            )),
         );
         // IAM OIDCProvider's Arn is always an IAM OIDC Provider ARN
         m.insert(
             ("AWS::IAM::OIDCProvider", "Arn"),
-            TypeOverride::StringType("super::super::iam::oidc_provider::arn()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "super::super::iam::oidc_provider::arn()",
+            )),
         );
         // IAM Role's RoleId uses AROA prefix pattern
         m.insert(
             ("AWS::IAM::Role", "RoleId"),
-            TypeOverride::StringType("carina_aws_types::iam_role_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::iam_role_id()",
+            )),
         );
         // RoleName: 1..=64 ASCII alphanumeric characters or _+=,.@-.
         // The producer and consumer share aws.iam.Role.Name, including read-back.
@@ -7467,7 +7670,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 (cfn_type, "RoleName"),
                 TypeOverride::AttributeType {
-                    expression: "carina_aws_types::iam_role_name()",
+                    expression: OverrideTypeExpression::raw("carina_aws_types::iam_role_name()"),
                     display: const { OverrideTypeDisplay::new("aws.iam.Role.Name") },
                     block_name: None,
                     default: None,
@@ -7484,7 +7687,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 key,
                 TypeOverride::AttributeType {
-                    expression: "carina_aws_types::iam_policy_name()",
+                    expression: OverrideTypeExpression::raw("carina_aws_types::iam_policy_name()"),
                     display: const { OverrideTypeDisplay::new("aws.iam.Policy.Name") },
                     block_name: None,
                     default: None,
@@ -7497,7 +7700,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::IAM::Role", "Path"),
             TypeOverride::AttributeType {
-                expression: "carina_aws_types::iam_path()",
+                expression: OverrideTypeExpression::raw("carina_aws_types::iam_path()"),
                 display: const {
                     OverrideTypeDisplay::new(
                         r"String (length: 1..=512, pattern: ^(?:/|/[\x21-\x7E]+/)\z)",
@@ -7514,9 +7717,15 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::IAM::Role", "Description"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some(r"^[\x09\x0A\x0D -~¡-ÿ]*\z".to_string()), Some((Some(0), Some(1000))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole(r"^[\x09\x0A\x0D -~¡-ÿ]*\z")),
+                    Some((Some(0), Some(1000))),
+                    PatternLiteral::Raw,
+                ),
                 display: const {
-                    OverrideTypeDisplay::new(r"String (length: 0..=1000, pattern: ^[\x09\x0A\x0D -~¡-ÿ]*\z)")
+                    OverrideTypeDisplay::new(
+                        r"String (length: 0..=1000, pattern: ^[\x09\x0A\x0D -~¡-ÿ]*\z)",
+                    )
                 },
                 block_name: None,
                 default: None,
@@ -7532,7 +7741,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateOpenIDConnectProvider.html#API_CreateOpenIDConnectProvider_RequestParameters
         m.insert(
             ("AWS::IAM::OIDCProvider", "Url"),
-            TypeOverride::StringType("carina_core::schema::types::https_url()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_core::schema::types::https_url()",
+            )),
         );
         // ClientIDList: "You cannot register more than 100 client IDs";
         // individual client IDs retain their documented 1..=255 character bounds.
@@ -7540,10 +7751,12 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::IAM::OIDCProvider", "ClientIdList"),
             TypeOverride::ArrayItemType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)",
-                display: const {
-                    OverrideTypeDisplay::new("List<String (length: 1..=255)>")
-                },
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), Some(255))),
+                    PatternLiteral::Quoted,
+                ),
+                display: const { OverrideTypeDisplay::new("List<String (length: 1..=255)>") },
                 block_name: None,
                 default: None,
                 min_items: None,
@@ -7554,40 +7767,58 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // EC2 Route's GatewayId accepts both igw-* and vgw-*
         m.insert(
             ("AWS::EC2::Route", "GatewayId"),
-            TypeOverride::StringType("carina_aws_types::gateway_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::gateway_id()",
+            )),
         );
         // Generic "Id" attributes on resources where the specific ID type is known
         m.insert(
             ("AWS::EC2::EgressOnlyInternetGateway", "Id"),
-            TypeOverride::StringType("carina_aws_types::egress_only_internet_gateway_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::egress_only_internet_gateway_id()",
+            )),
         );
         m.insert(
             ("AWS::EC2::TransitGateway", "Id"),
-            TypeOverride::StringType("carina_aws_types::transit_gateway_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::transit_gateway_id()",
+            )),
         );
         m.insert(
             ("AWS::EC2::VPCPeeringConnection", "Id"),
-            TypeOverride::StringType("carina_aws_types::vpc_peering_connection_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::vpc_peering_connection_id()",
+            )),
         );
         m.insert(
             ("AWS::EC2::VPCEndpoint", "Id"),
-            TypeOverride::StringType("carina_aws_types::vpc_endpoint_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::vpc_endpoint_id()",
+            )),
         );
         m.insert(
             ("AWS::EC2::SecurityGroup", "Id"),
-            TypeOverride::StringType("carina_aws_types::security_group_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::security_group_id()",
+            )),
         );
         m.insert(
             ("AWS::EC2::TransitGatewayAttachment", "Id"),
-            TypeOverride::StringType("carina_aws_types::transit_gateway_attachment_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::transit_gateway_attachment_id()",
+            )),
         );
         m.insert(
             ("AWS::EC2::FlowLog", "Id"),
-            TypeOverride::StringType("carina_aws_types::flow_log_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::flow_log_id()",
+            )),
         );
         m.insert(
             ("AWS::EC2::SubnetRouteTableAssociation", "Id"),
-            TypeOverride::StringType("carina_aws_types::subnet_route_table_association_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::subnet_route_table_association_id()",
+            )),
         );
         // Hosted-zone ID producers must carry the shared Route 53 identity so
         // they can flow into Route53 alias-target sinks. The cached CFN schemas
@@ -7599,48 +7830,56 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "AWS::ElasticLoadBalancingV2::LoadBalancer",
                 "CanonicalHostedZoneID",
             ),
-            TypeOverride::StringType("carina_aws_types::route53_hosted_zone_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::route53_hosted_zone_id()",
+            )),
         );
         m.insert(
             ("AWS::Route53::HostedZone", "Id"),
-            TypeOverride::StringType("carina_aws_types::route53_hosted_zone_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::route53_hosted_zone_id()",
+            )),
         );
         // EIP Address and TransferAddress are IPv4 addresses
         m.insert(
             ("AWS::EC2::EIP", "Address"),
-            TypeOverride::StringType("types::ipv4_address()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw("types::ipv4_address()")),
         );
         m.insert(
             ("AWS::EC2::EIP", "TransferAddress"),
-            TypeOverride::StringType("types::ipv4_address()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw("types::ipv4_address()")),
         );
         // FlowLog LogDestination is an ARN (S3 bucket, CloudWatch log group, or Firehose)
         m.insert(
             ("AWS::EC2::FlowLog", "LogDestination"),
-            TypeOverride::StringType("carina_aws_types::arn()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw("carina_aws_types::arn()")),
         );
         // S3 Bucket notification ARNs
         m.insert(
             ("AWS::S3::Bucket", "Function"),
-            TypeOverride::StringType("carina_aws_types::arn()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw("carina_aws_types::arn()")),
         );
         m.insert(
             ("AWS::S3::Bucket", "Queue"),
-            TypeOverride::StringType("carina_aws_types::arn()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw("carina_aws_types::arn()")),
         );
         m.insert(
             ("AWS::S3::Bucket", "Topic"),
-            TypeOverride::StringType("carina_aws_types::arn()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw("carina_aws_types::arn()")),
         );
         // S3 Bucket replication role is an IAM Role ARN
         m.insert(
             ("AWS::S3::Bucket", "Role"),
-            TypeOverride::StringType("super::super::iam::role::arn()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "super::super::iam::role::arn()",
+            )),
         );
         // S3 Bucket replication destination account
         m.insert(
             ("AWS::S3::Bucket", "Account"),
-            TypeOverride::StringType("carina_aws_types::aws_account_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::aws_account_id()",
+            )),
         );
 
         // LogGroupName: retain CFN's anchored pattern and 1..=512 bounds,
@@ -7649,7 +7888,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::Logs::LogGroup", "LogGroupName"),
             TypeOverride::AttributeType {
-                expression: "crate::schemas::catalog::logs_log_group_name()",
+                expression: OverrideTypeExpression::raw(
+                    "crate::schemas::catalog::logs_log_group_name()",
+                ),
                 display: const { OverrideTypeDisplay::new("aws.logs.LogGroup.LogGroupName") },
                 block_name: None,
                 default: None,
@@ -7663,7 +7904,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::Organizations::Account", "Email"),
             TypeOverride::AttributeType {
-                expression: "crate::schemas::catalog::organizations_account_email()",
+                expression: OverrideTypeExpression::raw(
+                    "crate::schemas::catalog::organizations_account_email()",
+                ),
                 display: const { OverrideTypeDisplay::new("aws.organizations.Account.Email") },
                 block_name: None,
                 default: None,
@@ -7675,7 +7918,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::Organizations::Account", "AccountName"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some(r"^[ -~]+\z".to_string()), Some((Some(1), Some(50))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole(r"^[ -~]+\z")),
+                    Some((Some(1), Some(50))),
+                    PatternLiteral::Raw,
+                ),
                 display: const {
                     OverrideTypeDisplay::new(r"String (length: 1..=50, pattern: ^[ -~]+\z)")
                 },
@@ -7690,7 +7937,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::Organizations::Account", "RoleName"),
             TypeOverride::AttributeType {
-                expression: "crate::schemas::catalog::organizations_account_role_name()",
+                expression: OverrideTypeExpression::raw(
+                    "crate::schemas::catalog::organizations_account_role_name()",
+                ),
                 display: const { OverrideTypeDisplay::new("aws.organizations.Account.RoleName") },
                 block_name: None,
                 default: None,
@@ -7705,7 +7954,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::Organizations::Account", "ParentIds"),
             TypeOverride::ArrayItemType {
-                expression: "crate::schemas::awscc_types::organizations_account_parent_id()",
+                expression: OverrideTypeExpression::raw("crate::schemas::awscc_types::organizations_account_parent_id()"),
                 display: const {
                     OverrideTypeDisplay::new(r"List<String (length: ..=100, pattern: ^(?:r-[0-9a-z]{4,32}|ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})\z)>")
                 },
@@ -7729,7 +7978,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "ImageTagMutabilityExclusionFilter.ImageTagMutabilityExclusionFilterValue",
             ),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some(r"^[0-9a-zA-Z._*-]{1,128}\z".to_string()), Some((Some(1), Some(128))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole(r"^[0-9a-zA-Z._*-]{1,128}\z")),
+                    Some((Some(1), Some(128))),
+                    PatternLiteral::Raw,
+                ),
                 display: const {
                     OverrideTypeDisplay::new(
                         r"String (length: 1..=128, pattern: ^[0-9a-zA-Z._*-]{1,128}\z)",
@@ -7771,7 +8024,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::S3::Bucket", key),
                 TypeOverride::AttributeType {
-                    expression: "carina_core::schema::types::positive_int()",
+                    expression: OverrideTypeExpression::raw(
+                        "carina_core::schema::types::positive_int()",
+                    ),
                     display: const { OverrideTypeDisplay::new("PositiveInt") },
                     block_name: None,
                     default: None,
@@ -7789,7 +8044,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::S3::Bucket", key),
                 TypeOverride::AttributeType {
-                    expression: "AttributeType::refined_int(None, Some((None, Some(100))))",
+                    expression: OverrideTypeExpression::raw(
+                        "AttributeType::refined_int(None, Some((None, Some(100))))",
+                    ),
                     display: const { OverrideTypeDisplay::new("Int (..=100)") },
                     block_name: None,
                     default: None,
@@ -7802,7 +8059,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::S3::Bucket", "Transition.TransitionInDays"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_int(None, Some((Some(0), None)))",
+                expression: OverrideTypeExpression::raw(
+                    "AttributeType::refined_int(None, Some((Some(0), None)))",
+                ),
                 display: const { OverrideTypeDisplay::new("Int (0..)") },
                 block_name: None,
                 default: None,
@@ -7818,7 +8077,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::S3::Bucket", key),
                 TypeOverride::AttributeType {
-                    expression: "crate::schemas::catalog::s3_lifecycle_date()",
+                    expression: OverrideTypeExpression::raw(
+                        "crate::schemas::catalog::s3_lifecycle_date()",
+                    ),
                     display: const { OverrideTypeDisplay::new("aws.s3.Bucket.LifecycleDate") },
                     block_name: None,
                     default: None,
@@ -7832,7 +8093,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::S3::Bucket", key),
                 TypeOverride::AttributeType {
-                    expression: "crate::schemas::awscc_types::s3_object_size()",
+                    expression: OverrideTypeExpression::raw(
+                        "crate::schemas::awscc_types::s3_object_size()",
+                    ),
                     display: const {
                         OverrideTypeDisplay::new(
                             r"String (length: ..=20, pattern: ^(?:0|[1-9][0-9]*)\z)",
@@ -7910,8 +8173,14 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::S3::Bucket", "MetricsConfiguration.Id"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some(r"^[A-Za-z0-9._-]+\z".to_string()), Some((None, Some(64))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: ..=64, pattern: ^[A-Za-z0-9._-]+\z)") },
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole(r"^[A-Za-z0-9._-]+\z")),
+                    Some((None, Some(64))),
+                    PatternLiteral::Raw,
+                ),
+                display: const {
+                    OverrideTypeDisplay::new(r"String (length: ..=64, pattern: ^[A-Za-z0-9._-]+\z)")
+                },
                 block_name: None,
                 default: None,
             },
@@ -7931,7 +8200,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::S3::Bucket", "DataExport.Destination"),
             TypeOverride::AttributeType {
-                expression: "crate::schemas::awscc_types::s3_analytics_destination()",
+                expression: OverrideTypeExpression::raw(
+                    "crate::schemas::awscc_types::s3_analytics_destination()",
+                ),
                 display: const { OverrideTypeDisplay::new("Struct(AnalyticsDestination)") },
                 block_name: None,
                 default: None,
@@ -7957,7 +8228,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 ("AWS::S3::Bucket", key),
                 TypeOverride::NamedAttributeType {
                     name: "S3NotificationEvent",
-                    expression: "crate::schemas::awscc_types::s3_notification_event()",
+                    expression: OverrideTypeExpression::raw(
+                        "crate::schemas::awscc_types::s3_notification_event()",
+                    ),
                     display: const {
                         OverrideTypeDisplay::new("aws.s3.Bucket.NotificationConfiguration.Event")
                     },
@@ -7975,7 +8248,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::S3::Bucket", "WebsiteConfiguration.IndexDocument"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some(r"^[^/]+\z".to_string()), None, None)"#,
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole(r"^[^/]+\z")),
+                    None,
+                    PatternLiteral::Raw,
+                ),
                 display: const { OverrideTypeDisplay::new(r"String (pattern: ^[^/]+\z)") },
                 block_name: None,
                 default: None,
@@ -7985,7 +8262,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::S3::Bucket", "WebsiteConfiguration.ErrorDocument"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(1), None)), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), None)),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: 1..)") },
                 block_name: None,
                 default: None,
@@ -8017,31 +8298,37 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // VPC CidrBlockAssociations are association IDs (vpc-cidr-assoc-xxx), not CIDRs
         m.insert(
             ("AWS::EC2::VPC", "CidrBlockAssociations"),
-            TypeOverride::StringType("carina_aws_types::vpc_cidr_block_association_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::vpc_cidr_block_association_id()",
+            )),
         );
         // Transit Gateway route table IDs use tgw-rtb- prefix, not rtb-
         m.insert(
             ("AWS::EC2::TransitGateway", "AssociationDefaultRouteTableId"),
-            TypeOverride::StringType("carina_aws_types::tgw_route_table_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::tgw_route_table_id()",
+            )),
         );
         m.insert(
             ("AWS::EC2::TransitGateway", "PropagationDefaultRouteTableId"),
-            TypeOverride::StringType("carina_aws_types::tgw_route_table_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::tgw_route_table_id()",
+            )),
         );
         // Transit Gateway CIDR blocks support both IPv4 and IPv6
         m.insert(
             ("AWS::EC2::TransitGateway", "TransitGatewayCidrBlocks"),
-            TypeOverride::StringType("types::cidr()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw("types::cidr()")),
         );
         // IPAM Pool provisioned CIDRs support both IPv4 and IPv6
         m.insert(
             ("AWS::EC2::IPAMPool", "Cidr"),
-            TypeOverride::StringType("types::cidr()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw("types::cidr()")),
         );
         // S3 ReplaceKeyPrefixWith is a free-form string, not an enum
         m.insert(
             ("AWS::S3::Bucket", "ReplaceKeyPrefixWith"),
-            TypeOverride::StringType("AttributeType::string()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw("AttributeType::string()")),
         );
 
         // The CloudFormation schema publishes these two BudgetData fields
@@ -8050,7 +8337,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::Budgets::Budget", "BudgetData.CostFilters"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::map(AttributeType::list(AttributeType::string()))",
+                expression: OverrideTypeExpression::raw(
+                    "AttributeType::map(AttributeType::list(AttributeType::string()))",
+                ),
                 display: const { OverrideTypeDisplay::new("Map<String, List<String>>") },
                 block_name: None,
                 default: None,
@@ -8059,7 +8348,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::Budgets::Budget", "BudgetData.PlannedBudgetLimits"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::map(AttributeType::ref_(\"Spend\".to_string()))",
+                expression: OverrideTypeExpression::raw(
+                    "AttributeType::map(AttributeType::ref_(\"Spend\".to_string()))",
+                ),
                 display: const { OverrideTypeDisplay::new("Map<String, Spend>") },
                 block_name: None,
                 default: None,
@@ -8120,7 +8411,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::Budgets::Budget", "Notification.Threshold"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_float(None, Some((Some(0.0), Some(15000000000000.0))))",
+                expression: OverrideTypeExpression::raw(
+                    "AttributeType::refined_float(None, Some((Some(0.0), Some(15000000000000.0))))",
+                ),
                 display: const { OverrideTypeDisplay::new("Float(0..=15000000000000)") },
                 block_name: None,
                 default: None,
@@ -8138,7 +8431,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::Budgets::Budget", "Spend.Amount"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_float(None, Some((Some(0.0), None)))",
+                expression: OverrideTypeExpression::raw(
+                    "AttributeType::refined_float(None, Some((Some(0.0), None)))",
+                ),
                 display: const { OverrideTypeDisplay::new("Float(0..)") },
                 block_name: None,
                 default: None,
@@ -8151,7 +8446,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::Budgets::Budget", "BudgetData.BudgetName"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole("^[^:\\\\]+$")),
+                    Some((Some(1), Some(100))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const {
                     OverrideTypeDisplay::new(r"String (length: 1..=100, pattern: ^[^:\\]+$)")
                 },
@@ -8171,7 +8470,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "HistoricalOptions.BudgetAdjustmentPeriod",
             ),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_int(None, Some((Some(1), Some(60))))",
+                expression: OverrideTypeExpression::raw(
+                    "AttributeType::refined_int(None, Some((Some(1), Some(60))))",
+                ),
                 display: const { OverrideTypeDisplay::new("Int(1..=60)") },
                 block_name: None,
                 default: None,
@@ -8207,7 +8508,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::Budgets::Budget", "TagValues.Key"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(0), Some(1024))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: 0..=1024)") },
                 block_name: None,
                 default: None,
@@ -8221,7 +8526,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // The API requires at least one value and bounds each string to
         // 0..=1024 characters. CFN omits both constraints.
         let budgets_filter_values = TypeOverride::ArrayItemType {
-            expression: "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)",
+            expression: OverrideTypeExpression::string(
+                None,
+                Some((Some(0), Some(1024))),
+                PatternLiteral::Quoted,
+            ),
             display: const { OverrideTypeDisplay::new("List<String (length: 0..=1024)>") },
             block_name: None,
             default: None,
@@ -8364,7 +8673,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudWatch::Alarm", "ExtendedStatistic"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(1), None)), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), None)),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: 1..)") },
                 block_name: None,
                 default: None,
@@ -8378,7 +8691,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudWatch::Alarm", "MetricStat.Stat"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(1), None)), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), None)),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: 1..)") },
                 block_name: None,
                 default: None,
@@ -8392,7 +8709,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudWatch::Alarm", "Period"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_int(None, Some((Some(10), None)))"#,
+                expression: OverrideTypeExpression::raw(
+                    r#"AttributeType::refined_int(None, Some((Some(10), None)))"#,
+                ),
                 display: const { OverrideTypeDisplay::new(r"Int(10..)") },
                 block_name: None,
                 default: None,
@@ -8411,7 +8730,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::CloudWatch::Alarm", path),
                 TypeOverride::AttributeType {
-                    expression: r#"AttributeType::refined_int(None, Some((Some(1), None)))"#,
+                    expression: OverrideTypeExpression::raw(
+                        r#"AttributeType::refined_int(None, Some((Some(1), None)))"#,
+                    ),
                     display: const { OverrideTypeDisplay::new(r"Int(1..)") },
                     block_name: None,
                     default: None,
@@ -8438,7 +8759,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::CloudWatch::Alarm", path),
                 TypeOverride::AttributeType {
-                    expression: "AttributeType::refined_int(None, Some((Some(0), Some(86400))))",
+                    expression: OverrideTypeExpression::raw(
+                        "AttributeType::refined_int(None, Some((Some(0), Some(86400))))",
+                    ),
                     display: const { OverrideTypeDisplay::new("Int(0..=86400)") },
                     block_name: None,
                     default: None,
@@ -8450,7 +8773,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudWatch::Alarm", "AlarmPromQLCriteria.Query"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(10000))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), Some(10000))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new(r"String (length: 1..=10000)") },
                 block_name: None,
                 default: None,
@@ -8461,8 +8788,16 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudWatch::Alarm", "AlarmName"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[^\\x00-\\x1F\\x7F]+$".to_string()), Some((Some(1), Some(255))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[^\x00-\x1F\x7F]+$)") },
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole("^[^\\x00-\\x1F\\x7F]+$")),
+                    Some((Some(1), Some(255))),
+                    PatternLiteral::Quoted,
+                ),
+                display: const {
+                    OverrideTypeDisplay::new(
+                        r"String (length: 1..=255, pattern: ^[^\x00-\x1F\x7F]+$)",
+                    )
+                },
                 block_name: None,
                 default: None,
             },
@@ -8474,7 +8809,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::CloudWatch::Alarm", path),
                 TypeOverride::AttributeType {
-                    expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)"#,
+                    expression: OverrideTypeExpression::string(
+                        None,
+                        Some((Some(1), Some(255))),
+                        PatternLiteral::Quoted,
+                    ),
                     display: const { OverrideTypeDisplay::new(r"String (length: 1..=255)") },
                     block_name: None,
                     default: None,
@@ -8492,8 +8831,14 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::CloudWatch::Alarm", path),
                 TypeOverride::AttributeType {
-                    expression: r#"AttributeType::refined_string(None, Some("^[^:].*$".to_string()), Some((Some(1), Some(255))), None)"#,
-                    display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[^:].*$)") },
+                    expression: OverrideTypeExpression::string(
+                        Some(ApprovedPattern::whole("^[^:].*$")),
+                        Some((Some(1), Some(255))),
+                        PatternLiteral::Quoted,
+                    ),
+                    display: const {
+                        OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[^:].*$)")
+                    },
                     block_name: None,
                     default: None,
                 },
@@ -8506,7 +8851,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudWatch::Alarm", "Dimension.Name"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^(?:[!-9;-~][ -~]*| [ -~]*[!-~][ -~]*)$".to_string()), Some((Some(1), Some(255))), None)"#,
+                expression: OverrideTypeExpression::string(Some(ApprovedPattern::whole("^(?:[!-9;-~][ -~]*| [ -~]*[!-~][ -~]*)$")), Some((Some(1), Some(255))), PatternLiteral::Quoted),
                 display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^(?:[!-9;-~][ -~]*| [ -~]*[!-~][ -~]*)$)") },
                 block_name: None,
                 default: None,
@@ -8519,8 +8864,16 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudWatch::Alarm", "Dimension.Value"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[ -~]*[!-~][ -~]*$".to_string()), Some((Some(1), Some(1024))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=1024, pattern: ^[ -~]*[!-~][ -~]*$)") },
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole("^[ -~]*[!-~][ -~]*$")),
+                    Some((Some(1), Some(1024))),
+                    PatternLiteral::Quoted,
+                ),
+                display: const {
+                    OverrideTypeDisplay::new(
+                        r"String (length: 1..=1024, pattern: ^[ -~]*[!-~][ -~]*$)",
+                    )
+                },
                 block_name: None,
                 default: None,
             },
@@ -8530,7 +8883,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudWatch::Alarm", "AlarmDescription"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(0), Some(1024))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new(r"String (length: 0..=1024)") },
                 block_name: None,
                 default: None,
@@ -8541,8 +8898,16 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudWatch::Alarm", "MetricDataQuery.Id"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[a-z][a-zA-Z0-9_]*$".to_string()), Some((Some(1), Some(255))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[a-z][a-zA-Z0-9_]*$)") },
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole("^[a-z][a-zA-Z0-9_]*$")),
+                    Some((Some(1), Some(255))),
+                    PatternLiteral::Quoted,
+                ),
+                display: const {
+                    OverrideTypeDisplay::new(
+                        r"String (length: 1..=255, pattern: ^[a-z][a-zA-Z0-9_]*$)",
+                    )
+                },
                 block_name: None,
                 default: None,
             },
@@ -8552,7 +8917,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudWatch::Alarm", "MetricDataQuery.Expression"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(2048))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), Some(2048))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new(r"String (length: 1..=2048)") },
                 block_name: None,
                 default: None,
@@ -8565,7 +8934,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::CloudWatch::Alarm", path),
                 TypeOverride::ArrayItemType {
-                    expression: "carina_aws_types::arn()",
+                    expression: OverrideTypeExpression::raw("carina_aws_types::arn()"),
                     display: const { OverrideTypeDisplay::new("List<Arn>") },
                     block_name: None,
                     default: None,
@@ -8583,7 +8952,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudWatch::Alarm", "WallClockWindow.Timezone"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(50))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), Some(50))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: 1..=50)") },
                 block_name: None,
                 default: None,
@@ -8598,7 +8971,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::DynamoDB::Table", "TableName"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9_.-]+\\z".to_string()), Some((Some(3), Some(255))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole("^[a-zA-Z0-9_.-]+\\z")),
+                    Some((Some(3), Some(255))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String(pattern, len: 3..=255)") },
                 block_name: None,
                 default: None,
@@ -8610,7 +8987,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::DynamoDB::Table", "AttributeDefinition.AttributeName"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), Some(255))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: 1..=255)") },
                 block_name: None,
                 default: None,
@@ -8622,7 +9003,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::DynamoDB::Table", "KeySchema.AttributeName"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), Some(255))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: 1..=255)") },
                 block_name: None,
                 default: None,
@@ -8631,9 +9016,16 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // AttributeName: "Minimum length of 1. Maximum length of 255."
         // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TimeToLiveSpecification.html
         m.insert(
-            ("AWS::DynamoDB::Table", "TimeToLiveSpecification.AttributeName"),
+            (
+                "AWS::DynamoDB::Table",
+                "TimeToLiveSpecification.AttributeName",
+            ),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), Some(255))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: 1..=255)") },
                 block_name: None,
                 default: None,
@@ -8645,7 +9037,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::DynamoDB::Table", "GlobalSecondaryIndex.IndexName"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9_.-]+\\z".to_string()), Some((Some(3), Some(255))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole("^[a-zA-Z0-9_.-]+\\z")),
+                    Some((Some(3), Some(255))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String(pattern, len: 3..=255)") },
                 block_name: None,
                 default: None,
@@ -8657,7 +9053,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::DynamoDB::Table", "LocalSecondaryIndex.IndexName"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9_.-]+\\z".to_string()), Some((Some(3), Some(255))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole("^[a-zA-Z0-9_.-]+\\z")),
+                    Some((Some(3), Some(255))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String(pattern, len: 3..=255)") },
                 block_name: None,
                 default: None,
@@ -8684,7 +9084,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::DynamoDB::Table", "Csv.Delimiter"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[,;:|\\t ]\\z".to_string()), Some((Some(1), Some(1))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole("^[,;:|\\t ]\\z")),
+                    Some((Some(1), Some(1))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String(pattern, len: 1)") },
                 block_name: None,
                 default: None,
@@ -8697,7 +9101,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::DynamoDB::Table", "Csv.HeaderList"),
             TypeOverride::ArrayItemType {
-                expression: r#"AttributeType::refined_string(None, Some("^[\\x20-\\x21\\x23-\\x2B\\x2D-\\x7E]*\\z".to_string()), Some((Some(1), Some(65536))), None)"#,
+                expression: OverrideTypeExpression::string(Some(ApprovedPattern::whole("^[\\x20-\\x21\\x23-\\x2B\\x2D-\\x7E]*\\z")), Some((Some(1), Some(65536))), PatternLiteral::Quoted),
                 display: const { OverrideTypeDisplay::new("List<String(pattern, len: 1..=65536)>") },
                 block_name: None,
                 default: None,
@@ -8713,7 +9117,13 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::DynamoDB::Table", "S3BucketSource.S3Bucket"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[a-z0-9A-Z]+[\\.\\-\\w]*[a-z0-9A-Z]+\\z".to_string()), Some((None, Some(255))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole(
+                        "^[a-z0-9A-Z]+[\\.\\-\\w]*[a-z0-9A-Z]+\\z",
+                    )),
+                    Some((None, Some(255))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String(pattern, len: ..=255)") },
                 block_name: None,
                 default: None,
@@ -8723,14 +9133,20 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_S3BucketSource.html
         m.insert(
             ("AWS::DynamoDB::Table", "S3BucketSource.S3BucketOwner"),
-            TypeOverride::StringType("carina_aws_types::aws_account_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::aws_account_id()",
+            )),
         );
         // S3KeyPrefix: "Maximum length of 1024." Empty prefixes are allowed.
         // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_S3BucketSource.html
         m.insert(
             ("AWS::DynamoDB::Table", "S3BucketSource.S3KeyPrefix"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(0), Some(1024))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: 0..=1024)") },
                 block_name: None,
                 default: None,
@@ -8743,7 +9159,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::DynamoDB::Table", "Projection.NonKeyAttributes"),
             TypeOverride::ArrayItemType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), Some(255))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("List<String (length: 1..=255)>") },
                 block_name: None,
                 default: None,
@@ -8762,7 +9182,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "ProvisionedThroughput.ReadCapacityUnits",
             ),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_int(None, Some((Some(1), None)))",
+                expression: OverrideTypeExpression::raw(
+                    "AttributeType::refined_int(None, Some((Some(1), None)))",
+                ),
                 display: const { OverrideTypeDisplay::new("Int(1..)") },
                 block_name: None,
                 default: None,
@@ -8776,7 +9198,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "ProvisionedThroughput.WriteCapacityUnits",
             ),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_int(None, Some((Some(1), None)))",
+                expression: OverrideTypeExpression::raw(
+                    "AttributeType::refined_int(None, Some((Some(1), None)))",
+                ),
                 display: const { OverrideTypeDisplay::new("Int(1..)") },
                 block_name: None,
                 default: None,
@@ -8837,7 +9261,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::ECS::Cluster", "CapacityProviderStrategyItem.Weight"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_int(None, Some((Some(0), Some(1000))))",
+                expression: OverrideTypeExpression::raw(
+                    "AttributeType::refined_int(None, Some((Some(0), Some(1000))))",
+                ),
                 display: const { OverrideTypeDisplay::new("Int(0..=1000)") },
                 block_name: None,
                 default: None,
@@ -8848,7 +9274,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::ECS::Cluster", "CapacityProviderStrategyItem.Base"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_int(None, Some((Some(0), Some(100000))))",
+                expression: OverrideTypeExpression::raw(
+                    "AttributeType::refined_int(None, Some((Some(0), Some(100000))))",
+                ),
                 display: const { OverrideTypeDisplay::new("Int(0..=100000)") },
                 block_name: None,
                 default: None,
@@ -8860,7 +9288,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::ECS::Cluster", "ClusterName"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9_-]+\\z".to_string()), Some((Some(1), Some(255))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole("^[a-zA-Z0-9_-]+\\z")),
+                    Some((Some(1), Some(255))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String(pattern, len: 1..=255)") },
                 block_name: None,
                 default: None,
@@ -8922,8 +9354,16 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::SNS::Topic", "TopicName"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[A-Za-z0-9_-]+(?:\\.fifo)?$".to_string()), Some((Some(1), Some(256))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=256, pattern: ^[A-Za-z0-9_-]+(?:\.fifo)?$)") },
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole("^[A-Za-z0-9_-]+(?:\\.fifo)?$")),
+                    Some((Some(1), Some(256))),
+                    PatternLiteral::Quoted,
+                ),
+                display: const {
+                    OverrideTypeDisplay::new(
+                        r"String (length: 1..=256, pattern: ^[A-Za-z0-9_-]+(?:\.fifo)?$)",
+                    )
+                },
                 block_name: None,
                 default: None,
             },
@@ -8935,7 +9375,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::SNS::Topic", "LoggingConfig.SuccessFeedbackSampleRate"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^0*(?:100|[0-9]{1,2})$".to_string()), None, None)"#,
+                expression: OverrideTypeExpression::string(Some(ApprovedPattern::whole("^0*(?:100|[0-9]{1,2})$")), None, PatternLiteral::Quoted),
                 display: const { OverrideTypeDisplay::new(r"String (pattern: ^0*(?:100|[0-9]{1,2})$)") },
                 block_name: None,
                 default: None,
@@ -8949,7 +9389,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::SNS::Subscription", "RedrivePolicy"),
             TypeOverride::AttributeType {
-                expression: "crate::schemas::awscc_types::sns_subscription_redrive_policy()",
+                expression: OverrideTypeExpression::raw(
+                    "crate::schemas::awscc_types::sns_subscription_redrive_policy()",
+                ),
                 display: const { OverrideTypeDisplay::new("Struct(SubscriptionRedrivePolicy)") },
                 block_name: None,
                 default: None,
@@ -8958,7 +9400,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::SNS::Subscription", "DeliveryPolicy"),
             TypeOverride::AttributeType {
-                expression: "crate::schemas::awscc_types::sns_subscription_delivery_policy()",
+                expression: OverrideTypeExpression::raw(
+                    "crate::schemas::awscc_types::sns_subscription_delivery_policy()",
+                ),
                 display: const { OverrideTypeDisplay::new("Struct(SubscriptionDeliveryPolicy)") },
                 block_name: None,
                 default: None,
@@ -8967,7 +9411,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::SNS::Subscription", "ReplayPolicy"),
             TypeOverride::AttributeType {
-                expression: "crate::schemas::awscc_types::sns_subscription_replay_policy()",
+                expression: OverrideTypeExpression::raw(
+                    "crate::schemas::awscc_types::sns_subscription_replay_policy()",
+                ),
                 display: const { OverrideTypeDisplay::new("Struct(SubscriptionReplayPolicy)") },
                 block_name: None,
                 default: None,
@@ -8976,7 +9422,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::SNS::Topic", "ArchivePolicy"),
             TypeOverride::AttributeType {
-                expression: "crate::schemas::awscc_types::sns_topic_archive_policy()",
+                expression: OverrideTypeExpression::raw(
+                    "crate::schemas::awscc_types::sns_topic_archive_policy()",
+                ),
                 display: const { OverrideTypeDisplay::new("Struct(TopicArchivePolicy)") },
                 block_name: None,
                 default: None,
@@ -8989,7 +9437,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::Logs::LogGroup", "FieldIndexPolicies"),
             TypeOverride::ArrayItemType {
-                expression: "crate::schemas::awscc_types::logs_field_index_policy()",
+                expression: OverrideTypeExpression::raw(
+                    "crate::schemas::awscc_types::logs_field_index_policy()",
+                ),
                 display: const { OverrideTypeDisplay::new("List<Struct(FieldIndexPolicy)>") },
                 block_name: Some("field_index_policy"),
                 default: Some(AttributeTypeOverrideDefault {
@@ -9003,7 +9453,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::Logs::LogGroup", "DataProtectionPolicy"),
             TypeOverride::AttributeType {
-                expression: "crate::schemas::awscc_types::logs_data_protection_policy()",
+                expression: OverrideTypeExpression::raw(
+                    "crate::schemas::awscc_types::logs_data_protection_policy()",
+                ),
                 display: const { OverrideTypeDisplay::new("Struct(LogGroupDataProtectionPolicy)") },
                 block_name: None,
                 default: None,
@@ -9015,19 +9467,27 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // Sinks (consumers in assignments, permission sets):
         m.insert(
             ("AWS::SSO::Assignment", "TargetId"),
-            TypeOverride::StringType("carina_aws_types::aws_account_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::aws_account_id()",
+            )),
         );
         m.insert(
             ("AWS::SSO::Assignment", "PrincipalId"),
-            TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::sso_principal_id()",
+            )),
         );
         m.insert(
             ("AWS::SSO::Assignment", "InstanceArn"),
-            TypeOverride::StringType("carina_aws_types::sso_instance_arn()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::sso_instance_arn()",
+            )),
         );
         m.insert(
             ("AWS::SSO::PermissionSet", "InstanceArn"),
-            TypeOverride::StringType("carina_aws_types::sso_instance_arn()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::sso_instance_arn()",
+            )),
         );
         //
         // Sources (produced by SSO/IdentityStore resources themselves).
@@ -9036,35 +9496,51 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // fail with "expected SsoInstanceArn, got Arn".
         m.insert(
             ("AWS::SSO::Instance", "InstanceArn"),
-            TypeOverride::StringType("carina_aws_types::sso_instance_arn()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::sso_instance_arn()",
+            )),
         );
         m.insert(
             ("AWS::SSO::Instance", "IdentityStoreId"),
-            TypeOverride::StringType("carina_aws_types::identity_store_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::identity_store_id()",
+            )),
         );
         m.insert(
             ("AWS::SSO::PermissionSet", "PermissionSetArn"),
-            TypeOverride::StringType("carina_aws_types::sso_permission_set_arn()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::sso_permission_set_arn()",
+            )),
         );
         m.insert(
             ("AWS::SSO::Assignment", "PermissionSetArn"),
-            TypeOverride::StringType("carina_aws_types::sso_permission_set_arn()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::sso_permission_set_arn()",
+            )),
         );
         m.insert(
             ("AWS::IdentityStore::Group", "GroupId"),
-            TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::sso_principal_id()",
+            )),
         );
         m.insert(
             ("AWS::IdentityStore::Group", "IdentityStoreId"),
-            TypeOverride::StringType("carina_aws_types::identity_store_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::identity_store_id()",
+            )),
         );
         m.insert(
             ("AWS::IdentityStore::GroupMembership", "IdentityStoreId"),
-            TypeOverride::StringType("carina_aws_types::identity_store_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::identity_store_id()",
+            )),
         );
         m.insert(
             ("AWS::IdentityStore::GroupMembership", "GroupId"),
-            TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_aws_types::sso_principal_id()",
+            )),
         );
 
         // ELBv2 Listener ports: 1..=65535. Keep integer ports anonymous;
@@ -9130,7 +9606,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::ElasticLoadBalancingV2::Listener", path),
                 TypeOverride::AttributeType {
-                    expression: r#"AttributeType::refined_string(None, Some("^[1-9][0-9]*\\z".to_string()), None, None)"#,
+                    expression: OverrideTypeExpression::string(Some(ApprovedPattern::whole("^[1-9][0-9]*\\z")), None, PatternLiteral::Quoted),
                     display: const {
                         OverrideTypeDisplay::new(r"String (pattern: ^[1-9][0-9]*\z)")
                     },
@@ -9157,7 +9633,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         ] {
             m.insert(
                 ("AWS::ElasticLoadBalancingV2::Listener", path),
-                TypeOverride::StringType("carina_core::schema::types::https_url()"),
+                TypeOverride::StringType(OverrideTypeExpression::raw(
+                    "carina_core::schema::types::https_url()",
+                )),
             );
         }
         // Stickiness duration: 1..=604800. Required-when-enabled is cross-field.
@@ -9215,7 +9693,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "JwtValidationConfig.Issuer",
             ),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((None, Some(256))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((None, Some(256))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: ..=256)") },
                 block_name: None,
                 default: None,
@@ -9230,7 +9712,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "AWS::ElasticLoadBalancingV2::Listener",
                 "JwtValidationConfig.JwksEndpoint",
             ),
-            TypeOverride::StringType("carina_core::schema::types::https_url()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_core::schema::types::https_url()",
+            )),
         );
         // Claim formats use hyphenated wire strings, not their DSL aliases.
         // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_JwtValidationActionAdditionalClaim.html
@@ -9254,7 +9738,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "JwtValidationActionAdditionalClaim.Values",
             ),
             TypeOverride::ArrayItemType {
-                expression: "AttributeType::refined_string(None, None, Some((None, Some(256))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((None, Some(256))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("List<String (length: ..=256)>") },
                 block_name: None,
                 default: None,
@@ -9295,9 +9783,15 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 key,
                 TypeOverride::AttributeType {
-                    expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9._]+\\z".to_string()), Some((None, Some(256))), None)"#,
+                    expression: OverrideTypeExpression::string(
+                        Some(ApprovedPattern::whole("^[a-zA-Z0-9._]+\\z")),
+                        Some((None, Some(256))),
+                        PatternLiteral::Quoted,
+                    ),
                     display: const {
-                        OverrideTypeDisplay::new(r"String (length: ..=256, pattern: ^[a-zA-Z0-9._]+\z)")
+                        OverrideTypeDisplay::new(
+                            r"String (length: ..=256, pattern: ^[a-zA-Z0-9._]+\z)",
+                        )
                     },
                     block_name: None,
                     default: None,
@@ -9326,7 +9820,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 key,
                 TypeOverride::AttributeType {
-                    expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\z".to_string()), Some((Some(1), Some(32))), None)"#,
+                    expression: OverrideTypeExpression::string(Some(ApprovedPattern::whole("^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\z")), Some((Some(1), Some(32))), PatternLiteral::Quoted),
                     display: const {
                         OverrideTypeDisplay::new(r"String (length: 1..=32, pattern: ^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\z)")
                     },
@@ -9339,7 +9833,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_LoadBalancer.html
         m.insert(
             ("AWS::ElasticLoadBalancingV2::LoadBalancer", "DNSName"),
-            TypeOverride::StringType("carina_core::schema::types::domain_name()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_core::schema::types::domain_name()",
+            )),
         );
         // Subnet-mapping addresses use core IP built-ins unchanged. Do not
         // restrict PrivateIPv4Address to RFC1918 ranges from its name alone.
@@ -9356,7 +9852,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         ] {
             m.insert(
                 ("AWS::ElasticLoadBalancingV2::LoadBalancer", path),
-                TypeOverride::StringType(constructor),
+                TypeOverride::StringType(OverrideTypeExpression::raw(constructor)),
             );
         }
         // SourceNatIpv6Prefix accepts auto_assigned or IPv6 CIDR with /80.
@@ -9376,7 +9872,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "LoadBalancerAttribute.Value",
             ),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((None, Some(1024))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((None, Some(1024))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: ..=1024)") },
                 block_name: None,
                 default: None,
@@ -9399,9 +9899,16 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // Health-check path: 1..=1024 characters; HTTP/gRPC semantics vary.
         // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_ModifyTargetGroup.html
         m.insert(
-            ("AWS::ElasticLoadBalancingV2::TargetGroup", "HealthCheckPath"),
+            (
+                "AWS::ElasticLoadBalancingV2::TargetGroup",
+                "HealthCheckPath",
+            ),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(1024))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), Some(1024))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: 1..=1024)") },
                 block_name: None,
                 default: None,
@@ -9447,10 +9954,12 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "TargetDescription.QuicServerId",
             ),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^0x[0-9a-f]{16}\\z".to_string()), None, None)"#,
-                display: const {
-                    OverrideTypeDisplay::new(r"String (pattern: ^0x[0-9a-f]{16}\z)")
-                },
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole("^0x[0-9a-f]{16}\\z")),
+                    None,
+                    PatternLiteral::Quoted,
+                ),
+                display: const { OverrideTypeDisplay::new(r"String (pattern: ^0x[0-9a-f]{16}\z)") },
                 block_name: None,
                 default: None,
             },
@@ -9465,9 +9974,18 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "TargetDescription.AvailabilityZone",
             ),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::union(vec![carina_aws_types::availability_zone(), AttributeType::refined_string(None, Some("^all\\z".to_string()), None, None)])"#,
+                expression: OverrideTypeExpression::union(vec![
+                    OverrideTypeExpression::raw("carina_aws_types::availability_zone()"),
+                    OverrideTypeExpression::string(
+                        Some(ApprovedPattern::whole("^all\\z")),
+                        None,
+                        PatternLiteral::Quoted,
+                    ),
+                ]),
                 display: const {
-                    OverrideTypeDisplay::new(r"aws.AvailabilityZone.ZoneName | String (pattern: ^all\z)")
+                    OverrideTypeDisplay::new(
+                        r"aws.AvailabilityZone.ZoneName | String (pattern: ^all\z)",
+                    )
                 },
                 block_name: None,
                 default: None,
@@ -9503,7 +10021,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::ElasticLoadBalancingV2::TargetGroup", path),
                 TypeOverride::AttributeType {
-                    expression,
+                    expression: OverrideTypeExpression::raw(expression),
                     display,
                     block_name: None,
                     default: None,
@@ -9520,7 +10038,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "AWS::ElasticLoadBalancingV2::Listener",
                 "FixedResponseConfig.StatusCode",
             ),
-            TypeOverride::StringType("carina_core::schema::types::http_response_status_code()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_core::schema::types::http_response_status_code()",
+            )),
         );
 
         // === Enum overrides ===
@@ -9603,7 +10123,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "LoadBalancerAttribute.Key",
             ),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9._]+\\z".to_string()), Some((None, Some(256))), None)"#,
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole("^[a-zA-Z0-9._]+\\z")),
+                    Some((None, Some(256))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const {
                     OverrideTypeDisplay::new(r"String (length: ..=256, pattern: ^[a-zA-Z0-9._]+\z)")
                 },
@@ -9646,35 +10170,45 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "AWS::ElasticLoadBalancingV2::Listener",
                 "RedirectConfig.Protocol",
             ),
-            TypeOverride::StringType("carina_core::schema::types::redirect_protocol()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_core::schema::types::redirect_protocol()",
+            )),
         );
         m.insert(
             (
                 "AWS::ElasticLoadBalancingV2::Listener",
                 "RedirectConfig.Host",
             ),
-            TypeOverride::StringType("carina_core::schema::types::redirect_host()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_core::schema::types::redirect_host()",
+            )),
         );
         m.insert(
             (
                 "AWS::ElasticLoadBalancingV2::Listener",
                 "RedirectConfig.Port",
             ),
-            TypeOverride::StringType("carina_core::schema::types::redirect_port()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_core::schema::types::redirect_port()",
+            )),
         );
         m.insert(
             (
                 "AWS::ElasticLoadBalancingV2::Listener",
                 "RedirectConfig.Path",
             ),
-            TypeOverride::StringType("carina_core::schema::types::redirect_path()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_core::schema::types::redirect_path()",
+            )),
         );
         m.insert(
             (
                 "AWS::ElasticLoadBalancingV2::Listener",
                 "RedirectConfig.Query",
             ),
-            TypeOverride::StringType("carina_core::schema::types::redirect_query()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "carina_core::schema::types::redirect_query()",
+            )),
         );
         // ELBv2 Listener RedirectConfig.StatusCode (awscc#360). The
         // description ("either permanent (HTTP 301) or temporary
@@ -9700,7 +10234,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudFront::Distribution", "DomainName"),
             TypeOverride::AttributeType {
-                expression: "carina_core::schema::types::domain_name()",
+                expression: OverrideTypeExpression::raw(
+                    "carina_core::schema::types::domain_name()",
+                ),
                 display: const { OverrideTypeDisplay::new("DomainName") },
                 block_name: None,
                 default: None,
@@ -9712,7 +10248,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudFront::Distribution", "DistributionConfig.DefaultRootObject"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some(r"^(?:[^/][\s\S]*)?\z".to_string()), None, None)"#,
+                expression: OverrideTypeExpression::string(Some(ApprovedPattern::whole(r"^(?:[^/][\s\S]*)?\z")), None, PatternLiteral::Raw),
                 display: const { OverrideTypeDisplay::new(r"String (pattern: ^(?:[^/][\s\S]*)?\z)") },
                 block_name: None,
                 default: None,
@@ -9752,7 +10288,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::CloudFront::Distribution", key),
                 TypeOverride::AttributeType {
-                    expression: "AttributeType::int()",
+                    expression: OverrideTypeExpression::raw("AttributeType::int()"),
                     display: const { OverrideTypeDisplay::new("Int") },
                     block_name: None,
                     default: None,
@@ -9802,7 +10338,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::CloudFront::Distribution", key),
                 TypeOverride::AttributeType {
-                    expression: "carina_core::schema::types::positive_int()",
+                    expression: OverrideTypeExpression::raw(
+                        "carina_core::schema::types::positive_int()",
+                    ),
                     display: const { OverrideTypeDisplay::new("PositiveInt") },
                     block_name: None,
                     default: None,
@@ -9815,10 +10353,23 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_S3OriginConfig.html
         // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_S3Origin.html
         m.insert(
-            ("AWS::CloudFront::Distribution", "S3OriginConfig.OriginAccessIdentity"),
+            (
+                "AWS::CloudFront::Distribution",
+                "S3OriginConfig.OriginAccessIdentity",
+            ),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some(r"^(?:origin-access-identity/cloudfront/[\s\S]+)?\z".to_string()), None, None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (pattern: ^(?:origin-access-identity/cloudfront/[\s\S]+)?\z)") },
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole(
+                        r"^(?:origin-access-identity/cloudfront/[\s\S]+)?\z",
+                    )),
+                    None,
+                    PatternLiteral::Raw,
+                ),
+                display: const {
+                    OverrideTypeDisplay::new(
+                        r"String (pattern: ^(?:origin-access-identity/cloudfront/[\s\S]+)?\z)",
+                    )
+                },
                 block_name: None,
                 default: None,
             },
@@ -9851,7 +10402,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudFront::Distribution", "GeoRestriction.Locations"),
             TypeOverride::ArrayItemType {
-                expression: r#"AttributeType::refined_string(None, Some(r"^[A-Z]{2}\z".to_string()), None, None)"#,
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole(r"^[A-Z]{2}\z")),
+                    None,
+                    PatternLiteral::Raw,
+                ),
                 display: const { OverrideTypeDisplay::new(r"List<String (pattern: ^[A-Z]{2}\z)>") },
                 block_name: None,
                 default: None,
@@ -9872,9 +10427,16 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // IAM certificate IDs: maximum 32 characters, with no added minimum.
         // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_ViewerCertificate.html
         m.insert(
-            ("AWS::CloudFront::Distribution", "ViewerCertificate.IamCertificateId"),
+            (
+                "AWS::CloudFront::Distribution",
+                "ViewerCertificate.IamCertificateId",
+            ),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((None, Some(32))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((None, Some(32))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: ..=32)") },
                 block_name: None,
                 default: None,
@@ -9883,9 +10445,16 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // Association ID: 1..=64 characters, without an invented ID alphabet.
         // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_ConnectionFunctionAssociation.html
         m.insert(
-            ("AWS::CloudFront::Distribution", "ConnectionFunctionAssociation.Id"),
+            (
+                "AWS::CloudFront::Distribution",
+                "ConnectionFunctionAssociation.Id",
+            ),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(64))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), Some(64))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: 1..=64)") },
                 block_name: None,
                 default: None,
@@ -9896,8 +10465,16 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudFront::Distribution", "ParameterDefinition.Name"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some(r"^[a-zA-Z0-9_-]+\z".to_string()), Some((Some(1), Some(128))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=128, pattern: ^[a-zA-Z0-9_-]+\z)") },
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole(r"^[a-zA-Z0-9_-]+\z")),
+                    Some((Some(1), Some(128))),
+                    PatternLiteral::Raw,
+                ),
+                display: const {
+                    OverrideTypeDisplay::new(
+                        r"String (length: 1..=128, pattern: ^[a-zA-Z0-9_-]+\z)",
+                    )
+                },
                 block_name: None,
                 default: None,
             },
@@ -9907,7 +10484,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudFront::Distribution", "StringSchema.DefaultValue"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(256))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), Some(256))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: 1..=256)") },
                 block_name: None,
                 default: None,
@@ -9926,12 +10507,19 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "CustomHeader.Header",
             ),
         ] {
-            m.insert(key, TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((None, Some(256))), None)",
-                display: const { OverrideTypeDisplay::new("String (length: ..=256)") },
-                block_name: None,
-                default: None,
-            });
+            m.insert(
+                key,
+                TypeOverride::AttributeType {
+                    expression: OverrideTypeExpression::string(
+                        None,
+                        Some((None, Some(256))),
+                        PatternLiteral::Quoted,
+                    ),
+                    display: const { OverrideTypeDisplay::new("String (length: ..=256)") },
+                    block_name: None,
+                    default: None,
+                },
+            );
         }
         // Custom header values: at most 1783 characters, with arbitrary contents.
         // This fixed cap does not apply to the adjustable CSP-length quota.
@@ -9946,20 +10534,35 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "CustomHeader.Value",
             ),
         ] {
-            m.insert(key, TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((None, Some(1783))), None)",
-                display: const { OverrideTypeDisplay::new("String (length: ..=1783)") },
-                block_name: None,
-                default: None,
-            });
+            m.insert(
+                key,
+                TypeOverride::AttributeType {
+                    expression: OverrideTypeExpression::string(
+                        None,
+                        Some((None, Some(1783))),
+                        PatternLiteral::Quoted,
+                    ),
+                    display: const { OverrideTypeDisplay::new("String (length: ..=1783)") },
+                    block_name: None,
+                    default: None,
+                },
+            );
         }
         // Function names: 1..=64 ASCII letters/digits, hyphens or underscores.
         // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CreateFunction.html
         m.insert(
             ("AWS::CloudFront::Function", "Name"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some(r"^[a-zA-Z0-9_-]{1,64}\z".to_string()), Some((Some(1), Some(64))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=64, pattern: ^[a-zA-Z0-9_-]{1,64}\z)") },
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole(r"^[a-zA-Z0-9_-]{1,64}\z")),
+                    Some((Some(1), Some(64))),
+                    PatternLiteral::Raw,
+                ),
+                display: const {
+                    OverrideTypeDisplay::new(
+                        r"String (length: 1..=64, pattern: ^[a-zA-Z0-9_-]{1,64}\z)",
+                    )
+                },
                 block_name: None,
                 default: None,
             },
@@ -9999,9 +10602,16 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // OAC names: up to 64 characters; no documented minimum or grammar.
         // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_OriginAccessControlConfig.html
         m.insert(
-            ("AWS::CloudFront::OriginAccessControl", "OriginAccessControlConfig.Name"),
+            (
+                "AWS::CloudFront::OriginAccessControl",
+                "OriginAccessControlConfig.Name",
+            ),
             TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((None, Some(64))), None)",
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((None, Some(64))),
+                    PatternLiteral::Quoted,
+                ),
                 display: const { OverrideTypeDisplay::new("String (length: ..=64)") },
                 block_name: None,
                 default: None,
@@ -10151,7 +10761,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // measured behavior and rejects non-default or unproven groups.
         m.insert(
             ("AWS::Scheduler::Schedule", "GroupName"),
-            TypeOverride::StringType("crate::schemas::catalog::scheduler_schedule_group_name()"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "crate::schemas::catalog::scheduler_schedule_group_name()",
+            )),
         );
 
         // === IntRange overrides ===
@@ -11902,6 +12514,7 @@ mod tests {
     #[test]
     fn test_codegen_regex_patterns_cached_output_compiles() {
         USED_STRING_PATTERN_REWRITES.with(|used| used.borrow_mut().clear());
+        let mut resources = BTreeSet::new();
         for path in cached_schema_paths() {
             let source: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
@@ -11909,6 +12522,8 @@ mod tests {
             if !schema.is_cloud_control_provisionable() {
                 continue;
             }
+            validate_pattern_registry_sources(&schema).unwrap();
+            resources.insert(schema.type_name.clone());
             // string_constraints is the compilation gate during generation.
             let context = EmissionContext::from_source(&schema).unwrap();
             super::render_schema_code(&context, &schema.type_name).unwrap();
@@ -11916,14 +12531,166 @@ mod tests {
         USED_STRING_PATTERN_REWRITES.with(|used| {
             let used = used.borrow();
             for rewrite in STRING_PATTERN_REWRITES {
-                assert!(
-                    used.contains(&(rewrite.cfn_type, rewrite.property_path)),
-                    "stale string pattern rewrite row {}.{} was not used by any cached schema",
-                    rewrite.cfn_type,
-                    rewrite.property_path
-                );
+                for &source_path in rewrite.source_paths {
+                    assert!(
+                        used.contains(&(rewrite.cfn_type, source_path)),
+                        "stale string pattern rewrite row {}#{} ({}) was not found in any cached schema",
+                        rewrite.cfn_type,
+                        source_path,
+                        rewrite.source,
+                    );
+                }
             }
         });
+        for exception in SUBSTRING_PATTERN_EXCEPTIONS {
+            assert!(
+                resources.contains(exception.resource_type),
+                "stale substring pattern exception {}#{} ({}) has no cached resource",
+                exception.resource_type,
+                exception.source_path,
+                exception.source,
+            );
+        }
+    }
+
+    #[test]
+    fn codegen_normalizes_whole_value_patterns_including_partial_alternation() {
+        let schema = empty_schema("AWS::Test::Resource");
+        for (source, expected) in [
+            ("[a-z]+", r"^(?:[a-z]+)\z"),
+            ("^A|B$", r"^(?:^A|B$)\z"),
+            ("^A$|^B$", "^A$|^B$"),
+        ] {
+            let prop = def(Some("string"), None, vec![], None, None, Some(source));
+            let code = pattern_type_code(&schema, None, "UserValue", &prop);
+            assert_eq!(emitted_patterns(&code), vec![expected]);
+        }
+    }
+
+    #[test]
+    fn override_string_patterns_share_approval_between_rust_and_markdown() {
+        let expression = OverrideTypeExpression::string(
+            Some(ApprovedPattern::whole("[a-z]+")),
+            Some((Some(1), Some(64))),
+            PatternLiteral::Quoted,
+        );
+        assert_eq!(
+            emitted_patterns(expression.as_str()),
+            vec![r"^(?:[a-z]+)\z"]
+        );
+        assert_eq!(
+            expression.normalized_display("String (length: 1..=64, pattern: [a-z]+)"),
+            r"String (length: 1..=64, pattern: ^(?:[a-z]+)\z)",
+        );
+        assert!(std::panic::catch_unwind(|| OverrideTypeExpression::raw(
+            r#"AttributeType::refined_string(None, Some("unapproved".to_string()), None, None)"#,
+        )).is_err());
+
+        let invalid = TypeOverride::StringType(OverrideTypeExpression::string(
+            Some(ApprovedPattern::whole("(?=x)x")),
+            None,
+            PatternLiteral::Quoted,
+        ));
+        let error = invalid
+            .validate_patterns(
+                &empty_schema("AWS::Test::Resource"),
+                CfnPropertyPath::new(None, "UserValue"),
+            )
+            .unwrap_err()
+            .to_string();
+        for expected in ["AWS::Test::Resource", "/properties/UserValue", "(?=x)x"] {
+            assert!(error.contains(expected), "{error}");
+        }
+    }
+
+    #[test]
+    fn codegen_rewrites_all_seventeen_wafv2_non_whitespace_source_paths() {
+        let schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
+        let mut sites = 0;
+        for (name, definition) in schema.definitions.as_ref().unwrap() {
+            for (property_name, property) in definition.properties.as_ref().into_iter().flatten() {
+                let leaf = property.items.as_deref().unwrap_or(property);
+                if leaf.pattern.as_deref() != Some(r".*\S.*") {
+                    continue;
+                }
+                sites += 1;
+                let code = pattern_type_code(&schema, Some(name), property_name, property);
+                assert_eq!(emitted_patterns(&code), vec![r"^[\s\S]*\S[\s\S]*\z"]);
+                for (value, valid) in [("\nx\n", true), ("", false), ("  \n", false)] {
+                    assert_eq!(
+                        emitted_string_accepts(&code, value),
+                        valid,
+                        "{name}.{property_name}: {value:?}"
+                    );
+                }
+            }
+        }
+        assert_eq!(sites, 17);
+    }
+
+    #[test]
+    fn codegen_rejects_changed_or_missing_registered_pattern_sources_before_emission() {
+        for (resource, path, source) in [
+            (
+                "AWS::Scheduler::Schedule",
+                "/definitions/EventBridgeParameters/properties/Source",
+                r"^(?=[/\.\-_A-Za-z0-9]+)((?!aws\.).*)|(\$(\.[\w_-]+(\[(\d+|\*)\])*)*)$",
+            ),
+            (
+                "AWS::WAFv2::WebACL",
+                "/definitions/ResponseInspectionJson/properties/SuccessValues/items",
+                r".*\S.*",
+            ),
+            (
+                "AWS::Logs::LogGroup",
+                "/properties/LogGroupName",
+                r"^[.\-_/#A-Za-z0-9]{1,512}\Z",
+            ),
+        ] {
+            for replacement in [Some("changed"), None] {
+                let mut schema = cfn_schema_for_codegen_tests(resource);
+                schema.edit_json(|json| {
+                    let node = json.pointer_mut(path).unwrap().as_object_mut().unwrap();
+                    match replacement {
+                        Some(value) => {
+                            node.insert("pattern".into(), serde_json::json!(value));
+                        }
+                        None => {
+                            node.remove("pattern");
+                        }
+                    }
+                });
+                let error = validate_pattern_registry_sources(&schema)
+                    .expect_err("stale pattern registry entry must fail before emission")
+                    .to_string();
+                for expected in [resource, path, source] {
+                    assert!(error.contains(expected), "{error}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn codegen_invalid_nested_item_pattern_reports_its_full_source_pointer_and_regex() {
+        let source = "(?=x)x";
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource",
+            "properties": {"Settings": {"$ref": "#/definitions/Settings"}},
+            "definitions": {"Settings": {"type": "object", "properties": {
+                "Values": {"type": "array", "items": {"type": "string", "pattern": source}}
+            }}}
+        }))
+        .unwrap();
+        let panic = std::panic::catch_unwind(|| generate_schema_code(&schema, &schema.type_name))
+            .expect_err("invalid emitted pattern must fail generation");
+        let message = panic.downcast_ref::<String>().unwrap();
+        for expected in [
+            "AWS::Test::Resource",
+            "/definitions/Settings/properties/Values/items",
+            source,
+        ] {
+            assert!(message.contains(expected), "{message}");
+        }
     }
 
     #[test]
@@ -12531,6 +13298,61 @@ mod tests {
     }
 
     #[test]
+    fn test_codegen_regex_patterns_translate_registered_sources_at_other_paths() {
+        for (type_name, parent, name, valid, invalid) in [
+            ("AWS::ECR::Repository", None, "RepositoryName", "ab", "a"),
+            (
+                "AWS::Scheduler::Schedule",
+                Some("EventBridgeParameters"),
+                "Source",
+                "custom.source",
+                "!prefix$",
+            ),
+        ] {
+            let cached = cfn_schema_for_codegen_tests(type_name);
+            let leaf = match parent {
+                Some(parent) => &cached.definitions.as_ref().unwrap()[parent]
+                    .properties
+                    .as_ref()
+                    .unwrap()[name],
+                None => &cached.properties[name],
+            };
+            let schema = ParsedCfnSchema::from_json(serde_json::json!({
+                "typeName": type_name,
+                "properties": {"UserValue": {"oneOf": [{
+                    "type": "array",
+                    "items": {"$ref": "#/definitions/Value"}
+                }]}},
+                "definitions": {"Value": leaf}
+            }))
+            .unwrap();
+            reset_recursion_guard();
+            let code =
+                pattern_type_code(&schema, None, "UserValue", &schema.properties["UserValue"]);
+            assert!(emitted_string_accepts(&code, valid), "{type_name}: {code}");
+            assert!(
+                !emitted_string_accepts(&code, invalid),
+                "{type_name}: {code}"
+            );
+            // Moving Scheduler's source shares its dialect translation, but
+            // does not grant its path-specific substring exception.
+            assert!(
+                emitted_patterns(&code)
+                    .iter()
+                    .all(|pattern| is_whole_anchored(pattern))
+            );
+            if type_name == "AWS::Scheduler::Schedule" {
+                for value in ["a!tail", "aw!tail", "awsxtail"] {
+                    assert!(emitted_string_accepts(&code, value), "{value:?}: {code}");
+                }
+                for value in ["aws.", "a\n", "aw\n", "aws\n"] {
+                    assert!(!emitted_string_accepts(&code, value), "{value:?}: {code}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_codegen_regex_patterns_ecr_extracts_and_intersects_length() {
         let schema = cfn_schema_for_codegen_tests("AWS::ECR::Repository");
         for (min, max, expected) in [
@@ -12596,6 +13418,47 @@ mod tests {
                 assert!(message.contains(type_name), "{message}");
                 assert!(message.contains(name), "{message}");
                 assert!(message.contains("changed"), "{message}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_codegen_regex_patterns_reject_changed_sources_through_ref_items() {
+        for (type_name, parent, name) in [
+            ("AWS::ECR::Repository", None, "RepositoryName"),
+            ("AWS::Logs::LogGroup", None, "LogGroupName"),
+            ("AWS::SSO::PermissionSet", None, "SessionDuration"),
+            (
+                "AWS::Scheduler::Schedule",
+                Some("EventBridgeParameters"),
+                "Source",
+            ),
+        ] {
+            for source in [Some("^changed[0-9]+$"), None] {
+                let schema = ParsedCfnSchema::from_json(serde_json::json!({
+                    "typeName": type_name,
+                    "properties": {name: {
+                        "type": "array",
+                        "items": {"$ref": "#/definitions/Changed"}
+                    }},
+                    "definitions": {"Changed": {
+                        "type": "string",
+                        "pattern": source
+                    }}
+                }))
+                .unwrap();
+                reset_recursion_guard();
+                let result = std::panic::catch_unwind(|| {
+                    pattern_type_code(&schema, parent, name, &schema.properties[name])
+                });
+                reset_recursion_guard();
+                let panic = result.expect_err(
+                    "resolved changed sources must still fail their logical property check",
+                );
+                let message = panic.downcast_ref::<String>().unwrap();
+                for expected in [type_name, name, "changed"] {
+                    assert!(message.contains(expected), "{message}");
+                }
             }
         }
     }
@@ -15985,7 +16848,7 @@ mod tests {
             ] {
                 let expected = refined_string_type(
                     "None",
-                    &emit_pattern_option(pattern),
+                    pattern.map(ApprovedPattern::whole).as_ref(),
                     &format!("Some(({min:?}, Some({max})))"),
                     "None",
                 );
@@ -16073,7 +16936,9 @@ mod tests {
                 "Csv.HeaderList",
                 refined_string_type(
                     "None",
-                    &emit_pattern_option(Some(r"^[\x20-\x21\x23-\x2B\x2D-\x7E]*\z")),
+                    Some(&ApprovedPattern::whole(
+                        r"^[\x20-\x21\x23-\x2B\x2D-\x7E]*\z",
+                    )),
                     &emit_length_option(Some(1), Some(65536)),
                     "None",
                 ),
@@ -16605,7 +17470,7 @@ mod tests {
                 assert!(cfn_override_property(&schema, cfn_path).is_some(), "{path}");
                 let expected = refined_string_type(
                     "None",
-                    &emit_pattern_option(Some(pattern)),
+                    Some(&ApprovedPattern::whole(pattern)),
                     &emit_length_option(min, max),
                     "None",
                 );
@@ -16943,8 +17808,12 @@ mod tests {
                     "Some((Some({min}), {}))",
                     max.map_or_else(|| "None".to_string(), |max| format!("Some({max})"))
                 );
-                let expected =
-                    refined_string_type("None", &emit_pattern_option(pattern), &length, "None");
+                let expected = refined_string_type(
+                    "None",
+                    pattern.map(ApprovedPattern::whole).as_ref(),
+                    &length,
+                    "None",
+                );
                 if path.contains('.') {
                     assert_all_generated_struct_fields(inline, path, &expected);
                     if with_query_def || !path.starts_with("MetricDataQuery.") {
@@ -19220,7 +20089,9 @@ mod tests {
             let mut overrides = ResourceTypeOverrides::default();
             overrides.insert(
                 (CFN_TYPE, "RedirectConfig.Protocol"),
-                TypeOverride::StringType("carina_core::schema::types::redirect_protocol()"),
+                TypeOverride::StringType(OverrideTypeExpression::raw(
+                    "carina_core::schema::types::redirect_protocol()",
+                )),
             );
             overrides
         });
@@ -19895,7 +20766,9 @@ mod tests {
         ] {
             assert_eq!(
                 overrides.get(&("AWS::ElasticLoadBalancingV2::Listener", field)),
-                Some(&TypeOverride::StringType(type_constructor))
+                Some(&TypeOverride::StringType(OverrideTypeExpression::raw(
+                    type_constructor
+                )))
             );
         }
     }
@@ -20112,7 +20985,11 @@ mod tests {
         };
         assert_eq!(
             *expression,
-            r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9._]+\\z".to_string()), Some((None, Some(256))), None)"#
+            OverrideTypeExpression::string(
+                Some(ApprovedPattern::whole(r"^[a-zA-Z0-9._]+\z")),
+                Some((None, Some(256))),
+                PatternLiteral::Quoted,
+            )
         );
     }
 
@@ -20131,7 +21008,9 @@ mod tests {
                 (
                     "Names",
                     "Settings.Names",
-                    TypeOverride::StringType("carina_core::schema::types::domain_name()"),
+                    TypeOverride::StringType(OverrideTypeExpression::raw(
+                        "carina_core::schema::types::domain_name()",
+                    )),
                 ),
             ] {
                 overrides.insert((CFN_TYPE, top_level), override_type.clone());
@@ -26788,9 +27667,16 @@ mod tests {
         static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
             let mut overrides = ResourceTypeOverrides::default();
             overrides.insert(
-                ("AWS::Test::InlineParentOverride", "InlineSettings.DefaultValue"),
+                (
+                    "AWS::Test::InlineParentOverride",
+                    "InlineSettings.DefaultValue",
+                ),
                 TypeOverride::AttributeType {
-                    expression: "AttributeType::refined_string(None, None, Some((Some(1), None)), None)",
+                    expression: OverrideTypeExpression::string(
+                        None,
+                        Some((Some(1), None)),
+                        PatternLiteral::Quoted,
+                    ),
                     display: OverrideTypeDisplay::new("String(len: 1..)"),
                     block_name: None,
                     default: None,
@@ -26799,7 +27685,7 @@ mod tests {
             overrides.insert(
                 ("AWS::Test::InlineParentOverride", "InlineSettings.Values"),
                 TypeOverride::ArrayItemType {
-                    expression: "AttributeType::int()",
+                    expression: OverrideTypeExpression::raw("AttributeType::int()"),
                     display: OverrideTypeDisplay::new("List<Int>"),
                     block_name: None,
                     default: None,
@@ -26857,7 +27743,7 @@ mod tests {
                     "InlineSettings.MissingValues",
                 ),
                 TypeOverride::ArrayItemType {
-                    expression: "AttributeType::int()",
+                    expression: OverrideTypeExpression::raw("AttributeType::int()"),
                     display: OverrideTypeDisplay::new("List<Int>"),
                     block_name: None,
                     default: None,
@@ -26927,7 +27813,7 @@ mod tests {
                 overrides.insert(
                     (CFN_TYPE, path),
                     TypeOverride::ArrayItemType {
-                        expression: "AttributeType::int()",
+                        expression: OverrideTypeExpression::raw("AttributeType::int()"),
                         display: OverrideTypeDisplay::new("List<Int>"),
                         block_name: None,
                         default: None,
@@ -27303,7 +28189,7 @@ mod tests {
                 overrides.insert(
                     (resource, path),
                     TypeOverride::ArrayItemType {
-                        expression: "AttributeType::string()",
+                        expression: OverrideTypeExpression::raw("AttributeType::string()"),
                         display: OverrideTypeDisplay::new("List<String>"),
                         block_name: None,
                         default: None,
@@ -27900,7 +28786,7 @@ mod tests {
         );
         assert!(
             generated.contains(
-                "AttributeType::refined_string(None, Some(\".*\\\\S.*\".to_string()), Some((Some(1), Some(512))), None)"
+                "AttributeType::refined_string(None, Some(\"^(?:.*\\\\S.*)\\\\z\".to_string()), Some((Some(1), Some(512))), None)"
             ),
             "the aliased object's field constraints must survive: {generated}"
         );
@@ -28538,7 +29424,9 @@ mod tests {
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         assert_eq!(
-            generated.matches(r#"Some("[0-9]+".to_string())"#).count(),
+            generated
+                .matches(r#"Some("^(?:[0-9]+)\\z".to_string())"#)
+                .count(),
             2,
             "Both properties should retain their pattern metadata: {generated}"
         );
@@ -28754,7 +29642,7 @@ mod tests {
             &BTreeMap::new(),
         );
         assert!(
-            type_str.contains("Some(\"[0-9]+\".to_string())"),
+            type_str.contains("Some(\"^(?:[0-9]+)\\\\z\".to_string())"),
             "Numeric string pattern should be captured in Custom.pattern: {type_str}"
         );
         assert!(
@@ -28861,7 +29749,7 @@ mod tests {
         );
         // Should mention both constraints
         assert!(
-            type_str.contains("Some(\"[0-9]+\".to_string())"),
+            type_str.contains("Some(\"^(?:[0-9]+)\\\\z\".to_string())"),
             "Should capture pattern: {type_str}"
         );
         assert!(
@@ -28923,7 +29811,7 @@ mod tests {
 
         assert!(
             code.contains(
-                r#"AttributeType::refined_string(None, Some("[0-9A-Fa-f]{40}".to_string()), Some((Some(40), Some(40))), None)"#
+                r#"AttributeType::refined_string(None, Some("^(?:[0-9A-Fa-f]{40})\\z".to_string()), Some((Some(40), Some(40))), None)"#
             ),
             "Array items should retain both constraints, got:\n{code}"
         );

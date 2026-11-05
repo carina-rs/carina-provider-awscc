@@ -88,7 +88,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_parent_ids_attribute());
     #[inline(never)]
     fn build_paths_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("paths", AttributeType::list(AttributeType::refined_string(None, Some("^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/".to_string()), None, None)))
+        AttributeSchema::provider_populated("paths", AttributeType::list(AttributeType::refined_string(None, Some("^(?:^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/)\\z".to_string()), None, None)))
                 .with_description("The paths in the organization where the account exists. (read-only)")
                 .with_provider_name("Paths")
             .build()
