@@ -8,6 +8,7 @@
 //! - `provider` - AwsccProvider implementation
 //! - `schemas` - Auto-generated resource schemas
 
+mod partition;
 pub mod provider;
 mod references;
 mod resend_safety;

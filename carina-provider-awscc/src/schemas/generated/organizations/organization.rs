@@ -46,7 +46,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_id_attribute());
     #[inline(never)]
     fn build_management_account_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("management_account_arn", carina_aws_types::arn())
+        AttributeSchema::provider_populated("management_account_arn", crate::schemas::catalog::arn())
                 .with_description("The Amazon Resource Name (ARN) of the account that is designated as the management account for the organization. (read-only)")
                 .with_provider_name("ManagementAccountArn")
             .build()

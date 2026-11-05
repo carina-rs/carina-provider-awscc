@@ -133,7 +133,7 @@ pub fn dynamodb_table_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_kinesis_stream_specification_attribute() -> AttributeSchema {
         AttributeSchema::optional("kinesis_stream_specification", AttributeType::struct_("KinesisStreamSpecification".to_string(), vec![StructField::optional("approximate_creation_date_time_precision", AttributeType::enum_(carina_core::schema::enum_identity("ApproximateCreationDateTimePrecision", Some("aws.dynamodb.Table.KinesisStreamSpecification")), Some(vec!["MICROSECOND".to_string(), "MILLISECOND".to_string()]), vec![("MICROSECOND".to_string(), "microsecond".to_string()), ("MILLISECOND".to_string(), "millisecond".to_string())], None, None)).with_description("The precision for the time and date that the stream was created.").with_provider_name("ApproximateCreationDateTimePrecision").build(),
-                    StructField::required("stream_arn", carina_aws_types::arn()).with_description("The ARN for a specific Kinesis data stream. Length Constraints: Minimum length of 37. Maximum length of 1024.").with_provider_name("StreamArn").build()]))
+                    StructField::required("stream_arn", crate::schemas::catalog::arn()).with_description("The ARN for a specific Kinesis data stream. Length Constraints: Minimum length of 37. Maximum length of 1024.").with_provider_name("StreamArn").build()]))
                 .with_description("The Kinesis Data Streams configuration for the specified table.")
                 .with_provider_name("KinesisStreamSpecification")
             .build()
@@ -196,7 +196,7 @@ pub fn dynamodb_table_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_sse_specification_attribute());
     #[inline(never)]
     fn build_stream_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("stream_arn", carina_aws_types::arn())
+        AttributeSchema::provider_populated("stream_arn", crate::schemas::catalog::arn())
                 .with_description(" (read-only)")
                 .with_provider_name("StreamArn")
             .build()
@@ -280,7 +280,7 @@ pub fn dynamodb_table_config() -> AwsccSchemaConfig {
     schema = schema.with_def("InputFormatOptions", build_schema_def_3());
     #[inline(never)]
     fn build_schema_def_4() -> AttributeType { AttributeType::struct_("KinesisStreamSpecification".to_string(), vec![StructField::optional("approximate_creation_date_time_precision", AttributeType::enum_(carina_core::schema::enum_identity("ApproximateCreationDateTimePrecision", Some("aws.dynamodb.Table.KinesisStreamSpecification")), Some(vec!["MICROSECOND".to_string(), "MILLISECOND".to_string()]), vec![("MICROSECOND".to_string(), "microsecond".to_string()), ("MILLISECOND".to_string(), "millisecond".to_string())], None, None)).with_description("The precision for the time and date that the stream was created.").with_provider_name("ApproximateCreationDateTimePrecision").build(),
-                    StructField::required("stream_arn", carina_aws_types::arn()).with_description("The ARN for a specific Kinesis data stream. Length Constraints: Minimum length of 37. Maximum length of 1024.").with_provider_name("StreamArn").build()]) }
+                    StructField::required("stream_arn", crate::schemas::catalog::arn()).with_description("The ARN for a specific Kinesis data stream. Length Constraints: Minimum length of 37. Maximum length of 1024.").with_provider_name("StreamArn").build()]) }
     schema = schema.with_def("KinesisStreamSpecification", build_schema_def_4());
     #[inline(never)]
     fn build_schema_def_5() -> AttributeType { AttributeType::struct_("OnDemandThroughput".to_string(), vec![StructField::optional("max_read_request_units", AttributeType::refined_int(None, Some((Some(1), None)))).with_description("Maximum number of read request units for the specified table. To specify a maximum ``OnDemandThroughput`` on your table, set the value of ``MaxReadRequestUnits`` as greater than or equal to 1. To remove the maximum ``OnDemandThroughput`` that is currently set on your table, set the value of ``MaxReadRequestUnits`` to -1.").with_provider_name("MaxReadRequestUnits").build(),

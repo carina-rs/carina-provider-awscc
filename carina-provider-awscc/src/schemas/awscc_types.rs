@@ -136,7 +136,7 @@ pub fn s3_analytics_destination() -> AttributeType {
     AttributeType::struct_(
         "AnalyticsDestination".to_string(),
         vec![
-            StructField::required("bucket_arn", carina_aws_types::arn())
+            StructField::required("bucket_arn", super::catalog::arn())
                 .with_description("ARN of the bucket to which analytics data is exported.")
                 .with_provider_name("BucketArn")
                 .build(),

@@ -83,7 +83,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipv4_ipam_pool_id_attribute());
     #[inline(never)]
     fn build_load_balancer_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("load_balancer_arn", carina_aws_types::arn())
+        AttributeSchema::provider_populated("load_balancer_arn", crate::schemas::catalog::arn())
                 .with_description(" (read-only)")
                 .with_provider_name("LoadBalancerArn")
             .build()

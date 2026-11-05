@@ -37,7 +37,7 @@ impl ReferenceKind {
         if cfn_length.is_none() || cfn_length == self.default_length() {
             return "carina_aws_types::kms_key_reference()".to_string();
         }
-        let pattern = if pattern.as_str() == carina_aws_types::KMS_KEY_REFERENCE_PATTERN {
+        let pattern = if pattern.as_str() == self.default_pattern() {
             // Retain the shared symbol in generated output after approving
             // its exact value, avoiding unrelated generated-resource diffs.
             "Some(carina_aws_types::KMS_KEY_REFERENCE_PATTERN.to_string())".to_string()
@@ -49,10 +49,19 @@ impl ReferenceKind {
         )
     }
 
-    #[cfg(test)]
-    #[allow(dead_code)] // Used by the library's final-registry test via this shared module.
     pub fn default_pattern(self) -> &'static str {
-        carina_aws_types::KMS_KEY_REFERENCE_PATTERN
+        // This comparison-only reference type is shared across providers (#541).
+        // Read its grammar from the type instead of maintaining a second source.
+        static DEFAULT_TYPE: std::sync::LazyLock<carina_core::schema::AttributeType> =
+            std::sync::LazyLock::new(carina_aws_types::kms_key_reference);
+        let carina_core::schema::RawShape::Reference {
+            pattern: Some(pattern),
+            ..
+        } = DEFAULT_TYPE.raw_shape()
+        else {
+            unreachable!("KMS reference constructor must carry a pattern");
+        };
+        pattern
     }
 }
 

@@ -8,7 +8,7 @@ use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 pub fn arn() -> AttributeType {
-    carina_aws_types::arn()
+    crate::schemas::catalog::arn()
 }
 
 const VALID_ENCRYPTION_CONFIGURATION_ENCRYPTION_TYPE: &[&str] = &["AES256", "KMS", "KMS_DSSE"];

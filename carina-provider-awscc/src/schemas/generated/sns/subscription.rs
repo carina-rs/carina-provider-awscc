@@ -8,7 +8,7 @@ use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    carina_aws_types::arn()
+    crate::schemas::catalog::arn()
 }
 
 const VALID_FILTER_POLICY_SCOPE: &[&str] = &["MessageAttributes", "MessageBody"];
@@ -107,7 +107,7 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_replay_policy_attribute());
     #[inline(never)]
     fn build_subscription_role_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("subscription_role_arn", carina_aws_types::arn())
+        AttributeSchema::optional("subscription_role_arn", crate::schemas::catalog::arn())
                 .with_description("This property applies only to Amazon Data Firehose delivery stream subscriptions.")
                 .with_provider_name("SubscriptionRoleArn")
             .build()
@@ -115,7 +115,7 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_subscription_role_arn_attribute());
     #[inline(never)]
     fn build_topic_arn_attribute() -> AttributeSchema {
-        AttributeSchema::required("topic_arn", carina_aws_types::arn())
+        AttributeSchema::required("topic_arn", crate::schemas::catalog::arn())
                 .create_only()
                 .with_description("The ARN of the topic to subscribe to.")
                 .with_provider_name("TopicArn")

@@ -110,7 +110,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_private_dns_enabled_attribute());
     #[inline(never)]
     fn build_resource_configuration_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("resource_configuration_arn", carina_aws_types::arn())
+        AttributeSchema::optional("resource_configuration_arn", crate::schemas::catalog::arn())
                 .create_only()
                 .with_description("The Amazon Resource Name (ARN) of the resource configuration.")
                 .with_provider_name("ResourceConfigurationArn")
@@ -144,7 +144,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_service_name_attribute());
     #[inline(never)]
     fn build_service_network_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("service_network_arn", carina_aws_types::arn())
+        AttributeSchema::optional("service_network_arn", crate::schemas::catalog::arn())
                 .create_only()
                 .with_description("The Amazon Resource Name (ARN) of the service network.")
                 .with_provider_name("ServiceNetworkArn")

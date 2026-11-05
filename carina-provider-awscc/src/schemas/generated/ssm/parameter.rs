@@ -8,7 +8,7 @@ use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    carina_aws_types::arn()
+    crate::schemas::catalog::arn()
 }
 
 const VALID_DATA_TYPE: &[&str] = &["text", "aws:ec2:image"];

@@ -30,7 +30,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_cidr_block_attribute());
     #[inline(never)]
     fn build_core_network_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("core_network_arn", carina_aws_types::arn())
+        AttributeSchema::optional("core_network_arn", crate::schemas::catalog::arn())
                 .with_description("The Amazon Resource Name (ARN) of the core network.")
                 .with_provider_name("CoreNetworkArn")
             .build()

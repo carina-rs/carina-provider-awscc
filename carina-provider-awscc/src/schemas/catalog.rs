@@ -6,6 +6,7 @@
 //! `carina_aws_types::define_aws_type_catalog` grammar shared with `AwsType`.
 
 use super::pattern::{ApprovedPattern, refined_string_with_validator};
+use crate::partition::{Partition, arn_regex};
 use carina_aws_types::AwsType;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeType, CompiledPattern, TypeIdentity, legacy_validator};
@@ -21,6 +22,122 @@ fn overlay_identity(segments: &[&str], kind: &str) -> TypeIdentity {
     }
 }
 
+/// Generic AWS ARN.
+pub fn arn() -> AttributeType {
+    // Preserve the provider-scoped aws.Arn identity without delegating any
+    // partition validation to the shared AWS types crate.
+    refined_string_with_validator(
+        overlay_identity(&[], "Arn"),
+        Some(ApprovedPattern::whole(&arn_regex("[^:]+:.*$"))),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(value)) = value {
+                arn_parts(value.expose_plaintext()).map(|_| ())
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
+
+/// Preserve the established ARN diagnostics while AWSCC owns the partition set.
+fn arn_parts(arn: &str) -> Result<[&str; 6], String> {
+    if !arn.starts_with("arn:") {
+        return Err("must start with 'arn:'".to_string());
+    }
+    let parts: [&str; 6] = arn.splitn(6, ':').collect::<Vec<_>>().try_into().map_err(|_| {
+        "must have at least 6 colon-separated parts (arn:partition:service:region:account:resource)".to_string()
+    })?;
+    if Partition::from_id(parts[1]).is_none() {
+        return Err(format!(
+            "invalid partition '{}', must be one of: {}",
+            parts[1],
+            Partition::ALL.map(Partition::id).join(", ")
+        ));
+    }
+    if parts[2].is_empty() {
+        return Err("service must not be empty (e.g., 's3', 'iam', 'ec2')".to_string());
+    }
+    Ok(parts)
+}
+
+fn validate_service_arn(
+    arn: &str,
+    expected_service: &str,
+    resource_prefix: Option<&str>,
+) -> Result<(), String> {
+    let parts = arn_parts(arn)?;
+    if parts[2] != expected_service {
+        return Err(format!(
+            "expected {} service, got '{}'",
+            expected_service, parts[2]
+        ));
+    }
+    if let Some(prefix) = resource_prefix
+        && !parts[5].starts_with(prefix)
+    {
+        return Err(format!(
+            "expected resource starting with '{}', got '{}'",
+            prefix, parts[5]
+        ));
+    }
+    Ok(())
+}
+
+fn validate_iam_arn(arn: &str, resource_prefix: &str) -> Result<(), String> {
+    // Retain the IAM-specific checks and wording of the former shared validator.
+    let resource_type = resource_prefix.trim_end_matches('/');
+    let label = format!(
+        "IAM {} ARN",
+        resource_type
+            .chars()
+            .next()
+            .map(|c| c.to_uppercase().to_string() + &resource_type[1..])
+            .unwrap_or_default()
+    );
+    let parts = arn_parts(arn)?;
+    if parts[2] != "iam" {
+        return Err(format!(
+            "expected {label} but service is '{}' in '{arn}'",
+            parts[2]
+        ));
+    }
+    if !parts[3].is_empty() {
+        return Err(format!(
+            "{label} region must be empty, got '{}' in '{arn}'",
+            parts[3]
+        ));
+    }
+    let account = parts[4];
+    if account != "aws" && (account.len() != 12 || !account.chars().all(|c| c.is_ascii_digit())) {
+        return Err(format!(
+            "{label} account must be 'aws' or a 12-digit ID, got '{account}' in '{arn}'"
+        ));
+    }
+    if !parts[5].starts_with(resource_prefix) {
+        return Err(format!(
+            "{label} resource must begin with '{resource_prefix}', but got '{}' in '{arn}'",
+            parts[5]
+        ));
+    }
+    let resource_name = &parts[5][resource_prefix.len()..];
+    if resource_name.is_empty() {
+        return Err(format!(
+            "{label} name after '{resource_prefix}' must not be empty in '{arn}'"
+        ));
+    }
+    if !resource_name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "+=,.@-_/".contains(c))
+    {
+        return Err(format!(
+            "{label} name contains invalid characters: '{resource_name}' in '{arn}'"
+        ));
+    }
+    Ok(())
+}
+
 fn validated_service_arn(
     identity: TypeIdentity,
     pattern: ApprovedPattern,
@@ -28,11 +145,8 @@ fn validated_service_arn(
     resource_prefix: Option<&'static str>,
     label: &'static str,
 ) -> AttributeType {
-    // `carina-aws-types` exposes the shared validator, but its `service_arn`
-    // AttributeType constructor is private. AWSCC needs this adapter both for
-    // overlay identities and for callback-bearing refinements of shared rows.
     // Keep `label` to preserve the established `Invalid <service> ARN ...`
-    // diagnostic emitted by the pre-catalog generated schemas.
+    // diagnostic for both AWSCC identities and refinements of shared rows.
     refined_string_with_validator(
         identity,
         Some(pattern),
@@ -40,7 +154,7 @@ fn validated_service_arn(
         legacy_validator(move |value| {
             if let Value::Concrete(ConcreteValue::String(value)) = value {
                 let value = value.expose_plaintext();
-                carina_aws_types::validate_service_arn(value, service, resource_prefix)
+                validate_service_arn(value, service, resource_prefix)
                     .map_err(|reason| format!("Invalid {label} ARN '{value}': {reason}"))
             } else {
                 Err("Expected string".to_string())
@@ -56,9 +170,8 @@ fn validated_iam_arn(
     resource_prefix: &'static str,
     label: &'static str,
 ) -> AttributeType {
-    // The shared `iam_arn` AttributeType constructor is private as well. The
-    // explicit label preserves AWSCC's `Invalid IAM OIDC Provider ARN ...`
-    // prefix while the public shared validator supplies the detailed reason.
+    // The explicit label preserves AWSCC's `Invalid IAM OIDC Provider ARN ...`
+    // prefix while the AWSCC validator supplies the detailed reason.
     refined_string_with_validator(
         identity,
         Some(pattern),
@@ -66,7 +179,7 @@ fn validated_iam_arn(
         legacy_validator(move |value| {
             if let Value::Concrete(ConcreteValue::String(value)) = value {
                 let value = value.expose_plaintext();
-                carina_aws_types::validate_iam_arn(value, resource_prefix)
+                validate_iam_arn(value, resource_prefix)
                     .map_err(|reason| format!("Invalid {label} ARN '{value}': {reason}"))
             } else {
                 Err("Expected string".to_string())
@@ -365,7 +478,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:cloudfront::123456789012:distribution/E1234567890ABC",
             constructor: |identity| validated_service_arn(
                 identity,
-                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):cloudfront::[^:]*:distribution/.+$"),
+                ApprovedPattern::whole(&arn_regex("cloudfront::[^:]*:distribution/.+$")),
                 "cloudfront",
                 Some("distribution/"),
                 "cloudfront",
@@ -378,7 +491,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:dynamodb:ap-northeast-1:123456789012:table/example",
             constructor: |identity| validated_service_arn(
                 identity,
-                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):dynamodb:[^:]*:[^:]*:table/.+$"),
+                ApprovedPattern::whole(&arn_regex("dynamodb:[^:]*:[^:]*:table/.+$")),
                 "dynamodb",
                 Some("table/"),
                 "dynamodb",
@@ -391,7 +504,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:ec2:ap-northeast-1:123456789012:ipam-pool/ipam-pool-12345678",
             constructor: |identity| validated_service_arn(
                 identity,
-                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):ec2:.*$"),
+                ApprovedPattern::whole(&arn_regex("ec2:.*$")),
                 "ec2",
                 None,
                 "ec2",
@@ -404,7 +517,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:ec2:ap-northeast-1:123456789012:ipam/ipam-12345678",
             constructor: |identity| validated_service_arn(
                 identity,
-                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):ec2:.*$"),
+                ApprovedPattern::whole(&arn_regex("ec2:.*$")),
                 "ec2",
                 None,
                 "ec2",
@@ -417,7 +530,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:ecs:ap-northeast-1:123456789012:cluster/example",
             constructor: |identity| validated_service_arn(
                 identity,
-                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):ecs:[^:]*:[^:]*:cluster/.+$"),
+                ApprovedPattern::whole(&arn_regex("ecs:[^:]*:[^:]*:cluster/.+$")),
                 "ecs",
                 Some("cluster/"),
                 "ecs",
@@ -437,7 +550,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:logs:ap-northeast-1:123456789012:log-group:example",
             constructor: |identity| validated_service_arn(
                 identity,
-                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):logs:[^:]*:[^:]*:log-group:.+$"),
+                ApprovedPattern::whole(&arn_regex("logs:[^:]*:[^:]*:log-group:.+$")),
                 "logs",
                 Some("log-group:"),
                 "logs",
@@ -457,7 +570,7 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "arn:aws:wafv2:ap-northeast-1:123456789012:regional/webacl/example/12345678-1234-1234-1234-123456789abc",
             constructor: |identity| validated_service_arn(
                 identity,
-                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):wafv2:.*$"),
+                ApprovedPattern::whole(&arn_regex("wafv2:.*$")),
                 "wafv2",
                 None,
                 "wafv2",
@@ -468,7 +581,7 @@ carina_aws_types::define_aws_type_catalog! {
             refines: AwsType::IamOidcProviderArn,
             constructor: |identity| validated_iam_arn(
                 identity,
-                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:oidc-provider/.+$"),
+                ApprovedPattern::whole(&arn_regex("iam::[^:]*:oidc-provider/.+$")),
                 "oidc-provider/",
                 "IAM OIDC Provider",
             ),
@@ -478,7 +591,7 @@ carina_aws_types::define_aws_type_catalog! {
             refines: AwsType::OrganizationsAccountArn,
             constructor: |identity| validated_service_arn(
                 identity,
-                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):organizations:.*$"),
+                ApprovedPattern::whole(&arn_regex("organizations:.*$")),
                 "organizations",
                 None,
                 "organizations",
@@ -501,7 +614,7 @@ carina_aws_types::define_aws_type_catalog! {
             refines: AwsType::OrganizationsOrganizationArn,
             constructor: |identity| validated_service_arn(
                 identity,
-                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):organizations:.*$"),
+                ApprovedPattern::whole(&arn_regex("organizations:.*$")),
                 "organizations",
                 None,
                 "organizations",
@@ -512,7 +625,7 @@ carina_aws_types::define_aws_type_catalog! {
             refines: AwsType::S3BucketArn,
             constructor: |identity| validated_service_arn(
                 identity,
-                ApprovedPattern::whole("^arn:(aws|aws-cn|aws-us-gov):s3:::.+$"),
+                ApprovedPattern::whole(&arn_regex("s3:::.+$")),
                 "s3",
                 None,
                 "s3",
@@ -576,6 +689,230 @@ mod tests {
                     .expect("integer catalog sample"),
             )),
             shape => panic!("AWSCC catalog row must be a scalar, got {shape:?}"),
+        }
+    }
+
+    #[test]
+    fn catalog_arns_accept_all_sdk_partitions() {
+        let rows = [
+            (
+                AwsccType::CloudFrontDistributionArn,
+                "cloudfront::[^:]*:distribution/.+$",
+            ),
+            (
+                AwsccType::DynamoDbTableArn,
+                "dynamodb:[^:]*:[^:]*:table/.+$",
+            ),
+            (AwsccType::Ec2IpamPoolArn, "ec2:.*$"),
+            (AwsccType::Ec2IpamArn, "ec2:.*$"),
+            (AwsccType::EcsClusterArn, "ecs:[^:]*:[^:]*:cluster/.+$"),
+            (AwsccType::LogsLogGroupArn, "logs:[^:]*:[^:]*:log-group:.+$"),
+            (AwsccType::Wafv2WebAclArn, "wafv2:.*$"),
+            (
+                AwsccType::IamOidcProviderArn,
+                "iam::[^:]*:oidc-provider/.+$",
+            ),
+            (AwsccType::OrganizationsAccountArn, "organizations:.*$"),
+            (AwsccType::OrganizationsOrganizationArn, "organizations:.*$"),
+            (AwsccType::S3BucketArn, "s3:::.+$"),
+        ];
+        let expected = rows
+            .iter()
+            .map(|(row, _)| format!("{row:?}"))
+            .collect::<BTreeSet<_>>();
+        let actual = AwsccType::ALL
+            .iter()
+            .copied()
+            .filter(|row| row.identity().kind == "Arn")
+            .map(|row| format!("{row:?}"))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            actual,
+            expected,
+            "ARN rows: missing {:?}; extra {:?}",
+            expected.difference(&actual).collect::<Vec<_>>(),
+            actual.difference(&expected).collect::<Vec<_>>()
+        );
+
+        let prefix = format!("^arn:{}:", crate::partition::regex_fragment());
+        let actual = AwsccType::ALL
+            .iter()
+            .copied()
+            .filter_map(|row| match row.attribute_type().raw_shape() {
+                RawShape::String {
+                    pattern: Some(pattern),
+                    ..
+                } if pattern.starts_with(&prefix) => Some(format!("{row:?}")),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            actual,
+            expected,
+            "Partition builder rows: missing {:?}; extra {:?}",
+            expected.difference(&actual).collect::<Vec<_>>(),
+            actual.difference(&expected).collect::<Vec<_>>()
+        );
+
+        let mut failures = Vec::new();
+        for (row, rest) in rows {
+            let attribute_type = row.attribute_type();
+            let RawShape::String {
+                pattern: Some(pattern),
+                validate: Some(validate),
+                ..
+            } = attribute_type.raw_shape()
+            else {
+                panic!("{row:?} must have a string pattern and validator");
+            };
+            assert_eq!(
+                pattern,
+                arn_regex(rest),
+                "{row:?} service/resource grammar and anchors"
+            );
+            let pattern = CompiledPattern::try_new(pattern).expect("ARN pattern must compile");
+            for partition in Partition::ALL.map(Partition::id) {
+                let arn = row
+                    .valid_sample()
+                    .replacen("arn:aws:", &format!("arn:{partition}:"), 1);
+                if !pattern.is_match(&arn) {
+                    failures.push(format!("{row:?} pattern rejected {partition}"));
+                }
+                let value = Value::Concrete(ConcreteValue::String(arn.into()));
+                if let Err(reason) = validate(&value) {
+                    failures.push(format!("{row:?} validator rejected {partition}: {reason}"));
+                }
+            }
+            let invalid = row.valid_sample().replacen("arn:aws:", "arn:aws-xx:", 1);
+            assert!(
+                !pattern.is_match(&invalid),
+                "{row:?} pattern accepted aws-xx"
+            );
+            assert!(
+                validate(&Value::Concrete(ConcreteValue::String(invalid.into()))).is_err(),
+                "{row:?} validator accepted aws-xx"
+            );
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn service_arn_validation_preserves_checks_and_diagnostics() {
+        for (arn, reason) in [
+            ("not-an-arn", "must start with 'arn:'"),
+            (
+                "arn:aws:ecs",
+                "must have at least 6 colon-separated parts (arn:partition:service:region:account:resource)",
+            ),
+            (
+                "arn:aws::us-east-1:123456789012:cluster/example",
+                "service must not be empty (e.g., 's3', 'iam', 'ec2')",
+            ),
+            (
+                "arn:aws:s3:::cluster/example",
+                "expected ecs service, got 's3'",
+            ),
+            (
+                "arn:aws:ecs:us-east-1:123456789012:service/example",
+                "expected resource starting with 'cluster/', got 'service/example'",
+            ),
+        ] {
+            assert_eq!(
+                validate_service_arn(arn, "ecs", Some("cluster/")),
+                Err(reason.to_string())
+            );
+            let attribute_type = ecs_cluster_arn();
+            let RawShape::String {
+                validate: Some(validate),
+                ..
+            } = attribute_type.raw_shape()
+            else {
+                panic!("ECS cluster ARN must have a validator");
+            };
+            let error = validate(&Value::Concrete(ConcreteValue::String(arn.into())))
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains(&format!("Invalid ecs ARN '{arn}': {reason}")),
+                "{error}"
+            );
+        }
+        assert_eq!(
+            validate_service_arn("arn:aws-xx:ecs:::cluster/example", "ecs", None),
+            Err(format!(
+                "invalid partition 'aws-xx', must be one of: {}",
+                Partition::ALL.map(Partition::id).join(", ")
+            ))
+        );
+        // Basic service validation intentionally leaves region/account grammar
+        // and empty-resource checks to the row's existing pattern.
+        assert!(validate_service_arn("arn:aws:ecs:::cluster/", "ecs", Some("cluster/")).is_ok());
+        assert!(validate_service_arn("arn:aws:ec2:::", "ec2", None).is_ok());
+        assert!(
+            validate_service_arn(
+                "arn:aws:logs:::log-group:example:stream",
+                "logs",
+                Some("log-group:")
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn oidc_arn_validation_preserves_strict_iam_checks_and_diagnostics() {
+        let attribute_type = iam_oidc_provider_arn();
+        let RawShape::String {
+            validate: Some(validate),
+            ..
+        } = attribute_type.raw_shape()
+        else {
+            panic!("OIDC ARN must have a validator");
+        };
+        for (arn, reason) in [
+            (
+                "arn:aws:sts::123456789012:oidc-provider/example.com",
+                "expected IAM Oidc-provider ARN but service is 'sts'",
+            ),
+            (
+                "arn:aws:iam:us-east-1:123456789012:oidc-provider/example.com",
+                "IAM Oidc-provider ARN region must be empty",
+            ),
+            (
+                "arn:aws:iam::123:oidc-provider/example.com",
+                "IAM Oidc-provider ARN account must be 'aws' or a 12-digit ID",
+            ),
+            (
+                "arn:aws:iam::12345678901x:oidc-provider/example.com",
+                "IAM Oidc-provider ARN account must be 'aws' or a 12-digit ID",
+            ),
+            (
+                "arn:aws:iam::123456789012:role/example",
+                "IAM Oidc-provider ARN resource must begin with 'oidc-provider/'",
+            ),
+            (
+                "arn:aws:iam::123456789012:oidc-provider/",
+                "IAM Oidc-provider ARN name after 'oidc-provider/' must not be empty",
+            ),
+            (
+                "arn:aws:iam::123456789012:oidc-provider/has space",
+                "IAM Oidc-provider ARN name contains invalid characters",
+            ),
+            (
+                "arn:aws:iam::123456789012:oidc-provider/日本語",
+                "IAM Oidc-provider ARN name contains invalid characters",
+            ),
+        ] {
+            let error = validate(&Value::Concrete(ConcreteValue::String(arn.into())))
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains(&format!("Invalid IAM OIDC Provider ARN '{arn}': {reason}")),
+                "{error}"
+            );
+        }
+        for account in ["aws", "123456789012"] {
+            let arn = format!("arn:aws:iam::{account}:oidc-provider/example.com/path_+=,.@-");
+            validate(&Value::Concrete(ConcreteValue::String(arn.into()))).unwrap();
         }
     }
 

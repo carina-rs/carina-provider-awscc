@@ -74,7 +74,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
     fn build_permissions_boundary_attribute() -> AttributeSchema {
         AttributeSchema::optional("permissions_boundary", AttributeType::struct_("PermissionsBoundary".to_string(), vec![StructField::optional("customer_managed_policy_reference", AttributeType::struct_("CustomerManagedPolicyReference".to_string(), vec![StructField::required("name", AttributeType::refined_string(None, Some("^(?:[\\w+=,.@-]+)\\z".to_string()), Some((Some(1), Some(128))), None)).with_provider_name("Name").build(),
                     StructField::optional("path", AttributeType::refined_string(None, Some("^(?:((/[A-Za-z0-9\\.,\\+@=_-]+)*)/)\\z".to_string()), Some((Some(1), Some(512))), None)).with_provider_name("Path").build()])).with_provider_name("CustomerManagedPolicyReference").build(),
-                    StructField::optional("managed_policy_arn", carina_aws_types::arn()).with_provider_name("ManagedPolicyArn").build()]))
+                    StructField::optional("managed_policy_arn", crate::schemas::catalog::arn()).with_provider_name("ManagedPolicyArn").build()]))
                 .with_provider_name("PermissionsBoundary")
             .build()
     }
@@ -113,7 +113,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_schema_def_1() -> AttributeType { AttributeType::struct_("PermissionsBoundary".to_string(), vec![StructField::optional("customer_managed_policy_reference", AttributeType::struct_("CustomerManagedPolicyReference".to_string(), vec![StructField::required("name", AttributeType::refined_string(None, Some("^(?:[\\w+=,.@-]+)\\z".to_string()), Some((Some(1), Some(128))), None)).with_provider_name("Name").build(),
                     StructField::optional("path", AttributeType::refined_string(None, Some("^(?:((/[A-Za-z0-9\\.,\\+@=_-]+)*)/)\\z".to_string()), Some((Some(1), Some(512))), None)).with_provider_name("Path").build()])).with_provider_name("CustomerManagedPolicyReference").build(),
-                    StructField::optional("managed_policy_arn", carina_aws_types::arn()).with_provider_name("ManagedPolicyArn").build()]) }
+                    StructField::optional("managed_policy_arn", crate::schemas::catalog::arn()).with_provider_name("ManagedPolicyArn").build()]) }
     schema = schema.with_def("PermissionsBoundary", build_schema_def_1());
     AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::PermissionSet",

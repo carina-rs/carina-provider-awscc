@@ -63,7 +63,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_id_attribute());
     #[inline(never)]
     fn build_log_destination_attribute() -> AttributeSchema {
-        AttributeSchema::optional("log_destination", carina_aws_types::arn())
+        AttributeSchema::optional("log_destination", crate::schemas::catalog::arn())
                 .create_only()
                 .with_description("Specifies the destination to which the flow log data is to be published. Flow log data can be published to a CloudWatch Logs log group, an Amazon S3 bucket, or a Kinesis Firehose stream. The value specified for this parameter depends on the value specified for LogDestinationType.")
                 .with_provider_name("LogDestination")
