@@ -291,6 +291,11 @@ enum TypeOverride {
         min_items: Option<i64>,
         max_items: Option<i64>,
     },
+    /// Tighten a derived string map key's length without replacing its CFN pattern.
+    MapKeyLength {
+        min_length: Option<u64>,
+        max_length: Option<u64>,
+    },
     /// Override to an enum with specific values
     Enum(Vec<&'static str>),
     /// Like [`TypeOverride::Enum`], but when the property is an array
@@ -402,6 +407,7 @@ impl TypeOverride {
             Self::NamedAttributeType { .. } => Some("resource_type_overrides NamedAttributeType"),
             Self::ArrayItemType { .. } => Some("resource_type_overrides ArrayItemType"),
             Self::Array { .. } => Some("resource_type_overrides Array"),
+            Self::MapKeyLength { .. } => Some("resource_type_overrides MapKeyLength"),
             _ => None,
         }
     }
@@ -444,6 +450,28 @@ impl TypeOverride {
     ) -> Result<()> {
         self.validate_patterns(schema, path)?;
         match self {
+            Self::MapKeyLength {
+                min_length,
+                max_length,
+            } => {
+                let (pattern, _) = property_pattern_map_entry(property, schema).with_context(|| {
+                    format!("{}.{}: MapKeyLength requires one patternProperties entry and additionalProperties:false on the same map", schema.type_name, path)
+                })?;
+                anyhow::ensure!(
+                    pattern_map_key_values(pattern).is_none(),
+                    "{}.{}: MapKeyLength requires a derived string key, not an enum",
+                    schema.type_name,
+                    path
+                );
+                anyhow::ensure!(
+                    min_length
+                        .zip(*max_length)
+                        .is_none_or(|(min, max)| min <= max),
+                    "{}.{}: MapKeyLength minimum exceeds maximum",
+                    schema.type_name,
+                    path
+                );
+            }
             Self::ArrayItemType { .. } | Self::Array { .. } => {
                 self.array_source(schema, path, property)?;
             }
@@ -1234,16 +1262,34 @@ struct TagMapType {
 }
 
 impl TagMapType {
-    fn emit(self, cfn_type: &str) -> String {
-        format!(
-            "AttributeType::map_with_key({}, {})",
-            self.key.emit(cfn_type, "Key").0,
-            self.value.emit(cfn_type, "Value").0,
+    fn emit(
+        self,
+        cfn_type: &str,
+        path: CfnPropertyPath<'_>,
+        namespace: &str,
+        structural: &[String],
+    ) -> (String, Option<EnumInfo>) {
+        let info = key_enum_info(&self.key).cloned();
+        (
+            format!(
+                "AttributeType::map_with_key({}, {})",
+                emit_map_key(self.key, cfn_type, path, namespace, structural),
+                self.value.emit(cfn_type, "Value").0,
+            ),
+            info,
         )
     }
 
     fn display(&self) -> String {
-        format!("Map<{}, {}>", self.key.display(), self.value.display())
+        format!(
+            "Map<{}, {}>",
+            if key_enum_info(&self.key).is_some() {
+                map_key_display(&self.key)
+            } else {
+                self.key.display()
+            },
+            self.value.display()
+        )
     }
 }
 
@@ -1275,8 +1321,21 @@ fn tag_map_type(classified: EmissionProperty<'_>, cfn_path: CfnPropertyPath<'_>)
     if let Some(items) = tag.items.as_deref() {
         (tag, source) = resolve(schema, items, format!("{source}/items"));
     }
-    let leaf = |property: &CfnProperty, source: String| {
+    let tag_definition = source.strip_prefix("/definitions/");
+    let leaf = |property: &CfnProperty, source: String, name: &str| {
         let (property, source) = resolve(schema, property, source);
+        if let Some(override_type) = tag_definition.and_then(|definition| {
+            resource_type_override(
+                &schema.type_name,
+                CfnPropertyPath::new(Some(definition), name),
+            )
+        }) && let Some(expression) = override_type.attribute_type_expression()
+        {
+            return StringLeaf::Inferred {
+                rust_type: expression.to_string(),
+                display_type: override_type.display().expect("Tag leaf override display"),
+            };
+        }
         StringLeaf::Refined {
             constraints: string_constraints(property, &schema.type_name, cfn_path, &source),
             format: None,
@@ -1287,21 +1346,25 @@ fn tag_map_type(classified: EmissionProperty<'_>, cfn_path: CfnPropertyPath<'_>)
         .unwrap_or_else(|| panic!("{}#{source}: unsupported Tag map shape", schema.type_name))
     {
         TagMapShape::KeyValue { key, value } => TagMapType {
-            key: leaf(key, format!("{source}/properties/Key")),
-            value: leaf(value, format!("{source}/properties/Value")),
+            key: leaf(key, format!("{source}/properties/Key"), "Key"),
+            value: leaf(value, format!("{source}/properties/Value"), "Value"),
         },
         TagMapShape::Pattern { pattern, value } => {
-            let source = format!(
-                "{source}/patternProperties/{}",
+            let key_source = format!("{source}/patternProperties");
+            let value_source = format!(
+                "{key_source}/{}",
                 pattern.replace('~', "~0").replace('/', "~1"),
             );
-            let key = CfnProperty {
-                pattern: Some(pattern.to_string()),
-                ..Default::default()
-            };
             TagMapType {
-                key: leaf(&key, source.clone()),
-                value: leaf(value, source),
+                key: if closed_pattern_map_entry(tag).is_some() {
+                    pattern_map_key_type(pattern, &schema.type_name, cfn_path, &key_source)
+                } else {
+                    StringLeaf::Inferred {
+                        rust_type: "AttributeType::string()".to_string(),
+                        display_type: "String".to_string(),
+                    }
+                },
+                value: leaf(value, value_source, "Value"),
             }
         }
     }
@@ -1794,6 +1857,14 @@ fn checked_resource_type_override(
     property: &CfnProperty,
 ) -> Option<&'static TypeOverride> {
     let override_type = resource_type_override(&schema.type_name, property_path)?;
+    // Value traversal retains the containing map's raw CFN property path.
+    // Its length refinement belongs only to the map's key. validate_sources
+    // validates the actual source map before either emitter walks its values.
+    if matches!(override_type, TypeOverride::MapKeyLength { .. })
+        && property_pattern_map_entry(property, schema).is_none()
+    {
+        return None;
+    }
     override_type
         .validate_source_shape(schema, property_path, property)
         .unwrap_or_else(|error| {
@@ -2632,6 +2703,7 @@ enum MarkdownType {
 
 #[derive(Debug)]
 enum MarkdownLinkedType {
+    Text(String),
     Enum(MarkdownEnumKey),
     Struct {
         key: MarkdownStructKey,
@@ -2642,6 +2714,7 @@ enum MarkdownLinkedType {
         suffix: Option<String>,
     },
     Map {
+        key: Box<MarkdownLinkedType>,
         value: Box<MarkdownLinkedType>,
     },
 }
@@ -2671,6 +2744,7 @@ impl MarkdownType {
 impl MarkdownLinkedType {
     fn write_to(&self, page: &mut PageBuilder<MarkdownTarget>) {
         match self {
+            Self::Text(text) => page.push_str(text),
             Self::Enum(key) => page.link(
                 MarkdownTarget::Enum(key.clone()),
                 format!("Enum ({})", key.type_name),
@@ -2687,8 +2761,10 @@ impl MarkdownLinkedType {
                     page.push_str(suffix);
                 }
             }
-            Self::Map { value } => {
-                page.push_str("Map\\<String, ");
+            Self::Map { key, value } => {
+                page.push_str("Map\\<");
+                key.write_to(page);
+                page.push_str(", ");
                 value.write_to(page);
                 page.push_str("\\>");
             }
@@ -2697,6 +2773,7 @@ impl MarkdownLinkedType {
 
     fn write_to_table_cell(&self, cell: &mut TableCell<MarkdownTarget>) {
         match self {
+            Self::Text(text) => cell.push_text(text),
             Self::Enum(key) => cell.push_link(
                 MarkdownTarget::Enum(key.clone()),
                 format!("Enum ({})", key.type_name),
@@ -2713,8 +2790,10 @@ impl MarkdownLinkedType {
                     cell.push_text(suffix);
                 }
             }
-            Self::Map { value } => {
-                cell.push_text("Map\\<String, ");
+            Self::Map { key, value } => {
+                cell.push_text("Map\\<");
+                key.write_to_table_cell(cell);
+                cell.push_text(", ");
                 value.write_to_table_cell(cell);
                 cell.push_text("\\>");
             }
@@ -3538,12 +3617,18 @@ impl TypeDisplay {
 
 fn object_map_type_text(
     prop_name: &str,
-    schema: &CfnSchema,
+    schema: &EmissionContext<'_>,
     property_path: CfnPropertyPath<'_>,
+    prop: &CfnProperty,
+    provider_path: &[String],
     value: &CfnProperty,
 ) -> String {
+    let key = map_key_type(prop, schema, provider_path, property_path)
+        .as_ref()
+        .map(map_key_display)
+        .unwrap_or_else(|| "String".to_string());
     match object_map_value_or_panic(schema, property_path, value) {
-        ObjectMapValueKind::DirectString => "Map<String, String>".to_string(),
+        ObjectMapValueKind::DirectString => format!("Map<{key}, String>"),
         ObjectMapValueKind::Struct => {
             let struct_name = value
                 .ref_path
@@ -3551,7 +3636,22 @@ fn object_map_type_text(
                 .and_then(|ref_path| resolve_ref(schema, ref_path))
                 .map(|resolved| resolved.name)
                 .unwrap_or(prop_name);
-            format!("Map<String, Struct({struct_name})>")
+            format!("Map<{key}, Struct({struct_name})>")
+        }
+    }
+}
+
+fn map_key_display(key: &StringLeaf<'_>) -> String {
+    if let Some(info) = key_enum_info(key) {
+        format!("Enum ({})", info.type_name)
+    } else {
+        let display = key.display();
+        if display == "String"
+            && matches!(key, StringLeaf::Refined { constraints, .. } if constraints.pattern.is_some())
+        {
+            "String(pattern)".to_string()
+        } else {
+            display
         }
     }
 }
@@ -3695,6 +3795,8 @@ fn type_display_at_resolved(
                 prop_name,
                 schema,
                 cfn_property_path,
+                prop,
+                provider_path,
                 value,
             ));
         }
@@ -3889,6 +3991,7 @@ fn markdown_enum_type(
         markdown_list_type(item, &array)
     } else if let Some(value) = property_object_map_value(prop, schema) {
         MarkdownLinkedType::Map {
+            key: Box::new(MarkdownLinkedType::Text("String".to_string())),
             value: Box::new(markdown_enum_type(value, schema, key)),
         }
     } else {
@@ -3899,13 +4002,74 @@ fn markdown_enum_type(
 fn markdown_link_type(
     prop_name: &str,
     prop: &CfnProperty,
-    schema: &CfnSchema,
+    schema: &EmissionContext<'_>,
     enum_target: Option<&MarkdownEnumKey>,
     property_path: &[String],
     cfn_parent: Option<&str>,
 ) -> Option<MarkdownLinkedType> {
-    if is_dsl_tags_property(schema, prop_name) {
+    let cfn_path = CfnPropertyPath::new(cfn_parent, prop_name);
+    let tag_map = is_dsl_tags_property(schema, prop_name)
+        || prop
+            .ref_path
+            .as_deref()
+            .is_some_and(|reference| is_tag_map_ref(schema, reference));
+    let key = map_key_type(prop, schema, property_path, cfn_path);
+    if tag_map && key.as_ref().and_then(key_enum_info).is_none() {
         return None;
+    }
+    if let Some(key_type) = key
+        && let Some((_, value)) = property_pattern_map_entry(prop, schema)
+    {
+        let value_kind = object_map_value_or_panic(schema, cfn_path, value);
+        let key_enum = key_enum_info(&key_type).is_some();
+        // Without links, retain the ordinary code-span map display. Its key
+        // refinement still comes from map_key_type in object_map_type_text.
+        if !key_enum && enum_target.is_none() && value_kind == ObjectMapValueKind::DirectString {
+            return None;
+        }
+        let key = if key_enum {
+            MarkdownLinkedType::Enum(
+                enum_target
+                    .expect("derived map key enum must be discovered")
+                    .clone(),
+            )
+        } else {
+            MarkdownLinkedType::Text(map_key_display(&key_type))
+        };
+        let value_path = extend_property_path(property_path, "*");
+        let value = if !key_enum && let Some(target) = enum_target {
+            markdown_enum_type(value, schema, target)
+        } else {
+            markdown_link_type(prop_name, value, schema, None, &value_path, cfn_parent)
+                .unwrap_or_else(|| {
+                    MarkdownLinkedType::Text(if tag_map {
+                        tag_map_type(schema.property_at(property_path, prop), cfn_path)
+                            .value
+                            .display()
+                    } else {
+                        "String".to_string()
+                    })
+                })
+        };
+        return Some(MarkdownLinkedType::Map {
+            key: Box::new(key),
+            value: Box::new(value),
+        });
+    }
+    if map_key_enum_info(prop, schema, prop_name).is_some()
+        && let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new())
+        && let Some(items) = array.items.as_deref()
+    {
+        let item_path = extend_property_path(property_path, "*");
+        let item = markdown_link_type(
+            prop_name,
+            items,
+            schema,
+            enum_target,
+            &item_path,
+            cfn_parent,
+        )?;
+        return Some(markdown_list_type(item, &array));
     }
     if let Some(key) = enum_target {
         return Some(markdown_enum_type(prop, schema, key));
@@ -3939,6 +4103,7 @@ fn markdown_link_type(
             markdown_link_type(prop_name, value, schema, None, &value_path, cfn_parent)
         {
             return Some(MarkdownLinkedType::Map {
+                key: Box::new(MarkdownLinkedType::Text("String".to_string())),
                 value: Box::new(value_type),
             });
         }
@@ -5195,29 +5360,20 @@ fn generate_attribute_type(
         return integer_from_number_type(prop, &schema.type_name, &property_path.to_string());
     }
 
+    // Map key enums publish ordinary enum metadata, but their generated map
+    // already contains that enum in the key slot. Never substitute it for values.
+    if map_key_enum_info(prop, schema, prop_name).is_some() {
+        return cfn_type_to_carina_type_with_enum_with_paths(prop, schema, namespace, enums, paths)
+            .0;
+    }
+
     let emit_enum = |enum_info: &EnumInfo| {
-        let aliases = known_enum_aliases();
-        let prop_aliases = aliases.get(prop_name);
-        let dsl_aliases_code = dsl_aliases_code(&enum_info.values, prop_aliases);
-        let (enum_kind, enum_namespace) = property_enum_identity(
+        let enum_type = string_enum_type(
             &schema.type_name,
             property_path,
             namespace,
             paths.structural,
             enum_info,
-        );
-        let values_str = enum_info
-            .values
-            .iter()
-            .map(|value| format!("{}.to_string()", rust_lit(value)))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let enum_type = format!(
-            r#"AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), Some(vec![{}]), {}, None, None)"#,
-            rust_lit(&enum_kind),
-            rust_lit(&enum_namespace),
-            values_str,
-            dsl_aliases_code
         );
         emit_enum_property_type(
             schema,
@@ -6590,14 +6746,194 @@ fn object_map_value_or_panic(
     })
 }
 
-fn direct_object_map_value(prop: &CfnProperty) -> Option<&CfnProperty> {
+fn direct_pattern_map_entry(prop: &CfnProperty) -> Option<(&str, &CfnProperty)> {
     let patterns = prop.pattern_properties.as_ref()?;
     (patterns.len() == 1).then(|| {
-        patterns
-            .values()
-            .next()
-            .expect("one patternProperties entry")
+        let (pattern, value) = patterns.iter().next().expect("one patternProperties entry");
+        (pattern.as_str(), value)
     })
+}
+
+fn direct_object_map_value(prop: &CfnProperty) -> Option<&CfnProperty> {
+    direct_pattern_map_entry(prop).map(|(_, value)| value)
+}
+
+fn closed_pattern_map_entry(prop: &CfnProperty) -> Option<(&str, &CfnProperty)> {
+    // A non-matching key remains an ordinary additional property unless this
+    // very object explicitly forbids additional properties. Neither an omitted
+    // flag nor additionalProperties:true restricts the map's key domain.
+    if prop.additional_properties != Some(false) {
+        return None;
+    }
+    direct_pattern_map_entry(prop)
+}
+
+fn property_pattern_map_entry<'a>(
+    prop: &'a CfnProperty,
+    schema: &'a CfnSchema,
+) -> Option<(&'a str, &'a CfnProperty)> {
+    match property_shape(prop, schema) {
+        PropertyShape::Reference { resolved, .. } => {
+            property_pattern_map_entry(resolved?.property, schema)
+        }
+        PropertyShape::Inline if inline_property_type(prop) == Some("object") => {
+            closed_pattern_map_entry(prop)
+        }
+        _ => None,
+    }
+}
+
+fn pattern_map_key_values(pattern: &str) -> Option<Vec<String>> {
+    extract_enum_from_alternation_pattern(pattern).filter(|values| {
+        values.iter().all(|value| {
+            value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        })
+    })
+}
+
+fn map_key_enum_info(prop: &CfnProperty, schema: &CfnSchema, name: &str) -> Option<EnumInfo> {
+    let mut prop = prop;
+    let mut references = HashSet::new();
+    loop {
+        match property_shape(prop, schema) {
+            PropertyShape::Reference { path, resolved } => {
+                if !references.insert(path) {
+                    return None;
+                }
+                prop = resolved?.property;
+            }
+            PropertyShape::Array { variant, .. } => prop = variant,
+            PropertyShape::Inline if inline_property_type(prop) == Some("array") => {
+                prop = prop.items.as_deref()?;
+            }
+            PropertyShape::Inline if inline_property_type(prop) == Some("object") => {
+                let (pattern, _) = closed_pattern_map_entry(prop)?;
+                return Some(EnumInfo {
+                    type_name: name.to_pascal_case(),
+                    values: pattern_map_key_values(pattern)?,
+                });
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn key_enum_info<'a>(key: &'a StringLeaf<'_>) -> Option<&'a EnumInfo> {
+    match key {
+        StringLeaf::Enum(EnumLeaf::String(info)) => Some(info),
+        _ => None,
+    }
+}
+
+fn pattern_map_key_type(
+    pattern: &str,
+    cfn_type: &str,
+    path: CfnPropertyPath<'_>,
+    source: &str,
+) -> StringLeaf<'static> {
+    if let Some(values) = pattern_map_key_values(pattern) {
+        return StringLeaf::Enum(EnumLeaf::string(path.property, values));
+    }
+    let key = CfnProperty {
+        pattern: Some(pattern.to_string()),
+        ..Default::default()
+    };
+    // A key's pattern uses the very same CFN provenance, review rewrites,
+    // whole-value approval and schema-dialect compiler as property patterns.
+    StringLeaf::Refined {
+        constraints: string_constraints(&key, cfn_type, path, source),
+        format: None,
+        to_dsl: None,
+    }
+}
+
+fn map_key_type(
+    prop: &CfnProperty,
+    schema: &EmissionContext<'_>,
+    provider_path: &[String],
+    path: CfnPropertyPath<'_>,
+) -> Option<StringLeaf<'static>> {
+    let (pattern, _) = property_pattern_map_entry(prop, schema)?;
+    let source = schema.pattern_source_path(provider_path, Some(pattern), path);
+    let mut key = pattern_map_key_type(pattern, &schema.type_name, path, &source);
+    if let Some(TypeOverride::MapKeyLength {
+        min_length,
+        max_length,
+    }) = resource_type_override(&schema.type_name, path)
+    {
+        let StringLeaf::Refined { constraints, .. } = &mut key else {
+            panic!(
+                "{}.{}: MapKeyLength requires a derived string key",
+                schema.type_name, path
+            )
+        };
+        if let Some(min) = min_length {
+            constraints.min_length = Some(
+                constraints
+                    .min_length
+                    .map_or(*min, |existing| existing.max(*min)),
+            );
+        }
+        if let Some(max) = max_length {
+            constraints.max_length = Some(
+                constraints
+                    .max_length
+                    .map_or(*max, |existing| existing.min(*max)),
+            );
+        }
+        assert!(
+            constraints
+                .min_length
+                .zip(constraints.max_length)
+                .is_none_or(|(min, max)| min <= max),
+            "{}.{}: incompatible map key length bounds",
+            schema.type_name,
+            path
+        );
+    }
+    Some(key)
+}
+
+fn emit_map_key(
+    key: StringLeaf<'_>,
+    cfn_type: &str,
+    path: CfnPropertyPath<'_>,
+    namespace: &str,
+    structural: &[String],
+) -> String {
+    match key {
+        StringLeaf::Enum(EnumLeaf::String(info)) => {
+            string_enum_type(cfn_type, path, namespace, structural, &info)
+        }
+        key => key.emit(cfn_type, path.property).0,
+    }
+}
+
+fn string_enum_type(
+    cfn_type: &str,
+    path: CfnPropertyPath<'_>,
+    namespace: &str,
+    structural: &[String],
+    info: &EnumInfo,
+) -> String {
+    let aliases = known_enum_aliases();
+    let dsl_aliases = dsl_aliases_code(&info.values, aliases.get(path.property));
+    let (kind, namespace) = property_enum_identity(cfn_type, path, namespace, structural, info);
+    let values = info
+        .values
+        .iter()
+        .map(|value| format!("{}.to_string()", rust_lit(value)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), Some(vec![{}]), {}, None, None)",
+        rust_lit(&kind),
+        rust_lit(&namespace),
+        values,
+        dsl_aliases,
+    )
 }
 
 fn property_object_map_value<'a>(
@@ -6865,13 +7201,15 @@ fn extract_enum_from_alternation_pattern(pattern: &str) -> Option<Vec<String>> {
         .strip_prefix('^')
         .and_then(|s| s.strip_suffix('$'))?;
     // Two recognized shapes:
-    //   1. `^(alt1|alt2|...)$` — one outer paren group, `|` only inside.
+    //   1. `^(alt1|alt2|...)$` or `^(?:alt1|alt2|...)$` — one outer group.
     //   2. `^literal$`         — no parens, no `|`.
     // Anything else (nested groups, top-level alternation without parens
     // like `^a|b$` which regex-parses as `(^a)|(b$)`, regex meta inside
     // alts, etc.) flows through the existing `Custom { pattern }` path.
-    let alternatives: Vec<&str> = if let Some(stripped) =
-        inner.strip_prefix('(').and_then(|s| s.strip_suffix(')'))
+    let alternatives: Vec<&str> = if let Some(stripped) = inner
+        .strip_prefix("(?:")
+        .or_else(|| inner.strip_prefix('('))
+        .and_then(|s| s.strip_suffix(')'))
     {
         if stripped.is_empty() || stripped.contains('(') || stripped.contains(')') {
             return None;
@@ -6997,16 +7335,24 @@ const STRING_PATTERN_REWRITES: &[StringPatternRewrite] = &[
     },
 ];
 
+fn cfn_pattern_at<'a>(source: &'a serde_json::Value, path: &str) -> Option<&'a str> {
+    let node = source.pointer(path)?;
+    node.get("pattern")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            let patterns = node.as_object()?;
+            (path.ends_with("/patternProperties") && patterns.len() == 1)
+                .then(|| patterns.keys().next().expect("one key pattern").as_str())
+        })
+}
+
 /// Check the original JSON even when an override replaces the CFN type. Run
 /// before either CLI output mode, so stale rows cannot silently become unused.
 fn validate_pattern_registry_sources(schema: &ParsedCfnSchema) -> Result<()> {
     let check = |path: &str, expected: &str, kind: &str| -> Result<()> {
-        let actual = schema
-            .source()
-            .pointer(path)
-            .and_then(|node| node.get("pattern"));
+        let actual = cfn_pattern_at(schema.source(), path);
         anyhow::ensure!(
-            actual.and_then(serde_json::Value::as_str) == Some(expected),
+            actual == Some(expected),
             "stale {kind} for {}#{path}: expected regex {expected}; found {actual:?}",
             schema.type_name,
         );
@@ -11072,6 +11418,435 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             TypeOverride::Enum(ssl_protocols),
         );
 
+        // WAFv2 WebACL constraints for #525. Every entry below is keyed by
+        // its raw CFN property/definition path, never by a DSL name suffix.
+        let waf_string = |pattern: &str, min: u64, max: u64, display: &'static str| {
+            TypeOverride::AttributeType {
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole(pattern)),
+                    Some(((min > 0).then_some(min), Some(max))),
+                    PatternLiteral::Quoted,
+                ),
+                display: OverrideTypeDisplay::new(display),
+                block_name: None,
+                default: None,
+            }
+        };
+        let waf_name = || waf_string(r"^[A-Za-z0-9_-]+$", 1, 128, "String(pattern, len: 1..=128)");
+
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_CreateWebACL.html#waf-CreateWebACL-request-Name
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 128-character names; rejected 129 characters and a.b.
+        m.insert(("AWS::WAFv2::WebACL", "Name"), waf_name());
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_CreateWebACL.html#waf-CreateWebACL-request-Description
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 256 characters, inner space and d\nd; rejected 257 characters,
+        // 1/2 characters, leading/trailing space, ! and Japanese.
+        // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted d\nd and returned the same string through get-resource.
+        // Java whitespace is ASCII, including newline; Rust \s is Unicode.
+        m.insert(("AWS::WAFv2::WebACL", "Description"), waf_string(
+            r"^[A-Za-z0-9_+=:#@/,.-][A-Za-z0-9_+=:#@/,. \t\n\r\x0B\x0C-]+[A-Za-z0-9_+=:#@/,.-]$",
+            1, 256, "String(pattern, len: 1..=256)",
+        ));
+        // The API adds key length bounds absent from CFN's patternProperties.
+        // Keep the key pattern derived from CFN and compose only these bounds.
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_WebACL.html#waf-Type-WebACL-CustomResponseBodies
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted keys k_1-a and 128 characters; rejected k.1 and 129 characters.
+        m.insert(
+            ("AWS::WAFv2::WebACL", "CustomResponseBodies"),
+            TypeOverride::MapKeyLength {
+                min_length: Some(1),
+                max_length: Some(128),
+            },
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_Tag.html#waf-Type-Tag-Key
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_Tag.html#waf-Type-Tag-Value
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted key 'a b', value '日本' and empty value; rejected a!b in keys
+        // and values. Preserve CFN's length bounds.
+        // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted key 'a b' with value '日本'; get-resource preserved both.
+        for (path, min, max, display) in [
+            ("Tag.Key", 1, 128, "String(pattern, len: 1..=128)"),
+            ("Tag.Value", 0, 256, "String(pattern, len: ..=256)"),
+        ] {
+            m.insert(
+                ("AWS::WAFv2::WebACL", path),
+                waf_string(r"^[\p{L}\p{Z}\p{N}_.:/=+\-@]*$", min, max, display),
+            );
+        }
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_CustomResponse.html#waf-Type-CustomResponse-CustomResponseBodyKey
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted CustomResponseBodyKey k_1; rejected k.1.
+        m.insert(
+            ("AWS::WAFv2::WebACL", "CustomResponse.CustomResponseBodyKey"),
+            waf_name(),
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_CustomHTTPHeader.html#waf-Type-CustomHTTPHeader-Name
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted header names x-a.b_c$ and 64 characters;
+        // rejected a b, a:b and 65 characters.
+        m.insert(
+            ("AWS::WAFv2::WebACL", "CustomHTTPHeader.Name"),
+            waf_string(r"^[A-Za-z0-9._$-]+$", 1, 64, "String(pattern, len: 1..=64)"),
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_DataProtectionConfig.html#waf-Type-DataProtectionConfig-DataProtections
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 26 DataProtections; rejected 27. Retain CFN's minimum of 1.
+        m.insert(
+            ("AWS::WAFv2::WebACL", "DataProtectionConfig.DataProtections"),
+            TypeOverride::Array {
+                items: None,
+                min_items: None,
+                max_items: Some(26),
+            },
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_FieldToProtect.html#waf-Type-FieldToProtect-FieldKeys
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 100 FieldKeys at member validation, then hit a separate
+        // 30-total semantic limit; rejected ' ' and 101 at member validation.
+        // The 30-total limit is not a type bound. \S is the complement of Java's
+        // ASCII whitespace; keep each item's existing 1..=64 characters.
+        m.insert(
+            ("AWS::WAFv2::WebACL", "FieldToProtect.FieldKeys"),
+            TypeOverride::ArrayItemType {
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole(r"^.*[^ \t\n\r\x0B\x0C].*$")),
+                    Some((Some(1), Some(64))),
+                    PatternLiteral::Quoted,
+                ),
+                display: OverrideTypeDisplay::new("List<String(pattern, len: 1..=64)>"),
+                block_name: None,
+                default: None,
+                min_items: None,
+                max_items: None,
+            }
+            .with_array_bounds(None, Some(100)),
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_Rule.html#waf-Type-Rule-Name
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_ExcludedRule.html#waf-Type-ExcludedRule-Name
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_RuleActionOverride.html#waf-Type-RuleActionOverride-Name
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 128-character Rule.Name and NoUserAgent_HEADER for ExcludedRule
+        // and RuleActionOverride; rejected Rule.Name with 129 characters, r.1 or
+        // r 1, and ExcludedRule/RuleActionOverride names a.b or a b.
+        // ExcludedRule/RuleActionOverride lengths: API documentation only, not probed.
+        for path in ["Rule.Name", "ExcludedRule.Name", "RuleActionOverride.Name"] {
+            m.insert(("AWS::WAFv2::WebACL", path), waf_name());
+        }
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_JsonMatchPattern.html#waf-Type-JsonMatchPattern-IncludedPaths
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted paths /, /a/b, /a~0 and 512 characters;
+        // rejected abc, /a~2 and 513 characters.
+        // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
+        // rejected IncludedPaths [] server-side (minimum length 1).
+        m.insert(
+            ("AWS::WAFv2::WebACL", "JsonMatchPattern.IncludedPaths"),
+            TypeOverride::ArrayItemType {
+                expression: OverrideTypeExpression::string(
+                    Some(ApprovedPattern::whole(r"^(?:/|(?:/(?:[^~]|~[01])+))$")),
+                    Some((Some(1), Some(512))),
+                    PatternLiteral::Quoted,
+                ),
+                display: OverrideTypeDisplay::new("List<String(pattern, len: 1..=512)>"),
+                block_name: None,
+                default: None,
+                min_items: None,
+                max_items: None,
+            }
+            .with_array_bounds(Some(1), None),
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_SingleHeader.html#waf-Type-SingleHeader-Name
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_SingleQueryArgument.html#waf-Type-SingleQueryArgument-Name
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted a b for both names and a 64-character SingleHeader.Name;
+        // rejected ' ' and 65 characters for both. SingleQueryArgument.Name with
+        // 64 characters reached WAFInvalidParameterException after member validation;
+        // retain the documented 64-character bound.
+        for path in ["SingleHeader.Name", "SingleQueryArgument.Name"] {
+            m.insert(
+                ("AWS::WAFv2::WebACL", path),
+                waf_string(
+                    r"^.*[^ \t\n\r\x0B\x0C].*$",
+                    1,
+                    64,
+                    "String(pattern, len: 1..=64)",
+                ),
+            );
+        }
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_ForwardedIPConfig.html#waf-Type-ForwardedIPConfig-HeaderName
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted HeaderName X-Forwarded-For and 255 characters;
+        // rejected X_F and 256 characters.
+        m.insert(
+            ("AWS::WAFv2::WebACL", "ForwardedIPConfiguration.HeaderName"),
+            waf_string(r"^[A-Za-z0-9-]+$", 1, 255, "String(pattern, len: 1..=255)"),
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_IPSetForwardedIPConfig.html#waf-Type-IPSetForwardedIPConfig-HeaderName
+        // API documentation only (not separately probed): HeaderName is 1..=255
+        // characters matching [A-Za-z0-9-]+, as for ForwardedIPConfig above.
+        m.insert(
+            (
+                "AWS::WAFv2::WebACL",
+                "IPSetForwardedIPConfiguration.HeaderName",
+            ),
+            waf_string(r"^[A-Za-z0-9-]+$", 1, 255, "String(pattern, len: 1..=255)"),
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_ResponseInspectionStatusCode.html#waf-Type-ResponseInspectionStatusCode-FailureCodes
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_ResponseInspectionStatusCode.html#waf-Type-ResponseInspectionStatusCode-SuccessCodes
+        // direct CreateWebACL, carina-test-008, us-east-1, 2026-11-06:
+        // accepted FailureCodes 0 and 999 at member validation, then rejected
+        // the ATP config with AT_LEAST_ONE_VALUE_REQUIRED; rejected 1000 at
+        // member validation. SuccessCodes has the same documented 0..=999 bound,
+        // not separately probed. Keep the existing 1..=10 items.
+        for path in [
+            "ResponseInspectionStatusCode.FailureCodes",
+            "ResponseInspectionStatusCode.SuccessCodes",
+        ] {
+            m.insert(
+                ("AWS::WAFv2::WebACL", path),
+                TypeOverride::ArrayItemType {
+                    expression: OverrideTypeExpression::raw(
+                        "AttributeType::refined_int(None, Some((Some(0), Some(999))))",
+                    ),
+                    display: OverrideTypeDisplay::new("List<Int(0..=999)>"),
+                    block_name: None,
+                    default: None,
+                    min_items: None,
+                    max_items: None,
+                },
+            );
+        }
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_Label.html#waf-Type-Label-Name
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_LabelMatchStatement.html#waf-Type-LabelMatchStatement-Key
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted Label.Name ns:x; rejected a.b, a b and 1025 characters for
+        // both fields. 1024 characters passed member validation but reached a
+        // separate semantic bound. Retain the documented 1024-character type bound.
+        for path in ["Label.Name", "LabelMatchStatement.Key"] {
+            m.insert(
+                ("AWS::WAFv2::WebACL", path),
+                waf_string(
+                    r"^[0-9A-Za-z_:-]+$",
+                    1,
+                    1024,
+                    "String(pattern, len: 1..=1024)",
+                ),
+            );
+        }
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_AndStatement.html#waf-Type-AndStatement-Statements
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_OrStatement.html#waf-Type-OrStatement-Statements
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted AndStatement with 2 statements; rejected AndStatement and
+        // OrStatement with 1 statement. OrStatement's minimum of 2 is also documented.
+        for path in ["AndStatement.Statements", "OrStatement.Statements"] {
+            m.insert(
+                ("AWS::WAFv2::WebACL", path),
+                TypeOverride::Array {
+                    items: None,
+                    min_items: Some(2),
+                    max_items: None,
+                },
+            );
+        }
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_AsnMatchStatement.html#waf-Type-AsnMatchStatement-AsnList
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 100 AsnList entries; rejected 101. Keep ASN item bounds.
+        // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
+        // rejected AsnList [] server-side (minimum length 1).
+        m.insert(
+            ("AWS::WAFv2::WebACL", "AsnMatchStatement.AsnList"),
+            TypeOverride::Array {
+                items: None,
+                min_items: Some(1),
+                max_items: Some(100),
+            },
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_ByteMatchStatement.html#waf-Type-ByteMatchStatement-SearchString
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 200 ASCII bytes and 66×'あ' (198 bytes);
+        // rejected 201 ASCII bytes, 67×'あ' (201 bytes) and empty string.
+        // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 66×'あ' and read back all 66 characters through get-resource.
+        // Core refined_string length counts characters, so use a byte validator.
+        m.insert(
+            ("AWS::WAFv2::WebACL", "ByteMatchStatement.SearchString"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "crate::schemas::catalog::wafv2_byte_match_search_string()",
+            )),
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_ByteMatchStatement.html#waf-Type-ByteMatchStatement-SearchString
+        // API documentation only (not separately probed): base64 must decode to
+        // 1..=200 bytes; the 200-byte limit applies before encoding.
+        m.insert(
+            (
+                "AWS::WAFv2::WebACL",
+                "ByteMatchStatement.SearchStringBase64",
+            ),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "crate::schemas::catalog::wafv2_byte_match_search_string_base64()",
+            )),
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_GeoMatchStatement.html#waf-Type-GeoMatchStatement-CountryCodes
+        // The maximum of 50 CountryCodes is NOT documented on the API reference page.
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted all 250 documented codes in five batches of 50; rejected
+        // XX/EU/UK/AA/jp and 51 entries ("Member must have length less than or equal to 50").
+        // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
+        // rejected CountryCodes [] server-side (minimum length 1).
+        // Values below preserve the API reference page's documented order.
+        m.insert(
+            ("AWS::WAFv2::WebACL", "GeoMatchStatement.CountryCodes"),
+            TypeOverride::Enum(vec![
+                "AF", "AX", "AL", "DZ", "AS", "AD", "AO", "AI", "AQ", "AG", "AR", "AM", "AW", "AU",
+                "AT", "AZ", "BS", "BH", "BD", "BB", "BY", "BE", "BZ", "BJ", "BM", "BT", "BO", "BQ",
+                "BA", "BW", "BV", "BR", "IO", "BN", "BG", "BF", "BI", "KH", "CM", "CA", "CV", "KY",
+                "CF", "TD", "CL", "CN", "CX", "CC", "CO", "KM", "CG", "CD", "CK", "CR", "CI", "HR",
+                "CU", "CW", "CY", "CZ", "DK", "DJ", "DM", "DO", "EC", "EG", "SV", "GQ", "ER", "EE",
+                "ET", "FK", "FO", "FJ", "FI", "FR", "GF", "PF", "TF", "GA", "GM", "GE", "DE", "GH",
+                "GI", "GR", "GL", "GD", "GP", "GU", "GT", "GG", "GN", "GW", "GY", "HT", "HM", "VA",
+                "HN", "HK", "HU", "IS", "IN", "ID", "IR", "IQ", "IE", "IM", "IL", "IT", "JM", "JP",
+                "JE", "JO", "KZ", "KE", "KI", "KP", "KR", "KW", "KG", "LA", "LV", "LB", "LS", "LR",
+                "LY", "LI", "LT", "LU", "MO", "MK", "MG", "MW", "MY", "MV", "ML", "MT", "MH", "MQ",
+                "MR", "MU", "YT", "MX", "FM", "MD", "MC", "MN", "ME", "MS", "MA", "MZ", "MM", "NA",
+                "NR", "NP", "NL", "NC", "NZ", "NI", "NE", "NG", "NU", "NF", "MP", "NO", "OM", "PK",
+                "PW", "PS", "PA", "PG", "PY", "PE", "PH", "PN", "PL", "PT", "PR", "QA", "RE", "RO",
+                "RU", "RW", "BL", "SH", "KN", "LC", "MF", "PM", "VC", "WS", "SM", "ST", "SA", "SN",
+                "RS", "SC", "SL", "SG", "SX", "SK", "SI", "SB", "SO", "ZA", "GS", "SS", "ES", "LK",
+                "SD", "SR", "SJ", "SZ", "SE", "CH", "SY", "TW", "TJ", "TZ", "TH", "TL", "TG", "TK",
+                "TO", "TT", "TN", "TR", "TM", "TC", "TV", "UG", "UA", "AE", "GB", "US", "UM", "UY",
+                "UZ", "VU", "VE", "VN", "VG", "VI", "WF", "EH", "YE", "ZM", "ZW", "XK",
+            ])
+            .with_array_bounds(Some(1), Some(50)),
+        );
+        // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
+        // rejected ByteMatchStatement.TextTransformations [] server-side
+        // (minimum length 1). API minimum 1 for all; other variants are
+        // API documentation only, not probed separately.
+        for path in [
+            // https://docs.aws.amazon.com/waf/latest/APIReference/API_ByteMatchStatement.html#waf-Type-ByteMatchStatement-TextTransformations
+            "ByteMatchStatement.TextTransformations",
+            // https://docs.aws.amazon.com/waf/latest/APIReference/API_RegexMatchStatement.html#waf-Type-RegexMatchStatement-TextTransformations
+            "RegexMatchStatement.TextTransformations",
+            // https://docs.aws.amazon.com/waf/latest/APIReference/API_RegexPatternSetReferenceStatement.html#waf-Type-RegexPatternSetReferenceStatement-TextTransformations
+            "RegexPatternSetReferenceStatement.TextTransformations",
+            // https://docs.aws.amazon.com/waf/latest/APIReference/API_SizeConstraintStatement.html#waf-Type-SizeConstraintStatement-TextTransformations
+            "SizeConstraintStatement.TextTransformations",
+            // https://docs.aws.amazon.com/waf/latest/APIReference/API_SqliMatchStatement.html#waf-Type-SqliMatchStatement-TextTransformations
+            "SqliMatchStatement.TextTransformations",
+            // https://docs.aws.amazon.com/waf/latest/APIReference/API_XssMatchStatement.html#waf-Type-XssMatchStatement-TextTransformations
+            "XssMatchStatement.TextTransformations",
+            // https://docs.aws.amazon.com/waf/latest/APIReference/API_RateLimitCookie.html#waf-Type-RateLimitCookie-TextTransformations
+            "RateLimitCookie.TextTransformations",
+            // https://docs.aws.amazon.com/waf/latest/APIReference/API_RateLimitHeader.html#waf-Type-RateLimitHeader-TextTransformations
+            "RateLimitHeader.TextTransformations",
+            // https://docs.aws.amazon.com/waf/latest/APIReference/API_RateLimitQueryArgument.html#waf-Type-RateLimitQueryArgument-TextTransformations
+            "RateLimitQueryArgument.TextTransformations",
+            // https://docs.aws.amazon.com/waf/latest/APIReference/API_RateLimitQueryString.html#waf-Type-RateLimitQueryString-TextTransformations
+            "RateLimitQueryString.TextTransformations",
+            // https://docs.aws.amazon.com/waf/latest/APIReference/API_RateLimitUriPath.html#waf-Type-RateLimitUriPath-TextTransformations
+            "RateLimitUriPath.TextTransformations",
+        ] {
+            m.insert(
+                ("AWS::WAFv2::WebACL", path),
+                TypeOverride::Array {
+                    items: None,
+                    min_items: Some(1),
+                    max_items: None,
+                },
+            );
+        }
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_ManagedRuleGroupStatement.html#waf-Type-ManagedRuleGroupStatement-ExcludedRules
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 100 ManagedRuleGroupStatement.ExcludedRules; rejected 101.
+        m.insert(
+            (
+                "AWS::WAFv2::WebACL",
+                "ManagedRuleGroupStatement.ExcludedRules",
+            ),
+            TypeOverride::Array {
+                items: None,
+                min_items: None,
+                max_items: Some(100),
+            },
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_RuleGroupReferenceStatement.html#waf-Type-RuleGroupReferenceStatement-ExcludedRules
+        // API documentation only (not separately probed): ExcludedRules has
+        // a maximum of 100 items, as for ManagedRuleGroupStatement above.
+        m.insert(
+            (
+                "AWS::WAFv2::WebACL",
+                "RuleGroupReferenceStatement.ExcludedRules",
+            ),
+            TypeOverride::Array {
+                items: None,
+                min_items: None,
+                max_items: Some(100),
+            },
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_RateLimitLabelNamespace.html#waf-Type-RateLimitLabelNamespace-Namespace
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted namespace ns: and 1024 characters ending in a colon;
+        // rejected ns, a.b: and 1025 characters.
+        m.insert(
+            ("AWS::WAFv2::WebACL", "RateLimitLabelNamespace.Namespace"),
+            waf_string(
+                r"^[0-9A-Za-z_:-]+:$",
+                1,
+                1024,
+                "String(pattern, len: 1..=1024)",
+            ),
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_SizeConstraintStatement.html#waf-Type-SizeConstraintStatement-Size
+        // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted Size 1.5 and silently read back 1 through get-resource;
+        // accepted 21474836480 and read back JSON 21474836480.0.
+        // provider/conversion.rs normalizes integral
+        // JSON floats using the Int schema without truncating fractional reads.
+        m.insert(
+            ("AWS::WAFv2::WebACL", "SizeConstraintStatement.Size"),
+            TypeOverride::IntegerFromNumber,
+        );
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_AWSManagedRulesACFPRuleSet.html#waf-Type-AWSManagedRulesACFPRuleSet-CreationPath
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_AWSManagedRulesACFPRuleSet.html#waf-Type-AWSManagedRulesACFPRuleSet-RegistrationPagePath
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 256-character CreationPath at member validation, then hit
+        // NUM_BYTES_IN_BYTEMATCH_SEARCHSTRING; rejected ' ' and 257 characters
+        // at member validation. RegistrationPagePath has the same documented
+        // constraints, not separately probed.
+        for path in [
+            "AWSManagedRulesACFPRuleSet.CreationPath",
+            "AWSManagedRulesACFPRuleSet.RegistrationPagePath",
+        ] {
+            m.insert(
+                ("AWS::WAFv2::WebACL", path),
+                waf_string(
+                    r"^.*[^ \t\n\r\x0B\x0C].*$",
+                    1,
+                    256,
+                    "String(pattern, len: 1..=256)",
+                ),
+            );
+        }
+        // https://docs.aws.amazon.com/waf/latest/APIReference/API_VisibilityConfig.html#waf-Type-VisibilityConfig-MetricName
+        // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted MetricName a#b, a:b.c/d, All and 128/129/255 characters;
+        // rejected a b and 256 characters.
+        // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 128 characters; rejected 129 at CFN model validation, so
+        // keep 1..=128. No unpublished reserved-name rule.
+        m.insert(
+            ("AWS::WAFv2::WebACL", "VisibilityConfig.MetricName"),
+            waf_string(
+                r"^[A-Za-z0-9_#:./-]+$",
+                1,
+                128,
+                "String(pattern, len: 1..=128)",
+            ),
+        );
+
         // AllowedPattern: CFN's cached schema omits the documented 0..=1024 bounds.
         // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ssm-parameter.html#cfn-ssm-parameter-allowedpattern
         // Cloud Control probe, carina-test-008, 2026-11-06: empty and 1024
@@ -12160,6 +12935,7 @@ struct CfnTypeGenerationPaths<'a> {
 }
 
 fn generate_object_map_type(
+    prop: &CfnProperty,
     value: &CfnProperty,
     prop_name: &str,
     schema: &EmissionContext<'_>,
@@ -12168,15 +12944,14 @@ fn generate_object_map_type(
     paths: CfnTypeGenerationPaths<'_>,
 ) -> (String, Option<EnumInfo>) {
     let property_path = CfnPropertyPath::new(paths.cfn_parent, prop_name);
-    match object_map_value_or_panic(schema, property_path, value) {
+    let value_type = match object_map_value_or_panic(schema, property_path, value) {
         ObjectMapValueKind::DirectString => {
             let value_path = schema.collection_path(paths.provider, PathSegment::MapValue);
             let value = schema.property_at(&value_path, value);
-            let value_type = emission_reference(&value, property_path).map_or_else(
+            emission_reference(&value, property_path).map_or_else(
                 || "AttributeType::string()".to_string(),
                 |reference| reference.emit(&schema.type_name, prop_name).0,
-            );
-            (format!("AttributeType::map({value_type})"), None)
+            )
         }
         ObjectMapValueKind::Struct => {
             let value_provider_path = schema.collection_path(paths.provider, PathSegment::MapValue);
@@ -12194,9 +12969,24 @@ fn generate_object_map_type(
                 enum_info.is_none(),
                 "typed object-map values must resolve to structs"
             );
-            (format!("AttributeType::map({value_type})"), None)
+            value_type
         }
-    }
+    };
+    let Some(key) = map_key_type(prop, schema, paths.provider, property_path) else {
+        return (format!("AttributeType::map({value_type})"), None);
+    };
+    let info = key_enum_info(&key).cloned();
+    let key_type = emit_map_key(
+        key,
+        &schema.type_name,
+        property_path,
+        namespace,
+        paths.structural,
+    );
+    (
+        format!("AttributeType::map_with_key({key_type}, {value_type})"),
+        info,
+    )
 }
 
 fn cfn_type_to_carina_type_with_enum_with_paths(
@@ -12299,9 +13089,11 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         schema
             .classify_tag_value(property_path)
             .unwrap_or_else(|error| panic!("{error}"));
-        return (
-            tag_map_type(classified, cfn_property_path).emit(&schema.type_name),
-            None,
+        return tag_map_type(classified, cfn_property_path).emit(
+            &schema.type_name,
+            cfn_property_path,
+            namespace,
+            paths.structural,
         );
     }
 
@@ -12322,9 +13114,11 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 schema
                     .classify_tag_value(property_path)
                     .unwrap_or_else(|error| panic!("{error}"));
-                return (
-                    tag_map_type(classified, cfn_property_path).emit(&schema.type_name),
-                    None,
+                return tag_map_type(classified, cfn_property_path).emit(
+                    &schema.type_name,
+                    cfn_property_path,
+                    namespace,
+                    paths.structural,
                 );
             }
 
@@ -12590,7 +13384,9 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 );
             }
             if let Some(value) = direct_object_map_value(prop) {
-                return generate_object_map_type(value, prop_name, schema, namespace, enums, paths);
+                return generate_object_map_type(
+                    prop, value, prop_name, schema, namespace, enums, paths,
+                );
             }
             panic!(
                 "unsupported object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
@@ -19320,6 +20116,92 @@ mod tests {
     }
 
     #[test]
+    fn test_wafv2_web_acl_overrides_use_exact_raw_cfn_paths() {
+        let schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
+        let expected = [
+            (None, "Name"),
+            (None, "Description"),
+            (None, "CustomResponseBodies"),
+            (Some("Tag"), "Key"),
+            (Some("Tag"), "Value"),
+            (Some("CustomResponse"), "CustomResponseBodyKey"),
+            (Some("CustomHTTPHeader"), "Name"),
+            (Some("DataProtectionConfig"), "DataProtections"),
+            (Some("FieldToProtect"), "FieldKeys"),
+            (Some("Rule"), "Name"),
+            (Some("ExcludedRule"), "Name"),
+            (Some("RuleActionOverride"), "Name"),
+            (Some("JsonMatchPattern"), "IncludedPaths"),
+            (Some("SingleHeader"), "Name"),
+            (Some("SingleQueryArgument"), "Name"),
+            (Some("ForwardedIPConfiguration"), "HeaderName"),
+            (Some("IPSetForwardedIPConfiguration"), "HeaderName"),
+            (Some("ResponseInspectionStatusCode"), "FailureCodes"),
+            (Some("ResponseInspectionStatusCode"), "SuccessCodes"),
+            (Some("Label"), "Name"),
+            (Some("LabelMatchStatement"), "Key"),
+            (Some("AndStatement"), "Statements"),
+            (Some("OrStatement"), "Statements"),
+            (Some("AsnMatchStatement"), "AsnList"),
+            (Some("ByteMatchStatement"), "SearchString"),
+            (Some("ByteMatchStatement"), "SearchStringBase64"),
+            (Some("GeoMatchStatement"), "CountryCodes"),
+            (Some("ByteMatchStatement"), "TextTransformations"),
+            (Some("RegexMatchStatement"), "TextTransformations"),
+            (
+                Some("RegexPatternSetReferenceStatement"),
+                "TextTransformations",
+            ),
+            (Some("SizeConstraintStatement"), "TextTransformations"),
+            (Some("SqliMatchStatement"), "TextTransformations"),
+            (Some("XssMatchStatement"), "TextTransformations"),
+            (Some("RateLimitCookie"), "TextTransformations"),
+            (Some("RateLimitHeader"), "TextTransformations"),
+            (Some("RateLimitQueryArgument"), "TextTransformations"),
+            (Some("RateLimitQueryString"), "TextTransformations"),
+            (Some("RateLimitUriPath"), "TextTransformations"),
+            (Some("ManagedRuleGroupStatement"), "ExcludedRules"),
+            (Some("RuleGroupReferenceStatement"), "ExcludedRules"),
+            (Some("RateLimitLabelNamespace"), "Namespace"),
+            (Some("SizeConstraintStatement"), "Size"),
+            (Some("AWSManagedRulesACFPRuleSet"), "CreationPath"),
+            (Some("AWSManagedRulesACFPRuleSet"), "RegistrationPagePath"),
+            (Some("VisibilityConfig"), "MetricName"),
+        ]
+        .map(|(parent, property)| CfnPropertyPath::new(parent, property).source_pointer());
+        assert_eq!(expected.len(), 45);
+        assert_eq!(
+            resource_type_overrides()
+                .for_resource(&schema.type_name)
+                .map(|(path, _)| path.source_pointer())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from(expected),
+            "only the decided WAFv2 slice may be overridden, using raw CFN paths",
+        );
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        for (constructor, identity) in [
+            (
+                "wafv2_byte_match_search_string",
+                "aws.wafv2.WebACL.ByteMatchSearchString",
+            ),
+            (
+                "wafv2_byte_match_search_string_base64",
+                "aws.wafv2.WebACL.ByteMatchSearchStringBase64",
+            ),
+        ] {
+            assert!(generated.contains(&format!("crate::schemas::catalog::{constructor}()")));
+            assert!(markdown.contains(&format!("`{identity}`")));
+        }
+        assert!(generated.contains("AttributeType::map_with_key("));
+        assert!(
+            markdown.contains("Map\\<String(pattern, len: 1..=128), [Struct(CustomResponseBody)]")
+        );
+        assert!(generated.contains("StructField::required(\"size\", AttributeType::refined_int(None, Some((Some(0), Some(21474836480))))"));
+        assert!(markdown.contains("Int(0..=21474836480)"));
+    }
+
+    #[test]
     fn test_ssm_parameter_length_overrides_use_exact_raw_cfn_paths() {
         let schema = cfn_schema_for_codegen_tests("AWS::SSM::Parameter");
         assert_eq!(
@@ -19623,9 +20505,324 @@ mod tests {
         );
     }
 
+    fn pattern_key_schema(patterns: serde_json::Value) -> ParsedCfnSchema {
+        ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::PatternMapKeys",
+            "properties": {
+                "Entries": {"$ref": "#/definitions/Entries"},
+                "Config": {"$ref": "#/definitions/Config"}
+            },
+            "definitions": {
+                "Entries": {"type": "object", "patternProperties": patterns, "additionalProperties": false},
+                "Config": {"type": "object", "properties": {
+                    "NestedKeys": {"$ref": "#/definitions/Entries"}
+                }}
+            }
+        }))
+        .unwrap()
+    }
+
+    fn pattern_key_panic(panic: Box<dyn std::any::Any + Send>) -> String {
+        panic
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| {
+                panic
+                    .downcast_ref::<&str>()
+                    .map(|message| message.to_string())
+            })
+            .expect("generator panic must contain a diagnostic")
+    }
+
+    #[test]
+    fn test_pattern_properties_without_additional_properties_false_keep_keys_unrestricted() {
+        // Cloud Control create-resource AWS::ElasticLoadBalancingV2::Listener,
+        // carina-test-008, ap-northeast-1, 2026-11-06: OIDC extra-param keys
+        // ab, a-b, 'a b', and '-' all PASSED model validation, then failed only
+        // on the fake load balancer ARN. Nothing was created. The cached map
+        // omits additionalProperties:false; non-matching keys remain allowed.
+        for pattern in ["[a-zA-Z0-9]+", "^(ALPHA|BETA)$"] {
+            for additional in [None, Some(true)] {
+                let mut schema =
+                    pattern_key_schema(serde_json::json!({(pattern): {"type": "string"}}));
+                schema.edit_json(|source| {
+                    let map = source["definitions"]["Entries"].as_object_mut().unwrap();
+                    map.remove("additionalProperties");
+                    if let Some(allowed) = additional {
+                        map.insert(
+                            "additionalProperties".to_string(),
+                            serde_json::json!(allowed),
+                        );
+                    }
+                });
+                let context = EmissionContext::from_source(&schema).unwrap();
+                let path = ["Entries".to_string()];
+                assert!(
+                    map_key_type(
+                        &schema.properties["Entries"],
+                        &context,
+                        &path,
+                        CfnPropertyPath::new(None, "Entries")
+                    )
+                    .is_none()
+                );
+                assert!(
+                    map_key_enum_info(&schema.properties["Entries"], &schema, "Entries").is_none()
+                );
+                let generated = generate_synthetic_schema_code(&schema).unwrap();
+                assert!(generated.contains("AttributeSchema::optional(\"entries\", AttributeType::map(AttributeType::string()))"), "{generated}");
+                assert!(generated.contains("StructField::optional(\"nested_keys\", AttributeType::map(AttributeType::string()))"), "{generated}");
+                let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
+                assert!(docs.contains("`Map<String, String>`"), "{docs}");
+                assert!(!docs.contains("String(pattern)"), "{docs}");
+                assert!(!docs.contains("## Enum Values"), "{docs}");
+            }
+        }
+        let schema = cfn_schema_for_codegen_tests("AWS::ElasticLoadBalancingV2::Listener");
+        for parent in ["AuthenticateCognitoConfig", "AuthenticateOidcConfig"] {
+            let prop = &schema.definitions.as_ref().unwrap()[parent]
+                .properties
+                .as_ref()
+                .unwrap()["AuthenticationRequestExtraParams"];
+            assert_eq!(prop.additional_properties, None);
+            let (generated, info) = cfn_type_to_carina_type_with_enum(
+                prop,
+                "AuthenticationRequestExtraParams",
+                &schema,
+                "aws.elasticloadbalancingv2.Listener",
+                &BTreeMap::new(),
+            );
+            assert_eq!(generated, "AttributeType::map(AttributeType::string())");
+            assert!(info.is_none());
+        }
+    }
+
+    #[test]
+    fn test_wafv2_custom_response_body_key_length_override_keeps_derived_pattern() {
+        let mut schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
+        let path = CfnPropertyPath::new(None, "CustomResponseBodies");
+        assert!(
+            resource_type_override(&schema.type_name, path).is_some(),
+            "the API-only 1..=128 key length must be an override"
+        );
+        for pattern in [r"^[\w\-]+$", r"^[A-Za-z0-9_.-]+$"] {
+            schema.edit_json(|source| {
+                let value = source["definitions"]["CustomResponseBodies"]["patternProperties"]
+                    .as_object()
+                    .unwrap()
+                    .values()
+                    .next()
+                    .unwrap()
+                    .clone();
+                source["definitions"]["CustomResponseBodies"]["patternProperties"] =
+                    serde_json::json!({(pattern): value});
+            });
+            let context = EmissionContext::from_source(&schema).unwrap();
+            let provider_path = ["CustomResponseBodies".to_string()];
+            let bounded = map_key_type(
+                &schema.properties["CustomResponseBodies"],
+                &context,
+                &provider_path,
+                path,
+            )
+            .unwrap();
+            let derived = pattern_map_key_type(
+                pattern,
+                &schema.type_name,
+                path,
+                "/definitions/CustomResponseBodies/patternProperties",
+            );
+            let StringLeaf::Refined {
+                constraints: bounded,
+                ..
+            } = bounded
+            else {
+                panic!("expected a refined key string")
+            };
+            let StringLeaf::Refined {
+                constraints: derived,
+                ..
+            } = derived
+            else {
+                panic!("expected a CFN-derived key string")
+            };
+            assert_eq!(
+                bounded.pattern, derived.pattern,
+                "the length override must never copy or replace the CFN pattern"
+            );
+            assert_eq!(
+                (bounded.min_length, bounded.max_length),
+                (Some(1), Some(128))
+            );
+            assert_eq!((derived.min_length, derived.max_length), (None, None));
+        }
+    }
+
+    #[test]
+    fn test_pattern_properties_map_keys_derive_enums_and_refresh_from_cfn() {
+        for pattern in [
+            "^(ALPHA|BETA_2|C3)$",
+            "^(?:ALPHA|BETA_2|C3)$",
+            "^(ALPHA|BETA_2|C3|NEW_GATEWAY)$",
+        ] {
+            let mut schema = pattern_key_schema(serde_json::json!({(pattern): {"type": "string"}}));
+            schema.edit_json(|source| {
+                source["properties"]["Tags"] = serde_json::json!({
+                    "type": "object", "patternProperties": {(pattern): {"type": "string", "minLength": 2, "maxLength": 17}}, "additionalProperties": false
+                });
+                source["tagging"] = serde_json::json!({"taggable": true, "tagProperty": "/properties/Tags"});
+                source["properties"]["ArrayKeys"] = serde_json::json!({
+                    "type": "array", "items": {"$ref": "#/definitions/Entries"},
+                    "minItems": 1, "maxItems": 2
+                });
+            });
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            for (property, kind, suffix) in [
+                ("entries", "Entries", ""),
+                ("nested_keys", "NestedKeys", ".Config"),
+                ("tags", "Tags", ""),
+            ] {
+                // The partial-schema helper emits Rust under EC2.Route, while
+                // Markdown keeps the fixture's source resource identity.
+                let namespace = format!("aws.ec2.Route{suffix}");
+                assert!(generated.contains(&format!(
+                    "(\"{property}\", AttributeType::map_with_key(AttributeType::enum_(carina_core::schema::enum_identity(\"{kind}\", Some(\"{namespace}\"))"
+                )), "key enum must preserve its property's identity: {generated}");
+                let namespace = format!("aws.test.PatternMapKeys{suffix}");
+                for (wire, dsl) in [("ALPHA", "alpha"), ("BETA_2", "beta_2"), ("C3", "c3")] {
+                    assert!(
+                        markdown.contains(&format!("| `{wire}` | `{namespace}.{kind}.{dsl}` |")),
+                        "{markdown}"
+                    );
+                }
+            }
+            assert!(markdown.contains("Map\\<[Enum (Entries)]"), "{markdown}");
+            assert!(markdown.contains("Map\\<[Enum (NestedKeys)]"), "{markdown}");
+            assert!(markdown.contains("Map\\<[Enum (Tags)]"), "{markdown}");
+            assert!(generated.contains("\"array_keys\", AttributeType::refined_list(AttributeType::map_with_key(AttributeType::enum_(carina_core::schema::enum_identity(\"ArrayKeys\", Some(\"aws.ec2.Route\"))"), "{generated}");
+            assert!(
+                markdown.contains("List\\<Map\\<[Enum (ArrayKeys)]"),
+                "{markdown}"
+            );
+            assert!(markdown.contains("`aws.test.PatternMapKeys.ArrayKeys.alpha`"));
+            assert_eq!(
+                generated.contains("NEW_GATEWAY"),
+                pattern.contains("NEW_GATEWAY")
+            );
+            assert_eq!(
+                markdown.contains(".new_gateway`"),
+                pattern.contains("NEW_GATEWAY")
+            );
+        }
+    }
+
+    #[test]
+    fn test_pattern_properties_map_keys_share_property_pattern_pipeline() {
+        for (pattern, accepted, rejected) in [
+            (r"[a-zA-Z0-9]+", "abc123", "abc!"),
+            (r"^[\w\-]+$", "k_1-a", "日本語"),
+            (r"^\d+$", "123", "１２３"),
+            (r"^(A-B|C)$", "A-B", "other"),
+            (r"(ALPHA|BETA)", "ALPHA", "ALPHAX"),
+        ] {
+            let schema = pattern_key_schema(serde_json::json!({(pattern): {"type": "string"}}));
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            let source = CfnProperty {
+                pattern: Some(pattern.to_string()),
+                ..Default::default()
+            };
+            let constraints = string_constraints(
+                &source,
+                &schema.type_name,
+                CfnPropertyPath::new(None, "Entries"),
+                "/definitions/Entries/patternProperties/test",
+            );
+            let key = refined_string_type("None", constraints.pattern.as_ref(), "None", "None");
+            assert!(
+                generated.contains(&format!(
+                    "AttributeType::map_with_key({key}, AttributeType::string())"
+                )),
+                "{generated}"
+            );
+            let compiled = carina_core::schema::CompiledPattern::try_new(
+                constraints.pattern.unwrap().as_str(),
+            )
+            .unwrap();
+            assert!(compiled.is_match(accepted));
+            assert!(!compiled.is_match(rejected));
+            assert!(!compiled.is_match(&format!("!{accepted}!")));
+        }
+
+        // Review rewrites must apply to map keys through string_constraints,
+        // just as they apply to the same source regex on ordinary properties.
+        let mut schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
+        schema.edit_json(|source| {
+            source["properties"]["MapKeysForTest"] = serde_json::json!({
+                "type": "object", "patternProperties": {r".*\S.*": {"type": "string"}}, "additionalProperties": false
+            });
+        });
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let expected = refined_string_type(
+            "None",
+            Some(&ApprovedPattern::whole(r"^[\s\S]*\S[\s\S]*\z")),
+            "None",
+            "None",
+        );
+        assert!(generated.contains(&format!(
+            "AttributeType::map_with_key({expected}, AttributeType::string())"
+        )));
+
+        let schema = pattern_key_schema(serde_json::json!({"(?=x)x": {"type": "string"}}));
+        let panic = std::panic::catch_unwind(|| generate_synthetic_schema_code(&schema));
+        let message = pattern_key_panic(
+            panic.expect_err("unsupported key regex must fail at schema admission"),
+        );
+        assert!(
+            message.contains("/definitions/Entries/patternProperties")
+                && message.contains("(?=x)x"),
+            "{message}"
+        );
+        let schema = pattern_key_schema(serde_json::json!({
+            "[a-z~/]+": {"type": "string", "pattern": "[0-9]+"}
+        }));
+        // The shared review registry must address key and value patterns
+        // independently, even when the key regex needs JSON Pointer escaping.
+        assert_eq!(
+            cfn_pattern_at(schema.source(), "/definitions/Entries/patternProperties"),
+            Some("[a-z~/]+")
+        );
+        assert_eq!(
+            cfn_pattern_at(
+                schema.source(),
+                "/definitions/Entries/patternProperties/[a-z~0~1]+"
+            ),
+            Some("[0-9]+")
+        );
+    }
+
+    #[test]
+    fn test_pattern_properties_map_keys_zero_or_many_keep_existing_behavior() {
+        for (patterns, expected_error) in [
+            (serde_json::json!({}), "unclassified bare object"),
+            (
+                serde_json::json!({"[a-z]+": {"type":"string"}, "[A-Z]+": {"type":"string"}}),
+                "unsupported object property",
+            ),
+        ] {
+            let schema = pattern_key_schema(patterns);
+            assert!(property_object_map_value(&schema.properties["Entries"], &schema).is_none());
+            let panic = std::panic::catch_unwind(|| generate_synthetic_schema_code(&schema));
+            let message = pattern_key_panic(
+                panic.expect_err("unclassified or ambiguous maps remain unsupported"),
+            );
+            assert!(message.contains(expected_error), "{message}");
+        }
+    }
+
     #[test]
     fn test_pattern_properties_object_ref_generates_typed_struct_map_and_docs() {
-        let mut schema = empty_schema("AWS::WAFv2::WebACL");
+        let mut schema = empty_schema("AWS::Test::TypedStructMap");
         schema.edit_json(|source| {
             source["properties"].as_object_mut().unwrap().insert(
                 "CustomResponseBodies".to_string(),
@@ -19641,6 +20838,7 @@ mod tests {
                     "CustomResponseBodies".to_string(),
                     CfnProperty {
                         prop_type: Some(TypeValue::Single("object".to_string())),
+                        additional_properties: Some(false),
                         pattern_properties: Some(BTreeMap::from([(
                             "^[a-z]+$".to_string(),
                             CfnProperty {
@@ -19687,13 +20885,13 @@ mod tests {
             property,
             "CustomResponseBodies",
             &schema,
-            "aws.wafv2.WebAcl",
+            "aws.test.TypedStructMap",
             &BTreeMap::new(),
         );
         assert!(enum_info.is_none());
         assert!(
             generated.contains(
-                "AttributeType::map(AttributeType::struct_(\"CustomResponseBody\".to_string()"
+                "AttributeType::map_with_key(AttributeType::refined_string(None, Some(\"^[a-z]+$\".to_string()), None, None), AttributeType::struct_(\"CustomResponseBody\".to_string()"
             ),
             "patternProperties $ref values must generate a typed struct map: {generated}"
         );
@@ -19702,10 +20900,10 @@ mod tests {
             "map value struct fields must be generated: {generated}"
         );
 
-        let markdown = generate_test_markdown(&schema, "AWS::WAFv2::WebACL")
+        let markdown = generate_test_markdown(&schema, "AWS::Test::TypedStructMap")
             .expect("typed object map markdown generation should succeed");
         assert!(
-            markdown.contains("Map\\<String, [Struct(CustomResponseBody)]"),
+            markdown.contains("Map\\<String(pattern), [Struct(CustomResponseBody)]"),
             "typed object-map docs must link the map value struct: {markdown}"
         );
     }
@@ -19871,6 +21069,10 @@ mod tests {
             for (property, display) in displays {
                 let text = display.as_str();
                 assert!(!text.contains('`'), "{cfn_type}.{property}: {text}");
+                let tag_leaf = property.split_once('.').is_some_and(|(definition, field)| {
+                    matches!(field, "Key" | "Value")
+                        && is_tag_map_ref(&schema, &format!("#/definitions/{definition}"))
+                });
                 // Nested types are table cells: regex alternation pipes must
                 // be escaped there while remaining inside one code span.
                 let table_text = text.replace('|', r"\|");
@@ -19878,6 +21080,10 @@ mod tests {
                     docs.split('`').skip(1).step_by(2).any(|span| {
                         [text, table_text.as_str()].into_iter().any(|expected| {
                             span == expected
+                                || (tag_leaf
+                                    && span.starts_with("Map<")
+                                    && (span.starts_with(&format!("Map<{expected}, "))
+                                        || span.ends_with(&format!(", {expected}>"))))
                                 || span.strip_prefix(expected).is_some_and(|suffix| {
                                     suffix.starts_with(" (items: ") && suffix.ends_with(')')
                                 })
@@ -24589,7 +25795,7 @@ mod tests {
         let linked = markdown_link_type(
             "Choice",
             &property,
-            &schema,
+            &EmissionContext::from_source(&schema).unwrap(),
             Some(&enum_key),
             &["Choice".to_string()],
             None,
@@ -25997,7 +27203,7 @@ mod tests {
             },
         );
         let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::WAFv2::WebACL".to_string(),
+            "typeName": "AWS::Test::ScalarRefInteger".to_string(),
             "properties": properties,
             "definitions": definitions
         }))
@@ -27174,7 +28380,7 @@ mod tests {
         let linked = markdown_link_type(
             "Choice",
             &property,
-            &schema,
+            &EmissionContext::from_source(&schema).unwrap(),
             Some(&enum_key),
             &["Choice".to_string()],
             None,
@@ -27784,11 +28990,12 @@ mod tests {
     }
 
     #[test]
-    fn test_type_display_string_pattern_map_shows_map_string() {
+    fn test_type_display_string_pattern_map_shows_refined_key() {
         static OVERRIDES: LazyLock<ResourceTypeOverrides> =
             LazyLock::new(ResourceTypeOverrides::default);
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Single("object".to_string())),
+            additional_properties: Some(false),
             pattern_properties: Some(BTreeMap::from([(
                 "[a-zA-Z0-9]+".to_string(),
                 CfnProperty {
@@ -27803,11 +29010,11 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        // A schema-declared homogeneous map remains Map<String, String>.
+        // The value stays String; the key's CFN pattern is visible in docs.
         with_resource_type_overrides(&OVERRIDES, || {
             assert_eq!(
                 type_display_string("AuthenticationRequestExtraParams", &prop, &schema),
-                "`Map<String, String>`"
+                "`Map<String(pattern), String>`"
             );
         });
     }

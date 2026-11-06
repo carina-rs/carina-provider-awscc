@@ -106,7 +106,7 @@ fn json_matches_shape(
     match schema.shape_of(attr_type) {
         Shape::UnloadedSchemaType(_) => false,
         Shape::Enum { .. } => value.is_string(),
-        Shape::Int { .. } => value.as_i64().is_some(),
+        Shape::Int { .. } => json_integer(value).is_some(),
         Shape::Float { .. } => value.is_number(),
         Shape::Bool => value.is_boolean(),
         Shape::Duration => value.is_string() || value.is_number(),
@@ -124,6 +124,18 @@ fn json_matches_shape(
         }),
         shape => is_string_leaf(shape) && value.is_string(),
     }
+}
+
+fn json_integer(value: &serde_json::Value) -> Option<i64> {
+    value.as_i64().or_else(|| {
+        let number = value.as_f64()?;
+        // The upper comparison is exclusive: i64::MAX rounds up to 2^63 in f64.
+        (number.is_finite()
+            && number.fract() == 0.0
+            && number >= i64::MIN as f64
+            && number < -(i64::MIN as f64))
+            .then_some(number as i64)
+    })
 }
 
 /// carina#3340: schema-aware variant that takes the enclosing
@@ -145,6 +157,17 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     // `Ref` (carina#3349).
     let schema = resource_schema_with_defs(resource_type, defs);
     let shape = schema.shape_of(attr_type);
+
+    // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
+    // accepted WebACL SizeConstraintStatement.Size 1.5 and 21474836480;
+    // get-resource returned 1 and JSON 21474836480.0, respectively.
+    // Preserve its declared Int type through nested structs/refs so state
+    // does not produce a phantom diff; fractional reads must not be truncated.
+    if matches!(shape, Shape::Int { .. })
+        && let Some(number) = json_integer(value)
+    {
+        return Some(Value::Concrete(ConcreteValue::Int(number)));
+    }
 
     // CloudFormation types these IAM policy documents as `object|string`, so
     // both object values and JSON-encoded object strings are schema-valid.
@@ -581,6 +604,77 @@ mod tests {
         AttributeType, DslTransform, RootlessType, StructField, ValidatedConfigSchema,
         legacy_validator,
     };
+
+    #[test]
+    fn wafv2_size_constraint_integral_float_readback_is_an_int_without_drift() {
+        use crate::test_support::field;
+
+        let config = crate::schemas::generated::wafv2::web_acl::wafv2_web_acl_config();
+        let size = field(
+            &config.schema,
+            "rules.statement.size_constraint_statement.size",
+        );
+        // Cloud Control GetResource, carina-test-008, ap-northeast-1, 2026-11-06:
+        // 21474836480 is returned as JSON 21474836480.0; 1.5 is truncated to 1.
+        let json: serde_json::Value = serde_json::from_str("21474836480.0").unwrap();
+        let read = aws_value_to_dsl_with_defs(
+            "size",
+            &json,
+            size.as_type(),
+            "wafv2.WebAcl",
+            config.schema.as_schema().defs(),
+        )
+        .unwrap();
+        let authored = Value::Concrete(ConcreteValue::Int(21474836480));
+        assert_eq!(
+            read, authored,
+            "integral float readback must not create a phantom diff"
+        );
+        assert!(size.validate(&read).is_ok());
+        assert_eq!(
+            dsl_value_to_aws_with_defs(
+                &read,
+                size.as_type(),
+                "wafv2.WebAcl",
+                "size",
+                config.schema.as_schema().defs(),
+            ),
+            Some(json!(21474836480_i64))
+        );
+    }
+
+    #[test]
+    fn integral_json_float_conversion_respects_schema_kind_and_i64_bounds() {
+        let defs = std::collections::BTreeMap::new();
+        let integer = CompiledAttributeType::int();
+        let float = CompiledAttributeType::float();
+        for (source, expected) in [
+            ("0.0", ConcreteValue::Int(0)),
+            ("1.0", ConcreteValue::Int(1)),
+            ("-9223372036854775808.0", ConcreteValue::Int(i64::MIN)),
+            (
+                "9223372036854775808.0",
+                ConcreteValue::Float(9223372036854775808.0),
+            ),
+            ("1.5", ConcreteValue::Float(1.5)),
+        ] {
+            let json: serde_json::Value = serde_json::from_str(source).unwrap();
+            assert_eq!(
+                aws_value_to_dsl_with_defs("value", &json, &integer, "test.Resource", &defs),
+                Some(Value::Concrete(expected)),
+                "{source}",
+            );
+        }
+        assert_eq!(
+            aws_value_to_dsl_with_defs("value", &json!(1.0), &float, "test.Resource", &defs),
+            Some(Value::Concrete(ConcreteValue::Float(1.0))),
+        );
+        let union = CompiledAttributeType::union(vec![integer, float]);
+        assert_eq!(
+            aws_value_to_dsl_with_defs("value", &json!(1.0), &union, "test.Resource", &defs),
+            Some(Value::Concrete(ConcreteValue::Int(1))),
+        );
+    }
 
     #[test]
     fn unloaded_schema_type_does_not_match_json_or_block_union_selection() {

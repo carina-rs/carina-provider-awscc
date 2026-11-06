@@ -1,11 +1,11 @@
 ### `enum_modes`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(pattern), String>`
 - **Required:** No
 
 ### `modes`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(pattern), String>`
 - **Required:** No
 
 ### `ratio`

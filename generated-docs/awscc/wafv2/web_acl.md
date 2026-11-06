@@ -57,7 +57,7 @@ Collection of application attributes.
 
 ### `custom_response_bodies`
 
-- **Type:** Map\<String, [Struct(CustomResponseBody)](#custom_response_bodies-1)\>
+- **Type:** Map\<String(pattern, len: 1..=128), [Struct(CustomResponseBody)](#custom_response_bodies-1)\>
 - **Required:** No
 
 ### `data_protection_config`
@@ -74,12 +74,12 @@ Collection of dataProtects.
 
 ### `description`
 
-- **Type:** String
+- **Type:** `String(pattern, len: 1..=256)`
 - **Required:** No
 
 ### `name`
 
-- **Type:** String
+- **Type:** `String(pattern, len: 1..=128)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -103,7 +103,7 @@ Collection of Rules.
 
 ### `tags`
 
-- **Type:** `Map<String(len: 1..=128), String(len: ..=256)>`
+- **Type:** `Map<String(pattern, len: 1..=128), String(pattern, len: ..=256)>`
 - **Required:** No
 
 ### `token_domains`
@@ -117,6 +117,18 @@ Collection of Rules.
 - **Required:** Yes
 
 ## Enum Values
+
+### association_config.request_body (RequestBody)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `CLOUDFRONT` | `aws.wafv2.WebAcl.AssociationConfig.RequestBody.cloudfront` |
+| `API_GATEWAY` | `aws.wafv2.WebAcl.AssociationConfig.RequestBody.api_gateway` |
+| `COGNITO_USER_POOL` | `aws.wafv2.WebAcl.AssociationConfig.RequestBody.cognito_user_pool` |
+| `APP_RUNNER_SERVICE` | `aws.wafv2.WebAcl.AssociationConfig.RequestBody.app_runner_service` |
+| `VERIFIED_ACCESS_INSTANCE` | `aws.wafv2.WebAcl.AssociationConfig.RequestBody.verified_access_instance` |
+
+Shorthand formats: `cloudfront` or `RequestBody.cloudfront`
 
 ### association_config.request_body.default_size_inspection_limit (SizeInspectionLimit)
 
@@ -315,6 +327,263 @@ Shorthand formats: `cloudfront` or `Scope.cloudfront`
 | `CONTAINS_WORD` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.contains_word` |
 
 Shorthand formats: `exactly` or `PositionalConstraint.exactly`
+
+### statement.geo_match_statement.country_codes (CountryCodes)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `AF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.af` |
+| `AX` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ax` |
+| `AL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.al` |
+| `DZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.dz` |
+| `AS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.as` |
+| `AD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ad` |
+| `AO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ao` |
+| `AI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ai` |
+| `AQ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.aq` |
+| `AG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ag` |
+| `AR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ar` |
+| `AM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.am` |
+| `AW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.aw` |
+| `AU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.au` |
+| `AT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.at` |
+| `AZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.az` |
+| `BS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bs` |
+| `BH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bh` |
+| `BD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bd` |
+| `BB` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bb` |
+| `BY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.by` |
+| `BE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.be` |
+| `BZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bz` |
+| `BJ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bj` |
+| `BM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bm` |
+| `BT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bt` |
+| `BO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bo` |
+| `BQ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bq` |
+| `BA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ba` |
+| `BW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bw` |
+| `BV` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bv` |
+| `BR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.br` |
+| `IO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.io` |
+| `BN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bn` |
+| `BG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bg` |
+| `BF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bf` |
+| `BI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bi` |
+| `KH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kh` |
+| `CM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cm` |
+| `CA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ca` |
+| `CV` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cv` |
+| `KY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ky` |
+| `CF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cf` |
+| `TD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.td` |
+| `CL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cl` |
+| `CN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cn` |
+| `CX` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cx` |
+| `CC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cc` |
+| `CO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.co` |
+| `KM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.km` |
+| `CG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cg` |
+| `CD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cd` |
+| `CK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ck` |
+| `CR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cr` |
+| `CI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ci` |
+| `HR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hr` |
+| `CU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cu` |
+| `CW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cw` |
+| `CY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cy` |
+| `CZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cz` |
+| `DK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.dk` |
+| `DJ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.dj` |
+| `DM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.dm` |
+| `DO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.do` |
+| `EC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ec` |
+| `EG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.eg` |
+| `SV` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sv` |
+| `GQ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gq` |
+| `ER` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.er` |
+| `EE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ee` |
+| `ET` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.et` |
+| `FK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fk` |
+| `FO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fo` |
+| `FJ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fj` |
+| `FI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fi` |
+| `FR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fr` |
+| `GF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gf` |
+| `PF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pf` |
+| `TF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tf` |
+| `GA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ga` |
+| `GM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gm` |
+| `GE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ge` |
+| `DE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.de` |
+| `GH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gh` |
+| `GI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gi` |
+| `GR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gr` |
+| `GL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gl` |
+| `GD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gd` |
+| `GP` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gp` |
+| `GU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gu` |
+| `GT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gt` |
+| `GG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gg` |
+| `GN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gn` |
+| `GW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gw` |
+| `GY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gy` |
+| `HT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ht` |
+| `HM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hm` |
+| `VA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.va` |
+| `HN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hn` |
+| `HK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hk` |
+| `HU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hu` |
+| `IS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.is` |
+| `IN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.in` |
+| `ID` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.id` |
+| `IR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ir` |
+| `IQ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.iq` |
+| `IE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ie` |
+| `IM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.im` |
+| `IL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.il` |
+| `IT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.it` |
+| `JM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.jm` |
+| `JP` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.jp` |
+| `JE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.je` |
+| `JO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.jo` |
+| `KZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kz` |
+| `KE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ke` |
+| `KI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ki` |
+| `KP` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kp` |
+| `KR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kr` |
+| `KW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kw` |
+| `KG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kg` |
+| `LA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.la` |
+| `LV` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lv` |
+| `LB` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lb` |
+| `LS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ls` |
+| `LR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lr` |
+| `LY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ly` |
+| `LI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.li` |
+| `LT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lt` |
+| `LU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lu` |
+| `MO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mo` |
+| `MK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mk` |
+| `MG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mg` |
+| `MW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mw` |
+| `MY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.my` |
+| `MV` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mv` |
+| `ML` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ml` |
+| `MT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mt` |
+| `MH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mh` |
+| `MQ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mq` |
+| `MR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mr` |
+| `MU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mu` |
+| `YT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.yt` |
+| `MX` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mx` |
+| `FM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fm` |
+| `MD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.md` |
+| `MC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mc` |
+| `MN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mn` |
+| `ME` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.me` |
+| `MS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ms` |
+| `MA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ma` |
+| `MZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mz` |
+| `MM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mm` |
+| `NA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.na` |
+| `NR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nr` |
+| `NP` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.np` |
+| `NL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nl` |
+| `NC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nc` |
+| `NZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nz` |
+| `NI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ni` |
+| `NE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ne` |
+| `NG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ng` |
+| `NU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nu` |
+| `NF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nf` |
+| `MP` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mp` |
+| `NO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.no` |
+| `OM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.om` |
+| `PK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pk` |
+| `PW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pw` |
+| `PS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ps` |
+| `PA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pa` |
+| `PG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pg` |
+| `PY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.py` |
+| `PE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pe` |
+| `PH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ph` |
+| `PN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pn` |
+| `PL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pl` |
+| `PT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pt` |
+| `PR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pr` |
+| `QA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.qa` |
+| `RE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.re` |
+| `RO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ro` |
+| `RU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ru` |
+| `RW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.rw` |
+| `BL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bl` |
+| `SH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sh` |
+| `KN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kn` |
+| `LC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lc` |
+| `MF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mf` |
+| `PM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pm` |
+| `VC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vc` |
+| `WS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ws` |
+| `SM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sm` |
+| `ST` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.st` |
+| `SA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sa` |
+| `SN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sn` |
+| `RS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.rs` |
+| `SC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sc` |
+| `SL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sl` |
+| `SG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sg` |
+| `SX` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sx` |
+| `SK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sk` |
+| `SI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.si` |
+| `SB` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sb` |
+| `SO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.so` |
+| `ZA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.za` |
+| `GS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gs` |
+| `SS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ss` |
+| `ES` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.es` |
+| `LK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lk` |
+| `SD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sd` |
+| `SR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sr` |
+| `SJ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sj` |
+| `SZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sz` |
+| `SE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.se` |
+| `CH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ch` |
+| `SY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sy` |
+| `TW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tw` |
+| `TJ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tj` |
+| `TZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tz` |
+| `TH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.th` |
+| `TL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tl` |
+| `TG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tg` |
+| `TK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tk` |
+| `TO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.to` |
+| `TT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tt` |
+| `TN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tn` |
+| `TR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tr` |
+| `TM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tm` |
+| `TC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tc` |
+| `TV` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tv` |
+| `UG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ug` |
+| `UA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ua` |
+| `AE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ae` |
+| `GB` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gb` |
+| `US` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.us` |
+| `UM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.um` |
+| `UY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.uy` |
+| `UZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.uz` |
+| `VU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vu` |
+| `VE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ve` |
+| `VN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vn` |
+| `VG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vg` |
+| `VI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vi` |
+| `WF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.wf` |
+| `EH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.eh` |
+| `YE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ye` |
+| `ZM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.zm` |
+| `ZW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.zw` |
+| `XK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.xk` |
+
+Shorthand formats: `af` or `CountryCodes.af`
 
 ### statement.ip_set_reference_statement.ip_set_forwarded_ip_config.fallback_behavior (FallbackBehavior)
 
@@ -515,7 +784,7 @@ Used by: `default_action.allow`, `rules.action.allow`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `request_body` | Map\<String, [Struct(RequestBodyAssociatedResourceTypeConfig)](#association_configrequest_body)\> | No |  |
+| `request_body` | Map\<[Enum (RequestBody)](#association_configrequest_body-requestbody), [Struct(RequestBodyAssociatedResourceTypeConfig)](#association_configrequest_body)\> | No |  |
 
 ### association_config.request_body
 
@@ -535,7 +804,7 @@ Used by: `default_action.block`, `rules.action.block`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `custom_response_body_key` | String | No | Custom response body key. |
+| `custom_response_body_key` | `String(pattern, len: 1..=128)` | No | Custom response body key. |
 | `response_code` | Int(200..=599) | Yes |  |
 | `response_headers` | List\<[Struct(CustomHTTPHeader)](#custom_http_header)\> (items: 1..) | No | Collection of HTTP headers. |
 
@@ -561,7 +830,7 @@ Used by: `block_action.custom_response.response_headers`, `custom_request_handli
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String(len: 1..=64) | Yes |  |
+| `name` | `String(pattern, len: 1..=64)` | Yes |  |
 | `value` | String(len: 1..=255) | Yes |  |
 
 ### custom_request_handling
@@ -583,7 +852,7 @@ Used by: `allow_action.custom_request_handling`, `rule_action.captcha.custom_req
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `data_protections` | List\<[Struct(DataProtect)](#data_protection_configdata_protections)\> (items: 1..) | Yes |  |
+| `data_protections` | List\<[Struct(DataProtect)](#data_protection_configdata_protections)\> (items: 1..=26) | Yes |  |
 
 ### data_protection_config.data_protections
 
@@ -598,7 +867,7 @@ Used by: `allow_action.custom_request_handling`, `rule_action.captcha.custom_req
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `field_keys` | `List<String(len: 1..=64)>` | No | List of field keys to protect |
+| `field_keys` | `List<String(pattern, len: 1..=64)> (items: ..=100)` | No | List of field keys to protect |
 | `field_type` | [Enum (FieldType)](#data_protection_configdata_protectionsfieldfield_type-fieldtype) | Yes | Field type to protect |
 
 ### default_action
@@ -614,7 +883,7 @@ Used by: `statement.managed_rule_group_statement.excluded_rules`, `statement.rul
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String | Yes |  |
+| `name` | `String(pattern, len: 1..=128)` | Yes |  |
 
 ### field_identifier
 
@@ -715,19 +984,19 @@ Used by: `statement.byte_match_statement.field_to_match`, `statement.regex_match
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `all` | Empty struct (`{}`) | No | Inspect all parts of the web request's JSON body. |
-| `included_paths` | `List<String>` | No |  |
+| `included_paths` | `List<String(pattern, len: 1..=512)> (items: 1..)` | No |  |
 
 ### field_to_match.single_header
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String | Yes |  |
+| `name` | `String(pattern, len: 1..=64)` | Yes |  |
 
 ### field_to_match.single_query_argument
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String | Yes |  |
+| `name` | `String(pattern, len: 1..=64)` | Yes |  |
 
 ### field_to_match.uri_fragment
 
@@ -742,7 +1011,7 @@ Used by: `statement.asn_match_statement.forwarded_ip_config`, `statement.geo_mat
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `fallback_behavior` | [Enum (FallbackBehavior)](#forwarded_ip_configurationfallback_behavior-fallbackbehavior) | Yes |  |
-| `header_name` | String | Yes |  |
+| `header_name` | `String(pattern, len: 1..=255)` | Yes |  |
 
 ### immunity_time_property
 
@@ -796,8 +1065,8 @@ Used by: `statement.managed_rule_group_statement.managed_rule_group_configs.aws_
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `failure_codes` | `List<Int>` (items: 1..=10) | Yes |  |
-| `success_codes` | `List<Int>` (items: 1..=10) | Yes |  |
+| `failure_codes` | `List<Int(0..=999)> (items: 1..=10)` | Yes |  |
+| `success_codes` | `List<Int(0..=999)> (items: 1..=10)` | Yes |  |
 
 ### rule_action
 
@@ -836,7 +1105,7 @@ Used by: `statement.managed_rule_group_statement.rule_action_overrides`, `statem
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `action_to_use` | [Struct(RuleAction)](#rule_action) | Yes |  |
-| `name` | String | Yes |  |
+| `name` | `String(pattern, len: 1..=128)` | Yes |  |
 
 ### rules
 
@@ -845,7 +1114,7 @@ Used by: `statement.managed_rule_group_statement.rule_action_overrides`, `statem
 | `action` | [Struct(RuleAction)](#rule_action) | No |  |
 | `captcha_config` | [Struct(CaptchaConfig)](#captcha_config-1) | No |  |
 | `challenge_config` | [Struct(ChallengeConfig)](#challenge_config-1) | No |  |
-| `name` | String | Yes |  |
+| `name` | `String(pattern, len: 1..=128)` | Yes |  |
 | `override_action` | [Struct(OverrideAction)](#rulesoverride_action) | No |  |
 | `priority` | Int(0..) | Yes |  |
 | `rule_labels` | List\<[Struct(Label)](#rulesrule_labels)\> | No | Collection of Rule Labels. |
@@ -863,7 +1132,7 @@ Used by: `statement.managed_rule_group_statement.rule_action_overrides`, `statem
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String | Yes |  |
+| `name` | `String(pattern, len: 1..=1024)` | Yes |  |
 
 ### statement
 
@@ -892,13 +1161,13 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `statements` | List\<[Struct(Statement)](#statement)\> | Yes |  |
+| `statements` | List\<[Struct(Statement)](#statement)\> (items: 2..) | Yes |  |
 
 ### statement.asn_match_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `asn_list` | `List<Int(0..=4294967295)>` | No |  |
+| `asn_list` | `List<Int(0..=4294967295)>` (items: 1..=100) | No |  |
 | `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwarded_ip_configuration) | No |  |
 
 ### statement.byte_match_statement
@@ -907,15 +1176,15 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 |-------|------|----------|-------------|
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
 | `positional_constraint` | [Enum (PositionalConstraint)](#statementbyte_match_statementpositional_constraint-positionalconstraint) | Yes |  |
-| `search_string` | String | No |  |
-| `search_string_base64` | String | No |  |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+| `search_string` | `aws.wafv2.WebACL.ByteMatchSearchString` | No |  |
+| `search_string_base64` | `aws.wafv2.WebACL.ByteMatchSearchStringBase64` | No |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
 
 ### statement.geo_match_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `country_codes` | `List<String(len: 1..=2)>` | No |  |
+| `country_codes` | List\<[Enum (CountryCodes)](#statementgeo_match_statementcountry_codes-countrycodes)\> (items: 1..=50) | No |  |
 | `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwarded_ip_configuration) | No |  |
 
 ### statement.ip_set_reference_statement
@@ -930,21 +1199,21 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `fallback_behavior` | [Enum (FallbackBehavior)](#statementip_set_reference_statementip_set_forwarded_ip_configfallback_behavior-fallbackbehavior) | Yes |  |
-| `header_name` | String | Yes |  |
+| `header_name` | `String(pattern, len: 1..=255)` | Yes |  |
 | `position` | [Enum (Position)](#statementip_set_reference_statementip_set_forwarded_ip_configposition-position) | Yes |  |
 
 ### statement.label_match_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key` | String | Yes |  |
+| `key` | `String(pattern, len: 1..=1024)` | Yes |  |
 | `scope` | [Enum (LabelMatchScope)](#statementlabel_match_statementscope-labelmatchscope) | Yes |  |
 
 ### statement.managed_rule_group_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `excluded_rules` | List\<[Struct(ExcludedRule)](#excluded_rule)\> | No |  |
+| `excluded_rules` | List\<[Struct(ExcludedRule)](#excluded_rule)\> (items: ..=100) | No |  |
 | `managed_rule_group_configs` | List\<[Struct(ManagedRuleGroupConfig)](#statementmanaged_rule_group_statementmanaged_rule_group_configs)\> | No | Collection of ManagedRuleGroupConfig. |
 | `name` | String | Yes |  |
 | `rule_action_overrides` | List\<[Struct(RuleActionOverride)](#rule_action_override)\> (items: ..=100) | No | Action overrides for rules in the rule group. |
@@ -969,9 +1238,9 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `creation_path` | String | Yes |  |
+| `creation_path` | `String(pattern, len: 1..=256)` | Yes |  |
 | `enable_regex_in_path` | Bool | No |  |
-| `registration_page_path` | String | Yes |  |
+| `registration_page_path` | `String(pattern, len: 1..=256)` | Yes |  |
 | `request_inspection` | [Struct(RequestInspectionACFP)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_acfp_rule_setrequest_inspection) | Yes |  |
 | `response_inspection` | [Struct(ResponseInspection)](#response_inspection) | No |  |
 
@@ -1047,7 +1316,7 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `statements` | List\<[Struct(Statement)](#statement)\> | Yes |  |
+| `statements` | List\<[Struct(Statement)](#statement)\> (items: 2..) | Yes |  |
 
 ### statement.rate_based_statement
 
@@ -1082,14 +1351,14 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | String(pattern, len: 1..=64) | Yes | The name of the cookie to use. |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
 
 ### statement.rate_based_statement.custom_keys.header
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | String(pattern, len: 1..=64) | Yes | The name of the header to use. |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
 
 ### statement.rate_based_statement.custom_keys.ja3_fingerprint
 
@@ -1107,26 +1376,26 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `namespace` | String | Yes | The namespace to use for aggregation. |
+| `namespace` | `String(pattern, len: 1..=1024)` | Yes | The namespace to use for aggregation. |
 
 ### statement.rate_based_statement.custom_keys.query_argument
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | String(pattern, len: 1..=64) | Yes | The name of the query argument to use. |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
 
 ### statement.rate_based_statement.custom_keys.query_string
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
 
 ### statement.rate_based_statement.custom_keys.uri_path
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
 
 ### statement.regex_match_statement
 
@@ -1134,7 +1403,7 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 |-------|------|----------|-------------|
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
 | `regex_string` | String(len: 1..=512) | Yes |  |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
 
 ### statement.regex_pattern_set_reference_statement
 
@@ -1142,14 +1411,14 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 |-------|------|----------|-------------|
 | `arn` | Arn | Yes |  |
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
 
 ### statement.rule_group_reference_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `arn` | Arn | Yes |  |
-| `excluded_rules` | List\<[Struct(ExcludedRule)](#excluded_rule)\> | No |  |
+| `excluded_rules` | List\<[Struct(ExcludedRule)](#excluded_rule)\> (items: ..=100) | No |  |
 | `rule_action_overrides` | List\<[Struct(RuleActionOverride)](#rule_action_override)\> (items: ..=100) | No | Action overrides for rules in the rule group. |
 
 ### statement.size_constraint_statement
@@ -1158,8 +1427,8 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 |-------|------|----------|-------------|
 | `comparison_operator` | [Enum (ComparisonOperator)](#statementsize_constraint_statementcomparison_operator-comparisonoperator) | Yes |  |
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
-| `size` | Float(0..=21474836480) | Yes |  |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+| `size` | Int(0..=21474836480) | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
 
 ### statement.sqli_match_statement
 
@@ -1167,14 +1436,14 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 |-------|------|----------|-------------|
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
 | `sensitivity_level` | [Enum (SensitivityLevel)](#statementsqli_match_statementsensitivity_level-sensitivitylevel) | No |  |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
 
 ### statement.xss_match_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
 
 ### text_transformation
 
@@ -1192,7 +1461,7 @@ Used by: `rules.visibility_config`, `visibility_config`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `cloud_watch_metrics_enabled` | Bool | Yes |  |
-| `metric_name` | String(len: 1..=128) | Yes |  |
+| `metric_name` | `String(pattern, len: 1..=128)` | Yes |  |
 | `sampled_requests_enabled` | Bool | Yes |  |
 
 ## Attribute Reference

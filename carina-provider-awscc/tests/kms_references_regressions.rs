@@ -187,7 +187,7 @@ fn shared_kms_definition_requires_a_decision_at_each_use_site() {
 }
 
 #[test]
-fn non_reference_string_maps_ignore_scalar_constraints_like_main() {
+fn non_reference_string_maps_refine_keys_and_keep_existing_value_behavior() {
     for value in [
         json!({"type": "string", "pattern": "^(?!aws:).*$", "minLength": 1, "maxLength": 256}),
         json!({"type": "string", "enum": ["enabled", "disabled"]}),
@@ -199,16 +199,21 @@ fn non_reference_string_maps_ignore_scalar_constraints_like_main() {
         schema["properties"]["Settings"] = json!({"type": "object", "properties": {"Modes": map}});
         let rust = rendered(&schema, "rust");
         assert_eq!(
-            rust.matches("AttributeType::map(AttributeType::string())")
+            rust.matches(r#"AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:.*)\\z".to_string()), None, None), AttributeType::string())"#)
                 .count(),
             2,
             "{rust}"
         );
         let markdown = rendered(&schema, "markdown");
         assert_eq!(
-            markdown.matches("Map<String, String>").count(),
-            3,
+            markdown.matches("Map<String(pattern), String>").count(),
+            2,
             "{markdown}"
+        );
+        assert_eq!(
+            markdown.matches("Map<String, String>").count(),
+            1,
+            "Tags stay unchanged: {markdown}"
         );
     }
 }

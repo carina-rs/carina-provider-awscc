@@ -59,9 +59,16 @@ fn every_registered_tag_map_preserves_its_cfn_string_constraints() {
             let min = source["minLength"].as_u64().filter(|min| *min > 0);
             let max = source["maxLength"].as_u64();
             let expected_length = (min.is_some() || max.is_some()).then_some((min, max));
-            let expected_pattern = source["pattern"]
-                .as_str()
-                .map(super::pattern::ApprovedPattern::whole);
+            let expected_pattern = if config.aws_type_name == "AWS::WAFv2::WebACL" {
+                // #525 adds the live-confirmed API pattern to both Tag leaves.
+                Some(super::pattern::ApprovedPattern::whole(
+                    r"^[\p{L}\p{Z}\p{N}_.:/=+\-@]*$",
+                ))
+            } else {
+                source["pattern"]
+                    .as_str()
+                    .map(super::pattern::ApprovedPattern::whole)
+            };
             assert!(
                 identity.is_none() && validate.is_none(),
                 "{} {name}",
