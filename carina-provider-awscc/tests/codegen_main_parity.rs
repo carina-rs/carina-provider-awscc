@@ -1,5 +1,6 @@
 //! Expected snippets originated from origin/main (d02e242) codegen.
 //! The Logs fixture includes the documented single-policy limit from #525.
+//! The VPC map fixtures include CFN-derived patternProperties keys from #525.
 #![cfg(not(target_arch = "wasm32"))]
 
 use serde_json::{Value, json};

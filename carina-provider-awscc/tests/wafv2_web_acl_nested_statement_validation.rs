@@ -196,13 +196,13 @@ fn validate_web_acl(resource: Resource) -> Result<(), String> {
 
 #[test]
 fn nested_waf_statements_validate_through_the_user_resource_path() {
-    let valid_geo_match = map([("country_codes", list([string("US")]))]);
+    let valid_geo_match = map([("country_codes", list([enum_identifier("us")]))]);
     validate_web_acl(web_acl(valid_geo_match))
         .expect("nested and/not/or statements must pass whole-resource validation");
 
     let unknown_field = "unknown_three_levels_deep";
     let unknown_geo_match = map([
-        ("country_codes", list([string("US")])),
+        ("country_codes", list([enum_identifier("us")])),
         (unknown_field, bool_(true)),
     ]);
     let unknown_error = validate_web_acl(web_acl(unknown_geo_match))
