@@ -88,7 +88,7 @@ The relay state URL that redirect links to any service in the AWS Management Con
 
 ### `session_duration`
 
-- **Type:** String(pattern, len: 1..=100)
+- **Type:** `aws.sso.PermissionSet.SessionDuration`
 - **Required:** No
 
 The length of time that a user can be signed in to an AWS account.

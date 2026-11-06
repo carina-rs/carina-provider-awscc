@@ -540,6 +540,77 @@ fn validated_s3_lifecycle_date(identity: TypeIdentity) -> AttributeType {
     )
 }
 
+fn validated_sso_permission_set_session_duration(identity: TypeIdentity) -> AttributeType {
+    // Keep the existing CFN grammar, spelling out ECMAScript's ASCII \d.
+    // Fractions are allowed only on seconds; date components may be zero.
+    let pattern = ApprovedPattern::whole(concat!(
+        r"^-?P(?:",
+        r"(?:[0-9]+Y(?:[0-9]+M)?(?:[0-9]+[DW])?|[0-9]+M(?:[0-9]+[DW])?|[0-9]+[DW])",
+        r"(?:T(?:[0-9]+H)?(?:[0-9]+M)?(?:[0-9]+(?:\.[0-9]+)?S)?)?",
+        r"|T(?:[0-9]+H(?:[0-9]+M)?(?:[0-9]+(?:\.[0-9]+)?S)?|[0-9]+M(?:[0-9]+(?:\.[0-9]+)?S)?|[0-9]+(?:\.[0-9]+)?S))$",
+    ));
+    let compiled_pattern = CompiledPattern::try_new(pattern.as_str())
+        .expect("SSO PermissionSet.SessionDuration pattern must compile");
+    refined_string_with_validator(
+        identity,
+        Some(pattern),
+        Some((Some(1), Some(100))),
+        legacy_validator(move |value| {
+            let Value::Concrete(ConcreteValue::String(value)) = value else {
+                return Err("Expected string".to_string());
+            };
+            let value = value.expose_plaintext();
+            let invalid = || {
+                "SSO permission set session duration must be an ISO 8601 duration between 1 and 12 hours (1 to 100 characters)"
+                    .to_string()
+            };
+            // SDK custom-type dispatch invokes the callback directly.
+            if !(1..=100).contains(&value.len())
+                || !compiled_pattern.is_match(value)
+                || value.starts_with('-')
+            {
+                return Err(invalid());
+            }
+            // The grammar and sign check guarantee the leading ASCII P.
+            let (date, time) = value[1..].split_once('T').unwrap_or((&value[1..], ""));
+            // Any nonzero year, month, week, or day exceeds 12 hours.
+            if date.bytes().any(|byte| matches!(byte, b'1'..=b'9')) {
+                return Err(invalid());
+            }
+            let mut seconds = 0_u32;
+            let mut fractional_seconds = "";
+            for component in time.split_inclusive(['H', 'M', 'S']) {
+                let (number, unit) = component.split_at(component.len() - 1);
+                let multiplier = match unit {
+                    "H" => 3600,
+                    "M" => 60,
+                    "S" => 1,
+                    _ => return Err(invalid()),
+                };
+                let (whole, fraction) = number.split_once('.').unwrap_or((number, ""));
+                let whole = whole.parse::<u32>().map_err(|_| invalid())?;
+                seconds = whole
+                    .checked_mul(multiplier)
+                    .and_then(|part| seconds.checked_add(part))
+                    .ok_or_else(invalid)?;
+                if unit == "S" {
+                    fractional_seconds = fraction;
+                }
+            }
+            // CFN permits fractions only on seconds. With integer bounds,
+            // their exact decimal digits matter only at the upper bound.
+            if (3600..=43200).contains(&seconds)
+                && (seconds < 43200 || fractional_seconds.bytes().all(|byte| byte == b'0'))
+            {
+                Ok(())
+            } else {
+                Err(invalid())
+            }
+        }),
+        None,
+    )
+}
+
 fn validated_scheduler_schedule_expression(identity: TypeIdentity) -> AttributeType {
     refined_string_with_validator(
         identity,
@@ -787,6 +858,13 @@ carina_aws_types::define_aws_type_catalog! {
             kind: "ScheduleExpression",
             valid_sample: "rate(6 hours)",
             constructor: validated_scheduler_schedule_expression,
+        },
+        /// AWSCC-local SSO permission set session duration from 1 to 12 hours.
+        SsoPermissionSetSessionDuration => sso_permission_set_session_duration {
+            segments: ["sso", "PermissionSet"],
+            kind: "SessionDuration",
+            valid_sample: "PT8H",
+            constructor: validated_sso_permission_set_session_duration,
         },
         /// AWSCC lifecycle calendar date at midnight UTC, including CFN's .000Z form.
         /// This identity is local to AWSCC, distinct from the existing shared
@@ -1173,6 +1251,7 @@ S3BucketArn|aws|s3/Bucket|Arn|Some(S3BucketArn)|arn:aws:s3:::example-bucket|None
 Ec2FlowLogMaxAggregationInterval|aws|ec2/FlowLog|MaxAggregationInterval|Some(Ec2FlowLogMaxAggregationInterval)|60|Some([60, 600])|crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()
 SchedulerScheduleGroupName|aws|scheduler/Schedule|GroupName|None|default|None|crate::schemas::catalog::scheduler_schedule_group_name()
 SchedulerScheduleExpression|aws|scheduler/Schedule|ScheduleExpression|None|rate(6 hours)|None|crate::schemas::catalog::scheduler_schedule_expression()
+SsoPermissionSetSessionDuration|aws|sso/PermissionSet|SessionDuration|None|PT8H|None|crate::schemas::catalog::sso_permission_set_session_duration()
 S3LifecycleDate|aws|s3/Bucket|LifecycleDate|None|2030-01-01T00:00:00Z|None|crate::schemas::catalog::s3_lifecycle_date()"#;
 
         let snapshot = AwsccType::ALL

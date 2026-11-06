@@ -65,6 +65,9 @@ mod s3_tests;
 mod sns_tests;
 
 #[cfg(test)]
+mod sso_tests;
+
+#[cfg(test)]
 mod ssm_tests;
 
 #[cfg(test)]

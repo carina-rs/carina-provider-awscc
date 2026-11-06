@@ -6961,22 +6961,6 @@ const STRING_PATTERN_REWRITES: &[StringPatternRewrite] = &[
         length: None,
     },
     StringPatternRewrite {
-        cfn_type: "AWS::SSO::PermissionSet",
-        source_paths: &["/properties/SessionDuration"],
-        source: r"^(-?)P(?=\d|T\d)(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)([DW]))?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$",
-        // Choose the first present date component, or a time-only duration
-        // with a required first time component. A date may still end in a
-        // bare T, as the original look-ahead only inspects the text after P.
-        // ECMAScript's \d is ASCII, unlike Rust regex's Unicode \d.
-        pattern: concat!(
-            r"^-?P(?:",
-            r"(?:[0-9]+Y(?:[0-9]+M)?(?:[0-9]+[DW])?|[0-9]+M(?:[0-9]+[DW])?|[0-9]+[DW])",
-            r"(?:T(?:[0-9]+H)?(?:[0-9]+M)?(?:[0-9]+(?:\.[0-9]+)?S)?)?",
-            r"|T(?:[0-9]+H(?:[0-9]+M)?(?:[0-9]+(?:\.[0-9]+)?S)?|[0-9]+M(?:[0-9]+(?:\.[0-9]+)?S)?|[0-9]+(?:\.[0-9]+)?S))$",
-        ),
-        length: None,
-    },
-    StringPatternRewrite {
         cfn_type: "AWS::ECR::Repository",
         source_paths: &["/properties/RepositoryName"],
         source: r"^(?=.{2,256}$)([a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*(\/[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*)*)$",
@@ -11136,6 +11120,19 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             },
         );
 
+        // IAM Identity Center documents a 1..=12 hour session duration.
+        // Keep CFN's grammar and 1..=100 bounds in the named type.
+        // https://docs.aws.amazon.com/singlesignon/latest/userguide/howtosessionduration.html
+        // This bound has NOT been confirmed live: no IAM Identity Center
+        // instance is available in a carina-test-* account, CreatePermissionSet
+        // is AccessDenied there, and the test org forbids member account instances.
+        m.insert(
+            ("AWS::SSO::PermissionSet", "SessionDuration"),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "crate::schemas::catalog::sso_permission_set_session_duration()",
+            )),
+        );
+
         // CreateSchedule probes, carina-test-008, ap-northeast-1, 2026-11-05:
         // accepted rate/cron/at syntax differs from the documented grammar.
         // Keep CFN's 1..=256 bounds in the named callback-bearing type.
@@ -13219,53 +13216,6 @@ mod tests {
                 ],
             ),
             (
-                "AWS::SSO::PermissionSet",
-                None,
-                "SessionDuration",
-                &[
-                    ("", false),
-                    ("P", false),
-                    ("PT", false),
-                    ("-PT", false),
-                    ("P1Y", true),
-                    ("P1M", true),
-                    ("P1D", true),
-                    ("P1W", true),
-                    ("P1YT", true),
-                    ("P1MT", true),
-                    ("P1DT", true),
-                    ("P1WT", true),
-                    ("PT1H", true),
-                    ("PT1M", true),
-                    ("PT1S", true),
-                    ("PT1.25S", true),
-                    ("-PT1H", true),
-                    ("P0D", true),
-                    ("PT0S", true),
-                    ("PT١H", false),
-                    ("PT１H", false),
-                    ("P١Y", false),
-                    ("PT1.٢S", false),
-                    ("P1DT٢M", false),
-                    ("P1Y2M3DT4H5M6.7S", true),
-                    ("P1Y2M3WT4H5M6S", true),
-                    ("P1Y2MT3H", true),
-                    ("P1YT2M", true),
-                    ("P1DT2.3S", true),
-                    ("P1W2D", false),
-                    ("P1D2W", false),
-                    ("P1", false),
-                    ("PT.5S", false),
-                    ("PT1.S", false),
-                    ("P1.5D", false),
-                    ("PT1M2H", false),
-                    ("+PT1H", false),
-                    ("--PT1H", false),
-                    ("pt1h", false),
-                    ("PT1H\n", false),
-                ],
-            ),
-            (
                 "AWS::ECR::Repository",
                 None,
                 "RepositoryName",
@@ -13813,7 +13763,6 @@ mod tests {
                 "Source",
             ),
             ("AWS::Logs::LogGroup", None, "LogGroupName"),
-            ("AWS::SSO::PermissionSet", None, "SessionDuration"),
             ("AWS::ECR::Repository", None, "RepositoryName"),
         ] {
             let schema = empty_schema(type_name);
@@ -13837,7 +13786,6 @@ mod tests {
         for (type_name, parent, name) in [
             ("AWS::ECR::Repository", None, "RepositoryName"),
             ("AWS::Logs::LogGroup", None, "LogGroupName"),
-            ("AWS::SSO::PermissionSet", None, "SessionDuration"),
             (
                 "AWS::Scheduler::Schedule",
                 Some("EventBridgeParameters"),
@@ -19442,6 +19390,41 @@ mod tests {
                 "overrides must use raw CFN spelling: {dsl}"
             );
         }
+    }
+
+    #[test]
+    fn test_sso_permission_set_session_duration_uses_exact_raw_cfn_override_path() {
+        let schema = cfn_schema_for_codegen_tests("AWS::SSO::PermissionSet");
+        let path = CfnPropertyPath::new(None, "SessionDuration");
+        assert_eq!(path.source_pointer(), "/properties/SessionDuration");
+        let expression = OverrideTypeExpression::raw(
+            "crate::schemas::catalog::sso_permission_set_session_duration()",
+        );
+        assert_eq!(
+            resource_type_override(&schema.type_name, path),
+            Some(&TypeOverride::StringType(expression.clone()))
+        );
+        let source = &schema.properties["SessionDuration"];
+        assert_eq!(source.min_length, Some(1));
+        assert_eq!(source.max_length, Some(100));
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert!(generated.contains(&format!(
+            "AttributeSchema::optional(\"session_duration\", {expression})"
+        )));
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(markdown.contains("- **Type:** `aws.sso.PermissionSet.SessionDuration`"));
+        for path in [
+            CfnPropertyPath::new(None, "session_duration"),
+            CfnPropertyPath::new(Some("Other"), "SessionDuration"),
+        ] {
+            assert!(resource_type_override(&schema.type_name, path).is_none());
+        }
+        assert!(!STRING_PATTERN_REWRITES.iter().any(|rewrite| {
+            rewrite.cfn_type == schema.type_name
+                && rewrite
+                    .source_paths
+                    .contains(&"/properties/SessionDuration")
+        }));
     }
 
     #[test]
