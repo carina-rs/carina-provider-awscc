@@ -44,6 +44,8 @@ use kms_references_cfn::{EmissionContext, EmissionProperty};
 mod override_type_expression;
 #[path = "codegen/parsed_cfn_schema.rs"]
 mod parsed_cfn_schema;
+#[path = "codegen/schema_layer.rs"]
+mod schema_layer;
 use override_type_expression::{OverrideTypeExpression, PatternLiteral};
 use parsed_cfn_schema::ParsedCfnSchema;
 #[path = "codegen/tagging.rs"]
@@ -2231,9 +2233,11 @@ struct CfnProperty {
     format: Option<String>,
     /// Property-level oneOf variants (union types)
     #[serde(default, rename = "oneOf")]
+    #[cfg_attr(test, serde(skip_serializing_if = "Vec::is_empty"))]
     one_of: Vec<CfnProperty>,
     #[serde(default)]
     #[serde(rename = "anyOf")]
+    #[cfg_attr(test, serde(skip_serializing_if = "Vec::is_empty"))]
     any_of: Vec<CfnProperty>,
 }
 
@@ -15095,16 +15099,17 @@ mod tests {
             ),
         ] {
             for source in [Some("^changed[0-9]+$"), None] {
+                let mut changed = serde_json::json!({"type": "string"});
+                if let Some(pattern) = source {
+                    changed["pattern"] = serde_json::json!(pattern);
+                }
                 let schema = ParsedCfnSchema::from_json(serde_json::json!({
                     "typeName": type_name,
                     "properties": {name: {
                         "type": "array",
                         "items": {"$ref": "#/definitions/Changed"}
                     }},
-                    "definitions": {"Changed": {
-                        "type": "string",
-                        "pattern": source
-                    }}
+                    "definitions": {"Changed": changed}
                 }))
                 .unwrap();
                 reset_recursion_guard();
@@ -33012,9 +33017,15 @@ mod tests {
         }
 
         let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
-        schema.edit_json(|source| {
-            source["properties"]["ResourceTags"]["maxItems"] = serde_json::json!(-1);
-        });
+        schema.edit_json_with_layer_error(
+            |source| {
+                source["properties"]["ResourceTags"]["maxItems"] = serde_json::json!(-1);
+            },
+            schema_layer::SchemaError::InvalidValue {
+                pointer: "/properties/ResourceTags/maxItems".into(),
+                reason: "expected a non-negative integer".into(),
+            },
+        );
         for result in [
             generate_schema_code(&schema, &schema.type_name),
             generate_test_markdown(&schema, &schema.type_name),
