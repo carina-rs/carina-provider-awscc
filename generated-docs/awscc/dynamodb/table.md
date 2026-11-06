@@ -453,6 +453,8 @@ Used by: `global_secondary_indexes.warm_throughput`, `warm_throughput`
 | `read_units_per_second` | Int(1..) | No | Represents the number of read operations your base table can instantaneously support. |
 | `write_units_per_second` | Int(1..) | No | Represents the number of write operations your base table can instantaneously support. |
 
+At least one of `read_units_per_second`, `write_units_per_second` must be specified.
+
 ## Attribute Reference
 
 ### `arn`

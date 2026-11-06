@@ -49,7 +49,10 @@ mod parsed_cfn_schema;
 mod schema_layer;
 #[path = "codegen/schema_projection.rs"]
 mod schema_projection;
-use schema_projection::{EmissionType, Projection};
+use schema_projection::{AlternativeKind, EmissionType, Projection};
+#[path = "codegen/field_groups.rs"]
+mod field_groups;
+use field_groups::{FieldGroups, RequiredGroup};
 #[cfg(test)]
 #[path = "codegen/schema_projection_tests.rs"]
 mod schema_projection_tests;
@@ -1310,8 +1313,6 @@ struct CfnSchema {
     layer: Option<std::sync::Arc<schema_layer::Layer>>,
     #[cfg_attr(test, serde(skip))]
     query_nodes: BTreeMap<schema_layer::NodeId, SchemaProperty>,
-    #[cfg_attr(test, serde(skip))]
-    root_projection: Projection,
     type_name: String,
     properties: BTreeMap<String, SchemaProperty>,
     definitions: Option<BTreeMap<String, SchemaProperty>>,
@@ -1434,6 +1435,10 @@ enum CloudControlPermissionSource<'a> {
 }
 
 impl CfnSchema {
+    fn root_projection(&self) -> std::result::Result<&Projection, schema_layer::SchemaError> {
+        self.query_node(self.metadata().root).try_query()
+    }
+
     fn metadata(&self) -> &schema_layer::Resource {
         self.layer
             .as_ref()
@@ -3053,6 +3058,7 @@ struct StructDefInfo {
     properties: BTreeMap<String, SchemaProperty>,
     /// Required fields
     required: Vec<String>,
+    field_groups: FieldGroups,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -4381,6 +4387,7 @@ struct MarkdownStructDef {
     name: String,
     properties: BTreeMap<String, SchemaProperty>,
     required: Vec<String>,
+    field_groups: FieldGroups,
 }
 
 /// Classify exactly the property shapes that own a Markdown struct target.
@@ -4411,7 +4418,7 @@ fn markdown_struct_def(
             else {
                 return Ok(None);
             };
-            struct_def.key = MarkdownStructKey::Definition(resolved.name.to_string());
+            struct_def.key = MarkdownStructKey::Definition(resolved.emission_key()?.into_owned());
             struct_def.name = resolved.name.to_string();
             Some(struct_def)
         }
@@ -4420,12 +4427,14 @@ fn markdown_struct_def(
             name,
             properties: properties.clone(),
             required: prop.query().required.clone(),
+            field_groups: prop.query().field_groups.clone(),
         }),
         PropertyShape::Merged(properties) => Some(MarkdownStructDef {
             key,
             name,
             properties,
-            required: Vec::new(),
+            required: prop.query().required.clone(),
+            field_groups: prop.query().field_groups.clone(),
         }),
         PropertyShape::Inline | PropertyShape::Array { variant: _ } | PropertyShape::Unresolved => {
             None
@@ -5023,7 +5032,7 @@ fn render_markdown(
         .map(|p| p.trim_start_matches("/properties/").to_string())
         .collect();
 
-    let required: HashSet<String> = schema.root_projection.required.iter().cloned().collect();
+    let required: HashSet<String> = schema.root_projection()?.required.iter().cloned().collect();
 
     // Collect enum info and struct definitions
     let mut property_enums: BTreeMap<String, EnumInfo> = BTreeMap::new();
@@ -5164,7 +5173,7 @@ fn render_markdown(
     page.push_str(&format!("CloudFormation Type: `{type_name}`\n\n"));
 
     // Description
-    if let Some(desc) = &schema.root_projection.description {
+    if let Some(desc) = &schema.root_projection()?.description {
         page.push_str(&format!("{desc}\n\n"));
     }
 
@@ -5200,6 +5209,13 @@ fn render_markdown(
 
     // Argument Reference (writable attributes)
     page.heading(Heading::plain(2, "Argument Reference"))?;
+    // Prose-derived EC2 rules keep their existing documentation. Only the
+    // shared schema projection contributes new declaration notes.
+    write_field_group_notes(
+        &mut page,
+        &schema.root_projection()?.field_groups,
+        |member| dsl_attribute_name(schema, member),
+    )?;
 
     for (prop_name, prop) in documented_top_level_properties(schema) {
         let property_path = [prop_name.clone()];
@@ -5452,6 +5468,9 @@ fn render_markdown(
             }
             page.table(["Field", "Type", "Required", "Description"], rows)?;
             page.push_str("\n");
+            write_field_group_notes(&mut page, &def_info.field_groups, |member| {
+                Ok(member.to_snake_case())
+            })?;
         }
     }
 
@@ -5587,6 +5606,7 @@ fn collect_struct_defs(
             name,
             properties,
             required,
+            field_groups,
         } = struct_def;
         let struct_cfn_parent = name.clone();
         let def_path = extend_struct_path(struct_path, &name);
@@ -5599,6 +5619,7 @@ fn collect_struct_defs(
                     property_paths: BTreeSet::from([property_path.to_vec()]),
                     properties: properties.clone(),
                     required,
+                    field_groups,
                 });
                 true
             }
@@ -5686,35 +5707,6 @@ fn collect_struct_defs(
     Ok(())
 }
 
-/// Detect mutually exclusive field groups from top-level `oneOf` / `anyOf` patterns.
-///
-/// CloudFormation schemas may have top-level `oneOf` or `anyOf` arrays where each variant
-/// has a different `required` field list. When each variant requires exactly one field and
-/// the fields differ across variants, they form a mutually exclusive group.
-fn detect_exclusive_from_oneof(schema: &CfnSchema) -> Vec<Vec<String>> {
-    let mut groups = Vec::new();
-
-    for variants in &schema.root_projection.declared_required_alternatives {
-        if variants.len() < 2 {
-            continue;
-        }
-        // Collect the required fields from each variant
-        let required_sets: Vec<&Vec<String>> = variants.iter().collect();
-
-        // Check that every variant has exactly one required field
-        if required_sets.iter().all(|r| r.len() == 1) {
-            let fields: Vec<String> = required_sets.iter().map(|r| r[0].clone()).collect();
-            // Only create a group if all fields are distinct property names
-            let unique: HashSet<&String> = fields.iter().collect();
-            if unique.len() == fields.len() && fields.len() >= 2 {
-                groups.push(fields);
-            }
-        }
-    }
-
-    groups
-}
-
 /// Regex for detecting unqualified "specify either X or Y" sentences in
 /// property descriptions. X and Y can be PascalCase names or
 /// ``backtick-quoted`` names.
@@ -5765,39 +5757,60 @@ fn detect_exclusive_from_descriptions(schema: &CfnSchema) -> Vec<Vec<String>> {
     seen_groups.into_iter().collect()
 }
 
-/// Detect all mutually exclusive field groups for a schema, combining both detection methods.
-/// Returns a deduplicated list of groups (each group is a sorted Vec of PascalCase field names).
-fn detect_exclusive_fields(schema: &CfnSchema, type_name: &str) -> Vec<Vec<String>> {
-    let mut all_groups: HashSet<Vec<String>> = HashSet::new();
+/// Both renderers consume schema-declared groups from the shared projection.
+/// Resource-only description evidence supplements that result without replacing
+/// a declared rule for the same members. Nested structs use only their projection.
+fn resource_field_groups(schema: &CfnSchema) -> Result<FieldGroups> {
+    let projection = schema.root_projection()?;
+    projection.field_groups.validate_members(
+        |name| schema.properties.contains_key(name),
+        &projection.required,
+        &projection.source_pointer,
+    )?;
+    Ok(projection
+        .field_groups
+        .clone()
+        .with_description_groups(detect_exclusive_from_descriptions(schema)))
+}
 
-    // Approach 1: oneOf / anyOf patterns
-    let oneof_groups = detect_exclusive_from_oneof(schema);
-    for mut group in oneof_groups {
-        group.sort();
-        eprintln!(
-            "  [exclusive:oneOf] {}: detected: [{}]",
-            type_name,
-            group.join(", ")
-        );
-        all_groups.insert(group);
+fn field_group_rust(
+    group: &RequiredGroup,
+    name: impl Fn(&str) -> Result<String>,
+) -> Result<String> {
+    let (constructor, label) = match group.kind {
+        AlternativeKind::OneOf => ("exactly_one", "exactly-one"),
+        AlternativeKind::AnyOf => ("at_least_one", "at-least-one"),
+    };
+    let members = group
+        .members
+        .iter()
+        .map(|member| name(member).map(|name| rust_lit(&name).to_string()))
+        .collect::<Result<Vec<_>>>()?
+        .join(", ");
+    Ok(format!(
+        "FieldGroup::{constructor}([{members}]).expect(\"generated {label} field group must be valid\")"
+    ))
+}
+
+fn write_field_group_notes(
+    page: &mut PageBuilder<MarkdownTarget>,
+    field_groups: &FieldGroups,
+    name: impl Fn(&str) -> Result<String>,
+) -> Result<()> {
+    for group in &field_groups.groups {
+        let rule = match group.kind {
+            AlternativeKind::OneOf => "Exactly one",
+            AlternativeKind::AnyOf => "At least one",
+        };
+        let members = group
+            .members
+            .iter()
+            .map(|member| name(member).map(|name| format!("`{name}`")))
+            .collect::<Result<Vec<_>>>()?
+            .join(", ");
+        page.push_str(&format!("{rule} of {members} must be specified.\n\n"));
     }
-
-    // Approach 2: description text parsing
-    let desc_groups = detect_exclusive_from_descriptions(schema);
-    for group in desc_groups {
-        // group is already sorted
-        if all_groups.contains(&group) {
-            eprintln!(
-                "  [exclusive:both] {}: detected by both methods: [{}]",
-                type_name,
-                group.join(", ")
-            );
-        } else {
-            all_groups.insert(group);
-        }
-    }
-
-    all_groups.into_iter().collect()
+    Ok(())
 }
 
 /// Produce the exact AttributeType expression used by a top-level generated
@@ -6045,7 +6058,7 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
         .map(|p| p.trim_start_matches("/properties/").to_string())
         .collect();
 
-    let required: HashSet<String> = schema.root_projection.required.iter().cloned().collect();
+    let required: HashSet<String> = schema.root_projection()?.required.iter().cloned().collect();
 
     // Pre-scan properties to collect emitted struct definitions and enum info.
     // Numeric, length, and pattern constraints are represented declaratively in
@@ -6201,7 +6214,7 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
 
     // Detect mutually exclusive required fields for validation, and derive the
     // separately curated updatable groups used to build CloudControl patches.
-    let exclusive_required_groups = detect_exclusive_fields(schema, type_name);
+    let field_groups = resource_field_groups(schema)?;
     let exclusive_groups = derive_mutually_exclusive_property_groups(schema)?;
     let exclusive_groups_expr = emit_exclusive_groups_slice(&exclusive_groups);
 
@@ -6253,7 +6266,7 @@ pub fn {}() -> AwsccSchemaConfig {{
     ));
 
     // Add description
-    if let Some(desc) = &schema.root_projection.description {
+    if let Some(desc) = &schema.root_projection()?.description {
         let escaped_desc = desc
             .replace('\\', "\\\\")
             .replace('"', "\\\"")
@@ -6469,22 +6482,10 @@ pub fn {}() -> AwsccSchemaConfig {{
         body.push_str("    });\n");
     }
 
-    // Mutually exclusive required groups are emitted as declarative data so
-    // the constraint survives the WASM plugin boundary (function-pointer
-    // validators are lost when schemas cross into the host).
-    for group in &exclusive_required_groups {
-        let fields_str = group
-            .iter()
-            .map(|f| {
-                let snake = dsl_attribute_name(schema, f)?;
-                Ok(rust_lit(&snake).to_string())
-            })
-            .collect::<Result<Vec<_>>>()?
-            .join(", ");
-        body.push_str(&format!(
-            "    schema = schema.field_group(FieldGroup::exactly_one([{}]).expect(\"generated exactly-one field group must be valid\"));\n",
-            fields_str
-        ));
+    // Portable field groups survive protocol transport and the WASM boundary.
+    for group in &field_groups.groups {
+        let group = field_group_rust(group, |member| dsl_attribute_name(schema, member))?;
+        body.push_str(&format!("    schema = schema.field_group({group});\n"));
     }
 
     // Tags map-shape validation is portable schema data so native and WASM
@@ -7079,6 +7080,27 @@ fn ref_def_name(ref_path: &str) -> Option<&str> {
 struct ResolvedRef<'a> {
     name: &'a str,
     property: &'a SchemaProperty,
+    canonical: &'a SchemaProperty,
+}
+
+impl<'a> ResolvedRef<'a> {
+    /// A reference can add requirements without changing the canonical type.
+    /// Give that use its own definition key so reuse and recursive edges retain
+    /// the correct containing scope. Both renderers use this same identity.
+    fn emission_key(self) -> Result<Cow<'a, str>> {
+        let effective = self.property.try_query()?;
+        let canonical = self.canonical.try_query()?;
+        if effective.field_groups == canonical.field_groups
+            && effective.required == canonical.required
+        {
+            Ok(Cow::Borrowed(self.name))
+        } else {
+            Ok(Cow::Owned(format!(
+                "{}@{}",
+                self.name, effective.source_pointer
+            )))
+        }
+    }
 }
 
 /// Resolve a local definition `$ref`, following definitions that are aliases
@@ -7095,10 +7117,15 @@ fn resolve_ref<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<ResolvedRef<
         Some(ResolvedRef {
             name: &reference.name,
             property: &reference.property,
+            canonical: &reference.canonical,
         })
     } else {
         let name = projection.source_name.as_str();
-        Some(ResolvedRef { name, property })
+        Some(ResolvedRef {
+            name,
+            property,
+            canonical: property,
+        })
     }
 }
 
@@ -7122,17 +7149,7 @@ enum PropertyShape<'a> {
     Unresolved,
 }
 
-fn property_shape<'a>(property: &'a SchemaProperty, schema: &'a CfnSchema) -> PropertyShape<'a> {
-    property_shape_with_visited(property, schema, &mut HashSet::new())
-}
-
-/// Shared shape selection consumes the validated Layer projection. Every
-/// alternative and intermediate alias has already participated in validation.
-fn property_shape_with_visited<'a>(
-    property: &'a SchemaProperty,
-    _schema: &'a CfnSchema,
-    _visiting_defs: &mut HashSet<&'a str>,
-) -> PropertyShape<'a> {
+fn property_shape<'a>(property: &'a SchemaProperty, _schema: &'a CfnSchema) -> PropertyShape<'a> {
     #[cfg(test)]
     property.bind_fixture(_schema);
     let projection = property.query();
@@ -7142,6 +7159,7 @@ fn property_shape_with_visited<'a>(
             resolved: Some(ResolvedRef {
                 name: &reference.name,
                 property: &reference.property,
+                canonical: &reference.canonical,
             }),
         };
     }
@@ -7464,8 +7482,7 @@ struct StructGenerationPaths<'a> {
 /// Generate Rust code for an AttributeType::Struct from a set of properties
 fn generate_struct_type(
     def_name: &str,
-    properties: &BTreeMap<String, SchemaProperty>,
-    required: &[String],
+    projection: &Projection,
     schema: &EmissionContext<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
@@ -7474,7 +7491,11 @@ fn generate_struct_type(
     let emission_mark = read_only_emission_mark();
     let write_only_emission_mark = write_only_emission_mark();
     let current_struct_path = extend_struct_path(paths.structural, def_name);
-    let required_set: HashSet<&str> = required.iter().map(|s| s.as_str()).collect();
+    let properties = projection
+        .properties
+        .as_ref()
+        .expect("struct projection has properties");
+    let required_set: HashSet<&str> = projection.required.iter().map(|s| s.as_str()).collect();
 
     let fields: Vec<String> = properties
         .iter()
@@ -7568,11 +7589,27 @@ fn generate_struct_type(
         .collect::<Result<_>>()?;
 
     let fields_str = fields.join(",\n                    ");
-    let struct_type = format!(
-        "AttributeType::struct_({}.to_string(), vec![{}])",
-        rust_lit(def_name),
-        fields_str
-    );
+    let struct_type = if projection.field_groups.groups.is_empty() {
+        format!(
+            "AttributeType::struct_({}.to_string(), vec![{}])",
+            rust_lit(def_name),
+            fields_str
+        )
+    } else {
+        let groups = projection
+            .field_groups
+            .groups
+            .iter()
+            .map(|group| field_group_rust(group, |member| Ok(member.to_snake_case())))
+            .collect::<Result<Vec<_>>>()?
+            .join(", ");
+        format!(
+            "AttributeType::struct_with_field_groups({}.to_string(), vec![{}], vec![{}])",
+            rust_lit(def_name),
+            fields_str,
+            groups
+        )
+    };
     record_struct_read_only_use(def_name, paths.provider, emission_mark);
     record_struct_write_only_use(def_name, paths.provider, write_only_emission_mark);
     Ok(struct_type)
@@ -13852,19 +13889,25 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                     .into());
             };
             let def_name = resolved.name;
+            let emission_key = resolved.emission_key()?;
 
-            if IN_PROGRESS_DEFS.with(|definitions| definitions.borrow().contains(def_name)) {
-                mark_back_reference(def_name);
+            if IN_PROGRESS_DEFS
+                .with(|definitions| definitions.borrow().contains(emission_key.as_ref()))
+            {
+                mark_back_reference(&emission_key);
                 return Ok((
-                    format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
+                    format!(
+                        "AttributeType::ref_({}.to_string())",
+                        rust_lit(&emission_key)
+                    ),
                     None,
                 ));
             }
 
-            let definition_already_emitted =
-                EMITTED_DEFS.with(|definitions| definitions.borrow().contains_key(def_name));
+            let definition_already_emitted = EMITTED_DEFS
+                .with(|definitions| definitions.borrow().contains_key(emission_key.as_ref()));
             IN_PROGRESS_DEFS.with(|definitions| {
-                definitions.borrow_mut().insert(def_name.to_string());
+                definitions.borrow_mut().insert(emission_key.to_string());
             });
             let array = resolved_array_property(prop, schema, &mut HashSet::new());
             let paths = if ref_context == RefContext::Normal
@@ -13889,7 +13932,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 },
             )?;
             IN_PROGRESS_DEFS.with(|definitions| {
-                definitions.borrow_mut().remove(def_name);
+                definitions.borrow_mut().remove(emission_key.as_ref());
             });
 
             if property_generates_struct(resolved.property, schema) {
@@ -13897,21 +13940,24 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                     RefContext::Normal => {
                         if definition_already_emitted {
                             return Ok((
-                                format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
+                                format!(
+                                    "AttributeType::ref_({}.to_string())",
+                                    rust_lit(&emission_key)
+                                ),
                                 None,
                             ));
                         }
                         EMITTED_DEFS.with(|definitions| {
                             definitions
                                 .borrow_mut()
-                                .insert(def_name.to_string(), body.clone());
+                                .insert(emission_key.to_string(), body.clone());
                         });
                     }
-                    RefContext::ListItem if was_back_referenced(def_name) => {
+                    RefContext::ListItem if was_back_referenced(&emission_key) => {
                         EMITTED_DEFS.with(|definitions| {
                             definitions
                                 .borrow_mut()
-                                .insert(def_name.to_string(), body.clone());
+                                .insert(emission_key.to_string(), body.clone());
                         });
                     }
                     RefContext::ListItem => {}
@@ -13941,7 +13987,6 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             projection.is_union = false;
             projection.reference = None;
             projection.properties = Some(properties);
-            projection.required.clear();
             let inline_property = schema_projection::materialize(projection);
             return cfn_type_to_carina_type_with_enum_resolved(
                 schema.property_at(property_path, &inline_property),
@@ -14085,8 +14130,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 return Ok((
                     generate_struct_type(
                         definition_name.unwrap_or(prop_name),
-                        props,
-                        &prop.query().required,
+                        prop.query(),
                         schema,
                         namespace,
                         enums,
@@ -14285,6 +14329,10 @@ mod tests {
 
     mod emission_tests {
         include!("codegen/schema_emission_tests.rs");
+    }
+
+    mod field_groups_tests {
+        include!("codegen/field_groups_tests.rs");
     }
 
     thread_local! {
@@ -16290,8 +16338,14 @@ mod tests {
                     Box::new(schema_shape(args[1])),
                 );
             }
-            if code.starts_with("AttributeType::struct_(") {
-                let args = call_arguments(code, "AttributeType::struct_");
+            if let Some(constructor) = [
+                "AttributeType::struct_",
+                "AttributeType::struct_with_field_groups",
+            ]
+            .into_iter()
+            .find(|constructor| code.starts_with(&format!("{constructor}(")))
+            {
+                let args = call_arguments(code, constructor);
                 return Shape::Struct(
                     vector_items(args[1])
                         .into_iter()
@@ -16801,7 +16855,7 @@ mod tests {
         }
 
         #[test]
-        fn test_one_of_object_refs_merge_optional_fields() {
+        fn test_one_of_object_refs_preserve_common_required_fields() {
             let definitions = json!({
                 "ObjDef":{"type":"object","properties":{"V":{"type":"integer"}},"required":["V"]},
                 "Alias":{"$ref":"#/definitions/ObjDef"},
@@ -16839,11 +16893,18 @@ mod tests {
                             expected,
                             "{target}/{position}"
                         );
+                        let constructor = if mixed { "optional" } else { "required" };
+                        let required = if mixed { "No" } else { "Yes" };
                         assert!(
-                            code.contains("StructField::optional(\"v\", AttributeType::int())"),
+                            code.contains(&format!(
+                                "StructField::{constructor}(\"v\", AttributeType::int())"
+                            )),
                             "{code}"
                         );
-                        assert!(docs.contains("| `v` | Int | No |"), "{docs}");
+                        assert!(
+                            docs.contains(&format!("| `v` | Int | {required} |")),
+                            "{docs}"
+                        );
                         if mixed {
                             assert!(
                                 code.contains(
@@ -16852,6 +16913,14 @@ mod tests {
                                 "{code}"
                             );
                             assert!(docs.contains("| `w` | String | No |"), "{docs}");
+                            assert!(
+                                code.contains("FieldGroup::exactly_one([\"v\", \"w\"])"),
+                                "{code}"
+                            );
+                            assert!(
+                                docs.contains("Exactly one of `v`, `w` must be specified."),
+                                "{docs}"
+                            );
                         }
                     }
                 }
@@ -19678,7 +19747,9 @@ mod tests {
         );
 
         assert!(
-            generated.contains("AttributeType::struct_(\"EvaluationWindow\".to_string()"),
+            generated.contains(
+                "AttributeType::struct_with_field_groups(\"EvaluationWindow\".to_string()"
+            ),
             "EvaluationWindow oneOf must generate a struct: {generated}"
         );
         assert!(
@@ -20193,14 +20264,18 @@ mod tests {
         );
     }
 
+    fn generated_struct_markers(definition: &str) -> [String; 2] {
+        ["struct_", "struct_with_field_groups"].map(|constructor| {
+            format!("AttributeType::{constructor}(\"{definition}\".to_string(), vec![")
+        })
+    }
+
     fn generated_budgets_field<'a>(generated: &'a str, path: &str) -> &'a str {
         let (definition, property) = path.split_once('.').unwrap();
-        let definition_code = generated
-            .split_once(&format!(
-                "AttributeType::struct_(\"{definition}\".to_string(), vec!["
-            ))
-            .unwrap_or_else(|| panic!("missing generated definition {definition}"))
-            .1;
+        let definition_code = generated_struct_markers(definition)
+            .into_iter()
+            .find_map(|marker| generated.split_once(&marker).map(|(_prefix, body)| body))
+            .unwrap_or_else(|| panic!("missing generated definition {definition}"));
         let field = definition_code
             .split_once(&format!("({}, ", rust_lit(&property.to_snake_case())))
             .unwrap_or_else(|| panic!("missing generated field {path}"))
@@ -20212,13 +20287,14 @@ mod tests {
     }
 
     fn assert_all_generated_struct_fields(generated: &str, path: &str, expected: &str) {
-        let (definition, _) = path.split_once('.').unwrap();
-        let marker = format!("AttributeType::struct_(\"{definition}\".to_string(), vec![");
+        let (definition, _property) = path.split_once('.').unwrap();
         let mut count = 0;
-        for (index, _) in generated.match_indices(&marker) {
-            let field = generated_budgets_field(&generated[index..], path);
-            assert!(field.starts_with(expected), "{path}: {field}");
-            count += 1;
+        for marker in generated_struct_markers(definition) {
+            for (index, _matched) in generated.match_indices(&marker) {
+                let field = generated_budgets_field(generated.split_at(index).1, path);
+                assert!(field.starts_with(expected), "{path}: {field}");
+                count += 1;
+            }
         }
         assert!(count > 0, "missing generated definition {definition}");
     }
@@ -24170,14 +24246,14 @@ mod tests {
                                 .iter()
                                 .map(|(wire, dsl)| (*wire, dsl.as_str()))
                                 .collect::<Vec<_>>();
-                            let marker =
-                                format!("AttributeType::struct_(\"{parent}\".to_string(), vec![");
-                            for (index, _) in section.match_indices(&marker) {
-                                assert_budgets_enum_values(
-                                    generated_budgets_field(&section[index..], &path),
-                                    &path,
-                                    &spellings,
-                                );
+                            for marker in generated_struct_markers(parent) {
+                                for (index, _matched) in section.match_indices(&marker) {
+                                    assert_budgets_enum_values(
+                                        generated_budgets_field(section.split_at(index).1, &path),
+                                        &path,
+                                        &spellings,
+                                    );
+                                }
                             }
                         }
                     }
@@ -34574,100 +34650,6 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_exclusive_from_oneof_two_variants() {
-        let mut schema = make_schema_with_props(BTreeMap::new());
-        schema.edit_json(|source| {
-            source["oneOf"] = serde_json::json!(vec![
-                CfnProperty {
-                    required: vec!["FieldA".to_string()],
-                    ..Default::default()
-                },
-                CfnProperty {
-                    required: vec!["FieldB".to_string()],
-                    ..Default::default()
-                },
-            ]);
-        });
-        let groups = detect_exclusive_from_oneof(&schema);
-        assert_eq!(groups.len(), 1);
-        let mut group = groups[0].clone();
-        group.sort();
-        assert_eq!(group, vec!["FieldA", "FieldB"]);
-    }
-
-    #[test]
-    fn test_detect_exclusive_from_oneof_three_variants() {
-        let mut schema = make_schema_with_props(BTreeMap::new());
-        schema.edit_json(|source| {
-            source["oneOf"] = serde_json::json!(vec![
-                CfnProperty {
-                    required: vec!["A".to_string()],
-                    ..Default::default()
-                },
-                CfnProperty {
-                    required: vec!["B".to_string()],
-                    ..Default::default()
-                },
-                CfnProperty {
-                    required: vec!["C".to_string()],
-                    ..Default::default()
-                },
-            ]);
-        });
-        let groups = detect_exclusive_from_oneof(&schema);
-        assert_eq!(groups.len(), 1);
-        let mut group = groups[0].clone();
-        group.sort();
-        assert_eq!(group, vec!["A", "B", "C"]);
-    }
-
-    #[test]
-    fn test_detect_exclusive_from_oneof_multi_required_ignored() {
-        // Variants with multiple required fields are not simple exclusive groups
-        let mut schema = make_schema_with_props(BTreeMap::new());
-        schema.edit_json(|source| {
-            source["oneOf"] = serde_json::json!(vec![
-                CfnProperty {
-                    required: vec!["A".to_string(), "B".to_string()],
-                    ..Default::default()
-                },
-                CfnProperty {
-                    required: vec!["C".to_string()],
-                    ..Default::default()
-                },
-            ]);
-        });
-        let groups = detect_exclusive_from_oneof(&schema);
-        assert!(groups.is_empty());
-    }
-
-    #[test]
-    fn test_detect_exclusive_from_oneof_empty() {
-        let schema = make_schema_with_props(BTreeMap::new());
-        let groups = detect_exclusive_from_oneof(&schema);
-        assert!(groups.is_empty());
-    }
-
-    #[test]
-    fn test_detect_exclusive_from_anyof() {
-        let mut schema = make_schema_with_props(BTreeMap::new());
-        schema.edit_json(|source| {
-            source["anyOf"] = serde_json::json!(vec![
-                CfnProperty {
-                    required: vec!["X".to_string()],
-                    ..Default::default()
-                },
-                CfnProperty {
-                    required: vec!["Y".to_string()],
-                    ..Default::default()
-                },
-            ]);
-        });
-        let groups = detect_exclusive_from_oneof(&schema);
-        assert_eq!(groups.len(), 1);
-    }
-
-    #[test]
     fn test_detect_exclusive_from_description_but_not_both() {
         let mut props = BTreeMap::new();
         props.insert(
@@ -34759,8 +34741,8 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_exclusive_fields_combined() {
-        // Test that detect_exclusive_fields combines both methods and deduplicates
+    fn test_resource_field_groups_composes_description_and_schema() {
+        // Description evidence supplements, and deduplicates against, the projection
         let mut props = BTreeMap::new();
         props.insert(
             "FieldA".to_string(),
@@ -34786,10 +34768,10 @@ mod tests {
                 },
             ]);
         });
-        let groups = detect_exclusive_fields(&schema, "AWS::Test::Resource");
+        let groups = resource_field_groups(&schema).unwrap().groups;
         // Should be deduplicated to 1 group
         assert_eq!(groups.len(), 1);
-        let mut group = groups[0].clone();
+        let mut group = groups[0].members.clone();
         group.sort();
         assert_eq!(group, vec!["FieldA", "FieldB"]);
     }
@@ -34824,9 +34806,9 @@ mod tests {
             },
         );
         let schema = make_schema_with_props(props);
-        let groups = detect_exclusive_fields(&schema, "AWS::EC2::VPCGatewayAttachment");
+        let groups = resource_field_groups(&schema).unwrap().groups;
         assert_eq!(groups.len(), 1, "Should detect exactly one exclusive group");
-        let mut group = groups[0].clone();
+        let mut group = groups[0].members.clone();
         group.sort();
         assert_eq!(group, vec!["InternetGatewayId", "VpnGatewayId"]);
     }

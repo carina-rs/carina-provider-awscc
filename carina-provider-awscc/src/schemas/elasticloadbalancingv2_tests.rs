@@ -585,8 +585,12 @@ async fn authored_listener_identifiers_serialize_to_exact_wire_strings() {
                     string("https://idp.example.com/userinfo"),
                 ),
                 ("client_id", string("client")),
+                (
+                    "use_existing_client_secret",
+                    Value::Concrete(ConcreteValue::Bool(false)),
+                ),
             ],
-            json!({"AuthorizationEndpoint": "https://idp.example.com/authorize", "Issuer": "https://idp.example.com/issuer", "TokenEndpoint": "https://idp.example.com/token", "UserInfoEndpoint": "https://idp.example.com/userinfo", "ClientId": "client"}),
+            json!({"AuthorizationEndpoint": "https://idp.example.com/authorize", "Issuer": "https://idp.example.com/issuer", "TokenEndpoint": "https://idp.example.com/token", "UserInfoEndpoint": "https://idp.example.com/userinfo", "ClientId": "client", "UseExistingClientSecret": false}),
         ),
     ] {
         for wire in ["deny", "allow", "authenticate"] {

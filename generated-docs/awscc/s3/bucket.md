@@ -753,6 +753,8 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 | `partitioned_prefix` | [Struct(PartitionedPrefix)](#logging_configurationtarget_object_key_formatpartitioned_prefix) | No |  |
 | `simple_prefix` | Empty struct (`{}`) | No | This format defaults the prefix to the given log file prefix for delivering server access log file. |
 
+Exactly one of `partitioned_prefix`, `simple_prefix` must be specified.
+
 ### logging_configuration.target_object_key_format.partitioned_prefix
 
 | Field | Type | Required | Description |

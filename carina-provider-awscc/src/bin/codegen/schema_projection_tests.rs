@@ -335,17 +335,20 @@ fn object_field_alternatives_keep_bare_arms_and_each_required_scope() {
             json!({"type":"object","properties":{"Selected":{"type":"string"}},"required":["Selected"]}),
             json!({"type":"object"}),
         ];
-        for order in 0..2 {
-            let p = probe(json!({keyword:arms}), json!({})).unwrap();
-            assert_eq!(p.effective_type(), Some("object"));
-            assert!(p.required.is_empty());
-            assert!(p.properties.as_ref().unwrap().contains_key("Selected"));
-            let mut expected = vec![vec!["Selected"], vec![]];
-            if order == 1 {
-                expected.reverse();
+        for _order in [0, 1] {
+            let result = probe(json!({keyword:arms}), json!({}));
+            if keyword == "oneOf" {
+                assert!(
+                    matches!(result, Err(SchemaError::Projection { pointer: _pointer, reason }) if reason.contains("unsupported required alternatives"))
+                );
+            } else {
+                let p = result.unwrap();
+                assert_eq!(p.effective_type(), Some("object"));
+                assert!(p.required.is_empty());
+                assert!(p.properties.as_ref().unwrap().contains_key("Selected"));
+                assert!(p.field_groups.groups.is_empty());
+                assert!(p.dropped_bare_alternatives.is_empty());
             }
-            assert_eq!(p.alternatives, expected);
-            assert!(p.dropped_bare_alternatives.is_empty());
             arms.reverse();
         }
     }
@@ -401,7 +404,11 @@ fn cached_object_field_alternatives_preserve_both_required_scopes() {
         let p = project(&layer, node).unwrap();
         assert_eq!(p.projected_type, ProjectedType::Value(JsonType::Object));
         assert!(p.required.is_empty());
-        assert_eq!(p.alternatives, expected);
+        assert_eq!(p.field_groups.groups.len(), 1);
+        assert_eq!(p.field_groups.groups[0].kind, AlternativeKind::OneOf);
+        let mut members = expected.iter().flatten().copied().collect::<Vec<_>>();
+        members.sort();
+        assert_eq!(p.field_groups.groups[0].members, members);
         assert!(p.dropped_bare_alternatives.is_empty());
         for name in expected.into_iter().flatten() {
             assert!(p.properties.as_ref().unwrap().contains_key(name));
@@ -480,7 +487,9 @@ fn object_alternatives_preserve_required_scopes_and_reject_conflicting_members()
     )
     .unwrap();
     assert_eq!(p.required, vec!["Always"]);
-    assert_eq!(p.alternatives, vec![vec!["A"], vec!["B"]]);
+    assert_eq!(p.field_groups.groups.len(), 1);
+    assert_eq!(p.field_groups.groups[0].kind, AlternativeKind::OneOf);
+    assert_eq!(p.field_groups.groups[0].members, ["A", "B"]);
     assert!(matches!(
         probe(
             json!({"oneOf":[

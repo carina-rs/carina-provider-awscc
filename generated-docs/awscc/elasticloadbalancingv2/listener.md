@@ -256,6 +256,8 @@ Shorthand formats: `http` or `Protocol.http`
 | `use_existing_client_secret` | Bool | No | Indicates whether to use the existing client secret when modifying a rule. If you are creating a rule, you can omit this parameter or set it to false. |
 | `user_info_endpoint` | String | Yes | The user info endpoint of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |
 
+At least one of `client_secret`, `use_existing_client_secret` must be specified.
+
 ### default_actions.fixed_response_config
 
 | Field | Type | Required | Description |

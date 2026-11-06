@@ -4,7 +4,7 @@
 //! into the Layer; queries never reconstruct facts from fixture fields.
 //! References and allOf intersect constraints. Same-type array alternatives must
 //! be equivalent, including children, bounds, ordering, and uniqueness. Object
-//! alternatives retain their required lists separately for the step-4/6 consumers.
+//! alternatives project portable sibling requirements for both renderers.
 //! Mixed-type alternatives select one constrained arm and record bare arms.
 //! The object|string type set projects to a JSON document, regardless of its site.
 #[cfg(test)]
@@ -12,6 +12,7 @@ use super::EnumValue;
 use super::SchemaProperty;
 #[cfg(test)]
 use super::TypeValue;
+use super::field_groups::FieldGroups;
 use super::schema_layer::{
     ArrayType, Dependency, JsonType, Layer, NodeId, PropertyKeywords, RefTarget, SchemaError,
     SchemaNode, TypeSet,
@@ -56,6 +57,8 @@ impl Origin {
 pub(super) struct Reference {
     pub(super) path: String,
     pub(super) name: String,
+    /// Query handle on the same Layer, before reference-site requirements.
+    pub(super) canonical: Box<SchemaProperty>,
     pub(super) property: Box<SchemaProperty>,
 }
 
@@ -135,9 +138,7 @@ pub(super) struct Projection {
     pub(super) required: Vec<String>,
     pub(super) reference: Option<Reference>,
     pub(super) concrete: Option<Box<SchemaProperty>>,
-    pub(super) alternatives: Vec<Vec<String>>,
-    /// Direct arm requirements only: STEP 6 owns changes to group semantics.
-    pub(super) declared_required_alternatives: Vec<Vec<Vec<String>>>,
+    pub(super) field_groups: FieldGroups,
     pub(super) dropped_bare_alternatives: Vec<DroppedBareAlternative>,
     pub(super) dependencies: BTreeMap<String, ConditionalDependency>,
     pub(super) contains: Option<Box<SchemaProperty>>,
@@ -146,6 +147,12 @@ pub(super) struct Projection {
 }
 
 impl Projection {
+    fn with_required_groups(mut self, required: Vec<String>, field_groups: FieldGroups) -> Self {
+        self.required = required;
+        self.field_groups = field_groups;
+        self
+    }
+
     /// Lists expand their item grammar inline. A cycle consisting only of
     /// lists has no emitted named struct at which either renderer can stop.
     /// Struct recursion remains supported through named definitions.
@@ -554,21 +561,7 @@ pub(super) fn direct(layer: &Arc<Layer>, node: NodeId) -> Result<Projection, Sch
                 required: k.required.clone().unwrap_or_default(),
                 reference: None,
                 concrete: None,
-                alternatives: Vec::new(),
-                declared_required_alternatives: [&k.compositions.one_of, &k.compositions.any_of]
-                    .into_iter()
-                    .map(|arms| {
-                        arms.iter()
-                            .flatten()
-                            .map(|id| match layer.node(*id) {
-                                SchemaNode::Boolean(_value) => Vec::new(),
-                                SchemaNode::Keywords(arm) => {
-                                    arm.required.clone().unwrap_or_default()
-                                }
-                            })
-                            .collect()
-                    })
-                    .collect(),
+                field_groups: FieldGroups::default(),
                 dropped_bare_alternatives: Vec::new(),
                 dependencies,
                 contains: k.contains.map(|id| Box::new(bridge(layer, id))),
@@ -729,9 +722,11 @@ fn complete_projection(mut p: Projection) -> Projection {
         }
         let name = reference.name.clone();
         let path = reference.path.clone();
+        let canonical = reference.canonical.clone();
         p.reference = Some(Reference {
             path,
             name,
+            canonical,
             property: Box::new(materialize(target)),
         });
     }
@@ -798,6 +793,7 @@ fn cycle_projection(
         reference: Some(Reference {
             path: format!("#{}", layer.sources().pointer(node)),
             name,
+            canonical: Box::new(bridge(layer, node)),
             property: Box::new(SchemaProperty::default()),
         }),
         ..Projection::default()
@@ -821,6 +817,10 @@ fn project_inner(
                 RefTarget::Unresolved(reason) => return Err(reason.clone()),
             };
             let q = project_inner(layer, target, visiting)?;
+            let canonical = q.reference.as_ref().map_or_else(
+                || Box::new(bridge(layer, target)),
+                |reference| reference.canonical.clone(),
+            );
             let name = q
                 .reference
                 .as_ref()
@@ -830,6 +830,7 @@ fn project_inner(
             p.reference = Some(Reference {
                 path: reference.spelling.clone(),
                 name,
+                canonical,
                 property: Box::new(SchemaProperty::default()),
             });
         }
@@ -1029,7 +1030,7 @@ pub(super) fn merge(
             p.required.push(name);
         }
     }
-    p.alternatives.extend(q.alternatives);
+    p.field_groups.extend(q.field_groups);
     p.dropped_bare_alternatives
         .extend(q.dropped_bare_alternatives);
     for (name, dependency) in q.dependencies {
@@ -1146,7 +1147,9 @@ fn alternatives(
     let mut arms = arms.into_iter().map(|(_id, p)| p).collect::<Vec<_>>();
     let mut first = arms.remove(0);
     if group_only(&first) && arms.iter().all(group_only) {
-        if !first.alternatives.is_empty() || arms.iter().any(|p| !p.alternatives.is_empty()) {
+        if !first.field_groups.groups.is_empty()
+            || arms.iter().any(|p| !p.field_groups.groups.is_empty())
+        {
             for other in arms {
                 if !equivalent(&first, &other, &mut BTreeSet::new())? {
                     return Err(error(
@@ -1161,11 +1164,12 @@ fn alternatives(
             }
             return Ok(AlternativeProjection::FieldGroup(first));
         }
-        let mut result = Projection::default();
-        result.alternatives.push(first.required.clone());
-        result
-            .alternatives
-            .extend(arms.iter().map(|p| p.required.clone()));
+        let requirements = std::iter::once(first.required)
+            .chain(arms.into_iter().map(|p| p.required))
+            .collect();
+        let (required, field_groups) =
+            FieldGroups::project(kind, requirements, layer.sources().pointer(node))?;
+        let result = Projection::default().with_required_groups(required, field_groups);
         return Ok(AlternativeProjection::FieldGroup(result));
     }
     let any_array = first.effective_type() == Some("array")
@@ -1188,35 +1192,20 @@ fn alternatives(
     if first.effective_type() == Some("object")
         && arms.iter().all(|p| p.effective_type() == Some("object"))
     {
-        // A single required alternative is unconditional within its own arm.
-        // Fold it into that arm's required list before retaining outer scopes.
-        let normalize_required = |mut p: Projection| {
-            if p.alternatives.len() == 1 {
-                for name in p.alternatives.pop().expect("one required alternative") {
-                    if !p.required.contains(&name) {
-                        p.required.push(name);
-                    }
-                }
-            }
-            p
-        };
-        let first = normalize_required(first);
-        // The containing union owns the combined struct identity. Its fields
-        // and outer required lists are handled below; every other fact must
-        // agree, including map schemas and conditional dependency scopes.
-        let common_facts = |p: &Projection| Projection {
-            properties: None,
-            required: Vec::new(),
-            reference: None,
-            ..p.clone()
+        // Object alternatives share all facts except their fields and
+        // requirements. The containing struct owns the resulting group.
+        let common_facts = |p: &Projection| {
+            let mut common = p.clone();
+            common.properties = None;
+            common.required.clear();
+            common.reference = None;
+            common
         };
         let common = common_facts(&first);
         let mut result = first;
-        result
-            .alternatives
-            .push(std::mem::take(&mut result.required));
+        let mut requirements = vec![std::mem::take(&mut result.required)];
         for other in arms {
-            let mut other = normalize_required(other);
+            let mut other = other;
             if !equivalent(&common, &common_facts(&other), &mut BTreeSet::new())? {
                 return Err(error(
                     layer,
@@ -1224,9 +1213,7 @@ fn alternatives(
                     "conflicting alternative object constraints",
                 ));
             }
-            result
-                .alternatives
-                .push(std::mem::take(&mut other.required));
+            requirements.push(std::mem::take(&mut other.required));
             result
                 .dropped_bare_alternatives
                 .extend(other.dropped_bare_alternatives);
@@ -1253,6 +1240,10 @@ fn alternatives(
                 }
             }
         }
+        let (required, field_groups) =
+            FieldGroups::project(kind, requirements, layer.sources().pointer(node))?;
+        result.required = required;
+        result.field_groups.extend(field_groups);
         return Ok(AlternativeProjection::FieldGroup(result));
     }
     for other in arms {
@@ -1378,7 +1369,7 @@ fn equivalent_with_identity(
     }
     if !equivalent_scalar(p, q)
         || p.required != q.required
-        || p.alternatives != q.alternatives
+        || p.field_groups != q.field_groups
         || p.dependencies.len() != q.dependencies.len()
     {
         return Ok(false);
@@ -1661,6 +1652,15 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
         }
         let p = property.try_query()?;
         p.validate_array_emission()?;
+        p.field_groups.validate_members(
+            |name| {
+                p.properties
+                    .as_ref()
+                    .is_some_and(|properties| properties.contains_key(name))
+            },
+            &p.required,
+            &p.source_pointer,
+        )?;
         if matches!(p.effective_type(), Some("integer" | "number")) {
             p.integer_bounds()?;
         }
@@ -1717,6 +1717,16 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
         }
         Ok(())
     }
+    let root = schema.root_projection()?;
+    root.field_groups.validate_members(
+        |name| {
+            root.properties
+                .as_ref()
+                .is_some_and(|properties| properties.contains_key(name))
+        },
+        &root.required,
+        &root.source_pointer,
+    )?;
     let mut seen = BTreeSet::new();
     for (name, property) in super::documented_top_level_properties(schema) {
         if super::is_dsl_tags_property(schema, std::slice::from_ref(name))? {

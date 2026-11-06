@@ -400,6 +400,8 @@ Used by: `dimensions`, `metrics.metric_stat.metric.dimensions`
 | `sliding_window` | Empty struct (`{}`) | No | A sliding window, which advances each time the alarm is evaluated, forming a rolling time window. This is the default evaluation window. |
 | `wall_clock_window` | [Struct(WallClockWindow)](#evaluation_windowwall_clock_window) | No | A wall clock window, which aligns the evaluated range to fixed clock boundaries that match the alarm's period, such as the top of the hour, midnight, or the start of the calendar week. |
 
+Exactly one of `sliding_window`, `wall_clock_window` must be specified.
+
 ### evaluation_window.wall_clock_window
 
 | Field | Type | Required | Description |

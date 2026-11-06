@@ -45,7 +45,6 @@ impl ParsedCfnSchema {
                     (id, super::schema_projection::bridge(typed, id))
                 })
                 .collect(),
-            root_projection,
             type_name: typed.resource().type_name.clone().unwrap_or_default(),
             properties,
             definitions,
