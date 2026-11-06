@@ -538,7 +538,7 @@ fn overridden_objects_classify_their_own_evidence_and_hidden_children() {
 }
 
 #[test]
-fn resource_combinators_contribute_property_constraints_and_candidates() {
+fn resource_combinators_reject_unsupported_property_contributions() {
     for keyword in ["oneOf", "anyOf", "allOf"] {
         let mut schema: Value =
             serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__SNS__Topic.json"))
@@ -549,7 +549,14 @@ fn resource_combinators_contribute_property_constraints_and_candidates() {
         for format in ["rust", "markdown"] {
             let output = generate(&schema, format);
             assert!(!output.status.success(), "root {keyword} passed {format}");
-            assert!(String::from_utf8_lossy(&output.stderr).contains("KMS pattern changed"));
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                error.contains("unsupported schema projection at #:")
+                    && error
+                        .contains("resource composition contributes to property KmsMasterKeyId"),
+                "{error}"
+            );
+            assert!(output.stdout.is_empty());
         }
 
         let mut schema = vpc_schema();
@@ -563,10 +570,13 @@ fn resource_combinators_contribute_property_constraints_and_candidates() {
                 !output.status.success(),
                 "root {keyword} candidate passed {format}"
             );
+            let error = String::from_utf8_lossy(&output.stderr);
             assert!(
-                String::from_utf8_lossy(&output.stderr)
-                    .contains("unclassified KMS string ec2.Vpc.encryption_key")
+                error.contains("unsupported schema projection at #:")
+                    && error.contains("resource composition contributes to property EncryptionKey"),
+                "{error}"
             );
+            assert!(output.stdout.is_empty());
         }
     }
 }
@@ -603,6 +613,16 @@ fn reference_enum_and_const_constraints_require_reclassification() {
                     "{location} constraint passed {format}"
                 );
                 let error = String::from_utf8_lossy(&output.stderr);
+                if location == "root"
+                    && error.contains("resource composition contributes to property KmsMasterKeyId")
+                {
+                    assert!(
+                        error.contains("unsupported schema projection at #:"),
+                        "{error}"
+                    );
+                    assert!(output.stdout.is_empty());
+                    continue;
+                }
                 assert!(
                     (error.contains("KMS enum/const constraint") && error.contains("revisit"))
                         || (constraint.get("const") == Some(&Value::Null)

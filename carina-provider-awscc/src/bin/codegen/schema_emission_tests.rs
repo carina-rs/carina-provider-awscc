@@ -9,6 +9,144 @@ fn emission_fixture(property: serde_json::Value) -> ParsedCfnSchema {
 }
 
 #[test]
+fn round1_root_composition_contributions_are_typed_errors() {
+    for contribution in [
+        json!({"properties":{"Tags":{"maxItems":3}}}),
+        json!({"properties":{"Added":{"type":"string"}}}),
+    ] {
+        let schema = ParsedCfnSchema::from_json(json!({
+            "typeName":"AWS::Test::Emission", "properties":{
+                "Tags":{"type":"array","items":{"type":"object","properties":{
+                    "Key":{"type":"string"},"Value":{"type":"string"}
+                }}}
+            }, "allOf":[contribution]
+        })).unwrap();
+        for result in [generate_synthetic_schema_code(&schema), generate_test_markdown(&schema, "AWS::EC2::Route")] {
+            let error = result.expect_err("resource composition must survive or fail explicitly");
+            assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+                Some(schema_layer::SchemaError::Projection { pointer, reason })
+                if pointer.is_empty() && reason.contains("resource composition")), "{error:#}");
+        }
+    }
+}
+
+#[test]
+fn round1_float_string_bounds_are_typed_errors() {
+    for keyword in ["minLength", "maxLength"] {
+        for bound in [json!(2.0), json!(9007199254740992.0)] {
+            for property in [
+                json!({"type":"string", keyword:bound}),
+                json!({"$ref":"#/definitions/Text", keyword:bound}),
+                json!({"allOf":[{"type":"string"},{keyword:bound}]}),
+            ] {
+                let schema = ParsedCfnSchema::from_json(json!({
+                    "typeName":"AWS::Test::Emission", "properties":{"Probe":property},
+                    "definitions":{"Text":{"type":"string"}}
+                })).unwrap();
+                for result in [generate_synthetic_schema_code(&schema), generate_test_markdown(&schema, "AWS::EC2::Route")] {
+                    let error = result.expect_err("floating point bounds cannot disappear");
+                    assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+                        Some(schema_layer::SchemaError::Projection { pointer, reason })
+                        if pointer.starts_with("/properties/Probe") && reason.contains(keyword)), "{error:#}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn round1_reference_default_is_a_local_annotation() {
+    let schema = ParsedCfnSchema::from_json(json!({
+        "typeName":"AWS::Test::Emission", "properties":{
+            "Local":{"$ref":"#/definitions/Count","default":2},
+            "Unannotated":{"$ref":"#/definitions/Count"}
+        }, "definitions":{"Count":{"type":"integer","default":1,"minimum":0,"maximum":9}}
+    })).unwrap();
+    let rust = generate_synthetic_schema_code(&schema).unwrap();
+    assert_eq!(rust.matches(".with_default(Value::Concrete(ConcreteValue::Int(2)))").count(), 1, "{rust}");
+    assert!(!rust.contains(".with_default(Value::Concrete(ConcreteValue::Int(1)))"), "{rust}");
+    let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+    assert!(markdown.contains("**Default:** `2`"), "{markdown}");
+    assert!(!markdown.contains("**Default:** `1`"), "{markdown}");
+}
+
+#[test]
+fn round1_definition_reuse_ignores_reference_site_annotations() {
+    for annotated_first in [false, true] {
+        let annotated = if annotated_first { "A" } else { "Z" };
+        let unannotated = if annotated_first { "Z" } else { "A" };
+        let schema = ParsedCfnSchema::from_json(json!({
+            "typeName":"AWS::Test::Emission", "properties":{
+                annotated:{"$ref":"#/definitions/Container", "default":{"Mode":"alpha"}, "description":"Local annotation."},
+                unannotated:{"$ref":"#/definitions/Container"},
+                "Other":{"$ref":"#/definitions/Container", "default":{"Mode":"beta"}}
+            }, "definitions":{"Container":{
+                "type":"object", "default":{"Mode":"canonical"}, "description":"Target annotation.",
+                "properties":{"Mode":{"type":"string", "enum":["alpha","beta","canonical"]}}
+            }}
+        })).unwrap();
+        for name in [annotated, unannotated, "Other"] {
+            let reference = schema.properties[name].query().reference.as_ref().unwrap();
+            assert_eq!(ResolvedRef {
+                name: &reference.name, property: &reference.property, canonical: &reference.canonical
+            }.emission_key().unwrap(), "Container", "{name}");
+        }
+        assert_eq!(schema.properties[annotated].annotation_default(), Some(&json!({"Mode":"alpha"})));
+        assert_eq!(schema.properties["Other"].annotation_default(), Some(&json!({"Mode":"beta"})));
+        assert_eq!(schema.properties[unannotated].annotation_default(), None);
+        let rust = generate_synthetic_schema_code(&schema).unwrap();
+        assert_eq!(rust.matches("schema.with_def(\"Container\",").count(), 1, "{rust}");
+        assert!(!rust.contains("Container@"), "{rust}");
+        assert_eq!(rust.matches("Local annotation.").count(), 1, "{rust}");
+        let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+        assert_eq!(markdown.matches("Local annotation.").count(), 1, "{markdown}");
+    }
+}
+
+#[test]
+fn round1_definition_identity_retains_descendant_constraints_and_defaults() {
+    for contribution in [
+        json!({"properties":{"Text":{"minLength":3}}}),
+        json!({"required":["Text"]}),
+        json!({"properties":{"Text":{"default":"local"}}}),
+    ] {
+        let schema = ParsedCfnSchema::from_json(json!({
+            "typeName":"AWS::Test::Emission", "properties":{
+                "Local":{"$ref":"#/definitions/Container", "properties":{"Child":contribution}},
+                "Shared":{"$ref":"#/definitions/Container"}
+            }, "definitions":{"Container":{"type":"object", "properties":{
+                "Child":{"type":"object", "properties":{"Text":{"type":"string", "default":"canonical"}}}
+            }}}
+        })).unwrap();
+        let key = |name: &str| {
+            let reference = schema.properties[name].query().reference.as_ref().unwrap();
+            ResolvedRef {
+                name: &reference.name, property: &reference.property, canonical: &reference.canonical
+            }.emission_key().unwrap().into_owned()
+        };
+        assert_ne!(key("Local"), key("Shared"), "{contribution}");
+        assert_eq!(key("Shared"), "Container");
+    }
+}
+
+#[test]
+fn round1_definition_reuse_preserves_cloudfront_enum_registration() {
+    let schema = cfn_schema_for_codegen_tests("AWS::CloudFront::Distribution");
+    let rust = generate_schema_code(&schema, &schema.type_name).unwrap();
+    for name in ["Cookies", "Restrictions", "ViewerCertificate"] {
+        assert_eq!(rust.matches(&format!("schema.with_def(\"{name}\",")).count(), 1, "{name}");
+        assert!(!rust.contains(&format!("{name}@")), "{name}");
+    }
+    for (field, constant) in [
+        ("forward", "VALID_COOKIES_FORWARD"),
+        ("minimum_protocol_version", "VALID_VIEWER_CERTIFICATE_MINIMUM_PROTOCOL_VERSION"),
+    ] {
+        assert!(rust.contains(&format!("const {constant}: &[&str]")), "{constant}");
+        assert!(rust.contains(&format!("(\"{field}\", {constant})")), "{field}");
+    }
+}
+
+#[test]
 fn step4_unsupported_emission_returns_typed_errors() {
     for property in [
         json!(false),

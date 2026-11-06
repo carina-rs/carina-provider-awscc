@@ -26,12 +26,21 @@ impl FieldGroups {
     }
 
     /// Description evidence supplements resource groups only when there is no
-    /// schema declaration for the same members. In particular, prose must not
-    /// strengthen a schema's anyOf into exactly-one.
+    /// overlapping schema declaration. In particular, prose must not
+    /// strengthen a schema's anyOf into exactly-one, even for a subset.
     pub(super) fn with_description_groups(mut self, groups: Vec<Vec<String>>) -> Self {
+        let declared_members: BTreeSet<_> = self
+            .groups
+            .iter()
+            .flat_map(|group| group.members.iter().cloned())
+            .collect();
         for mut members in groups {
             members.sort();
-            if !self.groups.iter().any(|group| group.members == members) {
+            if members
+                .iter()
+                .all(|member| !declared_members.contains(member))
+                && !self.groups.iter().any(|group| group.members == members)
+            {
                 self.groups.push(RequiredGroup {
                     kind: AlternativeKind::OneOf,
                     members,
@@ -112,20 +121,11 @@ impl FieldGroups {
 
     pub(super) fn validate_members(
         &self,
-        properties: impl Fn(&str) -> bool,
-        required: &[String],
-        pointer: &str,
+        admission: impl Fn(&str) -> Result<(), SchemaError>,
     ) -> Result<(), SchemaError> {
         for group in &self.groups {
             for member in &group.members {
-                if !properties(member) || required.contains(member) {
-                    return Err(SchemaError::Projection {
-                        pointer: pointer.into(),
-                        reason: format!(
-                            "unsupported required alternatives: member {member} must be an optional sibling field"
-                        ),
-                    });
-                }
+                admission(member)?;
             }
         }
         Ok(())

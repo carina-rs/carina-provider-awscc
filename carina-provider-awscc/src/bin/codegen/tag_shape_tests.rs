@@ -1,6 +1,84 @@
 use super::*;
 use serde_json::{Value, json};
 
+#[test]
+fn round1_tag_literal_constraints_are_typed_errors() {
+    for literal in [json!({"enum":["fixed"]}), json!({"const":"fixed"})] {
+        for constrained in ["Key", "Value", "MapValue"] {
+            for aliased in [false, true] {
+                let mut leaf = literal.clone();
+                leaf["type"] = json!("string");
+                let site = if aliased { json!({"$ref":"#/definitions/Leaf"}) } else { leaf.clone() };
+                let tags = if constrained == "MapValue" {
+                    json!({"type":"object","patternProperties":{".*":site},"additionalProperties":false})
+                } else {
+                    let mut properties = json!({"Key":{"type":"string"},"Value":{"type":"string"}});
+                    properties[constrained] = site;
+                    json!({"type":"array","items":{"type":"object","properties":properties}})
+                };
+                let schema = ParsedCfnSchema::from_json(json!({
+                    "typeName":"AWS::Test::Tags", "properties":{"Tags":tags},
+                    "definitions":{"Leaf":leaf}
+                })).unwrap();
+                for result in [generate_synthetic_schema_code(&schema), generate_test_markdown(&schema, "AWS::EC2::Route")] {
+                    let error = result.expect_err("tag string literals cannot become unrestricted leaves");
+                    assert!(matches!(error.downcast_ref::<TagShapeError>(),
+                        Some(TagShapeError::Unreadable { resource: _, pointer: _, source })
+                        if matches!(source.as_ref(), schema_layer::SchemaError::Projection { pointer: _, reason }
+                            if reason.contains("enum") || reason.contains("const"))), "{error:#}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn round1_tag_minimum_entries_reach_rust_and_markdown() {
+    static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+        let mut overrides = ResourceTypeOverrides::default();
+        overrides.insert(("AWS::Test::Tags", "Tags"), TypeOverride::Array {
+            items: None, min_items: Some(3), max_items: None,
+        });
+        overrides
+    });
+    for max in [None, Some(5)] {
+        let mut tags = json!({"type":"array","minItems":2,"items":{
+            "type":"object","properties":{"Key":{"type":"string"},"Value":{"type":"string"}}
+        }});
+        if let Some(max) = max { tags["maxItems"] = json!(max); }
+        let schema = ParsedCfnSchema::from_json(json!({
+            "typeName":"AWS::Test::Tags", "properties":{"Tags":tags}
+        })).unwrap();
+        let check = |min| {
+            let rust = generate_synthetic_schema_code(&schema).unwrap();
+            let upper = max.map_or_else(|| "None".to_string(), |max| format!("Some({max})"));
+            assert!(rust.contains(&format!("Some((Some({min}), {upper}))")), "{rust}");
+            let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+            let range = max.map_or_else(|| format!("{min}.."), |max| format!("{min}..={max}"));
+            assert!(markdown.contains(&format!("(entries: {range})")), "{markdown}");
+        };
+        check(2);
+        with_resource_type_overrides(&OVERRIDES, || check(3));
+    }
+}
+
+#[test]
+fn round1_tag_zero_minimum_uses_the_shared_length_normal_form() {
+    for max in [None, Some(5)] {
+        let mut source = json!({"typeName":"AWS::Test::Tags","properties":{"Tags":{
+            "type":"array","items":{"type":"object","properties":{
+                "Key":{"type":"string"},"Value":{"type":"string"}
+            }}
+        }}});
+        if let Some(max) = max { source["properties"]["Tags"]["maxItems"] = json!(max); }
+        let unbounded = ParsedCfnSchema::from_json(source.clone()).unwrap();
+        source["properties"]["Tags"]["minItems"] = json!(0);
+        let zero = ParsedCfnSchema::from_json(source).unwrap();
+        assert_eq!(generate_synthetic_schema_code(&zero).unwrap(), generate_synthetic_schema_code(&unbounded).unwrap());
+        assert_eq!(generate_test_markdown(&zero, "AWS::EC2::Route").unwrap(), generate_test_markdown(&unbounded, "AWS::EC2::Route").unwrap());
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 enum Expected {
     List,
@@ -467,15 +545,20 @@ fn resource_compositions_combine_partial_candidate_evidence() {
                 {"properties":{"Labels":{"type":"array","items":{"properties":{"Value":{"type":"string"}}}}}}
             ]
         })).unwrap();
+        let context = EmissionContext::from_source(&schema).unwrap();
+        let error = validate_tagging_classifications(&context).unwrap_err();
+        assert!(error.to_string().contains(
+            "unclassified tag-shaped top-level arrays: /properties/Labels"
+        ), "{keyword}: {error:#}");
         for result in [
             generate_synthetic_schema_code(&schema),
             generate_test_markdown(&schema, &schema.type_name),
         ] {
-            let error = result.expect_err("partial source sites must still require classification");
+            let error = result.expect_err("root property contributions require merged provenance");
             assert!(
-                error
-                    .to_string()
-                    .contains("unclassified tag-shaped top-level arrays: /properties/Labels"),
+                matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+                    Some(schema_layer::SchemaError::Projection { pointer, reason: _ })
+                    if pointer.is_empty()),
                 "{keyword}: {error:#}"
             );
         }

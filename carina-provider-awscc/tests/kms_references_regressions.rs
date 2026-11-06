@@ -444,7 +444,18 @@ fn reference_length_evidence_in_aliases_and_branches_is_pinned() {
                 let output = generate(&schema, format);
                 assert!(!output.status.success(), "{location} passed {format}");
                 let error = String::from_utf8_lossy(&output.stderr);
-                assert!(error.contains("KMS length changed"), "{error}");
+                if location == "root" {
+                    assert!(
+                        error.contains("unsupported schema projection at #:")
+                            && error.contains(
+                                "resource composition contributes to property KmsMasterKeyId"
+                            ),
+                        "{error}"
+                    );
+                } else {
+                    assert!(error.contains("KMS length changed"), "{error}");
+                }
+                assert!(output.stdout.is_empty());
             }
         }
     }

@@ -69,7 +69,15 @@ fn unaccounted_raw_kms_nodes_fail_at_their_json_pointers() {
             let output = generate(&schema, format);
             let error = String::from_utf8_lossy(&output.stderr);
             assert!(!output.status.success(), "{pointer} passed {format}");
-            if pointer == "/properties/Settings/patternProperties/.*" {
+            if pointer == "/allOf/0/properties/KmsHidden" {
+                // Root property contributions now fail at the shared typed
+                // projection boundary, before emitted-use KMS accounting.
+                assert!(
+                    error.contains("unsupported schema projection at #:")
+                        && error.contains("resource composition contributes to property KmsHidden"),
+                    "{format}: {error}"
+                );
+            } else if pointer == "/properties/Settings/patternProperties/.*" {
                 assert!(
                     error.contains("unsupported schema projection at #/properties/Settings:")
                         && error.contains("multiple non-null types"),

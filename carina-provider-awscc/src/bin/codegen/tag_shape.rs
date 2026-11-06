@@ -429,6 +429,11 @@ impl Classifier<'_> {
             None => property.try_query()?.clone(),
         };
         if projection.effective_type() == Some("string") {
+            if projection.enum_values.is_some() || projection.const_value.is_some() {
+                return Err(projection.emission_error(
+                    "tag string enum/const constraints require a literal-preserving map projection",
+                ));
+            }
             Ok(Some(TagString {
                 source: projection.source_pointer,
                 pattern: projection.pattern,

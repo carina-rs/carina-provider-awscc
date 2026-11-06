@@ -30,6 +30,9 @@ impl ParsedCfnSchema {
         }
         let typed = layer.as_ref().map_err(Clone::clone)?;
         let root_projection = super::schema_projection::direct(typed, typed.resource().root)?;
+        // The emission table retains direct Layer handles. Before rendering,
+        // validate_root_emission rejects effective root contributions that
+        // would need merged property provenance instead of these handles.
         let properties = root_projection.properties.clone().unwrap_or_default();
         let definitions = typed.resource().definitions.as_ref().map(|definitions| {
             definitions
@@ -108,5 +111,30 @@ impl std::ops::Deref for ParsedCfnSchema {
 
     fn deref(&self) -> &Self::Target {
         &self.schema
+    }
+}
+
+impl CfnSchema {
+    /// Root groups and requirements are projected by both renderers. Property
+    /// contributions need a merged source handle, including for cached tag
+    /// classification; reject them before either renderer can use a direct one.
+    pub(super) fn validate_root_emission(&self) -> std::result::Result<(), SchemaError> {
+        let root = self.root_projection()?;
+        for (name, effective) in root.properties.iter().flatten() {
+            let carried = self.properties.get(name).is_some_and(|direct| {
+                match (&direct.origin, &effective.origin) {
+                    (Some(direct), Some(effective)) => direct.node == effective.node,
+                    (Some(_direct), None) => false,
+                    (None, Some(_effective)) => false,
+                    (None, None) => false,
+                }
+            });
+            if !carried {
+                return Err(root.emission_error(format!(
+                    "resource composition contributes to property {name}; emission requires merged property provenance"
+                )));
+            }
+        }
+        Ok(())
     }
 }

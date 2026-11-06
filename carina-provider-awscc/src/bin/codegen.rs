@@ -1612,6 +1612,7 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
 struct TagMapType {
     key: StringLeaf<'static>,
     value: StringLeaf<'static>,
+    min_entries: Option<i64>,
     max_entries: Option<i64>,
 }
 
@@ -1626,12 +1627,21 @@ impl TagMapType {
         let info = key_enum_info(&self.key).cloned();
         let key = emit_map_key(self.key, cfn_type, path, namespace, structural);
         let value = self.value.emit(cfn_type, "Value").0;
-        let expression = if let Some(max) = self.max_entries {
-            let max = u64::try_from(max)
-                .with_context(|| format!("{cfn_type}.{path}: Tags maxItems must be nonnegative"))?;
+        let bound = |bound: Option<i64>, keyword: &str| -> Result<Option<u64>> {
+            bound
+                .map(|bound| {
+                    u64::try_from(bound).with_context(|| {
+                        format!("{cfn_type}.{path}: Tags {keyword} must be nonnegative")
+                    })
+                })
+                .transpose()
+        };
+        let min = bound(self.min_entries, "minItems")?;
+        let max = bound(self.max_entries, "maxItems")?;
+        let expression = if min.is_some() || max.is_some() {
             format!(
                 "AttributeType::refined_map({key}, {value}, {})",
-                emit_length_option(None, Some(max)),
+                emit_length_option(min, max),
             )
         } else {
             format!("AttributeType::map_with_key({key}, {value})")
@@ -1647,6 +1657,7 @@ impl TagMapType {
                 self.key.display()
             },
             value: self.value.display(),
+            min_entries: self.min_entries,
             max_entries: self.max_entries,
         }
     }
@@ -1703,6 +1714,7 @@ fn project_tag_map(
             project_pattern_map_key_type(pattern, &schema.type_name, cfn_path, source)?
         }
     };
+    let mut min_entries = map.min_entries;
     let mut max_entries = map.max_entries;
     if matches!(schema.tag_shape(property)?, TagShape::KeyValueList(_map))
         && let Some(TypeOverride::Array {
@@ -1728,11 +1740,13 @@ fn project_tag_map(
                 );
             }
         }
-        let min = min_items.or(map.min_entries);
+        min_entries = min_items.or(map.min_entries);
         max_entries = max_items.or(map.max_entries);
         anyhow::ensure!(
-            min.zip(max_entries).is_none_or(|(min, max)| min <= max),
-            "{}.{cfn_path}: Array merged minItems {min:?} exceeds maxItems {max_entries:?}",
+            min_entries
+                .zip(max_entries)
+                .is_none_or(|(min, max)| min <= max),
+            "{}.{cfn_path}: Array merged minItems {min_entries:?} exceeds maxItems {max_entries:?}",
             schema.type_name
         );
         EMITTED_ARRAY_OVERRIDES.with(|emitted| {
@@ -1742,6 +1756,9 @@ fn project_tag_map(
     Ok(TagMapType {
         key,
         value: leaf(&map.value, "Value")?,
+        // Lengths have an implicit lower bound of zero. Use the same normal
+        // form as emit_length_option for both Rust and Markdown.
+        min_entries: min_entries.filter(|&min| min != 0),
         max_entries,
     })
 }
@@ -4011,6 +4028,7 @@ enum TypeDisplay {
     Map {
         key: String,
         value: String,
+        min_entries: Option<i64>,
         max_entries: Option<i64>,
     },
 }
@@ -4051,10 +4069,11 @@ impl TypeDisplay {
             Self::Map {
                 key,
                 value,
+                min_entries,
                 max_entries,
             } => format!(
                 "Map<{key}, {value}>{}",
-                Self::collection_limits("entries", None, *max_entries),
+                Self::collection_limits("entries", *min_entries, *max_entries),
             ),
         }
     }
@@ -4076,10 +4095,11 @@ impl TypeDisplay {
             Self::Map {
                 key,
                 value,
+                min_entries,
                 max_entries,
             } => format!(
                 "`Map<{key}, {value}>`{}",
-                Self::collection_limits("entries", None, *max_entries),
+                Self::collection_limits("entries", *min_entries, *max_entries),
             ),
         }
     }
@@ -4996,6 +5016,7 @@ fn render_markdown(
     type_name: &str,
     example: &DocExample,
 ) -> Result<String> {
+    schema.validate_root_emission()?;
     checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
     // Preserve specific override diagnostics before scanning raw tag candidates.
@@ -5759,18 +5780,22 @@ fn detect_exclusive_from_descriptions(schema: &CfnSchema) -> Vec<Vec<String>> {
 
 /// Both renderers consume schema-declared groups from the shared projection.
 /// Resource-only description evidence supplements that result without replacing
-/// a declared rule for the same members. Nested structs use only their projection.
+/// an overlapping declared rule. Nested structs use only their projection.
 fn resource_field_groups(schema: &CfnSchema) -> Result<FieldGroups> {
     let projection = schema.root_projection()?;
-    projection.field_groups.validate_members(
-        |name| schema.properties.contains_key(name),
-        &projection.required,
-        &projection.source_pointer,
-    )?;
-    Ok(projection
+    let groups = projection
         .field_groups
         .clone()
-        .with_description_groups(detect_exclusive_from_descriptions(schema)))
+        .with_description_groups(detect_exclusive_from_descriptions(schema));
+    schema_projection::validate_emitted_field_groups(
+        schema,
+        projection,
+        &groups,
+        None,
+        &[],
+        false,
+    )?;
+    Ok(groups)
 }
 
 fn field_group_rust(
@@ -6003,6 +6028,7 @@ fn checked_read_back_declarations(
 }
 
 fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<String> {
+    schema.validate_root_emission()?;
     let read_back_declarations = checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
     // Preserve specific override diagnostics before scanning raw tag candidates.
@@ -7090,9 +7116,7 @@ impl<'a> ResolvedRef<'a> {
     fn emission_key(self) -> Result<Cow<'a, str>> {
         let effective = self.property.try_query()?;
         let canonical = self.canonical.try_query()?;
-        if effective.field_groups == canonical.field_groups
-            && effective.required == canonical.required
-        {
+        if schema_projection::equivalent_definition_projection(effective, canonical)? {
             Ok(Cow::Borrowed(self.name))
         } else {
             Ok(Cow::Owned(format!(
@@ -33297,15 +33321,35 @@ mod tests {
                     let schema = ParsedCfnSchema::from_json(source)
                         .expect("property-defining resource composition must pass schema intake");
                     assert_eq!(schema.properties.contains_key("Labels"), root_placeholder);
+                    let context = EmissionContext::from_source(&schema).unwrap();
+                    let classification_error = validate_tagging_classifications(&context)
+                        .expect_err("every composition source must contribute candidate evidence")
+                        .to_string();
+                    for expected in [
+                        "unclassified tag-shaped",
+                        "/properties/Labels",
+                        "TagProperty",
+                        "NonTagList",
+                    ] {
+                        assert!(
+                            classification_error.contains(expected),
+                            "{classification_error}"
+                        );
+                    }
                     for result in [
                         generate_schema_code(&schema, &schema.type_name),
                         generate_test_markdown(&schema, &schema.type_name),
                     ] {
-                        let error = result
-                            .expect_err(
-                                "resource composition tag candidates must require classification",
-                            )
-                            .to_string();
+                        let error = result.expect_err(
+                            "resource property contributions must survive or fail explicitly",
+                        );
+                        if let Some(schema_layer::SchemaError::Projection { pointer, reason: _ }) =
+                            error.downcast_ref::<schema_layer::SchemaError>()
+                        {
+                            assert!(pointer.is_empty(), "{error:#}");
+                            continue;
+                        }
+                        let error = error.to_string();
                         for expected in [
                             "AWS::EC2::RouteTable",
                             "/properties/Labels",
@@ -33352,15 +33396,13 @@ mod tests {
                     generate_test_markdown(&schema, &schema.type_name),
                 ] {
                     let error = result
-                        .expect_err("a declared tag property must be emitted as an attribute")
-                        .to_string();
-                    for expected in [
-                        "AWS::EC2::RouteTable#/properties/Labels",
-                        "cannot be emitted as a top-level attribute",
-                        "absent from root properties",
-                    ] {
-                        assert!(error.contains(expected), "{composition}: {error}");
-                    }
+                        .expect_err("a declared tag property must be emitted as an attribute");
+                    assert!(
+                        matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+                        Some(schema_layer::SchemaError::Projection { pointer, reason })
+                        if pointer.is_empty() && reason.contains("resource composition contributes to property Labels")),
+                        "{composition}: {error:#}"
+                    );
                 }
             }
         });

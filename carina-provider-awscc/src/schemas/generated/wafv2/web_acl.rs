@@ -441,7 +441,7 @@ pub fn wafv2_web_acl_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_scope_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, Some("^[\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*$".to_string()), Some((Some(1), Some(128))), None), AttributeType::refined_string(None, Some("^[\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*$".to_string()), Some((None, Some(256))), None)))
+        AttributeSchema::optional("tags", AttributeType::refined_map(AttributeType::refined_string(None, Some("^[\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*$".to_string()), Some((Some(1), Some(128))), None), AttributeType::refined_string(None, Some("^[\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*$".to_string()), Some((None, Some(256))), None), Some((Some(1), None))))
                 .with_provider_name("Tags")
                 .with_block_name("tag")
             .build()

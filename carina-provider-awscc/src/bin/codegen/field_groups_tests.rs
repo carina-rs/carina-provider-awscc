@@ -2,6 +2,164 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn round1_definition_identity_includes_descendant_groups_in_both_orders() {
+    for local_first in [false, true] {
+        let local = if local_first { "A" } else { "Z" };
+        let shared = if local_first { "Z" } else { "A" };
+        let schema = ParsedCfnSchema::from_json(json!({
+            "typeName":"AWS::Test::Groups", "properties":{
+                local:{"$ref":"#/definitions/Container","properties":{"Child":{
+                    "anyOf":[{"required":["A"]},{"required":["B"]}]
+                }}},
+                shared:{"$ref":"#/definitions/Container"}
+            }, "definitions":{"Container":{"type":"object","properties":{
+                "Child":{"type":"object","properties":{"A":{"type":"boolean"},"B":{"type":"boolean"}}}
+            }}}
+        })).unwrap();
+        let local_ref = schema.properties[local].query().reference.as_ref().unwrap();
+        let shared_ref = schema.properties[shared].query().reference.as_ref().unwrap();
+        let key = |reference: &schema_projection::Reference| ResolvedRef {
+            name: &reference.name, property: &reference.property, canonical: &reference.canonical
+        }.emission_key().unwrap().into_owned();
+        assert_ne!(key(local_ref), key(shared_ref));
+        let rust = generate_synthetic_schema_code(&schema).unwrap();
+        assert_eq!(rust.matches("FieldGroup::at_least_one([\"a\", \"b\"])").count(), 2, "{rust}");
+        let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+        assert_eq!(markdown.matches("At least one of `a`, `b` must be specified.").count(), 1, "{markdown}");
+    }
+}
+
+#[test]
+fn round1_group_members_must_be_emitted_optional_and_without_defaults() {
+    for scope in ["root", "inline", "reference", "list", "map"] {
+        for invalid in ["deprecated", "defaulted", "provider_populated"] {
+            let mut object = json!({"type":"object","properties":{
+                "A":{"type":"boolean"},"B":{"type":"boolean"}
+            },"anyOf":[{"required":["A"]},{"required":["B"]}]});
+            if invalid == "deprecated" {
+                object["properties"]["A"]["description"] = json!("(Deprecated.) Removed.");
+            }
+            if invalid == "defaulted" {
+                object["properties"]["A"]["default"] = json!(false);
+            }
+            let mut source = json!({"typeName":"AWS::Test::Groups"});
+            let member_path = match scope {
+                "root" => {
+                    source["properties"] = object["properties"].clone();
+                    source["anyOf"] = object["anyOf"].clone();
+                    "/properties/A"
+                }
+                "inline" => {
+                    source["properties"] = json!({"Parent":object});
+                    "/properties/Parent/A"
+                }
+                "reference" => {
+                    source["properties"] = json!({"Parent":{"$ref":"#/definitions/Choice"}});
+                    source["definitions"] = json!({"Choice":object});
+                    "/properties/Parent/A"
+                }
+                "list" => {
+                    source["properties"] = json!({"Parent":{"type":"array","items":object}});
+                    "/properties/Parent/*/A"
+                }
+                "map" => {
+                    source["properties"] = json!({"Parent":{"type":"object","patternProperties":{".*":object}}});
+                    "/properties/Parent/*/A"
+                }
+                unsupported => panic!("unexpected scope {unsupported}"),
+            };
+            if invalid == "provider_populated" {
+                source["readOnlyProperties"] = json!([member_path]);
+            }
+            let schema = ParsedCfnSchema::from_json(source).unwrap();
+            for result in [generate_synthetic_schema_code(&schema), generate_test_markdown(&schema, "AWS::EC2::Route")] {
+                let error = result.expect_err(&format!("{scope}: {invalid}"));
+                assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+                    Some(schema_layer::SchemaError::Projection { pointer: _, reason })
+                    if reason.contains("member A") && reason.contains(invalid)), "{scope}: {invalid}: {error:#}");
+            }
+        }
+    }
+}
+
+#[test]
+fn round1_group_admission_checks_each_reference_use() {
+    let schema = ParsedCfnSchema::from_json(json!({
+        "typeName":"AWS::Test::Groups", "properties":{
+            "First":{"$ref":"#/definitions/Choice"},
+            "Second":{"$ref":"#/definitions/Choice"}
+        }, "definitions":{"Choice":{"type":"object","properties":{
+            "A":{"type":"boolean"},"B":{"type":"boolean"}
+        },"anyOf":[{"required":["A"]},{"required":["B"]}]}},
+        "readOnlyProperties":["/properties/Second/A"]
+    })).unwrap();
+    for result in [generate_synthetic_schema_code(&schema), generate_test_markdown(&schema, "AWS::EC2::Route")] {
+        let error = result.expect_err("the second use has a provider-populated group member");
+        assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+            Some(schema_layer::SchemaError::Projection { pointer: _, reason })
+            if reason.contains("member A") && reason.contains("provider_populated")), "{error:#}");
+    }
+}
+
+#[test]
+fn round1_group_admission_checks_override_defaults_and_provider_ancestors() {
+    static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+        let mut overrides = ResourceTypeOverrides::default();
+        overrides.insert(("AWS::Test::Groups", "A"), TypeOverride::AttributeType {
+            expression: OverrideTypeExpression::raw("AttributeType::bool()"),
+            display: const { OverrideTypeDisplay::new("Bool") },
+            block_name: None,
+            default: Some(AttributeTypeOverrideDefault {
+                value_expression: "Value::Concrete(ConcreteValue::Bool(false))", markdown: "false",
+            }),
+        });
+        overrides
+    });
+    let object = json!({"type":"object","properties":{
+        "A":{"type":"boolean"},"B":{"type":"boolean"}
+    },"anyOf":[{"required":["A"]},{"required":["B"]}]});
+    let root = ParsedCfnSchema::from_json(json!({
+        "typeName":"AWS::Test::Groups","properties":object["properties"],"anyOf":object["anyOf"]
+    })).unwrap();
+    with_resource_type_overrides(&OVERRIDES, || {
+        for result in [generate_synthetic_schema_code(&root), generate_test_markdown(&root, "AWS::EC2::Route")] {
+            let error = result.expect_err("override defaults participate in group admission");
+            assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+                Some(schema_layer::SchemaError::Projection { pointer: _, reason })
+                if reason.contains("member A") && reason.contains("defaulted")), "{error:#}");
+        }
+    });
+    let nested = ParsedCfnSchema::from_json(json!({
+        "typeName":"AWS::Test::Groups","properties":{"Parent":object},
+        "readOnlyProperties":["/properties/Parent"]
+    })).unwrap();
+    for result in [generate_synthetic_schema_code(&nested), generate_test_markdown(&nested, "AWS::EC2::Route")] {
+        let error = result.expect_err("a provider-populated ancestor changes effective member modes");
+        assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+            Some(schema_layer::SchemaError::Projection { pointer: _, reason })
+            if reason.contains("member A") && reason.contains("provider_populated")), "{error:#}");
+    }
+}
+
+#[test]
+fn round1_schema_groups_take_precedence_over_overlapping_descriptions() {
+    for description in ["Specify either A or B.", "Specify either B or D."] {
+        let schema = ParsedCfnSchema::from_json(json!({
+            "typeName":"AWS::Test::Groups", "properties":{
+                "A":{"type":"boolean","description":description},"B":{"type":"boolean"},
+                "C":{"type":"boolean"},"D":{"type":"boolean"}
+            },"anyOf":[{"required":["A"]},{"required":["B"]},{"required":["C"]}]
+        })).unwrap();
+        let rust = generate_synthetic_schema_code(&schema).unwrap();
+        assert_eq!(rust.matches("FieldGroup::at_least_one").count(), 1);
+        assert!(!rust.contains("FieldGroup::exactly_one"), "{rust}");
+        let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+        assert!(markdown.contains("At least one of `a`, `b`, `c` must be specified."));
+        assert!(!markdown.contains("Exactly one of"), "{markdown}");
+    }
+}
+
+#[test]
 fn step6_cached_field_groups_reach_every_rust_copy_and_markdown() {
     for (resource, constructor, members, copies, note) in [
         ("AWS::CloudWatch::Alarm", "exactly_one", "\"sliding_window\", \"wall_clock_window\"", 2, "Exactly one of `sliding_window`, `wall_clock_window` must be specified."),

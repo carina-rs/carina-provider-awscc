@@ -490,6 +490,20 @@ pub(super) fn direct(layer: &Arc<Layer>, node: NodeId) -> Result<Projection, Sch
                         }),
                     }
                 };
+            let length_bound = |bound: &Option<Number>,
+                                keyword: &str|
+             -> Result<Option<u64>, SchemaError> {
+                match bound {
+                    None => Ok(None),
+                    Some(number) => number.as_u64().map(Some).ok_or_else(|| {
+                        error(
+                            layer,
+                            node,
+                            format!("{keyword} cannot fit the string projection exactly: {number}"),
+                        )
+                    }),
+                }
+            };
             let mut dependencies = BTreeMap::new();
             if let Some(entries) = &k.dependencies {
                 for (name, dependency) in entries {
@@ -543,8 +557,8 @@ pub(super) fn direct(layer: &Arc<Layer>, node: NodeId) -> Result<Projection, Sch
                     SchemaNode::Boolean(_value) => None,
                     SchemaNode::Keywords(_keywords) => Some(Box::new(bridge(layer, id))),
                 }),
-                min_length: k.min_length.as_ref().and_then(Number::as_u64),
-                max_length: k.max_length.as_ref().and_then(Number::as_u64),
+                min_length: length_bound(&k.min_length, "minLength")?,
+                max_length: length_bound(&k.max_length, "maxLength")?,
                 min_items: item_bound(&k.min_items, "minItems")?,
                 max_items: item_bound(&k.max_items, "maxItems")?,
                 unique_items: k.unique_items,
@@ -919,11 +933,12 @@ pub(super) fn merge(
         pattern,
         format,
         const_value,
-        default_value,
         multiple_of,
         additional_properties,
         array_type
     );
+    // A default annotates this site; it neither restricts accepted values nor
+    // inherits from a reference target or another conjunction arm.
     for (target, source, lower) in [
         (&mut p.min_properties, q.min_properties, true),
         (&mut p.max_properties, q.max_properties, false),
@@ -1324,7 +1339,6 @@ fn equivalent_scalar(p: &Projection, q: &Projection) -> bool {
         && p.projected_type == q.projected_type
         && p.enum_values == q.enum_values
         && p.const_value == q.const_value
-        && p.default_value == q.default_value
         && p.minimum == q.minimum
         && p.maximum == q.maximum
         && p.exclusive_minimum == q.exclusive_minimum
@@ -1351,6 +1365,16 @@ fn equivalent(
     equivalent_with_identity(p, q, seen, true)
 }
 
+pub(super) fn equivalent_definition_projection(
+    p: &Projection,
+    q: &Projection,
+) -> Result<bool, SchemaError> {
+    // A reference site's default annotates the containing field, not its type.
+    // Compare the definition body without that outer annotation; defaults on
+    // descendants still belong to their fields inside the body.
+    equivalent_body(p, q, &mut BTreeSet::new(), true)
+}
+
 pub(super) fn equivalent_tag_projection(
     p: &Projection,
     q: &Projection,
@@ -1359,6 +1383,18 @@ pub(super) fn equivalent_tag_projection(
 }
 
 fn equivalent_with_identity(
+    p: &Projection,
+    q: &Projection,
+    seen: &mut BTreeSet<(NodeId, NodeId)>,
+    identity: bool,
+) -> Result<bool, SchemaError> {
+    if p.default_value != q.default_value {
+        return Ok(false);
+    }
+    equivalent_body(p, q, seen, identity)
+}
+
+fn equivalent_body(
     p: &Projection,
     q: &Projection,
     seen: &mut BTreeSet<(NodeId, NodeId)>,
@@ -1636,31 +1672,94 @@ pub(super) fn validate(layer: &Layer, node: NodeId, p: &Projection) -> Result<()
     Ok(())
 }
 
+/// Match core admission against the containing scope's emitted siblings,
+/// including filters, per-use provider modes and local/override defaults.
+pub(super) fn validate_emitted_field_groups(
+    schema: &super::CfnSchema,
+    projection: &Projection,
+    groups: &FieldGroups,
+    parent: Option<&str>,
+    provider_path: &[String],
+    provider_populated: bool,
+) -> Result<(), SchemaError> {
+    groups.validate_members(|member| {
+        let reject = |reason: &str| {
+            Err(projection.emission_error(format!(
+                "unsupported required alternatives: member {member} {reason}"
+            )))
+        };
+        let Some(property) = projection
+            .properties
+            .as_ref()
+            .and_then(|fields| fields.get(member))
+        else {
+            return reject("must be an emitted optional sibling field");
+        };
+        property.try_query()?;
+        if super::is_deprecated_property(property) {
+            return reject("is deprecated and excluded from emitted fields");
+        }
+        let cfn_path = super::CfnPropertyPath::new(parent, member);
+        if super::should_omit_property(&schema.type_name, cfn_path) {
+            return reject("is omitted from emitted fields");
+        }
+        let path = super::extend_property_path(provider_path, member);
+        if provider_populated || super::is_property_read_only(schema, property, &path) {
+            return reject("is provider_populated; an optional input sibling is required");
+        }
+        if projection
+            .required
+            .iter()
+            .any(|required| required == member)
+        {
+            return reject("is required; an optional sibling field is required");
+        }
+        if property.annotation_default().is_some()
+            || super::resource_type_override(&schema.type_name, cfn_path)
+                .and_then(super::TypeOverride::default)
+                .is_some()
+        {
+            return reject("is defaulted; a group member must have no default");
+        }
+        Ok(())
+    })
+}
+
 /// Query validation precedes either renderer. A renderer cannot turn a failed
 /// query into a fallback String, an inferred type, or a panic at the CLI boundary.
-/// Tag classification and tag projection remain on their STEP-2 path.
+/// Tag properties use the separately cached TagShape admission.
 pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Result<()> {
     fn visit(
         schema: &super::CfnSchema,
         property: &SchemaProperty,
-        seen: &mut BTreeSet<NodeId>,
+        name: &str,
+        provider_path: &[String],
+        provider_populated: bool,
+        active: &mut BTreeSet<NodeId>,
     ) -> Result<(), SchemaError> {
+        let p = property.try_query()?;
+        p.validate_array_emission()?;
+        let scope_name = p
+            .reference
+            .as_ref()
+            .map_or(name, |reference| reference.name.as_str());
+        let provider_populated =
+            provider_populated || super::is_property_read_only(schema, property, provider_path);
+        validate_emitted_field_groups(
+            schema,
+            p,
+            &p.field_groups,
+            Some(scope_name),
+            provider_path,
+            provider_populated,
+        )?;
+        // Admission depends on the provider path. A previous use of the same
+        // definition must not suppress checks for this use; only cut back edges.
         if let Some(origin) = &property.origin
-            && !seen.insert(origin.node)
+            && !active.insert(origin.node)
         {
             return Ok(());
         }
-        let p = property.try_query()?;
-        p.validate_array_emission()?;
-        p.field_groups.validate_members(
-            |name| {
-                p.properties
-                    .as_ref()
-                    .is_some_and(|properties| properties.contains_key(name))
-            },
-            &p.required,
-            &p.source_pointer,
-        )?;
         if matches!(p.effective_type(), Some("integer" | "number")) {
             p.integer_bounds()?;
         }
@@ -1670,9 +1769,10 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
             .chain(p.contains.iter())
             .chain(p.additional_schema.iter())
         {
-            visit(schema, child, seen)?;
+            let path = super::extend_property_path(provider_path, "*");
+            visit(schema, child, name, &path, provider_populated, active)?;
         }
-        for properties in [&p.properties, &p.pattern_properties].into_iter().flatten() {
+        if let Some(properties) = &p.properties {
             for (name, child) in properties {
                 if super::is_deprecated_property(child) {
                     continue;
@@ -1680,15 +1780,7 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
                 // Whole-attribute and item replacements discard child grammar,
                 // but their own source shape and collection constraints are
                 // validated separately by the override registry.
-                let parent = property.origin.as_ref().and_then(|o| {
-                    o.layer
-                        .resource()
-                        .definitions
-                        .as_ref()
-                        .and_then(|defs| defs.iter().find(|(_name, id)| **id == o.node))
-                        .map(|(name, _id)| name.as_str())
-                });
-                let path = super::CfnPropertyPath::new(parent, name);
+                let path = super::CfnPropertyPath::new(Some(scope_name), name);
                 if super::should_omit_property(&schema.type_name, path) {
                     continue;
                 }
@@ -1706,28 +1798,40 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
                 }) {
                     continue;
                 }
-                visit(schema, child, seen)?;
+                let path = super::extend_property_path(provider_path, name);
+                visit(schema, child, name, &path, provider_populated, active)?;
+            }
+        }
+        if let Some(patterns) = &p.pattern_properties {
+            for child in patterns.values() {
+                let path = super::extend_property_path(provider_path, "*");
+                visit(schema, child, name, &path, provider_populated, active)?;
             }
         }
         for dependency in p.dependencies.values() {
             match dependency {
-                ConditionalDependency::Schema(child) => visit(schema, child, seen)?,
+                ConditionalDependency::Schema(child) => {
+                    visit(
+                        schema,
+                        child,
+                        name,
+                        provider_path,
+                        provider_populated,
+                        active,
+                    )?;
+                }
                 ConditionalDependency::PropertyList(_names) => {}
             }
         }
+        if let Some(origin) = &property.origin {
+            active.remove(&origin.node);
+        }
         Ok(())
     }
+    schema.validate_root_emission()?;
     let root = schema.root_projection()?;
-    root.field_groups.validate_members(
-        |name| {
-            root.properties
-                .as_ref()
-                .is_some_and(|properties| properties.contains_key(name))
-        },
-        &root.required,
-        &root.source_pointer,
-    )?;
-    let mut seen = BTreeSet::new();
+    validate_emitted_field_groups(schema, root, &root.field_groups, None, &[], false)?;
+    let mut active = BTreeSet::new();
     for (name, property) in super::documented_top_level_properties(schema) {
         if super::is_dsl_tags_property(schema, std::slice::from_ref(name))? {
             continue;
@@ -1747,7 +1851,14 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
         }) {
             continue;
         }
-        visit(schema, property, &mut seen)?;
+        visit(
+            schema,
+            property,
+            name,
+            std::slice::from_ref(name),
+            false,
+            &mut active,
+        )?;
     }
     Ok(())
 }
