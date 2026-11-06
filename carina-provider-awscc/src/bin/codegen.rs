@@ -103,7 +103,7 @@ fn emit_primary_identifier(schema: &CfnSchema) -> Result<String> {
             Ok(format!(
                 "crate::schemas::config::PrimaryIdentifierAttribute {{ provider_name: {}, dsl_name: {} }}",
                 rust_lit(prop),
-                rust_lit(&dsl_attribute_name(schema, prop))
+                rust_lit(&dsl_attribute_name(schema, prop)?)
             ))
         })
         .collect::<Result<_>>()?;
@@ -1192,14 +1192,14 @@ struct GeneratedTagsProperty {
 
 /// Match the resource's declared tag property at its top-level source path.
 /// Nested properties with the same name retain their own CFN grammar.
-fn is_dsl_tags_property(schema: &CfnSchema, property_path: &[String]) -> bool {
+fn is_dsl_tags_property(schema: &CfnSchema, property_path: &[String]) -> Result<bool> {
     let [provider_name] = property_path else {
-        return false;
+        return Ok(false);
     };
-    tag_property_path(schema)
-        .unwrap_or_else(|error| panic!("{error}"))
-        .and_then(|path| path.strip_prefix("/properties/"))
-        == Some(provider_name.as_str())
+    Ok(
+        tag_property_path(schema)?.and_then(|path| path.strip_prefix("/properties/"))
+            == Some(provider_name.as_str()),
+    )
 }
 
 /// The source leaves of one of Carina's canonical tag-map shapes.
@@ -2253,7 +2253,7 @@ fn validate_mutually_exclusive_property_groups(
                     group_index + 1
                 );
             }
-            dsl_group.push(dsl_attribute_name(schema, property_name));
+            dsl_group.push(dsl_attribute_name(schema, property_name)?);
         }
         dsl_groups.push(dsl_group);
     }
@@ -2299,6 +2299,8 @@ fn emit_exclusive_groups_slice(groups: &[Vec<String>]) -> String {
 /// out of scope.
 /// Accumulate Key and Value across all nodes reached after an items or contains edge,
 /// including allOf/oneOf/anyOf branches, schema dependencies and $refs.
+/// Non-local or unresolvable refs are a codegen-wide opaque fallback with no
+/// visible shape, so they cannot be proven tag-shaped.
 /// Over-approximation (e.g. Key and Value in different oneOf arms) is acceptable:
 /// it only requires an explicit classification, not tag-map projection.
 fn is_key_value_array_candidate<'a>(
@@ -2327,19 +2329,14 @@ fn is_key_value_array_candidate<'a>(
         }
         // A reference can be reached both before and after an items/contains edge.
         // Visit each state once to terminate cycles without losing candidates.
-        if let Some(reference) = node.get("$ref").and_then(serde_json::Value::as_str) {
-            let target = reference
+        if let Some(reference) = node.get("$ref").and_then(serde_json::Value::as_str)
+            && let Some(target) = reference
                 .strip_prefix('#')
                 .filter(|pointer| pointer.starts_with('/'))
                 .and_then(|pointer| source.pointer(pointer))
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "unsupported $ref {reference:?}: expected a resolvable local JSON pointer starting with #/"
-                    )
-                })?;
-            if visited_refs.insert((reference, crossed_items)) {
-                pending.push((target, crossed_items));
-            }
+            && visited_refs.insert((reference, crossed_items))
+        {
+            pending.push((target, crossed_items));
         }
         for keyword in ["allOf", "oneOf", "anyOf"] {
             if let Some(branches) = node.get(keyword).and_then(serde_json::Value::as_array) {
@@ -3642,6 +3639,7 @@ fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &ParsedCfnSc
         &[prop_name.to_string()],
         CfnPropertyPath::new(None, prop_name),
     )
+    .unwrap()
 }
 
 /// Keep type text and collection limits separate from Markdown formatting so a
@@ -3778,25 +3776,25 @@ fn type_display_string_at(
     schema: &EmissionContext<'_>,
     provider_path: &[String],
     cfn_property_path: CfnPropertyPath<'_>,
-) -> String {
-    type_display_at_resolved(
+) -> Result<String> {
+    Ok(type_display_at_resolved(
         schema.property_at(provider_path, prop),
         cfn_property_path,
         None,
-    )
-    .markdown()
+    )?
+    .markdown())
 }
 
 fn type_display_at_resolved(
     classified: EmissionProperty<'_>,
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
-) -> TypeDisplay {
+) -> Result<TypeDisplay> {
     if let Some(identity) = top_level_arn_catalog_display(&classified) {
-        return TypeDisplay::Code(identity.to_string());
+        return Ok(TypeDisplay::Code(identity.to_string()));
     }
     if let Some(reference) = emission_reference(&classified, cfn_property_path) {
-        return TypeDisplay::Plain(reference.display());
+        return Ok(TypeDisplay::Plain(reference.display()));
     }
     let schema = classified.schema();
     let prop = classified.property();
@@ -3808,43 +3806,41 @@ fn type_display_at_resolved(
         prop,
         resource_type_override(&schema.type_name, cfn_property_path),
     ) {
-        return TypeDisplay::Code(display);
+        return Ok(TypeDisplay::Code(display));
     }
     if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
-        return TypeDisplay::Plain("PolicyDocument".to_string());
+        return Ok(TypeDisplay::Plain("PolicyDocument".to_string()));
     }
-    if is_dsl_tags_property(schema, provider_path) {
-        schema
-            .classify_tag_value(provider_path)
-            .unwrap_or_else(|error| panic!("{error}"));
-        return tag_map_type(classified, cfn_property_path).display();
+    if is_dsl_tags_property(schema, provider_path)? {
+        schema.classify_tag_value(provider_path)?;
+        return Ok(tag_map_type(classified, cfn_property_path).display());
     }
     if property_is_bare_object(prop, schema) {
-        return match classify_bare_object_or_panic(&schema.type_name, cfn_property_path) {
-            BareObjectClassification::IamPolicyDocument(_) => {
-                TypeDisplay::Plain("PolicyDocument".to_string())
-            }
-            BareObjectClassification::EmptyObject(_) => TypeDisplay::EmptyStruct,
-            BareObjectClassification::StringMap(_) => {
-                TypeDisplay::Code("Map<String, String>".to_string())
-            }
-            BareObjectClassification::TypedOverride { display, .. } => {
-                TypeDisplay::Code(display.as_str().to_string())
-            }
-            BareObjectClassification::FreeFormJson(entry)
-            | BareObjectClassification::OmittedResource(entry) => panic!(
-                "omitted property {}.{} reached Markdown type generation: {}",
-                entry.cfn_type, entry.property_path, entry.reason
-            ),
-        };
+        return Ok(
+            match classify_bare_object_or_panic(&schema.type_name, cfn_property_path) {
+                BareObjectClassification::IamPolicyDocument(_) => {
+                    TypeDisplay::Plain("PolicyDocument".to_string())
+                }
+                BareObjectClassification::EmptyObject(_) => TypeDisplay::EmptyStruct,
+                BareObjectClassification::StringMap(_) => {
+                    TypeDisplay::Code("Map<String, String>".to_string())
+                }
+                BareObjectClassification::TypedOverride { display, .. } => {
+                    TypeDisplay::Code(display.as_str().to_string())
+                }
+                BareObjectClassification::FreeFormJson(entry)
+                | BareObjectClassification::OmittedResource(entry) => panic!(
+                    "omitted property {}.{} reached Markdown type generation: {}",
+                    entry.cfn_type, entry.property_path, entry.reason
+                ),
+            },
+        );
     }
     match property_shape(classified.property(), classified.schema()) {
         PropertyShape::Reference { resolved, .. } => {
             return if is_tag_map_ref(schema, prop.ref_path.as_deref().expect("reference shape")) {
-                schema
-                    .classify_tag_value(provider_path)
-                    .unwrap_or_else(|error| panic!("{error}"));
-                tag_map_type(classified, cfn_property_path).display()
+                schema.classify_tag_value(provider_path)?;
+                Ok(tag_map_type(classified, cfn_property_path).display())
             } else if let Some(resolved) = resolved {
                 let array = resolved_array_property(prop, schema, &mut HashSet::new());
                 type_display_at_resolved(
@@ -3854,7 +3850,10 @@ fn type_display_at_resolved(
                     Some(resolved.name),
                 )
             } else {
-                TypeDisplay::Plain(infer_string_type_display(prop_name, &schema.type_name))
+                Ok(TypeDisplay::Plain(infer_string_type_display(
+                    prop_name,
+                    &schema.type_name,
+                )))
             };
         }
         PropertyShape::Array {
@@ -3868,7 +3867,10 @@ fn type_display_at_resolved(
             );
         }
         PropertyShape::Direct(_) | PropertyShape::Merged(_) => {
-            return TypeDisplay::Plain(format!("Struct({})", definition_name.unwrap_or(prop_name)));
+            return Ok(TypeDisplay::Plain(format!(
+                "Struct({})",
+                definition_name.unwrap_or(prop_name)
+            )));
         }
         PropertyShape::Unresolved => {
             let variant_types: Vec<Vec<String>> =
@@ -3886,10 +3888,10 @@ fn type_display_at_resolved(
                 let default = CfnProperty::default();
                 let item_path = schema.collection_path(provider_path, PathSegment::ListElement);
                 let item = schema.property_at(&item_path, &default);
-                TypeDisplay::Plain(
+                Ok(TypeDisplay::Plain(
                     emission_reference(&item, cfn_property_path)
                         .map_or_else(|| "String".to_string(), |reference| reference.display()),
-                )
+                ))
             },
             |items| {
                 let item_path = schema.collection_path(provider_path, PathSegment::ListElement);
@@ -3899,37 +3901,37 @@ fn type_display_at_resolved(
                     None,
                 )
             },
-        );
-        return TypeDisplay::List {
+        )?;
+        return Ok(TypeDisplay::List {
             item: Box::new(item),
             min_items: prop.min_items,
             max_items: prop.max_items,
-        };
+        });
     }
     if inline_property_type(prop) == Some("object") {
         if let Some(value) = direct_object_map_value(prop) {
-            return TypeDisplay::Code(object_map_type_text(
+            return Ok(TypeDisplay::Code(object_map_type_text(
                 prop_name,
                 schema,
                 cfn_property_path,
                 prop,
                 provider_path,
                 value,
-            ));
+            )));
         }
         panic!(
             "unsupported object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
             schema.type_name, cfn_property_path
         );
     }
-    scalar_type_display_at(
+    Ok(scalar_type_display_at(
         prop_name,
         prop,
         schema,
         provider_path,
         cfn_property_path,
         definition_name,
-    )
+    ))
 }
 
 fn scalar_type_display_at(
@@ -4038,20 +4040,25 @@ fn markdown_struct_def(
     prop: &CfnProperty,
     schema: &CfnSchema,
     property_path: &[String],
-) -> Option<MarkdownStructDef> {
-    if is_dsl_tags_property(schema, property_path) {
-        return None;
+) -> Result<Option<MarkdownStructDef>> {
+    if is_dsl_tags_property(schema, property_path)? {
+        return Ok(None);
     }
     let key = MarkdownStructKey::Inline(property_path.to_vec());
     let name = prop_name.to_string();
-    match property_shape(prop, schema) {
+    Ok(match property_shape(prop, schema) {
         PropertyShape::Reference { path, resolved } => {
             if is_tag_map_ref(schema, path) {
-                return None;
+                return Ok(None);
             }
-            let resolved = resolved?;
-            let mut struct_def =
-                markdown_struct_def(prop_name, resolved.property, schema, property_path)?;
+            let Some(resolved) = resolved else {
+                return Ok(None);
+            };
+            let Some(mut struct_def) =
+                markdown_struct_def(prop_name, resolved.property, schema, property_path)?
+            else {
+                return Ok(None);
+            };
             struct_def.key = MarkdownStructKey::Definition(resolved.name.to_string());
             struct_def.name = resolved.name.to_string();
             Some(struct_def)
@@ -4069,7 +4076,7 @@ fn markdown_struct_def(
             required: Vec::new(),
         }),
         PropertyShape::Inline | PropertyShape::Array { .. } | PropertyShape::Unresolved => None,
-    }
+    })
 }
 
 fn markdown_array<'a>(
@@ -4123,16 +4130,16 @@ fn markdown_link_type(
     enum_target: Option<&MarkdownEnumKey>,
     property_path: &[String],
     cfn_parent: Option<&str>,
-) -> Option<MarkdownLinkedType> {
+) -> Result<Option<MarkdownLinkedType>> {
     let cfn_path = CfnPropertyPath::new(cfn_parent, prop_name);
-    let tag_map = is_dsl_tags_property(schema, property_path)
+    let tag_map = is_dsl_tags_property(schema, property_path)?
         || prop
             .ref_path
             .as_deref()
             .is_some_and(|reference| is_tag_map_ref(schema, reference));
     let key = map_key_type(prop, schema, property_path, cfn_path);
     if tag_map && key.as_ref().and_then(key_enum_info).is_none() {
-        return None;
+        return Ok(None);
     }
     if let Some(key_type) = key
         && let Some((_, value)) = property_pattern_map_entry(prop, schema)
@@ -4142,7 +4149,7 @@ fn markdown_link_type(
         // Without links, retain the ordinary code-span map display. Its key
         // refinement still comes from map_key_type in object_map_type_text.
         if !key_enum && enum_target.is_none() && value_kind == ObjectMapValueKind::DirectString {
-            return None;
+            return Ok(None);
         }
         let key = if key_enum {
             MarkdownLinkedType::Enum(
@@ -4157,7 +4164,7 @@ fn markdown_link_type(
         let value = if !key_enum && let Some(target) = enum_target {
             markdown_enum_type(value, schema, target)
         } else {
-            markdown_link_type(prop_name, value, schema, None, &value_path, cfn_parent)
+            markdown_link_type(prop_name, value, schema, None, &value_path, cfn_parent)?
                 .unwrap_or_else(|| {
                     MarkdownLinkedType::Text(if tag_map {
                         tag_map_type(schema.property_at(property_path, prop), cfn_path)
@@ -4168,10 +4175,10 @@ fn markdown_link_type(
                     })
                 })
         };
-        return Some(MarkdownLinkedType::Map {
+        return Ok(Some(MarkdownLinkedType::Map {
             key: Box::new(key),
             value: Box::new(value),
-        });
+        }));
     }
     if map_key_enum_info(prop, schema, prop_name).is_some()
         && let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new())
@@ -4186,10 +4193,10 @@ fn markdown_link_type(
             &item_path,
             cfn_parent,
         )?;
-        return Some(markdown_list_type(item, &array));
+        return Ok(item.map(|item| markdown_list_type(item, &array)));
     }
     if let Some(key) = enum_target {
-        return Some(markdown_enum_type(prop, schema, key));
+        return Ok(Some(markdown_enum_type(prop, schema, key)));
     }
 
     match property_shape(prop, schema) {
@@ -4217,20 +4224,20 @@ fn markdown_link_type(
         object_map_value_or_panic(schema, CfnPropertyPath::new(cfn_parent, prop_name), value);
         let value_path = extend_property_path(property_path, "*");
         if let Some(value_type) =
-            markdown_link_type(prop_name, value, schema, None, &value_path, cfn_parent)
+            markdown_link_type(prop_name, value, schema, None, &value_path, cfn_parent)?
         {
-            return Some(MarkdownLinkedType::Map {
+            return Ok(Some(MarkdownLinkedType::Map {
                 key: Box::new(MarkdownLinkedType::Text("String".to_string())),
                 value: Box::new(value_type),
-            });
+            }));
         }
     }
 
-    if let Some(struct_def) = markdown_struct_def(prop_name, prop, schema, property_path) {
-        return Some(MarkdownLinkedType::Struct {
+    if let Some(struct_def) = markdown_struct_def(prop_name, prop, schema, property_path)? {
+        return Ok(Some(MarkdownLinkedType::Struct {
             key: struct_def.key,
             name: struct_def.name,
-        });
+        }));
     }
 
     if let Some(array) = markdown_array(prop, schema)
@@ -4238,25 +4245,27 @@ fn markdown_link_type(
     {
         let item_path = extend_property_path(property_path, "*");
         let item_type = markdown_link_type(prop_name, items, schema, None, &item_path, cfn_parent)?;
-        return Some(markdown_list_type(item_type, &array));
+        return Ok(item_type.map(|item| markdown_list_type(item, &array)));
     }
 
-    None
+    Ok(None)
 }
 
 fn markdown_type(
     classified: EmissionProperty<'_>,
     enum_target: Option<&MarkdownEnumKey>,
     cfn_parent: Option<&str>,
-) -> MarkdownType {
+) -> Result<MarkdownType> {
     if let Some(identity) = top_level_arn_catalog_display(&classified) {
-        return MarkdownType::Plain(TypeDisplay::Code(identity.to_string()).markdown());
+        return Ok(MarkdownType::Plain(
+            TypeDisplay::Code(identity.to_string()).markdown(),
+        ));
     }
     if let Some(reference) = emission_reference(
         &classified,
         CfnPropertyPath::new(cfn_parent, classified.name()),
     ) {
-        return MarkdownType::Plain(reference.display());
+        return Ok(MarkdownType::Plain(reference.display()));
     }
     let schema = classified.schema();
     let prop = classified.property();
@@ -4269,7 +4278,7 @@ fn markdown_type(
     if cfn_parent.is_some()
         && let Some(display) = override_type_display(schema, cfn_property_path, prop, override_type)
     {
-        return MarkdownType::Plain(TypeDisplay::Code(display).markdown());
+        return Ok(MarkdownType::Plain(TypeDisplay::Code(display).markdown()));
     }
     if let Some(override_type) = override_type.filter(|value| value.requires_array_source()) {
         let array = override_type
@@ -4280,38 +4289,38 @@ fn markdown_type(
                 || MarkdownLinkedType::Enum(key.clone()),
                 |items| markdown_enum_type(items, schema, key),
             );
-            return MarkdownType::Linked(markdown_list_type(item, &array));
+            return Ok(MarkdownType::Linked(markdown_list_type(item, &array)));
         }
         // Preserve source struct links while displaying the refined bounds
         // for both item-type overrides and bounds-only overrides.
-        return markdown_link_type(prop_name, &array, schema, None, property_path, cfn_parent)
-            .map(MarkdownType::Linked)
-            .unwrap_or_else(|| {
-                MarkdownType::Plain(type_display_string_at(
-                    &array,
-                    schema,
-                    property_path,
-                    cfn_property_path,
-                ))
-            });
+        if let Some(linked) =
+            markdown_link_type(prop_name, &array, schema, None, property_path, cfn_parent)?
+        {
+            return Ok(MarkdownType::Linked(linked));
+        }
+        return Ok(MarkdownType::Plain(type_display_string_at(
+            &array,
+            schema,
+            property_path,
+            cfn_property_path,
+        )?));
     }
-    markdown_link_type(
+    if let Some(linked) = markdown_link_type(
         prop_name,
         prop,
         schema,
         enum_target,
         property_path,
         cfn_parent,
-    )
-    .map(MarkdownType::Linked)
-    .unwrap_or_else(|| {
-        MarkdownType::Plain(type_display_string_at(
-            prop,
-            schema,
-            property_path,
-            CfnPropertyPath::new(cfn_parent, prop_name),
-        ))
-    })
+    )? {
+        return Ok(MarkdownType::Linked(linked));
+    }
+    Ok(MarkdownType::Plain(type_display_string_at(
+        prop,
+        schema,
+        property_path,
+        CfnPropertyPath::new(cfn_parent, prop_name),
+    )?))
 }
 
 fn override_type_display(
@@ -4594,9 +4603,10 @@ fn render_markdown(
     type_name: &str,
     example: &DocExample,
 ) -> Result<String> {
-    validate_tagging_classifications(schema)?;
     checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
+    // Preserve specific override diagnostics before scanning raw tag candidates.
+    validate_tagging_classifications(schema)?;
     reset_recursion_guard();
     validate_identity_properties(schema)?;
     reset_recursion_guard();
@@ -4650,8 +4660,13 @@ fn render_markdown(
             property_enums.insert(prop_name.clone(), enum_info_for_override(prop_name, values));
             continue;
         }
-        let (_, enum_info) =
-            cfn_type_to_carina_type_with_enum(prop, prop_name, schema, &namespace, &property_enums);
+        let (_, enum_info) = cfn_type_to_carina_type_with_enum(
+            prop,
+            prop_name,
+            schema,
+            &namespace,
+            &property_enums,
+        )?;
         if let Some(info) = enum_info {
             property_enums.insert(prop_name.clone(), info);
         }
@@ -4664,7 +4679,7 @@ fn render_markdown(
             std::slice::from_ref(prop_name),
             None,
             &mut struct_defs,
-        );
+        )?;
     }
 
     // Scan struct definition fields for enum info (const values, $ref to enum-only definitions)
@@ -4707,7 +4722,7 @@ fn render_markdown(
                     provider: &field_path,
                     cfn_parent: Some(&def_info.def_name),
                 },
-            );
+            )?;
             if let Some(info) = enum_info {
                 struct_field_enums.insert(source_key, info);
             }
@@ -4730,7 +4745,7 @@ fn render_markdown(
             &namespace,
             &property_enums,
             has_arn_helper,
-        );
+        )?;
         let property_path = [prop_name.clone()];
         if is_property_read_only(schema, prop, &property_path) {
             record_emitted_read_only_path(&property_path);
@@ -4803,13 +4818,13 @@ fn render_markdown(
             continue;
         }
 
-        let attr_name = dsl_attribute_name(schema, prop_name);
+        let attr_name = dsl_attribute_name(schema, prop_name)?;
         let is_required = required.contains(prop_name);
         let type_display = markdown_type(
             schema.property_at(&property_path, prop),
             enum_targets.properties.get(prop_name),
             None,
-        );
+        )?;
 
         page.heading(Heading::code(3, &attr_name))?;
         page.push_str("- **Type:** ");
@@ -5011,13 +5026,13 @@ fn render_markdown(
                         schema.property_at(&field_path, field_prop),
                         Some(enum_target),
                         Some(&def_info.def_name),
-                    )
+                    )?
                 } else {
                     markdown_type(
                         schema.property_at(&field_path, field_prop),
                         None,
                         Some(&def_info.def_name),
-                    )
+                    )?
                 };
                 let mut desc = collapse_whitespace(
                     &field_prop
@@ -5070,12 +5085,12 @@ fn render_markdown(
                 continue;
             }
 
-            let attr_name = dsl_attribute_name(schema, prop_name);
+            let attr_name = dsl_attribute_name(schema, prop_name)?;
             let type_display = markdown_type(
                 schema.property_at(&property_path, prop),
                 enum_targets.properties.get(prop_name),
                 None,
-            );
+            )?;
 
             page.heading(Heading::code(3, &attr_name))?;
             page.push_str("- **Type:** ");
@@ -5134,11 +5149,11 @@ fn collect_struct_defs(
     property_path: &[String],
     cfn_parent: Option<&str>,
     struct_defs: &mut BTreeMap<MarkdownStructKey, StructDefInfo>,
-) {
+) -> Result<()> {
     // A projected tag map has no item struct in the DSL, even when the CFN
     // definition has a nonstandard name such as ResourceTag or HostedZoneTag.
-    if is_dsl_tags_property(schema, property_path) {
-        return;
+    if is_dsl_tags_property(schema, property_path)? {
+        return Ok(());
     }
     // Enum overlays and nested item expressions replace the source children.
     // Top-level item overrides retain source struct documentation, as on main.
@@ -5150,7 +5165,7 @@ fn collect_struct_defs(
         override_type.enum_values().is_some()
             || (cfn_parent.is_some() && override_type.array_item_type_expression().is_some())
     }) {
-        return;
+        return Ok(());
     }
     match property_shape(prop, schema) {
         PropertyShape::Array {
@@ -5165,8 +5180,8 @@ fn collect_struct_defs(
                 property_path,
                 cfn_parent,
                 struct_defs,
-            );
-            return;
+            )?;
+            return Ok(());
         }
         PropertyShape::Reference { .. }
         | PropertyShape::Inline
@@ -5175,7 +5190,7 @@ fn collect_struct_defs(
         | PropertyShape::Unresolved => {}
     }
 
-    if let Some(struct_def) = markdown_struct_def(prop_name, prop, schema, property_path) {
+    if let Some(struct_def) = markdown_struct_def(prop_name, prop, schema, property_path)? {
         let MarkdownStructDef {
             key,
             name,
@@ -5224,10 +5239,10 @@ fn collect_struct_defs(
                     &field_path,
                     Some(&struct_cfn_parent),
                     struct_defs,
-                );
+                )?;
             }
         }
-        return;
+        return Ok(());
     }
 
     if let Some(value) = property_object_map_value(prop, schema) {
@@ -5241,15 +5256,15 @@ fn collect_struct_defs(
             &value_path,
             cfn_parent,
             struct_defs,
-        );
-        return;
+        )?;
+        return Ok(());
     }
 
     let Some(array) = markdown_array(prop, schema) else {
-        return;
+        return Ok(());
     };
     let Some(items) = array.items.as_deref() else {
-        return;
+        return Ok(());
     };
     let array_def_name = prop
         .ref_path
@@ -5270,13 +5285,14 @@ fn collect_struct_defs(
             &item_path,
             cfn_parent,
             struct_defs,
-        );
+        )?;
         if let Some(name) = array_def_name {
             IN_PROGRESS_DEFS.with(|defs| {
                 defs.borrow_mut().remove(name);
             });
         }
     }
+    Ok(())
 }
 
 /// Detect mutually exclusive field groups from top-level `oneOf` / `anyOf` patterns.
@@ -5401,9 +5417,9 @@ fn generate_top_level_attribute_type(
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     has_arn_helper: bool,
-) -> String {
+) -> Result<String> {
     if classified.name() == "Arn" && has_arn_helper {
-        return "self::arn()".to_string();
+        return Ok("self::arn()".to_string());
     }
 
     let property_path = classified.path();
@@ -5427,7 +5443,7 @@ fn generate_attribute_type(
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
-) -> String {
+) -> Result<String> {
     let prop = classified.property();
     let prop_name = classified.name();
     let schema = classified.schema();
@@ -5458,36 +5474,47 @@ fn generate_attribute_type(
                 "conflicting local type definition {name}"
             );
         });
-        return format!("AttributeType::ref_({}.to_string())", rust_lit(name));
+        return Ok(format!(
+            "AttributeType::ref_({}.to_string())",
+            rust_lit(name)
+        ));
     }
 
     if let Some(expression) = override_type.and_then(TypeOverride::attribute_type_expression) {
-        return if matches!(override_type, Some(TypeOverride::StringType(_))) {
-            // StringType replaces a leaf; existing top-level uses include
-            // arrays such as VPC.CidrBlockAssociations. Retain their wrappers.
-            enum_property_type(prop, schema, expression, false)
-        } else {
-            // Whole-attribute overrides discard source children. Do not walk
-            // them or record read-only fields that will never be emitted.
-            expression.to_string()
-        };
+        return Ok(
+            if matches!(override_type, Some(TypeOverride::StringType(_))) {
+                // StringType replaces a leaf; existing top-level uses include
+                // arrays such as VPC.CidrBlockAssociations. Retain their wrappers.
+                enum_property_type(prop, schema, expression, false)
+            } else {
+                // Whole-attribute overrides discard source children. Do not walk
+                // them or record read-only fields that will never be emitted.
+                expression.to_string()
+            },
+        );
     }
 
     if let Some(item_type) = override_type.and_then(|override_type| {
         emit_array_item_override(schema, property_path, prop, override_type)
     }) {
-        return item_type;
+        return Ok(item_type);
     }
 
     if matches!(override_type, Some(TypeOverride::IntegerFromNumber)) {
-        return integer_from_number_type(prop, &schema.type_name, &property_path.to_string());
+        return Ok(integer_from_number_type(
+            prop,
+            &schema.type_name,
+            &property_path.to_string(),
+        ));
     }
 
     // Map key enums publish ordinary enum metadata, but their generated map
     // already contains that enum in the key slot. Never substitute it for values.
     if map_key_enum_info(prop, schema, prop_name).is_some() {
-        return cfn_type_to_carina_type_with_enum_with_paths(prop, schema, namespace, enums, paths)
-            .0;
+        return Ok(cfn_type_to_carina_type_with_enum_with_paths(
+            prop, schema, namespace, enums, paths,
+        )?
+        .0);
     }
 
     let emit_enum = |enum_info: &EnumInfo| {
@@ -5511,11 +5538,11 @@ fn generate_attribute_type(
     if paths.cfn_parent.is_none()
         && let Some(enum_info) = enums.get(prop_name)
     {
-        return emit_enum(enum_info);
+        return Ok(emit_enum(enum_info));
     }
 
     let (attribute_type, local_enum_info) =
-        cfn_type_to_carina_type_with_enum_with_paths(prop, schema, namespace, enums, paths);
+        cfn_type_to_carina_type_with_enum_with_paths(prop, schema, namespace, enums, paths)?;
     let local_enum_info = override_type
         .and_then(TypeOverride::enum_values)
         .map(|values| enum_info_for_override(prop_name, values))
@@ -5530,10 +5557,10 @@ fn generate_attribute_type(
             .get(&composite_key)
             .or_else(|| enums.get(prop_name))
             .unwrap_or(&local_enum_info);
-        return emit_enum(enum_info);
+        return Ok(emit_enum(enum_info));
     }
 
-    attribute_type
+    Ok(attribute_type)
 }
 
 /// Admit declarations against the exact top-level DSL names emitted for this resource.
@@ -5551,9 +5578,9 @@ fn checked_read_back_declarations(
             synthetic_attributes()
                 .iter()
                 .filter(|attribute| attribute.cfn_type == type_name)
-                .map(|attribute| attribute.attr_name.to_string()),
+                .map(|attribute| Ok(attribute.attr_name.to_string())),
         )
-        .collect::<HashSet<_>>();
+        .collect::<Result<HashSet<_>>>()?;
     for attribute in declarations {
         if !carina_provider_awscc::schemas::config::ReadBackAttribute::is_dsl_root(attribute)
             || !attributes.contains(*attribute)
@@ -5568,9 +5595,10 @@ fn checked_read_back_declarations(
 }
 
 fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<String> {
-    validate_tagging_classifications(schema)?;
     let read_back_declarations = checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
+    // Preserve specific override diagnostics before scanning raw tag candidates.
+    validate_tagging_classifications(schema)?;
     // carina#3340: clear per-resource codegen state at function entry
     // (cyclic-$ref guard + emitted-pattern accumulators) so prior
     // resources don't leak entries into this resource's pre-scan or
@@ -5650,10 +5678,10 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
                 std::slice::from_ref(prop_name),
                 None,
                 &mut emitted_struct_defs,
-            );
+            )?;
         }
         let (_, enum_info) =
-            cfn_type_to_carina_type_with_enum(prop, prop_name, schema, &namespace, &enums);
+            cfn_type_to_carina_type_with_enum(prop, prop_name, schema, &namespace, &enums)?;
         if let Some(info) = enum_info {
             enums.insert(prop_name.clone(), info);
         }
@@ -5730,7 +5758,7 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
                             provider: &provider_path,
                             cfn_parent: Some(def_name),
                         },
-                    );
+                    )?;
                     if let Some(info) = field_enum_info {
                         enums.insert(composite_key, info);
                     }
@@ -5843,7 +5871,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         if should_omit_top_level_property(&schema.type_name, prop_name) {
             continue;
         }
-        let attr_name = dsl_attribute_name(schema, prop_name);
+        let attr_name = dsl_attribute_name(schema, prop_name)?;
         let property_path = [prop_name.clone()];
         let is_read_only = is_property_read_only(schema, prop, &property_path);
         let is_required = required.contains(prop_name) && !is_read_only;
@@ -5870,7 +5898,7 @@ pub fn {}() -> AwsccSchemaConfig {{
             &namespace,
             &enums,
             has_arn_helper,
-        );
+        )?;
 
         let constructor = if is_read_only {
             "provider_populated"
@@ -6045,10 +6073,10 @@ pub fn {}() -> AwsccSchemaConfig {{
         let fields_str = group
             .iter()
             .map(|f| {
-                let snake = dsl_attribute_name(schema, f);
-                rust_lit(&snake).to_string()
+                let snake = dsl_attribute_name(schema, f)?;
+                Ok(rust_lit(&snake).to_string())
             })
-            .collect::<Vec<_>>()
+            .collect::<Result<Vec<_>>>()?
             .join(", ");
         body.push_str(&format!(
             "    schema = schema.field_group(FieldGroup::exactly_one([{}]).expect(\"generated exactly-one field group must be valid\"));\n",
@@ -7088,7 +7116,7 @@ fn generate_struct_type(
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: StructGenerationPaths<'_>,
-) -> String {
+) -> Result<String> {
     let emission_mark = read_only_emission_mark();
     let write_only_emission_mark = write_only_emission_mark();
     let current_struct_path = extend_struct_path(paths.structural, def_name);
@@ -7124,7 +7152,7 @@ fn generate_struct_type(
                     provider: &field_path,
                     cfn_parent: Some(def_name),
                 },
-            );
+            )?;
             let is_read_only = is_property_read_only(schema, field_prop, &field_path);
             let is_write_only = is_write_only_property_path(schema, &field_path);
             let is_required = required_set.contains(field_name.as_str()) && !is_read_only;
@@ -7181,9 +7209,9 @@ fn generate_struct_type(
 
             field_code.push_str(".build()");
 
-            field_code
+            Ok(field_code)
         })
-        .collect();
+        .collect::<Result<_>>()?;
 
     let fields_str = fields.join(",\n                    ");
     let struct_type = format!(
@@ -7193,7 +7221,7 @@ fn generate_struct_type(
     );
     record_struct_read_only_use(def_name, paths.provider, emission_mark);
     record_struct_write_only_use(def_name, paths.provider, write_only_emission_mark);
-    struct_type
+    Ok(struct_type)
 }
 
 /// Known enum overrides for properties where `extract_enum_from_description()` fails
@@ -12486,7 +12514,7 @@ fn validate_identity_properties_from_table(
             std::slice::from_ref(name),
             None,
             &mut struct_defs,
-        );
+        )?;
     }
 
     for ((cfn_type, key), entry) in entries {
@@ -13118,7 +13146,7 @@ fn cfn_type_to_carina_type_with_enum(
     schema: &EmissionContext<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
-) -> (String, Option<EnumInfo>) {
+) -> Result<(String, Option<EnumInfo>)> {
     let property_path = [prop_name.to_string()];
     cfn_type_to_carina_type_with_enum_with_paths(
         prop,
@@ -13350,7 +13378,7 @@ fn generate_object_map_type(
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
-) -> (String, Option<EnumInfo>) {
+) -> Result<(String, Option<EnumInfo>)> {
     let property_path = CfnPropertyPath::new(paths.cfn_parent, prop_name);
     let value_type = match object_map_value_or_panic(schema, property_path, value) {
         ObjectMapValueKind::DirectString => {
@@ -13372,7 +13400,7 @@ fn generate_object_map_type(
                     provider: &value_provider_path,
                     ..paths
                 },
-            );
+            )?;
             assert!(
                 enum_info.is_none(),
                 "typed object-map values must resolve to structs"
@@ -13381,7 +13409,7 @@ fn generate_object_map_type(
         }
     };
     let Some(key) = map_key_type(prop, schema, paths.provider, property_path) else {
-        return (format!("AttributeType::map({value_type})"), None);
+        return Ok((format!("AttributeType::map({value_type})"), None));
     };
     let info = key_enum_info(&key).cloned();
     let key_type = emit_map_key(
@@ -13391,10 +13419,10 @@ fn generate_object_map_type(
         namespace,
         paths.structural,
     );
-    (
+    Ok((
         format!("AttributeType::map_with_key({key_type}, {value_type})"),
         info,
-    )
+    ))
 }
 
 fn cfn_type_to_carina_type_with_enum_with_paths(
@@ -13403,7 +13431,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
-) -> (String, Option<EnumInfo>) {
+) -> Result<(String, Option<EnumInfo>)> {
     cfn_type_to_carina_type_with_enum_resolved(
         schema.property_at(paths.provider, prop),
         namespace,
@@ -13434,12 +13462,12 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
     ref_state: RefGenerationState<'_>,
-) -> (String, Option<EnumInfo>) {
+) -> Result<(String, Option<EnumInfo>)> {
     if let Some(reference) = emission_reference(
         &classified,
         CfnPropertyPath::new(paths.cfn_parent, classified.name()),
     ) {
-        return reference.emit(&classified.schema().type_name, classified.name());
+        return Ok(reference.emit(&classified.schema().type_name, classified.name()));
     }
     let schema = classified.schema();
     let prop = classified.property();
@@ -13465,10 +13493,10 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         if let Some(item_type) =
             emit_array_item_override(schema, cfn_property_path, prop, override_type)
         {
-            return (item_type, None);
+            return Ok((item_type, None));
         }
         if let Some(values) = override_type.enum_values() {
-            return (
+            return Ok((
                 emit_enum_property_type(
                     schema,
                     cfn_property_path,
@@ -13477,74 +13505,70 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                     override_forces_unordered(&schema.type_name, cfn_property_path),
                 ),
                 Some(enum_info_for_override(prop_name, values)),
-            );
+            ));
         }
     }
     if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
-        return ("carina_aws_types::iam_policy_document()".to_string(), None);
+        return Ok(("carina_aws_types::iam_policy_document()".to_string(), None));
     }
 
     if property_is_bare_object(prop, schema) {
-        return (
+        return Ok((
             bare_object_attribute_type(&schema.type_name, cfn_property_path, prop_name),
             None,
-        );
+        ));
     }
 
     // Every resource tag property is projected to the canonical DSL `tags` map,
     // preserving the CFN property name only in the provider mapping.
-    if is_dsl_tags_property(schema, property_path) {
-        schema
-            .classify_tag_value(property_path)
-            .unwrap_or_else(|error| panic!("{error}"));
-        return tag_map_type(classified, cfn_property_path).emit(
+    if is_dsl_tags_property(schema, property_path)? {
+        schema.classify_tag_value(property_path)?;
+        return Ok(tag_map_type(classified, cfn_property_path).emit(
             &schema.type_name,
             cfn_property_path,
             namespace,
             paths.structural,
-        );
+        ));
     }
 
     // Preserve non-string const precedence over $ref/oneOf resolution;
     // enum values and naming still use the same classifier as strings.
     if prop.const_value.is_some() && inline_property_type(prop) != Some("string") {
-        return string_leaf(
+        return Ok(string_leaf(
             schema.property_at(property_path, prop),
             cfn_property_path,
             definition_name,
         )
-        .emit(&schema.type_name, prop_name);
+        .emit(&schema.type_name, prop_name));
     }
 
     match property_shape(classified.property(), classified.schema()) {
         PropertyShape::Reference { resolved, .. } => {
             if is_tag_map_ref(schema, prop.ref_path.as_deref().expect("reference shape")) {
-                schema
-                    .classify_tag_value(property_path)
-                    .unwrap_or_else(|error| panic!("{error}"));
-                return tag_map_type(classified, cfn_property_path).emit(
+                schema.classify_tag_value(property_path)?;
+                return Ok(tag_map_type(classified, cfn_property_path).emit(
                     &schema.type_name,
                     cfn_property_path,
                     namespace,
                     paths.structural,
-                );
+                ));
             }
 
             let Some(resolved) = resolved else {
-                return (
+                return Ok((
                     infer_string_type(prop_name, &schema.type_name)
                         .unwrap_or_else(|| "AttributeType::string()".to_string()),
                     None,
-                );
+                ));
             };
             let def_name = resolved.name;
 
             if IN_PROGRESS_DEFS.with(|definitions| definitions.borrow().contains(def_name)) {
                 mark_back_reference(def_name);
-                return (
+                return Ok((
                     format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
                     None,
-                );
+                ));
             }
 
             let definition_already_emitted =
@@ -13573,7 +13597,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                     definition_name: Some(def_name),
                     context: ref_context,
                 },
-            );
+            )?;
             IN_PROGRESS_DEFS.with(|definitions| {
                 definitions.borrow_mut().remove(def_name);
             });
@@ -13582,10 +13606,10 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 match ref_context {
                     RefContext::Normal => {
                         if definition_already_emitted {
-                            return (
+                            return Ok((
                                 format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
                                 None,
-                            );
+                            ));
                         }
                         EMITTED_DEFS.with(|definitions| {
                             definitions
@@ -13603,7 +13627,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                     RefContext::ListItem => {}
                 }
             }
-            return (body, enum_info);
+            return Ok((body, enum_info));
         }
         PropertyShape::Array {
             variant: array_variant,
@@ -13643,28 +13667,28 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     }
 
     if inline_property_type(prop) == Some("string") {
-        return string_leaf(classified, cfn_property_path, definition_name)
-            .emit(&schema.type_name, prop_name);
+        return Ok(string_leaf(classified, cfn_property_path, definition_name)
+            .emit(&schema.type_name, prop_name));
     }
 
     if let Some(leaf) = enum_leaf(prop, prop_name, definition_name) {
-        return leaf.emit(&schema.type_name, prop_name);
+        return Ok(leaf.emit(&schema.type_name, prop_name));
     }
 
     // Handle type
-    match inline_property_type(prop) {
+    Ok(match inline_property_type(prop) {
         Some("boolean") => ("AttributeType::bool()".to_string(), None),
         Some("integer") => {
             // Check resource-scoped overrides first
             let res_override = resource_type_override(&schema.type_name, cfn_property_path);
             if let Some(TypeOverride::IntRange(min, max)) = res_override {
-                return (
+                return Ok((
                     refined_int_type("None", &emit_int_range_option(Some(*min), Some(*max))),
                     None,
-                );
+                ));
             }
             if let Some(TypeOverride::IntEnum(values)) = res_override {
-                return (int_enum_type(&schema.type_name, prop_name, values), None);
+                return Ok((int_enum_type(&schema.type_name, prop_name, values), None));
             }
             // Use CF min/max if available (including one-sided), otherwise check known overrides
             let range: Option<(Option<i64>, Option<i64>)> =
@@ -13691,10 +13715,10 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             // Check resource-scoped overrides first
             let res_override = resource_type_override(&schema.type_name, cfn_property_path);
             if let Some(TypeOverride::IntRange(min, max)) = res_override {
-                return (
+                return Ok((
                     refined_float_type("None", Some((Some(*min), Some(*max)))),
                     None,
-                );
+                ));
             }
             // Use CF min/max if available (including one-sided), otherwise check known overrides
             let range: Option<(Option<i64>, Option<i64>)> =
@@ -13729,7 +13753,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                         definition_name: None,
                         context: RefContext::ListItem,
                     },
-                );
+                )?;
                 (item_type, item_enum)
             } else {
                 let default = CfnProperty::default();
@@ -13765,14 +13789,14 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             if let Some(override_type) =
                 res_override.and_then(TypeOverride::attribute_type_expression)
             {
-                return (override_type.to_string(), None);
+                return Ok((override_type.to_string(), None));
             }
 
             // Check if this object has inline properties -> Struct
             if let Some(props) = &prop.properties
                 && !props.is_empty()
             {
-                return (
+                return Ok((
                     generate_struct_type(
                         definition_name.unwrap_or(prop_name),
                         props,
@@ -13784,9 +13808,9 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                             structural: struct_path,
                             provider: property_path,
                         },
-                    ),
+                    )?,
                     None,
-                );
+                ));
             }
             if let Some(value) = direct_object_map_value(prop) {
                 return generate_object_map_type(
@@ -13803,7 +13827,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 .unwrap_or_else(|| "AttributeType::string()".to_string()),
             None,
         ),
-    }
+    })
 }
 
 /// Convert a JSON default value to a Rust `Value::...` expression string.
@@ -13988,6 +14012,7 @@ mod tests {
     ) -> (String, Option<EnumInfo>) {
         let classified = EmissionContext::from_source(schema).unwrap();
         super::cfn_type_to_carina_type_with_enum(prop, prop_name, &classified, namespace, enums)
+            .unwrap()
     }
 
     fn cfn_type_to_carina_type_with_enum_with_paths(
@@ -14015,6 +14040,7 @@ mod tests {
             enums,
             paths,
         )
+        .unwrap()
     }
 
     fn generate_top_level_attribute_type(
@@ -14032,6 +14058,7 @@ mod tests {
             enums,
             has_arn_helper,
         )
+        .unwrap()
     }
 
     fn markdown_type(
@@ -14054,6 +14081,7 @@ mod tests {
             enum_target,
             cfn_parent,
         )
+        .unwrap()
     }
 
     // Parse the emitted Rust literals, so these tests exercise the constraints
@@ -17460,7 +17488,8 @@ mod tests {
             return;
         }
 
-        if (parent_struct.is_none() && is_dsl_tags_property(schema, &[prop_name.to_string()]))
+        if (parent_struct.is_none()
+            && is_dsl_tags_property(schema, &[prop_name.to_string()]).unwrap())
             || prop
                 .ref_path
                 .as_deref()
@@ -21527,7 +21556,8 @@ mod tests {
                 &["Config".to_string()],
                 None,
                 &mut struct_defs,
-            );
+            )
+            .unwrap();
         }))
         .expect_err("unsupported nested object map must fail struct collection");
         let collect_message = collect_panic
@@ -26327,7 +26357,8 @@ mod tests {
             Some(&enum_key),
             &["Choice".to_string()],
             None,
-        );
+        )
+        .unwrap();
         assert!(matches!(
             linked,
             Some(MarkdownLinkedType::List { item, suffix })
@@ -28925,6 +28956,7 @@ mod tests {
             &["Choice".to_string()],
             None,
         )
+        .unwrap()
         .expect("an enum target must produce a linked Markdown type");
 
         assert!(
@@ -32813,6 +32845,19 @@ mod tests {
                     });
                 }
             });
+            let expected_error = tag_property_path(&schema).unwrap_err().to_string();
+            assert_eq!(
+                dsl_attribute_name(&schema, "ResourceTags")
+                    .expect_err("multiple tag properties must fail DSL naming")
+                    .to_string(),
+                expected_error
+            );
+            assert_eq!(
+                is_dsl_tags_property(&schema, &["ResourceTags".to_string()])
+                    .expect_err("multiple tag properties must fail tag detection")
+                    .to_string(),
+                expected_error
+            );
             for result in [
                 generate_schema_code(&schema, &schema.type_name),
                 generate_test_markdown(&schema, &schema.type_name),
@@ -33207,6 +33252,18 @@ mod tests {
                 true,
             ),
             (
+                "dangling ref",
+                serde_json::json!({"items": {"$ref": "#/definitions/Missing"}}),
+                false,
+            ),
+            (
+                "non-local ref",
+                serde_json::json!({"items": {
+                    "$ref": "https://example.com/schema.json#/Pair"
+                }}),
+                false,
+            ),
+            (
                 "ref cycle terminates",
                 serde_json::json!({"type": "array", "items": {
                     "$ref": "#/definitions/CycleA"
@@ -33369,42 +33426,6 @@ mod tests {
                 }
             }
         }
-        for (name, property, reference) in [
-            (
-                "missing ref",
-                serde_json::json!({"items": {
-                    "allOf": [{"$ref": "#/definitions/Missing"}, pair]
-                }}),
-                "#/definitions/Missing",
-            ),
-            (
-                "non-local ref",
-                serde_json::json!({"items": {
-                    "$ref": "https://example.com/schema.json#/Pair",
-                    "properties": pair["properties"]
-                }}),
-                "https://example.com/schema.json#/Pair",
-            ),
-        ] {
-            let source = serde_json::json!({
-                "typeName": "AWS::EC2::RouteTable",
-                "properties": {"Labels": property}
-            });
-            let candidate =
-                is_key_value_array_candidate([&source["properties"]["Labels"]], &source);
-            let schema = ParsedCfnSchema::from_json(source).unwrap();
-            for result in [
-                candidate.map(|_| ()),
-                generate_schema_code(&schema, &schema.type_name).map(|_| ()),
-                generate_test_markdown(&schema, &schema.type_name).map(|_| ()),
-            ] {
-                let error = result
-                    .expect_err("unsupported refs must fail codegen")
-                    .to_string();
-                assert!(error.contains("unsupported $ref"), "{name}: {error}");
-                assert!(error.contains(reference), "{name}: {error}");
-            }
-        }
     }
 
     fn inexact_key_value_items() -> [serde_json::Value; 5] {
@@ -33514,7 +33535,7 @@ mod tests {
             let generated = generate_schema_code(&schema, resource).unwrap();
             let field = generated_dynamodb_field(&generated, property);
             assert!(field.contains("list("), "{resource}.{property}: {field}");
-            assert!(!is_dsl_tags_property(&schema, &[property.to_string()]));
+            assert!(!is_dsl_tags_property(&schema, &[property.to_string()]).unwrap());
             carina_docgen::check_page(&generate_test_markdown(&schema, resource).unwrap()).unwrap();
         }
     }

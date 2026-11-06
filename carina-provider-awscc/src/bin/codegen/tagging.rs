@@ -55,16 +55,15 @@ pub(super) fn tag_property_path(schema: &CfnSchema) -> Result<Option<&str>> {
 }
 
 /// Core merges default_tags and validates tag pairs through this exact DSL name.
-pub(super) fn dsl_attribute_name(schema: &CfnSchema, provider_name: &str) -> String {
-    if tag_property_path(schema)
-        .unwrap_or_else(|error| panic!("{error}"))
-        .and_then(|path| path.strip_prefix("/properties/"))
-        == Some(provider_name)
-    {
-        "tags".to_string()
-    } else {
-        provider_name.to_snake_case()
-    }
+pub(super) fn dsl_attribute_name(schema: &CfnSchema, provider_name: &str) -> Result<String> {
+    let tag_property = tag_property_path(schema)?;
+    Ok(
+        if tag_property.and_then(|path| path.strip_prefix("/properties/")) == Some(provider_name) {
+            "tags".to_string()
+        } else {
+            provider_name.to_snake_case()
+        },
+    )
 }
 
 /// A Key/Value list must never silently escape resource-tag classification.
