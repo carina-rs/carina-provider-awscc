@@ -124,7 +124,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_secondary_allocation_ids_attribute());
     #[inline(never)]
     fn build_secondary_private_ip_address_count_attribute() -> AttributeSchema {
-        AttributeSchema::optional("secondary_private_ip_address_count", AttributeType::refined_int(None, Some((Some(1), None))))
+        AttributeSchema::optional("secondary_private_ip_address_count", AttributeType::refined_int(None, Some((Some(1), Some(31)))))
                 .with_description("[Private NAT gateway only] The number of secondary private IPv4 addresses you want to assign to the NAT gateway. For more information about secondary addresses, see [Create a NAT gateway](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html#nat-gateway-creating) in the *Amazon Virtual Private Cloud User Guide*. ``SecondaryPrivateIpAddressCount`` and ``SecondaryPrivateIpAddresses`` cannot be set at the same time.")
                 .with_provider_name("SecondaryPrivateIpAddressCount")
             .build()
@@ -149,7 +149,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_subnet_id_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((None, Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_description("The tags for the NAT gateway.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

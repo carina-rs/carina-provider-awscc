@@ -170,7 +170,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_subnet_ids_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((None, Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_description("The tags to associate with the endpoint.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

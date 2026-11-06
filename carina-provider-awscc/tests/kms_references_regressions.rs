@@ -211,9 +211,11 @@ fn non_reference_string_maps_refine_keys_and_keep_existing_value_behavior() {
             "{markdown}"
         );
         assert_eq!(
-            markdown.matches("Map<String, String>").count(),
+            markdown
+                .matches("Map<String(len: ..=128), String(len: ..=256)>")
+                .count(),
             1,
-            "Tags stay unchanged: {markdown}"
+            "Tags retain their EC2 API length bounds: {markdown}"
         );
     }
 }

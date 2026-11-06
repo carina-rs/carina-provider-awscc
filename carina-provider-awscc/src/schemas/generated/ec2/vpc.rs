@@ -7,7 +7,7 @@
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, FieldGroup, ResourceSchema, types};
 
-const VALID_INSTANCE_TENANCY: &[&str] = &["default", "dedicated", "host"];
+const VALID_INSTANCE_TENANCY: &[&str] = &["default", "dedicated"];
 
 /// Returns the schema config for ec2_vpc (AWS::EC2::VPC)
 #[rustfmt::skip]
@@ -65,7 +65,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_enable_dns_support_attribute());
     #[inline(never)]
     fn build_instance_tenancy_attribute() -> AttributeSchema {
-        AttributeSchema::optional("instance_tenancy", AttributeType::enum_(carina_core::schema::enum_identity("InstanceTenancy", Some("aws.ec2.Vpc")), Some(vec!["default".to_string(), "dedicated".to_string(), "host".to_string()]), vec![("default".to_string(), "default".to_string()), ("dedicated".to_string(), "dedicated".to_string()), ("host".to_string(), "host".to_string())], None, None))
+        AttributeSchema::optional("instance_tenancy", AttributeType::enum_(carina_core::schema::enum_identity("InstanceTenancy", Some("aws.ec2.Vpc")), Some(vec!["default".to_string(), "dedicated".to_string()]), vec![("default".to_string(), "default".to_string()), ("dedicated".to_string(), "dedicated".to_string())], None, None))
                 .with_description("The allowed tenancy of instances launched into the VPC. + ``default``: An instance launched into the VPC runs on shared hardware by default, unless you explicitly specify a different tenancy during instance launch. + ``dedicated``: An instance launched into the VPC runs on dedicated hardware by default, unless you explicitly specify a tenancy of ``host`` during instance launch. You cannot specify a tenancy of ``default`` during instance launch. Updating ``InstanceTenancy`` requires no replacement only if you are updating its value from ``dedicated`` to ``default``. Updating ``InstanceTenancy`` from ``default`` to ``dedicated`` requires replacement.")
                 .with_provider_name("InstanceTenancy")
             .build()
@@ -101,7 +101,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipv6_cidr_blocks_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((None, Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_description("The tags for the VPC.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

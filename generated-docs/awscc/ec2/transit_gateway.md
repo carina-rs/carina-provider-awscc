@@ -23,7 +23,7 @@ awscc.ec2.TransitGateway {
 
 ### `amazon_side_asn`
 
-- **Type:** Int(1..=4294967294)
+- **Type:** `Int(64512..=65534) | Int(4200000000..=4294967294)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -81,7 +81,7 @@ awscc.ec2.TransitGateway {
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
 - **Required:** No
 
 ### `transit_gateway_cidr_blocks`

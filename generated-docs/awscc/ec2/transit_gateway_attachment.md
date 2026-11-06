@@ -51,7 +51,7 @@ The options for the transit gateway vpc attachment.
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
 - **Required:** No
 
 ### `transit_gateway_id`

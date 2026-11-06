@@ -57,7 +57,17 @@ fn every_registered_tag_map_preserves_its_cfn_string_constraints() {
                 panic!("{} {name} must remain a string", config.aws_type_name);
             };
             let min = source["minLength"].as_u64().filter(|min| *min > 0);
-            let max = source["maxLength"].as_u64();
+            let max = if config.aws_type_name.starts_with("AWS::EC2::") {
+                // #525: CreateTags, carina-test-008, ap-northeast-1,
+                // 2026-11-06: keys 128 and values 256 accepted; 129/257 rejected.
+                Some(
+                    source["maxLength"]
+                        .as_u64()
+                        .unwrap_or(if name == "Key" { 128 } else { 256 }),
+                )
+            } else {
+                source["maxLength"].as_u64()
+            };
             let expected_length = (min.is_some() || max.is_some()).then_some((min, max));
             let expected_pattern = if config.aws_type_name == "AWS::WAFv2::WebACL" {
                 // #525 adds the live-confirmed API pattern to both Tag leaves.
@@ -201,7 +211,7 @@ fn unicode_tag_patterns_and_unrestricted_patterns_keep_their_source_meaning() {
 
 #[test]
 fn unconstrained_tags_keep_plain_strings_and_no_entry_count_limit_is_added() {
-    let config = super::generated::get_config_by_type("ec2.Vpc").unwrap();
+    let config = super::generated::get_config_by_type("ecs.Cluster").unwrap();
     let tags = field(&config.schema, "tags");
     let RawShape::Map { key, value } = tags.as_type().raw_shape() else {
         panic!("Tags must remain a map");
@@ -220,7 +230,7 @@ fn unconstrained_tags_keep_plain_strings_and_no_entry_count_limit_is_added() {
     }
     validate_fixtures(&[(
         "unconstrained_tags.crn",
-        &fixture("ec2.Eip", "", &"v".repeat(300)),
+        &fixture("ecs.Cluster", "", &"v".repeat(300)),
     )]);
     let entries = (0..51)
         .map(|i| format!("'key{i}' = 'value'"))
@@ -246,7 +256,7 @@ async fn default_tags_merge_into_typed_maps_but_core_does_not_revalidate_new_ent
         ),
         ("cloudwatch.Alarm", "team".to_string(), String::new(), false),
         ("kms.Key", "team".to_string(), String::new(), true),
-        ("ec2.Eip", "team".to_string(), "v".repeat(300), true),
+        ("ec2.Eip", "team".to_string(), "v".repeat(300), false),
     ] {
         let config = ProviderConfig {
             name: "awscc".into(),

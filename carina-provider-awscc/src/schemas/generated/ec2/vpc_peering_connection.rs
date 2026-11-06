@@ -68,7 +68,7 @@ pub fn ec2_vpc_peering_connection_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_peer_vpc_id_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((None, Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_provider_name("Tags")
                 .with_block_name("tag")
             .build()

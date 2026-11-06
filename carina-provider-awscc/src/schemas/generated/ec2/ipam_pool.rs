@@ -21,6 +21,8 @@ const VALID_IPAM_SCOPE_TYPE: &[&str] = &["public", "private"];
 
 const VALID_PUBLIC_IP_SOURCE: &[&str] = &["byoip", "amazon"];
 
+const VALID_SOURCE_RESOURCE_RESOURCE_TYPE: &[&str] = &["vpc"];
+
 const VALID_STATE: &[&str] = &[
     "create-in-progress",
     "create-complete",
@@ -46,7 +48,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_address_family_attribute());
     #[inline(never)]
     fn build_allocation_default_netmask_length_attribute() -> AttributeSchema {
-        AttributeSchema::optional("allocation_default_netmask_length", AttributeType::int())
+        AttributeSchema::optional("allocation_default_netmask_length", AttributeType::refined_int(None, Some((Some(0), Some(128)))))
                 .with_description("The default netmask length for allocations made from this pool. This value is used when the netmask length of an allocation isn't specified.")
                 .with_provider_name("AllocationDefaultNetmaskLength")
             .build()
@@ -54,7 +56,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_allocation_default_netmask_length_attribute());
     #[inline(never)]
     fn build_allocation_max_netmask_length_attribute() -> AttributeSchema {
-        AttributeSchema::optional("allocation_max_netmask_length", AttributeType::int())
+        AttributeSchema::optional("allocation_max_netmask_length", AttributeType::refined_int(None, Some((Some(0), Some(128)))))
                 .with_description("The maximum allowed netmask length for allocations made from this pool.")
                 .with_provider_name("AllocationMaxNetmaskLength")
             .build()
@@ -62,7 +64,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_allocation_max_netmask_length_attribute());
     #[inline(never)]
     fn build_allocation_min_netmask_length_attribute() -> AttributeSchema {
-        AttributeSchema::optional("allocation_min_netmask_length", AttributeType::int())
+        AttributeSchema::optional("allocation_min_netmask_length", AttributeType::refined_int(None, Some((Some(0), Some(128)))))
                 .with_description("The minimum allowed netmask length for allocations made from this pool.")
                 .with_provider_name("AllocationMinNetmaskLength")
             .build()
@@ -208,7 +210,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         AttributeSchema::optional("source_resource", AttributeType::struct_("SourceResource".to_string(), vec![StructField::required("resource_id", AttributeType::string()).with_provider_name("ResourceId").build(),
                     StructField::required("resource_owner", AttributeType::string()).with_provider_name("ResourceOwner").build(),
                     StructField::required("resource_region", carina_aws_types::aws_region()).with_provider_name("ResourceRegion").build(),
-                    StructField::required("resource_type", AttributeType::string()).with_provider_name("ResourceType").build()]))
+                    StructField::required("resource_type", AttributeType::enum_(carina_core::schema::enum_identity("ResourceType", Some("aws.ec2.IpamPool.SourceResource")), Some(vec!["vpc".to_string()]), vec![("vpc".to_string(), "vpc".to_string())], None, None)).with_provider_name("ResourceType").build()]))
                 .create_only()
                 .with_provider_name("SourceResource")
             .build()
@@ -254,7 +256,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     fn build_schema_def_0() -> AttributeType { AttributeType::struct_("SourceResource".to_string(), vec![StructField::required("resource_id", AttributeType::string()).with_provider_name("ResourceId").build(),
                     StructField::required("resource_owner", AttributeType::string()).with_provider_name("ResourceOwner").build(),
                     StructField::required("resource_region", carina_aws_types::aws_region()).with_provider_name("ResourceRegion").build(),
-                    StructField::required("resource_type", AttributeType::string()).with_provider_name("ResourceType").build()]) }
+                    StructField::required("resource_type", AttributeType::enum_(carina_core::schema::enum_identity("ResourceType", Some("aws.ec2.IpamPool.SourceResource")), Some(vec!["vpc".to_string()]), vec![("vpc".to_string(), "vpc".to_string())], None, None)).with_provider_name("ResourceType").build()]) }
     schema = schema.with_def("SourceResource", build_schema_def_0());
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::IPAMPool",
@@ -279,6 +281,7 @@ pub fn enum_valid_values() -> (
             ("aws_service", VALID_AWS_SERVICE),
             ("ipam_scope_type", VALID_IPAM_SCOPE_TYPE),
             ("public_ip_source", VALID_PUBLIC_IP_SOURCE),
+            ("resource_type", VALID_SOURCE_RESOURCE_RESOURCE_TYPE),
             ("state", VALID_STATE),
         ],
     )

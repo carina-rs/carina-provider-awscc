@@ -75,7 +75,7 @@ The netmask length of the IPv4 CIDR you want to allocate to this VPC from an Ama
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
 - **Required:** No
 
 The tags for the VPC.
@@ -88,7 +88,6 @@ The tags for the VPC.
 |-------|----------------|
 | `default` | `aws.ec2.Vpc.InstanceTenancy.default` |
 | `dedicated` | `aws.ec2.Vpc.InstanceTenancy.dedicated` |
-| `host` | `aws.ec2.Vpc.InstanceTenancy.host` |
 
 Shorthand formats: `default` or `InstanceTenancy.default`
 
