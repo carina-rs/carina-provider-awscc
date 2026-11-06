@@ -8,6 +8,9 @@ pub mod pattern;
 mod scheduler;
 
 #[cfg(test)]
+mod arn_tests;
+
+#[cfg(test)]
 mod kms_reference_tests;
 
 #[cfg(test)]

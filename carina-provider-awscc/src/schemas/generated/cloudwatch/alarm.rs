@@ -9,7 +9,7 @@ use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 pub fn arn() -> AttributeType {
-    carina_aws_types::arn()
+    crate::schemas::catalog::arn()
 }
 
 const VALID_COMPARISON_OPERATOR: &[&str] = &[
@@ -114,7 +114,7 @@ pub fn cloudwatch_alarm_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_actions_enabled_attribute());
     #[inline(never)]
     fn build_alarm_actions_attribute() -> AttributeSchema {
-        AttributeSchema::optional("alarm_actions", AttributeType::refined_list(carina_aws_types::arn(), true, Some((None, Some(5))), carina_core::schema::ListElements::AllowDuplicates))
+        AttributeSchema::optional("alarm_actions", AttributeType::refined_list(crate::schemas::catalog::arn(), true, Some((None, Some(5))), carina_core::schema::ListElements::AllowDuplicates))
                 .with_description("The list of actions to execute when this alarm transitions into an ALARM state from any other state. Specify each action as an Amazon Resource Name (ARN). For more information about creating alarms and the actions that you can specify, see [PutMetricAlarm](https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html) in the *API Reference*.")
                 .with_provider_name("AlarmActions")
             .build()
@@ -224,7 +224,7 @@ pub fn cloudwatch_alarm_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_extended_statistic_attribute());
     #[inline(never)]
     fn build_insufficient_data_actions_attribute() -> AttributeSchema {
-        AttributeSchema::optional("insufficient_data_actions", AttributeType::refined_list(carina_aws_types::arn(), true, Some((None, Some(5))), carina_core::schema::ListElements::AllowDuplicates))
+        AttributeSchema::optional("insufficient_data_actions", AttributeType::refined_list(crate::schemas::catalog::arn(), true, Some((None, Some(5))), carina_core::schema::ListElements::AllowDuplicates))
                 .with_description("The actions to execute when this alarm transitions to the ``INSUFFICIENT_DATA`` state from any other state. Each action is specified as an Amazon Resource Name (ARN).")
                 .with_provider_name("InsufficientDataActions")
             .build()
@@ -269,7 +269,7 @@ pub fn cloudwatch_alarm_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_namespace_attribute());
     #[inline(never)]
     fn build_ok_actions_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ok_actions", AttributeType::refined_list(carina_aws_types::arn(), true, Some((None, Some(5))), carina_core::schema::ListElements::AllowDuplicates))
+        AttributeSchema::optional("ok_actions", AttributeType::refined_list(crate::schemas::catalog::arn(), true, Some((None, Some(5))), carina_core::schema::ListElements::AllowDuplicates))
                 .with_description("The actions to execute when this alarm transitions to the ``OK`` state from any other state. Each action is specified as an Amazon Resource Name (ARN).")
                 .with_provider_name("OKActions")
             .build()

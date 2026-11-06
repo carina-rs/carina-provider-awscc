@@ -14,7 +14,7 @@ pub fn wafv2_web_acl_association_config() -> AwsccSchemaConfig {
         .with_description("Associates WebACL to Application Load Balancer, CloudFront or API Gateway.");
     #[inline(never)]
     fn build_resource_arn_attribute() -> AttributeSchema {
-        AttributeSchema::required("resource_arn", carina_aws_types::arn())
+        AttributeSchema::required("resource_arn", crate::schemas::catalog::arn())
                 .create_only()
                 .with_provider_name("ResourceArn")
             .build()
@@ -22,7 +22,7 @@ pub fn wafv2_web_acl_association_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_resource_arn_attribute());
     #[inline(never)]
     fn build_web_acl_arn_attribute() -> AttributeSchema {
-        AttributeSchema::required("web_acl_arn", carina_aws_types::arn())
+        AttributeSchema::required("web_acl_arn", crate::schemas::catalog::arn())
                 .create_only()
                 .with_provider_name("WebACLArn")
             .build()

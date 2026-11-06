@@ -5,5 +5,5 @@
 use carina_core::schema::AttributeType;
 
 pub fn arn() -> AttributeType {
-    carina_aws_types::AwsType::IamPolicyArn.attribute_type()
+    crate::schemas::catalog::iam_policy_arn()
 }

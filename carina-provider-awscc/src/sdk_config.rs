@@ -273,7 +273,6 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[tokio::test]
     async fn kms_routes_use_assumed_credentials_and_instance_or_arn_region() {
-        use carina_aws_types::AwsType;
         use carina_provider_protocol::types::{
             ReferenceError, ReferenceOutcome, ReferenceRequest, TypeIdentity,
         };
@@ -430,15 +429,15 @@ mod tests {
             &provider,
             &[
                 carina_core::references::ReferenceRequest {
-                    ty: AwsType::KmsKeyReference.identity(),
+                    ty: carina_aws_types::AwsType::KmsKeyReference.identity(),
                     value: "alias/aws/ecr".into(),
                 },
                 carina_core::references::ReferenceRequest {
-                    ty: AwsType::KmsKeyReference.identity(),
+                    ty: carina_aws_types::AwsType::KmsKeyReference.identity(),
                     value: REMOTE_KEY.into(),
                 },
                 carina_core::references::ReferenceRequest {
-                    ty: AwsType::KmsKeyArn.identity(),
+                    ty: carina_aws_types::AwsType::KmsKeyArn.identity(),
                     value: "alias/unsupported".into(),
                 },
             ],

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use carina_aws_types::AwsType;
 use carina_core::binding_index::{LivePreApplyInputs, ResolvedBindings};
 use carina_core::config_loader::load_buffer_configuration;
 use carina_core::data_source_value::DataSourceValues;
@@ -41,10 +40,30 @@ fn role_and_policy_names_use_shared_identities_and_documented_boundaries() {
     let role = role_schema();
     let policy = role_policy_schema();
     for (schema, path, shared, maximum) in [
-        (&role, "role_name", AwsType::IamRoleName, 64),
-        (&policy, "role_name", AwsType::IamRoleName, 64),
-        (&policy, "policy_name", AwsType::IamPolicyName, 128),
-        (&role, "policies.policy_name", AwsType::IamPolicyName, 128),
+        (
+            &role,
+            "role_name",
+            carina_aws_types::AwsType::IamRoleName,
+            64,
+        ),
+        (
+            &policy,
+            "role_name",
+            carina_aws_types::AwsType::IamRoleName,
+            64,
+        ),
+        (
+            &policy,
+            "policy_name",
+            carina_aws_types::AwsType::IamPolicyName,
+            128,
+        ),
+        (
+            &role,
+            "policies.policy_name",
+            carina_aws_types::AwsType::IamPolicyName,
+            128,
+        ),
     ] {
         let name = field(schema, path);
         assert!(matches!(

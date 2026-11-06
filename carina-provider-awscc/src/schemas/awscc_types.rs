@@ -1,6 +1,6 @@
 //! AWS Cloud Control-specific reusable attribute shapes.
 //!
-//! These types live here, instead of in `carina_aws_types`, until another
+//! These types live here, instead of in `carina-aws-types`, until another
 //! provider needs the same Cloud Control document shapes.
 
 use super::pattern::{ApprovedPattern, refined_string};
@@ -136,7 +136,7 @@ pub fn s3_analytics_destination() -> AttributeType {
     AttributeType::struct_(
         "AnalyticsDestination".to_string(),
         vec![
-            StructField::required("bucket_arn", carina_aws_types::arn())
+            StructField::required("bucket_arn", super::catalog::arn())
                 .with_description("ARN of the bucket to which analytics data is exported.")
                 .with_provider_name("BucketArn")
                 .build(),

@@ -91,7 +91,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ip_address_type_attribute());
     #[inline(never)]
     fn build_load_balancer_arns_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("load_balancer_arns", AttributeType::refined_list(carina_aws_types::arn(), false, Some((None, Some(1))), carina_core::schema::ListElements::AllowDuplicates))
+        AttributeSchema::provider_populated("load_balancer_arns", AttributeType::refined_list(crate::schemas::catalog::arn(), false, Some((None, Some(1))), carina_core::schema::ListElements::AllowDuplicates))
                 .with_description("The Amazon Resource Names (ARNs) of the load balancers that route traffic to this target group. (read-only)")
                 .with_provider_name("LoadBalancerArns")
             .build()
@@ -161,7 +161,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_target_control_port_attribute());
     #[inline(never)]
     fn build_target_group_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("target_group_arn", carina_aws_types::arn())
+        AttributeSchema::provider_populated("target_group_arn", crate::schemas::catalog::arn())
                 .with_description("The ARN of the Target Group (read-only)")
                 .with_provider_name("TargetGroupArn")
             .build()

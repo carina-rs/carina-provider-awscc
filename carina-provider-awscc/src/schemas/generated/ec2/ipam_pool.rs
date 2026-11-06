@@ -111,7 +111,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_description_attribute());
     #[inline(never)]
     fn build_ipam_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("ipam_arn", carina_aws_types::arn())
+        AttributeSchema::provider_populated("ipam_arn", crate::schemas::catalog::arn())
                 .with_description("The Amazon Resource Name (ARN) of the IPAM this pool is a part of. (read-only)")
                 .with_provider_name("IpamArn")
             .build()
@@ -127,7 +127,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipam_pool_id_attribute());
     #[inline(never)]
     fn build_ipam_scope_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("ipam_scope_arn", carina_aws_types::arn())
+        AttributeSchema::provider_populated("ipam_scope_arn", crate::schemas::catalog::arn())
                 .with_description("The Amazon Resource Name (ARN) of the scope this pool is a part of. (read-only)")
                 .with_provider_name("IpamScopeArn")
             .build()

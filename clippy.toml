@@ -1,0 +1,13 @@
+# AWSCC owns partition decisions, including constructors used as function values.
+disallowed-methods = [
+    { path = "carina_aws_types::AwsType::attribute_type", reason = "AWSCC owns its partition-bearing types (#593); use AWSCC catalog constructors" },
+    { path = "carina_aws_types::arn", reason = "AWSCC owns its partition-bearing types (#593); use AWSCC catalog constructors" },
+    { path = "carina_aws_types::iam_role_arn", reason = "AWSCC owns its partition-bearing types (#593); use AWSCC catalog constructors" },
+    { path = "carina_aws_types::iam_policy_arn", reason = "AWSCC owns its partition-bearing types (#593); use AWSCC catalog constructors" },
+    { path = "carina_aws_types::iam_oidc_provider_arn", reason = "AWSCC owns its partition-bearing types (#593); use AWSCC catalog constructors" },
+    { path = "carina_aws_types::kms_key_arn", reason = "AWSCC owns its partition-bearing types (#593); use AWSCC catalog constructors" },
+    { path = "carina_aws_types::kms_key_id", reason = "AWSCC owns its partition-bearing types (#593); use AWSCC catalog constructors" },
+    { path = "carina_aws_types::sso_instance_arn", reason = "AWSCC owns its partition-bearing types (#593); use AWSCC catalog constructors" },
+    { path = "carina_aws_types::sso_permission_set_arn", reason = "AWSCC owns its partition-bearing types (#593); use AWSCC catalog constructors" },
+    { path = "carina_aws_types::s3_bucket_arn", reason = "AWSCC owns its partition-bearing types (#593); use AWSCC catalog constructors" },
+]

@@ -510,8 +510,7 @@ impl<'a> EmissionContext<'a> {
         let entry = kms_references::entry(&self.resource, &self.dsl_path(path))
             .expect("classified reference");
         let Some(pattern) = entry.cfn_pattern else {
-            let pattern =
-                super::ApprovedPattern::whole(carina_aws_types::KMS_KEY_REFERENCE_PATTERN);
+            let pattern = super::ApprovedPattern::whole(kind.default_pattern());
             return kind.constructor(entry.cfn_length, &pattern);
         };
         let property = CfnProperty {

@@ -155,7 +155,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_network_acl_association_id_attribute());
     #[inline(never)]
     fn build_outpost_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("outpost_arn", carina_aws_types::arn())
+        AttributeSchema::optional("outpost_arn", crate::schemas::catalog::arn())
                 .create_only()
                 .with_description("The Amazon Resource Name (ARN) of the Outpost.")
                 .with_provider_name("OutpostArn")

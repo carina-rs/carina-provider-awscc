@@ -18,7 +18,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for SSO assignmet");
     #[inline(never)]
     fn build_instance_arn_attribute() -> AttributeSchema {
-        AttributeSchema::required("instance_arn", carina_aws_types::sso_instance_arn())
+        AttributeSchema::required("instance_arn", crate::schemas::catalog::sso_instance_arn())
                 .create_only()
                 .with_description("The sso instance that the permission set is owned.")
                 .with_provider_name("InstanceArn")
@@ -27,7 +27,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_instance_arn_attribute());
     #[inline(never)]
     fn build_permission_set_arn_attribute() -> AttributeSchema {
-        AttributeSchema::required("permission_set_arn", carina_aws_types::sso_permission_set_arn())
+        AttributeSchema::required("permission_set_arn", crate::schemas::catalog::sso_permission_set_arn())
                 .create_only()
                 .with_description("The permission set that the assignment will be assigned")
                 .with_provider_name("PermissionSetArn")

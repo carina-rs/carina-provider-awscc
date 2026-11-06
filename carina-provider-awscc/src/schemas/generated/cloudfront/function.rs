@@ -27,7 +27,7 @@ pub fn cloudfront_function_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_auto_publish_attribute());
     #[inline(never)]
     fn build_function_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("function_arn", carina_aws_types::arn())
+        AttributeSchema::provider_populated("function_arn", crate::schemas::catalog::arn())
                 .with_description(" (read-only)")
                 .with_provider_name("FunctionARN")
             .build()
@@ -44,7 +44,7 @@ pub fn cloudfront_function_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_function_config_attribute() -> AttributeSchema {
         AttributeSchema::required("function_config", AttributeType::struct_("FunctionConfig".to_string(), vec![StructField::required("comment", AttributeType::string()).with_description("A comment to describe the function. The comment cannot be longer than 128 characters.").with_provider_name("Comment").build(),
-                    StructField::optional("key_value_store_associations", AttributeType::refined_list(AttributeType::struct_("KeyValueStoreAssociation".to_string(), vec![StructField::required("key_value_store_arn", carina_aws_types::arn()).with_description("The Amazon Resource Name (ARN) of the key value store association.").with_provider_name("KeyValueStoreARN").build()]), true, Some((None, Some(1))), carina_core::schema::ListElements::Unique)).with_description("The configuration for the key value store associations.").with_provider_name("KeyValueStoreAssociations").with_block_name("key_value_store_association").build(),
+                    StructField::optional("key_value_store_associations", AttributeType::refined_list(AttributeType::struct_("KeyValueStoreAssociation".to_string(), vec![StructField::required("key_value_store_arn", crate::schemas::catalog::arn()).with_description("The Amazon Resource Name (ARN) of the key value store association.").with_provider_name("KeyValueStoreARN").build()]), true, Some((None, Some(1))), carina_core::schema::ListElements::Unique)).with_description("The configuration for the key value store associations.").with_provider_name("KeyValueStoreAssociations").with_block_name("key_value_store_association").build(),
                     StructField::required("runtime", AttributeType::enum_(carina_core::schema::enum_identity("Runtime", Some("aws.cloudfront.Function.FunctionConfig")), Some(vec!["cloudfront-js-1.0".to_string(), "cloudfront-js-2.0".to_string()]), vec![("cloudfront-js-1.0".to_string(), "cloudfront_js_1_0".to_string()), ("cloudfront-js-2.0".to_string(), "cloudfront_js_2_0".to_string())], None, None)).with_description("The function's runtime environment version.").with_provider_name("Runtime").build()]))
                 .with_description("Contains configuration information about a CloudFront function.")
                 .with_provider_name("FunctionConfig")
@@ -54,7 +54,7 @@ pub fn cloudfront_function_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_function_config_attribute());
     #[inline(never)]
     fn build_function_metadata_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("function_metadata", AttributeType::struct_("FunctionMetadata".to_string(), vec![StructField::provider_populated("function_arn", carina_aws_types::arn()).with_description("The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function.").with_provider_name("FunctionARN").build()]))
+        AttributeSchema::provider_populated("function_metadata", AttributeType::struct_("FunctionMetadata".to_string(), vec![StructField::provider_populated("function_arn", crate::schemas::catalog::arn()).with_description("The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function.").with_provider_name("FunctionARN").build()]))
                 .with_description("Contains metadata about a CloudFront function. (read-only)")
                 .with_provider_name("FunctionMetadata")
             .build()
@@ -91,11 +91,11 @@ pub fn cloudfront_function_config() -> AwsccSchemaConfig {
     schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);
     #[inline(never)]
     fn build_schema_def_0() -> AttributeType { AttributeType::struct_("FunctionConfig".to_string(), vec![StructField::required("comment", AttributeType::string()).with_description("A comment to describe the function. The comment cannot be longer than 128 characters.").with_provider_name("Comment").build(),
-                    StructField::optional("key_value_store_associations", AttributeType::refined_list(AttributeType::struct_("KeyValueStoreAssociation".to_string(), vec![StructField::required("key_value_store_arn", carina_aws_types::arn()).with_description("The Amazon Resource Name (ARN) of the key value store association.").with_provider_name("KeyValueStoreARN").build()]), true, Some((None, Some(1))), carina_core::schema::ListElements::Unique)).with_description("The configuration for the key value store associations.").with_provider_name("KeyValueStoreAssociations").with_block_name("key_value_store_association").build(),
+                    StructField::optional("key_value_store_associations", AttributeType::refined_list(AttributeType::struct_("KeyValueStoreAssociation".to_string(), vec![StructField::required("key_value_store_arn", crate::schemas::catalog::arn()).with_description("The Amazon Resource Name (ARN) of the key value store association.").with_provider_name("KeyValueStoreARN").build()]), true, Some((None, Some(1))), carina_core::schema::ListElements::Unique)).with_description("The configuration for the key value store associations.").with_provider_name("KeyValueStoreAssociations").with_block_name("key_value_store_association").build(),
                     StructField::required("runtime", AttributeType::enum_(carina_core::schema::enum_identity("Runtime", Some("aws.cloudfront.Function.FunctionConfig")), Some(vec!["cloudfront-js-1.0".to_string(), "cloudfront-js-2.0".to_string()]), vec![("cloudfront-js-1.0".to_string(), "cloudfront_js_1_0".to_string()), ("cloudfront-js-2.0".to_string(), "cloudfront_js_2_0".to_string())], None, None)).with_description("The function's runtime environment version.").with_provider_name("Runtime").build()]) }
     schema = schema.with_def("FunctionConfig", build_schema_def_0());
     #[inline(never)]
-    fn build_schema_def_1() -> AttributeType { AttributeType::struct_("FunctionMetadata".to_string(), vec![StructField::provider_populated("function_arn", carina_aws_types::arn()).with_description("The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function.").with_provider_name("FunctionARN").build()]) }
+    fn build_schema_def_1() -> AttributeType { AttributeType::struct_("FunctionMetadata".to_string(), vec![StructField::provider_populated("function_arn", crate::schemas::catalog::arn()).with_description("The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function.").with_provider_name("FunctionARN").build()]) }
     schema = schema.with_def("FunctionMetadata", build_schema_def_1());
     AwsccSchemaConfig {
         aws_type_name: "AWS::CloudFront::Function",

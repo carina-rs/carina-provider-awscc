@@ -134,7 +134,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_transit_gateway_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("transit_gateway_arn", carina_aws_types::arn())
+        AttributeSchema::provider_populated("transit_gateway_arn", crate::schemas::catalog::arn())
                 .with_provider_name("TransitGatewayArn")
             .build()
     }

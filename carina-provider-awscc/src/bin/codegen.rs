@@ -809,14 +809,16 @@ fn arn_constructor(service: &str, resource: &str) -> Result<String> {
         return Ok(awscc_type.constructor_path().to_string());
     }
 
-    if let Some(aws_type) = carina_aws_types::AwsType::ALL
-        .iter()
-        .copied()
-        .find(|aws_type| is_resource_identity(&aws_type.identity(), service, resource, "Arn"))
-    {
-        return Ok(format!(
-            "carina_aws_types::AwsType::{aws_type:?}.attribute_type()"
-        ));
+    let specialized = match (service, resource) {
+        ("iam", "Role") => Some("crate::schemas::catalog::iam_role_arn()"),
+        ("iam", "Policy") => Some("crate::schemas::catalog::iam_policy_arn()"),
+        ("kms", "Key") => Some("crate::schemas::catalog::kms_key_arn()"),
+        ("sso", "Instance") => Some("crate::schemas::catalog::sso_instance_arn()"),
+        ("sso", "PermissionSet") => Some("crate::schemas::catalog::sso_permission_set_arn()"),
+        _ => None,
+    };
+    if let Some(constructor) = specialized {
+        return Ok(constructor.to_string());
     }
 
     if catalog_knows_arn_service(service) {
@@ -825,7 +827,7 @@ fn arn_constructor(service: &str, resource: &str) -> Result<String> {
         );
     }
 
-    Ok("carina_aws_types::arn()".to_string())
+    Ok("crate::schemas::catalog::arn()".to_string())
 }
 
 fn emit_arn_helper(service: &str, resource: &str) -> Result<String> {
@@ -3363,7 +3365,7 @@ fn is_list_of_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
 }
 
 fn uses_core_schema_types_path(s: &str) -> bool {
-    // Qualified paths and identifiers such as `carina_aws_types` need no import.
+    // Paths such as `carina_aws_types::vpc_id()` already carry their namespace.
     s.match_indices("types::").any(|(index, _)| {
         s[..index]
             .chars()
@@ -3386,7 +3388,7 @@ fn infer_string_type_display(prop_name: &str, resource_type: &str) -> String {
     if let Some(&override_type) = string_overrides.get(prop_name) {
         // Extract display name from override type string
         // e.g., "carina_aws_types::security_group_id()" -> "SecurityGroupId"
-        //       "carina_aws_types::iam_role_arn()" -> "IamRoleArn"
+        //       "crate::schemas::catalog::iam_role_arn()" -> "IamRoleArn"
         return override_type_to_display_name(override_type).to_string();
     }
 
@@ -3492,8 +3494,8 @@ fn top_level_arn_catalog_display(classified: &EmissionProperty<'_>) -> Option<&'
         .unwrap_or_else(|error| panic!("{}.Arn: {error:#}", classified.schema().type_name))
 }
 
-/// AWSCC-local constructors use catalog identities. Shared AWS/core types
-/// retain their established public short aliases, such as Region and Arn.
+/// Catalog rows display their identities. The generic ARN and shared AWS/core
+/// types retain their established public short aliases, such as Arn and Region.
 fn override_type_to_display_name(override_type: &str) -> &str {
     if let Some(identity) = catalog_type_display(override_type) {
         return identity;
@@ -3502,11 +3504,14 @@ fn override_type_to_display_name(override_type: &str) -> &str {
         "carina_aws_types::security_group_id()" => "SecurityGroupId",
         "carina_aws_types::route53_hosted_zone_id()" => "Route53HostedZoneId",
         "carina_aws_types::aws_resource_id()" => "AwsResourceId",
-        "carina_aws_types::iam_role_arn()" | "super::super::iam::role::arn()" => "IamRoleArn",
-        "carina_aws_types::iam_policy_arn()" | "super::super::iam::policy::arn()" => "IamPolicyArn",
-        "carina_aws_types::iam_oidc_provider_arn()" => "IamOidcProviderArn",
-        "carina_aws_types::kms_key_arn()" | "super::super::kms::key::arn()" => "KmsKeyArn",
-        "carina_aws_types::kms_key_id()" => "KmsKeyId",
+        "crate::schemas::catalog::iam_role_arn()" | "super::super::iam::role::arn()" => {
+            "IamRoleArn"
+        }
+        "crate::schemas::catalog::iam_policy_arn()" | "super::super::iam::policy::arn()" => {
+            "IamPolicyArn"
+        }
+        "crate::schemas::catalog::kms_key_arn()" | "super::super::kms::key::arn()" => "KmsKeyArn",
+        "crate::schemas::catalog::kms_key_id()" => "KmsKeyId",
         "carina_aws_types::gateway_id()" => "GatewayId",
         "carina_aws_types::network_acl_id()" => "NetworkAclId",
         "carina_aws_types::aws_account_id()" => "AwsAccountId",
@@ -3529,7 +3534,7 @@ fn override_type_to_display_name(override_type: &str) -> &str {
         "types::ipv4_address()" | "carina_core::schema::types::ipv4_address()" => "Ipv4Address",
         "carina_core::schema::types::ipv6_address()" => "Ipv6Address",
         "carina_core::schema::types::domain_name()" => "DomainName",
-        "carina_aws_types::arn()" => "Arn",
+        "crate::schemas::catalog::arn()" => "Arn",
         "carina_aws_types::ipam_pool_id()" => "IpamPoolId",
         "carina_aws_types::vpc_cidr_block_association_id()" => "VpcCidrBlockAssociationId",
         "carina_aws_types::tgw_route_table_id()" => "TgwRouteTableId",
@@ -8004,8 +8009,8 @@ fn known_string_type_overrides() -> &'static HashMap<&'static str, &'static str>
         // Writable references are selected by full-path classification before
         // these heuristics. Preserve main's types for non-reference outputs.
         m.insert("KmsKeyId", "super::super::kms::key::arn()");
-        m.insert("KMSMasterKeyID", "carina_aws_types::kms_key_id()");
-        m.insert("ReplicaKmsKeyID", "carina_aws_types::kms_key_id()");
+        m.insert("KMSMasterKeyID", "crate::schemas::catalog::kms_key_id()");
+        m.insert("ReplicaKmsKeyID", "crate::schemas::catalog::kms_key_id()");
         m.insert("KmsKeyArn", "super::super::kms::key::arn()");
         m.insert("IpamId", "carina_aws_types::ipam_id()");
         m.insert("BucketAccountId", "carina_aws_types::aws_account_id()");
@@ -8433,20 +8438,28 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // FlowLog LogDestination is an ARN (S3 bucket, CloudWatch log group, or Firehose)
         m.insert(
             ("AWS::EC2::FlowLog", "LogDestination"),
-            TypeOverride::StringType(OverrideTypeExpression::raw("carina_aws_types::arn()")),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "crate::schemas::catalog::arn()",
+            )),
         );
         // S3 Bucket notification ARNs
         m.insert(
             ("AWS::S3::Bucket", "Function"),
-            TypeOverride::StringType(OverrideTypeExpression::raw("carina_aws_types::arn()")),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "crate::schemas::catalog::arn()",
+            )),
         );
         m.insert(
             ("AWS::S3::Bucket", "Queue"),
-            TypeOverride::StringType(OverrideTypeExpression::raw("carina_aws_types::arn()")),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "crate::schemas::catalog::arn()",
+            )),
         );
         m.insert(
             ("AWS::S3::Bucket", "Topic"),
-            TypeOverride::StringType(OverrideTypeExpression::raw("carina_aws_types::arn()")),
+            TypeOverride::StringType(OverrideTypeExpression::raw(
+                "crate::schemas::catalog::arn()",
+            )),
         );
         // S3 Bucket replication role is an IAM Role ARN
         m.insert(
@@ -9582,7 +9595,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert(
                 ("AWS::CloudWatch::Alarm", path),
                 TypeOverride::ArrayItemType {
-                    expression: OverrideTypeExpression::raw("carina_aws_types::arn()"),
+                    expression: OverrideTypeExpression::raw("crate::schemas::catalog::arn()"),
                     display: const { OverrideTypeDisplay::new("List<Arn>") },
                     block_name: None,
                     default: None,
@@ -10128,13 +10141,13 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::SSO::Assignment", "InstanceArn"),
             TypeOverride::StringType(OverrideTypeExpression::raw(
-                "carina_aws_types::sso_instance_arn()",
+                "crate::schemas::catalog::sso_instance_arn()",
             )),
         );
         m.insert(
             ("AWS::SSO::PermissionSet", "InstanceArn"),
             TypeOverride::StringType(OverrideTypeExpression::raw(
-                "carina_aws_types::sso_instance_arn()",
+                "crate::schemas::catalog::sso_instance_arn()",
             )),
         );
         //
@@ -10145,7 +10158,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::SSO::Instance", "InstanceArn"),
             TypeOverride::StringType(OverrideTypeExpression::raw(
-                "carina_aws_types::sso_instance_arn()",
+                "crate::schemas::catalog::sso_instance_arn()",
             )),
         );
         m.insert(
@@ -10157,13 +10170,13 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::SSO::PermissionSet", "PermissionSetArn"),
             TypeOverride::StringType(OverrideTypeExpression::raw(
-                "carina_aws_types::sso_permission_set_arn()",
+                "crate::schemas::catalog::sso_permission_set_arn()",
             )),
         );
         m.insert(
             ("AWS::SSO::Assignment", "PermissionSetArn"),
             TypeOverride::StringType(OverrideTypeExpression::raw(
-                "carina_aws_types::sso_permission_set_arn()",
+                "crate::schemas::catalog::sso_permission_set_arn()",
             )),
         );
         // DisplayName: retain CFN's exact pattern and 1..=1024 character bounds,
@@ -12178,7 +12191,7 @@ fn synthetic_attributes() -> &'static [SyntheticAttribute] {
         vec![SyntheticAttribute {
             cfn_type: "AWS::CloudFront::Distribution",
             attr_name: "arn",
-            attr_type: "carina_aws_types::arn()",
+            attr_type: "crate::schemas::catalog::arn()",
             description: "The ARN of the CloudFront distribution. Synthesized by the provider \
                  from the distribution id; CloudFront's CloudFormation type does not \
                  expose ARN through the Cloud Control API.",
@@ -12266,7 +12279,7 @@ fn infer_string_type(prop_name: &str, resource_type: &str) -> Option<String> {
 
     // Check ARN pattern
     if prop_lower.ends_with("arn") || prop_lower.ends_with("arns") || prop_lower.contains("_arn") {
-        return Some("carina_aws_types::arn()".to_string());
+        return Some("crate::schemas::catalog::arn()".to_string());
     }
 
     // IPAM Pool IDs
@@ -14270,7 +14283,8 @@ mod tests {
                 "ValueArn",
                 json!({"type":"string","description":"Valid values: public | private","pattern":"(?=x)x"}),
                 None,
-                "carina_aws_types::arn()",
+                // #593: Use AWSCC's generic ARN constructor with the same type semantics.
+                "crate::schemas::catalog::arn()",
                 "Arn",
             ),
             (
@@ -14820,7 +14834,10 @@ mod tests {
             let mixed = format!("carina_core::schema::{path}, {path}");
             assert!(uses_core_schema_types_path(&mixed), "{mixed}");
         }
-        assert!(!uses_core_schema_types_path("carina_aws_types::arn()"));
+        // #593: Use AWSCC's generic ARN constructor with the same type semantics.
+        assert!(!uses_core_schema_types_path(
+            "crate::schemas::catalog::arn()"
+        ));
         assert!(!uses_core_schema_types_path(""));
     }
 
@@ -19062,7 +19079,8 @@ mod tests {
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         for path in ["AlarmActions", "OKActions", "InsufficientDataActions"] {
             let expected = concat!(
-                "AttributeType::refined_list(carina_aws_types::arn(), true, Some((None, Some(5))), ",
+                // #593: Use AWSCC's generic ARN constructor with the same type semantics.
+                "AttributeType::refined_list(crate::schemas::catalog::arn(), true, Some((None, Some(5))), ",
                 "carina_core::schema::ListElements::AllowDuplicates)"
             );
             assert_eq!(
@@ -20102,9 +20120,12 @@ mod tests {
         for (constructor, alias) in [
             ("carina_aws_types::aws_region()", "Region"),
             ("carina_aws_types::security_group_id()", "SecurityGroupId"),
-            ("carina_aws_types::arn()", "Arn"),
-            ("carina_aws_types::kms_key_id()", "KmsKeyId"),
-            ("carina_aws_types::iam_role_arn()", "IamRoleArn"),
+            // #593: Use AWSCC's generic ARN constructor with the same type semantics.
+            ("crate::schemas::catalog::arn()", "Arn"),
+            // #593: Preserve the alias while AWSCC owns the KMS key ID grammar.
+            ("crate::schemas::catalog::kms_key_id()", "KmsKeyId"),
+            // #593: Keep the IAM role alias while using AWSCC's constructor.
+            ("crate::schemas::catalog::iam_role_arn()", "IamRoleArn"),
         ] {
             assert_eq!(override_type_to_display_name(constructor), alias);
             assert_eq!(
@@ -21725,7 +21746,8 @@ mod tests {
 
         assert!(
             generated.contains(
-                r#"StructField::provider_populated("function_arn", carina_aws_types::arn())"#
+                // #593: Use AWSCC's generic ARN constructor with the same type semantics.
+                r#"StructField::provider_populated("function_arn", crate::schemas::catalog::arn())"#
             ),
             "FunctionMetadata.FunctionARN must be provider-populated: {generated}"
         );
@@ -21764,7 +21786,8 @@ mod tests {
             .expect("generated S3 schema should contain S3TablesDestination");
         for (field, field_type) in [
             ("table_namespace", "AttributeType::enum_("),
-            ("table_arn", "carina_aws_types::arn()"),
+            // #593: Use AWSCC's generic ARN constructor with the same type semantics.
+            ("table_arn", "crate::schemas::catalog::arn()"),
         ] {
             assert!(
                 s3_tables_destination.contains(&format!(
@@ -21813,7 +21836,8 @@ mod tests {
             .expect("MetadataConfiguration should contain InventoryTableConfiguration");
         assert!(
             inventory_table_configuration.contains(
-                r#"StructField::provider_populated("table_arn", carina_aws_types::arn())"#
+                // #593: Use AWSCC's generic ARN constructor with the same type semantics.
+                r#"StructField::provider_populated("table_arn", crate::schemas::catalog::arn())"#
             ),
             "InventoryTableConfiguration.TableArn must be provider-populated: {inventory_table_configuration}"
         );
@@ -21834,7 +21858,8 @@ mod tests {
             .expect("MetadataConfiguration should contain JournalTableConfiguration");
         assert!(
             journal_table_configuration.contains(
-                r#"StructField::provider_populated("table_arn", carina_aws_types::arn())"#
+                // #593: Use AWSCC's generic ARN constructor with the same type semantics.
+                r#"StructField::provider_populated("table_arn", crate::schemas::catalog::arn())"#
             ),
             "JournalTableConfiguration.TableArn must be provider-populated: {journal_table_configuration}"
         );
@@ -24758,7 +24783,11 @@ mod tests {
             assert_eq!(overrides.get(name), Some(&"super::super::kms::key::arn()"));
         }
         for name in ["KMSMasterKeyID", "ReplicaKmsKeyID"] {
-            assert_eq!(overrides.get(name), Some(&"carina_aws_types::kms_key_id()"));
+            // #593: These fallbacks must use AWSCC's partition definition.
+            assert_eq!(
+                overrides.get(name),
+                Some(&"crate::schemas::catalog::kms_key_id()")
+            );
         }
         assert_eq!(
             overrides.get("PermissionsBoundary"),
@@ -24799,15 +24828,18 @@ mod tests {
         );
         assert_eq!(
             arn_constructor("iam", "Role").unwrap(),
-            "carina_aws_types::AwsType::IamRoleArn.attribute_type()"
+            // #593: IAM role validation belongs to AWSCC.
+            "crate::schemas::catalog::iam_role_arn()"
         );
         assert_eq!(
             arn_constructor("unknownservice", "Thing").unwrap(),
-            "carina_aws_types::arn()"
+            // #593: Use AWSCC's generic ARN constructor with the same type semantics.
+            "crate::schemas::catalog::arn()"
         );
         assert_eq!(
             arn_constructor("scheduler", "Schedule").unwrap(),
-            "carina_aws_types::arn()"
+            // #593: Use AWSCC's generic ARN constructor with the same type semantics.
+            "crate::schemas::catalog::arn()"
         );
     }
 
@@ -24837,8 +24869,26 @@ mod tests {
     #[test]
     fn virtual_arn_module_uses_the_same_catalog_path() {
         let module = generate_arn_helper_module("AWS::IAM::Policy").unwrap();
-        assert!(module.contains("carina_aws_types::AwsType::IamPolicyArn.attribute_type()"));
-        assert!(!module.contains("carina_aws_types::iam_policy_arn()"));
+        // #593: Forward to the AWSCC policy constructor without a shared bypass.
+        assert!(module.contains("crate::schemas::catalog::iam_policy_arn()"));
+        assert!(!module.contains("carina_aws_types::"));
+    }
+
+    #[test]
+    fn specialized_arn_routing_uses_owned_constructors() {
+        for (service, resource, function) in [
+            ("iam", "Role", "iam_role_arn"),
+            ("iam", "Policy", "iam_policy_arn"),
+            ("iam", "OidcProvider", "iam_oidc_provider_arn"),
+            ("kms", "Key", "kms_key_arn"),
+            ("sso", "Instance", "sso_instance_arn"),
+            ("sso", "PermissionSet", "sso_permission_set_arn"),
+        ] {
+            assert_eq!(
+                arn_constructor(service, resource).unwrap(),
+                format!("crate::schemas::catalog::{function}()")
+            );
+        }
     }
 
     #[test]
@@ -25027,7 +25077,8 @@ mod tests {
         .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "Arn", &schema, "", &BTreeMap::new());
-        assert_eq!(type_str, "carina_aws_types::arn()");
+        // #593: Use AWSCC's generic ARN constructor with the same type semantics.
+        assert_eq!(type_str, "crate::schemas::catalog::arn()");
     }
 
     #[test]
@@ -25497,7 +25548,8 @@ mod tests {
         // Other resources' Arn should use generic arn
         assert_eq!(
             infer_string_type("Arn", "AWS::S3::Bucket"),
-            Some("carina_aws_types::arn()".to_string())
+            // #593: Use AWSCC's generic ARN constructor with the same type semantics.
+            Some("crate::schemas::catalog::arn()".to_string())
         );
         // Non-overridden properties are unaffected
         assert_eq!(
@@ -28835,7 +28887,10 @@ mod tests {
         assert!(attr_type_accepts_scalar_default(
             "AttributeType::refined_int_with_validator(identity, None, legacy_validator(f))"
         ));
-        assert!(attr_type_accepts_scalar_default("carina_aws_types::arn()"));
+        // #593: Use AWSCC's generic ARN constructor with the same type semantics.
+        assert!(attr_type_accepts_scalar_default(
+            "crate::schemas::catalog::arn()"
+        ));
         assert!(!attr_type_accepts_scalar_default(
             "carina_aws_types::iam_policy_document()"
         ));

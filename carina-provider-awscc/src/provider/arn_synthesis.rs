@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 
 use super::read_back::ReadFailure;
+use crate::partition::Partition;
 use carina_core::resource::{ConcreteValue, Value};
 
 use super::AwsccProvider;
@@ -40,11 +41,7 @@ pub(crate) fn iam_role_arn(
 }
 
 pub(crate) fn partition_for_region(region: Option<&str>) -> &'static str {
-    match region {
-        Some(region) if region.starts_with("cn-") => "aws-cn",
-        Some(region) if region.starts_with("us-gov-") => "aws-us-gov",
-        _ => "aws",
-    }
+    region.map_or(Partition::Aws, Partition::from_region).id()
 }
 
 /// If `attributes` is missing the `arn` slot for a
@@ -182,6 +179,84 @@ mod tests {
         assert_eq!(partition_for_region(Some("us-gov-west-1")), "aws-us-gov");
         assert_eq!(partition_for_region(Some("cn-north-1")), "aws-cn");
         assert_eq!(partition_for_region(None), "aws");
+    }
+
+    #[test]
+    fn synthesized_arns_use_every_region_partition() {
+        let mut failures = Vec::new();
+        for (region, expected) in [
+            ("us-east-1", "aws"),
+            ("ap-northeast-1", "aws"),
+            ("cn-north-1", "aws-cn"),
+            ("us-gov-west-1", "aws-us-gov"),
+            ("us-iso-east-1", "aws-iso"),
+            ("us-isob-east-1", "aws-iso-b"),
+            ("eu-isoe-west-1", "aws-iso-e"),
+            ("us-isof-south-1", "aws-iso-f"),
+            ("eusc-de-east-1", "aws-eusc"),
+        ] {
+            let partition = partition_for_region(Some(region));
+            if partition != expected {
+                failures.push(format!("{region}: expected {expected}, got {partition}"));
+            }
+            for (actual, expected_arn) in [
+                (
+                    cloudfront_distribution_arn(partition, "123456789012", "E123"),
+                    format!("arn:{expected}:cloudfront::123456789012:distribution/E123"),
+                ),
+                (
+                    iam_role_arn(partition, "123456789012", "/service-role/", "example"),
+                    format!("arn:{expected}:iam::123456789012:role/service-role/example"),
+                ),
+            ] {
+                if actual != expected_arn {
+                    failures.push(format!("{region}: expected {expected_arn}, got {actual}"));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn synthesized_iam_roles_validate_in_every_partition() {
+        use carina_core::schema::{CompiledPattern, RawShape};
+        let ty = crate::schemas::generated::iam::role::arn();
+        let RawShape::String {
+            pattern: Some(pattern),
+            validate: Some(validate),
+            ..
+        } = ty.raw_shape()
+        else {
+            panic!("IAM role ARN must have a pattern and callback");
+        };
+        let pattern = CompiledPattern::try_new(pattern).unwrap();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut failures = Vec::new();
+        for region in [
+            "us-east-1",
+            "cn-north-1",
+            "us-gov-west-1",
+            "us-iso-east-1",
+            "us-isob-east-1",
+            "eu-isoe-west-1",
+            "us-isof-south-1",
+            "eusc-de-east-1",
+        ] {
+            let partition = partition_for_region(Some(region));
+            seen.insert(partition);
+            let arn = iam_role_arn(partition, "123456789012", "/service-role/", "example");
+            if !pattern.is_match(&arn) {
+                failures.push(format!("{region}: pattern rejected {arn}"));
+            }
+            if let Err(error) = validate(&Value::Concrete(ConcreteValue::String(arn.into()))) {
+                failures.push(format!("{region}: {error}"));
+            }
+        }
+        assert_eq!(
+            seen,
+            Partition::ALL.map(Partition::id).into_iter().collect()
+        );
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
     /// `AWS::CloudFront::Distribution`'s CFN schema does not expose `Arn`,

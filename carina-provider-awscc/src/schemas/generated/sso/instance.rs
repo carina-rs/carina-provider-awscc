@@ -24,7 +24,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_identity_store_id_attribute());
     #[inline(never)]
     fn build_instance_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("instance_arn", carina_aws_types::sso_instance_arn())
+        AttributeSchema::provider_populated("instance_arn", crate::schemas::catalog::sso_instance_arn())
                 .with_description("The SSO Instance ARN that is returned upon creation of the Identity Center (SSO) Instance (read-only)")
                 .with_provider_name("InstanceArn")
             .build()
