@@ -6,6 +6,7 @@
 
 use indexmap::IndexMap;
 
+use carina_core::FiniteF64;
 use carina_core::resource::{ConcreteValue, Value, ValueString};
 use carina_core::schema::{
     Compiled, CompiledAttributeType, CompiledResourceSchema, CompiledStructField, Shape,
@@ -351,7 +352,9 @@ pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
             if let Some(i) = n.as_i64() {
                 Some(Value::Concrete(ConcreteValue::Int(i)))
             } else {
-                n.as_f64().map(|f| Value::Concrete(ConcreteValue::Float(f)))
+                n.as_f64()
+                    .and_then(|f| FiniteF64::new(f).ok())
+                    .map(|f| Value::Concrete(ConcreteValue::Float(f)))
             }
         }
         serde_json::Value::Array(arr) => {
@@ -555,8 +558,9 @@ pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
         Value::Concrete(ConcreteValue::CanonicalEnum(c)) => Some(json!(c.api_value())),
         Value::Concrete(ConcreteValue::Bool(b)) => Some(json!(b)),
         Value::Concrete(ConcreteValue::Int(i)) => Some(json!(i)),
-        Value::Concrete(ConcreteValue::Float(f)) if f.is_finite() => Some(json!(f)),
-        Value::Concrete(ConcreteValue::Float(_)) => None,
+        Value::Concrete(ConcreteValue::Float(f)) => {
+            Some(serde_json::Value::Number(f.to_json_number()))
+        }
         Value::Concrete(ConcreteValue::List(items)) => {
             let arr: Vec<serde_json::Value> = items
                 .iter()
@@ -654,9 +658,9 @@ mod tests {
             ("-9223372036854775808.0", ConcreteValue::Int(i64::MIN)),
             (
                 "9223372036854775808.0",
-                ConcreteValue::Float(9223372036854775808.0),
+                ConcreteValue::Float(FiniteF64::new(9223372036854775808.0).unwrap()),
             ),
-            ("1.5", ConcreteValue::Float(1.5)),
+            ("1.5", ConcreteValue::Float(FiniteF64::new(1.5).unwrap())),
         ] {
             let json: serde_json::Value = serde_json::from_str(source).unwrap();
             assert_eq!(
@@ -667,7 +671,9 @@ mod tests {
         }
         assert_eq!(
             aws_value_to_dsl_with_defs("value", &json!(1.0), &float, "test.Resource", &defs),
-            Some(Value::Concrete(ConcreteValue::Float(1.0))),
+            Some(Value::Concrete(ConcreteValue::Float(
+                FiniteF64::new(1.0).unwrap()
+            ))),
         );
         let union = CompiledAttributeType::union(vec![integer, float]);
         assert_eq!(
@@ -2333,29 +2339,45 @@ mod tests {
     }
 
     #[test]
-    fn test_value_to_json_nan_returns_none() {
-        let value = Value::Concrete(ConcreteValue::Float(f64::NAN));
-        assert_eq!(value_to_json(&value), None);
+    fn test_nan_is_rejected_at_float_admission() {
+        assert_eq!(
+            FiniteF64::new(f64::NAN),
+            Err(carina_core::NonFiniteFloatError::NaN)
+        );
     }
 
     #[test]
-    fn test_value_to_json_infinity_returns_none() {
-        let value = Value::Concrete(ConcreteValue::Float(f64::INFINITY));
-        assert_eq!(value_to_json(&value), None);
+    fn test_infinity_is_rejected_at_float_admission() {
+        assert_eq!(
+            FiniteF64::new(f64::INFINITY),
+            Err(carina_core::NonFiniteFloatError::PositiveInfinity)
+        );
     }
 
     #[test]
-    fn test_value_to_json_neg_infinity_returns_none() {
-        let value = Value::Concrete(ConcreteValue::Float(f64::NEG_INFINITY));
-        assert_eq!(value_to_json(&value), None);
+    fn test_neg_infinity_is_rejected_at_float_admission() {
+        assert_eq!(
+            FiniteF64::new(f64::NEG_INFINITY),
+            Err(carina_core::NonFiniteFloatError::NegativeInfinity)
+        );
     }
 
     #[test]
-    fn test_value_to_json_finite_float() {
-        let value = Value::Concrete(ConcreteValue::Float(1.5));
-        let result = value_to_json(&value);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), serde_json::json!(1.5));
+    fn test_json_float_roundtrip_preserves_finite_values() {
+        for (source, expected) in [
+            ("1.5", 1.5_f64),
+            ("-0.0", -0.0_f64),
+            ("1.7976931348623157e308", f64::MAX),
+            ("18446744073709551615", u64::MAX as f64),
+        ] {
+            let json = serde_json::from_str(source).unwrap();
+            let value = json_to_value(&json).expect("finite JSON number");
+            let Value::Concrete(ConcreteValue::Float(number)) = &value else {
+                panic!("expected a finite float for {source}, got {value:?}");
+            };
+            assert_eq!(number.get().to_bits(), expected.to_bits(), "{source}");
+            assert_eq!(value_to_json(&value), Some(json!(expected)));
+        }
     }
 
     #[test]
@@ -2510,14 +2532,14 @@ mod tests {
     }
 
     #[test]
-    fn test_value_to_json_list_with_nan_drops_nan_items() {
+    fn test_value_to_json_list_preserves_finite_float_items() {
         let value = Value::Concrete(ConcreteValue::List(vec![
-            Value::Concrete(ConcreteValue::Float(1.0)),
-            Value::Concrete(ConcreteValue::Float(f64::NAN)),
-            Value::Concrete(ConcreteValue::Float(2.0)),
+            Value::Concrete(ConcreteValue::Float(FiniteF64::new(1.0).unwrap())),
+            Value::Concrete(ConcreteValue::Float(FiniteF64::new(-0.0).unwrap())),
+            Value::Concrete(ConcreteValue::Float(FiniteF64::new(2.0).unwrap())),
         ]));
         let result = value_to_json(&value);
-        let expected = serde_json::json!([1.0, 2.0]);
+        let expected = serde_json::json!([1.0, -0.0, 2.0]);
         assert_eq!(result, Some(expected));
     }
 
@@ -2787,11 +2809,11 @@ mod tests {
     }
 
     #[test]
-    fn test_dsl_value_to_aws_list_with_nan_drops_nan_items() {
+    fn test_dsl_value_to_aws_list_preserves_finite_float_items() {
         let value = Value::Concrete(ConcreteValue::List(vec![
-            Value::Concrete(ConcreteValue::Float(1.0)),
-            Value::Concrete(ConcreteValue::Float(f64::NAN)),
-            Value::Concrete(ConcreteValue::Float(2.0)),
+            Value::Concrete(ConcreteValue::Float(FiniteF64::new(1.0).unwrap())),
+            Value::Concrete(ConcreteValue::Float(FiniteF64::new(-0.0).unwrap())),
+            Value::Concrete(ConcreteValue::Float(FiniteF64::new(2.0).unwrap())),
         ]));
         let attr_type = AttributeType::list(AttributeType::float());
         let schema = test_config_type(attr_type);
@@ -2805,7 +2827,7 @@ mod tests {
             &std::collections::BTreeMap::new(),
         );
 
-        let expected = serde_json::json!([1.0, 2.0]);
+        let expected = serde_json::json!([1.0, -0.0, 2.0]);
         assert_eq!(result, Some(expected));
     }
 

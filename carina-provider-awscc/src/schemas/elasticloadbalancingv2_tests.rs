@@ -1184,7 +1184,19 @@ fn assert_same_constraints(left: &CompiledAttributeType, right: &CompiledAttribu
             assert_eq!(lo, ro);
             assert_same_constraints(left, right);
         }
-        (RawShape::Map { key: lk, value: lv }, RawShape::Map { key: rk, value: rv }) => {
+        (
+            RawShape::Map {
+                key: lk,
+                value: lv,
+                constraints: lc,
+            },
+            RawShape::Map {
+                key: rk,
+                value: rv,
+                constraints: rc,
+            },
+        ) => {
+            assert_eq!(lc, rc);
             assert_same_constraints(lk, rk);
             assert_same_constraints(lv, rv);
         }

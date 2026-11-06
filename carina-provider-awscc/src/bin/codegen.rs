@@ -7909,7 +7909,10 @@ fn int_enum_type_display(constructor: &str, values: &[i64]) -> TypeDisplay {
     )
 }
 
-fn refined_float_type(identity: &str, range: &str) -> String {
+fn refined_float_type(identity: &str, range: Option<(Option<i64>, Option<i64>)>) -> String {
+    let range = range
+        .map(|(min, max)| emit_float_range_option(min, max))
+        .unwrap_or_else(|| "None".to_string());
     format!("AttributeType::refined_float({identity}, {range})")
 }
 
@@ -7938,11 +7941,19 @@ fn emit_int_range_option(min: Option<i64>, max: Option<i64>) -> String {
 
 fn emit_float_range_option(min: Option<i64>, max: Option<i64>) -> String {
     let min_str = match min {
-        Some(m) => format!("Some({m}.0)"),
+        Some(m) => {
+            format!(
+                "Some(carina_core::FiniteF64::new({m}.0).expect(\"finite float range endpoint\"))"
+            )
+        }
         None => "None".to_string(),
     };
     let max_str = match max {
-        Some(m) => format!("Some({m}.0)"),
+        Some(m) => {
+            format!(
+                "Some(carina_core::FiniteF64::new({m}.0).expect(\"finite float range endpoint\"))"
+            )
+        }
         None => "None".to_string(),
     };
     format!("Some(({min_str}, {max_str}))")
@@ -9073,7 +9084,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Budgets::Budget", "Notification.Threshold"),
             TypeOverride::AttributeType {
                 expression: OverrideTypeExpression::raw(
-                    "AttributeType::refined_float(None, Some((Some(0.0), Some(15000000000000.0))))",
+                    "AttributeType::refined_float(None, Some((Some(carina_core::FiniteF64::new(0.0).expect(\"finite float range endpoint\")), Some(carina_core::FiniteF64::new(15000000000000.0).expect(\"finite float range endpoint\")))))",
                 ),
                 display: const { OverrideTypeDisplay::new("Float(0..=15000000000000)") },
                 block_name: None,
@@ -9093,7 +9104,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Budgets::Budget", "Spend.Amount"),
             TypeOverride::AttributeType {
                 expression: OverrideTypeExpression::raw(
-                    "AttributeType::refined_float(None, Some((Some(0.0), None)))",
+                    "AttributeType::refined_float(None, Some((Some(carina_core::FiniteF64::new(0.0).expect(\"finite float range endpoint\")), None)))",
                 ),
                 display: const { OverrideTypeDisplay::new("Float(0..)") },
                 block_name: None,
@@ -13482,7 +13493,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             let res_override = resource_type_override(&schema.type_name, cfn_property_path);
             if let Some(TypeOverride::IntRange(min, max)) = res_override {
                 return (
-                    refined_float_type("None", &emit_float_range_option(Some(*min), Some(*max))),
+                    refined_float_type("None", Some((Some(*min), Some(*max)))),
                     None,
                 );
             }
@@ -13496,13 +13507,10 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                         .map(|&(min, max)| (Some(min), Some(max)))
                 };
             if let Some((min, max)) = range {
-                (
-                    refined_float_type("None", &emit_float_range_option(min, max)),
-                    None,
-                )
+                (refined_float_type("None", Some((min, max))), None)
             } else if prop.format.is_some() {
                 // Format-only float (e.g., double) - informational, no range validation
-                (refined_float_type("None", "None"), None)
+                (refined_float_type("None", None), None)
             } else {
                 ("AttributeType::float()".to_string(), None)
             }
@@ -13615,8 +13623,11 @@ fn json_default_to_value_code(val: &serde_json::Value) -> Option<String> {
             if let Some(i) = n.as_i64() {
                 Some(format!("Value::Concrete(ConcreteValue::Int({}))", i))
             } else {
-                n.as_f64()
-                    .map(|f| format!("Value::Concrete(ConcreteValue::Float({:.1}))", f))
+                n.as_f64().map(|f| {
+                    format!(
+                        "Value::Concrete(ConcreteValue::Float(carina_core::FiniteF64::new({f:.1}).expect(\"finite JSON default\")))"
+                    )
+                })
             }
         }
         _ => None,
@@ -19971,7 +19982,7 @@ mod tests {
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         assert_eq!(
             generated_budgets_field(&generated, "Notification.Threshold"),
-            "AttributeType::refined_float(None, Some((Some(0.0), Some(15000000000000.0)))))"
+            "AttributeType::refined_float(None, Some((Some(carina_core::FiniteF64::new(0.0).expect(\"finite float range endpoint\")), Some(carina_core::FiniteF64::new(15000000000000.0).expect(\"finite float range endpoint\"))))))"
         );
     }
 
@@ -19979,7 +19990,7 @@ mod tests {
     fn test_budgets_budget_spend_amount_is_non_negative_in_all_uses() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
-        let amount = "AttributeType::refined_float(None, Some((Some(0.0), None)))";
+        let amount = "AttributeType::refined_float(None, Some((Some(carina_core::FiniteF64::new(0.0).expect(\"finite float range endpoint\")), None)))";
         assert_eq!(
             generated_budgets_field(&generated, "Spend.Amount"),
             format!("{amount})")
@@ -25395,7 +25406,9 @@ mod tests {
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "FromPort", &schema, "", &BTreeMap::new());
         assert!(
-            type_str.contains("Some((Some(0.0), Some(65535.0)))"),
+            type_str.contains(
+                "Some((Some(carina_core::FiniteF64::new(0.0).expect(\"finite float range endpoint\")), Some(carina_core::FiniteF64::new(65535.0).expect(\"finite float range endpoint\"))))"
+            ),
             "Number with range should carry refined range, got: {}",
             type_str
         );
@@ -29475,6 +29488,14 @@ mod tests {
             json_default_to_value_code(&serde_json::json!(42)),
             Some("Value::Concrete(ConcreteValue::Int(42))".to_string())
         );
+        for (value, literal) in [(1.5, "1.5"), (-0.0, "-0.0")] {
+            assert_eq!(
+                json_default_to_value_code(&serde_json::json!(value)),
+                Some(format!(
+                    "Value::Concrete(ConcreteValue::Float(carina_core::FiniteF64::new({literal}).expect(\"finite JSON default\")))"
+                )),
+            );
+        }
         assert_eq!(json_default_to_value_code(&serde_json::Value::Null), None,);
         assert_eq!(json_default_to_value_code(&serde_json::json!([])), None,);
     }

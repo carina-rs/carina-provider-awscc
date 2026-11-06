@@ -122,7 +122,11 @@ fn audit_patterns(
         RawShape::List { element_type, .. } => {
             count += audit_patterns(resource, &format!("{path}[]"), element_type, failures);
         }
-        RawShape::Map { key, value } => {
+        RawShape::Map {
+            key,
+            value,
+            constraints: _,
+        } => {
             count += audit_patterns(resource, &format!("{path}.<key>"), key, failures);
             count += audit_patterns(resource, &format!("{path}.*"), value, failures);
         }

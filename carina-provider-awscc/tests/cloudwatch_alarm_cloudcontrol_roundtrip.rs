@@ -42,7 +42,9 @@ fn int(value: i64) -> Value {
 }
 
 fn float(value: f64) -> Value {
-    Value::Concrete(ConcreteValue::Float(value))
+    Value::Concrete(ConcreteValue::Float(
+        carina_core::FiniteF64::new(value).expect("finite test value"),
+    ))
 }
 
 fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {

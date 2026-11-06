@@ -5011,9 +5011,12 @@ mod tests {
         let service = PartialUpdateCloudControlService::new(true, true);
         let provider = provider_with_partial_update_service(service.clone()).await;
         let mut from = partial_update_bucket_state().to_snapshot();
-        let secret = Value::Deferred(DeferredValue::Secret(Box::new(Value::Concrete(
-            ConcreteValue::String("stored-write-only-secret".into()),
-        ))));
+        let secret = Value::Deferred(DeferredValue::Secret(
+            Box::new(Value::Concrete(ConcreteValue::String(
+                "stored-write-only-secret".into(),
+            )))
+            .into(),
+        ));
         let redacted = carina_core::value::redact_secrets_in_value(&secret)
             .expect("redact saved-state placeholder");
         let digest = redacted
