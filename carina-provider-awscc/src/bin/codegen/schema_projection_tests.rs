@@ -60,7 +60,7 @@ fn scalar_constraints_survive_alias_siblings_and_all_of() {
     .unwrap();
     assert_eq!((p.min_length, p.max_length), (Some(3), Some(6)));
     assert_eq!(p.reference.as_ref().unwrap().name, "Value");
-    assert_eq!(p.enum_values, Some(vec![json!("A"), json!("ABCDE")]));
+    assert_eq!(p.enum_values, Some(vec![json!("ABCDE")]));
     assert!(matches!(
         probe(
             json!({"allOf":[{"minLength":9},{"maxLength":2}]}),
@@ -329,7 +329,7 @@ fn mixed_types_never_drop_reference_or_composition_arms_as_bare() {
 }
 
 #[test]
-fn object_field_alternatives_keep_bare_arms_and_each_required_scope() {
+fn object_field_alternatives_reject_branch_only_domains_with_bare_arms() {
     for keyword in ["oneOf", "anyOf"] {
         let mut arms = vec![
             json!({"type":"object","properties":{"Selected":{"type":"string"}},"required":["Selected"]}),
@@ -342,12 +342,9 @@ fn object_field_alternatives_keep_bare_arms_and_each_required_scope() {
                     matches!(result, Err(SchemaError::Projection { pointer: _pointer, reason }) if reason.contains("unsupported required alternatives"))
                 );
             } else {
-                let p = result.unwrap();
-                assert_eq!(p.effective_type(), Some("object"));
-                assert!(p.required.is_empty());
-                assert!(p.properties.as_ref().unwrap().contains_key("Selected"));
-                assert!(p.field_groups.groups.is_empty());
-                assert!(p.dropped_bare_alternatives.is_empty());
+                assert!(
+                    matches!(result, Err(SchemaError::Projection { pointer: _pointer, reason }) if reason.contains("field domain"))
+                );
             }
             arms.reverse();
         }
@@ -480,8 +477,8 @@ fn conditional_dependencies_do_not_become_unconditional_bounds_or_requirements()
 fn object_alternatives_preserve_required_scopes_and_reject_conflicting_members() {
     let p = probe(
         json!({"type":"object","required":["Always"],"oneOf":[
-            {"properties":{"A":{"type":"integer"}},"required":["A"]},
-            {"properties":{"B":{"type":"string"}},"required":["B"]}
+            {"properties":{"A":{"type":"integer"},"B":{"type":"string"}},"required":["A"]},
+            {"properties":{"A":{"type":"integer"},"B":{"type":"string"}},"required":["B"]}
         ]}),
         json!({}),
     )

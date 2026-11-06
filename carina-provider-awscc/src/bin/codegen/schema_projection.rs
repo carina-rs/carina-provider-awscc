@@ -69,6 +69,12 @@ pub(super) enum ConditionalDependency {
     PropertyList(Vec<String>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ConditionalRequirement {
+    pub(super) if_present: String,
+    pub(super) then_present: String,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum ProjectedType {
     #[default]
@@ -148,6 +154,47 @@ pub(super) struct Projection {
 }
 
 impl Projection {
+    pub(super) fn conditional_requirements(
+        &self,
+    ) -> Result<Vec<ConditionalRequirement>, SchemaError> {
+        let mut requirements = Vec::new();
+        for (name, dependency) in &self.dependencies {
+            match dependency {
+                ConditionalDependency::PropertyList(names) => {
+                    requirements.extend(names.iter().map(|required| ConditionalRequirement {
+                        if_present: name.clone(),
+                        then_present: required.clone(),
+                    }));
+                }
+                ConditionalDependency::Schema(child) => {
+                    return Err(child.try_query()?.emission_error(
+                        "schema dependency requires conditional constraint emission",
+                    ));
+                }
+            }
+        }
+        Ok(requirements)
+    }
+
+    pub(super) fn map_bounds(&self) -> Result<(Option<i64>, Option<i64>), SchemaError> {
+        let bound = |number: &Option<Number>, keyword: &str| {
+            number
+                .as_ref()
+                .map(|number| {
+                    number.as_i64().ok_or_else(|| {
+                        self.emission_error(format!(
+                            "{keyword} cannot fit the map projection exactly: {number}"
+                        ))
+                    })
+                })
+                .transpose()
+        };
+        Ok((
+            bound(&self.min_properties, "minProperties")?,
+            bound(&self.max_properties, "maxProperties")?,
+        ))
+    }
+
     fn with_required_groups(mut self, required: Vec<String>, field_groups: FieldGroups) -> Self {
         self.required = required;
         self.field_groups = field_groups;
@@ -158,6 +205,11 @@ impl Projection {
     /// lists has no emitted named struct at which either renderer can stop.
     /// Struct recursion remains supported through named definitions.
     fn validate_array_emission(&self) -> Result<(), SchemaError> {
+        if self.contains.is_some() {
+            return Err(
+                self.emission_error("contains requires existential array constraint emission")
+            );
+        }
         let mut projection = self;
         let mut seen = BTreeSet::new();
         while projection.effective_type() == Some("array") {
@@ -253,9 +305,6 @@ impl Projection {
     }
 
     fn effective_json_type(&self) -> Option<JsonType> {
-        if self.properties.as_ref().is_some_and(|p| !p.is_empty()) {
-            return Some(JsonType::Object);
-        }
         match self.projected_type {
             ProjectedType::Unspecified => None,
             ProjectedType::Value(kind) => Some(kind),
@@ -347,7 +396,41 @@ impl Projection {
                 })
                 .transpose()
         };
-        Ok((convert(&self.minimum)?, convert(&self.maximum)?))
+        let mut min = convert(&self.minimum)?;
+        let mut max = convert(&self.maximum)?;
+        for (number, lower) in [
+            (&self.exclusive_minimum, true),
+            (&self.exclusive_maximum, false),
+        ] {
+            if let Some(number) = number {
+                let keyword = if lower {
+                    "exclusiveMinimum"
+                } else {
+                    "exclusiveMaximum"
+                };
+                if self.effective_json_type() != Some(JsonType::Integer) {
+                    return Err(self.emission_error(format!(
+                        "{keyword} requires a strict non-integer bound API unavailable in pinned carina-core"
+                    )));
+                }
+                let value = strict_integer_bound(number, lower).ok_or_else(|| {
+                    self.emission_error(format!(
+                        "{keyword} leaves no representable integer values: {number}"
+                    ))
+                })?;
+                if lower {
+                    min = Some(min.map_or(value, |old| old.max(value)));
+                } else {
+                    max = Some(max.map_or(value, |old| old.min(value)));
+                }
+            }
+        }
+        if min.zip(max).is_some_and(|(min, max)| min > max) {
+            return Err(
+                self.emission_error("empty integer interval after exclusive bound translation")
+            );
+        }
+        Ok((min, max))
     }
 }
 
@@ -735,7 +818,6 @@ pub(super) fn materialize(p: Projection) -> SchemaProperty {
 
 pub(super) fn project(layer: &Arc<Layer>, node: NodeId) -> Result<Projection, SchemaError> {
     let p = project_inner(layer, node, &mut Vec::new())?;
-    validate(layer, node, &p)?;
     Ok(complete_projection(p))
 }
 
@@ -908,6 +990,7 @@ fn project_inner(
         }
     }
     visiting.pop();
+    intersect_literals(&mut p)?;
     validate(layer, node, &p)?;
     Ok(p)
 }
@@ -923,6 +1006,13 @@ pub(super) fn merge(
             layer,
             node,
             "closed additionalProperties domain in allOf/$ref cannot admit fields from another conjunct",
+        ));
+    }
+    if crosses_additional_schema_domain(p, &q) || crosses_additional_schema_domain(&q, p) {
+        return Err(error(
+            layer,
+            node,
+            "additionalProperties schema domain in allOf/$ref requires conjunct-local property emission",
         ));
     }
     p.concrete = None;
@@ -1111,6 +1201,22 @@ fn widens_closed_domain(closed: &Projection, other: &Projection) -> bool {
         })
 }
 
+fn crosses_additional_schema_domain(domain: &Projection, other: &Projection) -> bool {
+    domain.additional_schema.is_some()
+        && [
+            (&domain.properties, &other.properties),
+            (&domain.pattern_properties, &other.pattern_properties),
+        ]
+        .into_iter()
+        .any(|(declared, added)| {
+            added.iter().flat_map(|fields| fields.keys()).any(|name| {
+                declared
+                    .as_ref()
+                    .is_none_or(|fields| !fields.contains_key(name))
+            })
+        })
+}
+
 fn conjoin_child(
     layer: &Arc<Layer>,
     node: NodeId,
@@ -1140,6 +1246,7 @@ fn conjoin_child(
             let reference = p.reference.clone().or(q.reference.clone());
             merge(layer, node, &mut p, q)?;
             p.reference = reference;
+            intersect_literals(&mut p)?;
             validate(layer, node, &p)?;
             Ok(materialize(complete_projection(p)))
         }
@@ -1300,8 +1407,14 @@ fn alternatives(
                 ));
             }
         }
-        // Object alternatives share all facts except their fields and
-        // requirements. The containing struct owns the resulting group.
+        let requirements = std::iter::once(&first)
+            .chain(&arms)
+            .map(|arm| arm.required.clone())
+            .collect();
+        let (required, field_groups) =
+            FieldGroups::project(kind, requirements, layer.sources().pointer(node))?;
+        // Only equivalent field domains can be hoisted out of open branches.
+        // The containing struct owns the resulting presence group.
         let common_facts = |p: &Projection| {
             let mut common = p.clone();
             common.properties = None;
@@ -1310,8 +1423,33 @@ fn alternatives(
             common
         };
         let common = common_facts(&first);
+        if !exclusive_single_fields {
+            for other in &arms {
+                let mut first_domain = first.clone();
+                let mut other_domain = other.clone();
+                first_domain.required.clear();
+                other_domain.required.clear();
+                first_domain.field_groups = FieldGroups::default();
+                other_domain.field_groups = FieldGroups::default();
+                first_domain.reference = None;
+                other_domain.reference = None;
+                if !equivalent(&first_domain, &other_domain, &mut BTreeSet::new())? {
+                    let keyword = match kind {
+                        AlternativeKind::OneOf => "oneOf",
+                        AlternativeKind::AnyOf => "anyOf",
+                    };
+                    return Err(error(
+                        layer,
+                        node,
+                        format!(
+                            "{keyword} object field domains require equivalent branch-local constraints"
+                        ),
+                    ));
+                }
+            }
+        }
         let mut result = first;
-        let mut requirements = vec![std::mem::take(&mut result.required)];
+        result.required.clear();
         for other in arms {
             let mut other = other;
             if !equivalent(&common, &common_facts(&other), &mut BTreeSet::new())? {
@@ -1321,7 +1459,7 @@ fn alternatives(
                     "conflicting alternative object constraints",
                 ));
             }
-            requirements.push(std::mem::take(&mut other.required));
+            other.required.clear();
             result.field_groups.extend(other.field_groups);
             result
                 .dropped_bare_alternatives
@@ -1349,8 +1487,6 @@ fn alternatives(
                 }
             }
         }
-        let (required, field_groups) =
-            FieldGroups::project(kind, requirements, layer.sources().pointer(node))?;
         result.required = required;
         result.field_groups.extend(field_groups);
         return Ok(AlternativeProjection::FieldGroup(result));
@@ -1583,37 +1719,38 @@ fn equivalent_body(
 // Compare canonical JSON decimals directly. Converting an integer endpoint to
 // f64 would make 9007199254740993 equal to 9007199254740992.0 and make an
 // allOf intersection depend on arm order. No endpoint is rounded or truncated.
-fn number_cmp(a: &Number, b: &Number) -> std::cmp::Ordering {
-    fn decimal(number: &Number) -> (bool, String, i32) {
-        let spelling = number.to_string();
-        let negative = spelling.starts_with('-');
-        let magnitude = spelling.strip_prefix('-').unwrap_or(&spelling);
-        let (mantissa, exponent) =
-            magnitude
-                .split_once(['e', 'E'])
-                .map_or((magnitude, 0), |(digits, exponent)| {
-                    (
-                        digits,
-                        exponent
-                            .parse::<i32>()
-                            .expect("finite JSON number exponent"),
-                    )
-                });
-        let fraction = mantissa
-            .split_once('.')
-            .map_or(0, |(_whole, fraction)| fraction.len() as i32);
-        let digits = mantissa
-            .replace('.', "")
-            .trim_start_matches('0')
-            .to_string();
-        if digits.is_empty() {
-            (false, "0".into(), 0)
-        } else {
-            (negative, digits, exponent - fraction)
-        }
+fn decimal_number(number: &Number) -> (bool, String, i32) {
+    let spelling = number.to_string();
+    let negative = spelling.starts_with('-');
+    let magnitude = spelling.strip_prefix('-').unwrap_or(&spelling);
+    let (mantissa, exponent) =
+        magnitude
+            .split_once(['e', 'E'])
+            .map_or((magnitude, 0), |(digits, exponent)| {
+                (
+                    digits,
+                    exponent
+                        .parse::<i32>()
+                        .expect("finite JSON number exponent"),
+                )
+            });
+    let fraction = mantissa
+        .split_once('.')
+        .map_or(0, |(_whole, fraction)| fraction.len() as i32);
+    let digits = mantissa
+        .replace('.', "")
+        .trim_start_matches('0')
+        .to_string();
+    if digits.is_empty() {
+        (false, "0".into(), 0)
+    } else {
+        (negative, digits, exponent - fraction)
     }
-    let (negative_a, digits_a, power_a) = decimal(a);
-    let (negative_b, digits_b, power_b) = decimal(b);
+}
+
+fn number_cmp(a: &Number, b: &Number) -> std::cmp::Ordering {
+    let (negative_a, digits_a, power_a) = decimal_number(a);
+    let (negative_b, digits_b, power_b) = decimal_number(b);
     if negative_a != negative_b {
         return if negative_a {
             std::cmp::Ordering::Less
@@ -1647,7 +1784,166 @@ fn number_cmp(a: &Number, b: &Number) -> std::cmp::Ordering {
     }
 }
 
+/// Search the integer lattice with decimal comparisons, including fractional
+/// and exponent endpoints. Never round an i64 endpoint through f64.
+fn strict_integer_bound(number: &Number, lower: bool) -> Option<i64> {
+    if (lower && !number_cmp(number, &Number::from(i64::MAX)).is_lt())
+        || (!lower && !number_cmp(number, &Number::from(i64::MIN)).is_gt())
+    {
+        return None;
+    }
+    let mut lo = i128::from(i64::MIN);
+    let mut hi = i128::from(i64::MAX);
+    while lo < hi {
+        let mid = lo + (hi - lo + i128::from(!lower)) / 2;
+        let candidate = i64::try_from(mid).expect("search stays inside the i64 domain");
+        let order = number_cmp(&Number::from(candidate), number);
+        if lower {
+            if order.is_gt() {
+                hi = mid;
+            } else {
+                lo = mid + 1;
+            }
+        } else if order.is_lt() {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    i64::try_from(lo).ok()
+}
+
+/// Finite literal domains can absorb scalar constraints exactly before enum
+/// emission. Evaluate the source regex with JSON Schema's substring semantics;
+/// a finite enum no longer needs a separate pattern/range validator.
+fn intersect_literals(p: &mut Projection) -> Result<(), SchemaError> {
+    if p.const_value.is_none() && p.enum_values.is_none() {
+        return Ok(());
+    }
+    let pattern = p
+        .pattern
+        .as_ref()
+        .filter(|_pattern| {
+            p.const_value.as_ref().is_some_and(Value::is_string)
+                || p.enum_values
+                    .as_ref()
+                    .is_some_and(|values| values.iter().any(Value::is_string))
+        })
+        .map(|pattern| {
+            carina_core::schema::CompiledPattern::try_new(pattern).map_err(|error| {
+                p.emission_error(format!(
+                    "literal pattern intersection is unsupported: {error}"
+                ))
+            })
+        })
+        .transpose()?;
+    let accepts = |value: &Value| -> Result<bool, SchemaError> {
+        match value {
+            Value::String(value) => {
+                if p.format.is_some() {
+                    return Err(p.emission_error(
+                        "literal format intersection requires a format validator",
+                    ));
+                }
+                let length = value.chars().count() as u64;
+                Ok(p.min_length.is_none_or(|min| length >= min)
+                    && p.max_length.is_none_or(|max| length <= max)
+                    && pattern
+                        .as_ref()
+                        .is_none_or(|pattern| pattern.is_match(value)))
+            }
+            Value::Number(value) => {
+                for (bound, lower, strict) in [
+                    (&p.minimum, true, false),
+                    (&p.maximum, false, false),
+                    (&p.exclusive_minimum, true, true),
+                    (&p.exclusive_maximum, false, true),
+                ] {
+                    if let Some(bound) = bound {
+                        let order = number_cmp(value, bound);
+                        if (lower && order.is_lt())
+                            || (!lower && order.is_gt())
+                            || (strict && order.is_eq())
+                        {
+                            return Ok(false);
+                        }
+                    }
+                }
+                if let Some(multiple) = &p.multiple_of {
+                    let integer = value.as_i64().ok_or_else(|| {
+                        p.emission_error("non-integral literal multipleOf intersection")
+                    })?;
+                    let (_negative, digits, power) = decimal_number(multiple);
+                    let divisor = digits.parse::<u128>().map_err(|error| {
+                        p.emission_error(format!(
+                            "literal multipleOf intersection is unsupported: {error}"
+                        ))
+                    })?;
+                    if divisor == 0 {
+                        return Err(p.emission_error("literal multipleOf must be positive"));
+                    }
+                    let mut magnitude = u128::from(integer.unsigned_abs());
+                    if power >= 0 {
+                        for _power in 0..power {
+                            if !magnitude.is_multiple_of(10) {
+                                return Ok(false);
+                            }
+                            magnitude /= 10;
+                        }
+                        Ok(magnitude.is_multiple_of(divisor))
+                    } else {
+                        let mut remainder = magnitude % divisor;
+                        for _power in power..0 {
+                            remainder = (remainder * 10) % divisor;
+                        }
+                        Ok(remainder == 0)
+                    }
+                } else {
+                    Ok(true)
+                }
+            }
+            Value::Null => Ok(true),
+            Value::Bool(_value) => Ok(true),
+            Value::Array(_value) => Ok(true),
+            Value::Object(_value) => Ok(true),
+        }
+    };
+    if let Some(value) = &p.const_value
+        && !accepts(value)?
+    {
+        return Err(
+            p.emission_error("empty literal intersection for const and effective constraints")
+        );
+    }
+    if let Some(values) = &p.enum_values {
+        let mut retained = Vec::new();
+        for value in values {
+            if accepts(value)? {
+                retained.push(value.clone());
+            }
+        }
+        if retained.is_empty() {
+            return Err(
+                p.emission_error("empty literal intersection for enum and effective constraints")
+            );
+        }
+        p.enum_values = Some(retained);
+    }
+    Ok(())
+}
+
 pub(super) fn validate(layer: &Layer, node: NodeId, p: &Projection) -> Result<(), SchemaError> {
+    if p.properties
+        .as_ref()
+        .is_some_and(|fields| !fields.is_empty())
+        && p.projected_type != ProjectedType::Value(JsonType::Object)
+    {
+        return Err(error(
+            layer,
+            node,
+            "properties cannot override an explicit non-object type",
+        ));
+    }
     for dropped in &p.dropped_bare_alternatives {
         if bare_type(layer, dropped.arm) != Some(dropped.json_type) {
             return Err(error(
@@ -1858,7 +2154,10 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
         {
             return Ok(());
         }
-        if matches!(p.effective_type(), Some("integer" | "number")) {
+        if matches!(p.effective_type(), Some("integer" | "number"))
+            && p.enum_values.is_none()
+            && p.const_value.is_none()
+        {
             p.integer_bounds()?;
         }
         for child in p

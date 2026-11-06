@@ -8,6 +8,208 @@ fn emission_fixture(property: serde_json::Value) -> ParsedCfnSchema {
     .unwrap()
 }
 
+fn round3_projection_error(schema: &ParsedCfnSchema, construct: &str) {
+    for result in [generate_synthetic_schema_code(schema), generate_test_markdown(schema, "AWS::EC2::Route")] {
+        let error = result.expect_err("an unpreserved constraint must be a typed error");
+        assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+            Some(schema_layer::SchemaError::Projection { pointer, reason })
+            if pointer.starts_with("/properties/Probe") && reason.contains(construct)), "{error:#}");
+    }
+}
+
+#[test]
+fn round3_allof_additional_property_domains_are_typed_errors() {
+    let domain = json!({"type":"object","additionalProperties":{"type":"integer"}});
+    let fields = json!({"properties":{"A":{"type":"boolean"}}});
+    for arms in [json!([domain, fields]), json!([fields, domain])] {
+        round3_projection_error(&emission_fixture(json!({"allOf":arms})), "additionalProperties");
+    }
+    let schema = ParsedCfnSchema::from_json(json!({
+        "typeName":"AWS::Test::Emission", "properties":{"Probe":{
+            "$ref":"#/definitions/Map", "properties":{"A":{"type":"boolean"}}
+        }}, "definitions":{"Map":domain}
+    })).unwrap();
+    round3_projection_error(&schema, "additionalProperties");
+}
+
+#[test]
+fn round3_explicit_nonobject_types_with_properties_are_typed_errors() {
+    for kind in ["string", "integer", "boolean", "array"] {
+        let mut property = json!({"type":kind,"properties":{"A":{"type":"boolean"}}});
+        if kind == "array" { property["items"] = json!({"type":"string"}); }
+        round3_projection_error(&emission_fixture(property), "properties");
+    }
+}
+
+#[test]
+fn round3_anyof_branch_field_domains_are_typed_errors() {
+    let a = json!({"type":"object","properties":{"A":{"type":"integer"}},"required":["A"]});
+    let b = json!({"type":"object","properties":{"B":{"type":"boolean"}},"required":["B"]});
+    for keyword in ["anyOf", "oneOf"] {
+        for arms in [json!([a,b]), json!([b,a])] {
+            round3_projection_error(&emission_fixture(json!({keyword:arms})), "field domain");
+        }
+    }
+}
+
+#[test]
+fn round3_literal_intersections_filter_every_effective_constraint() {
+    for (literal, constraint, expected) in [
+        (json!({"type":"integer","enum":[1,2]}), json!({"minimum":2}), json!([2])),
+        (json!({"type":"integer","enum":[1,2,3]}), json!({"exclusiveMinimum":1,"exclusiveMaximum":3}), json!([2])),
+        (json!({"type":"integer","enum":[1,2,3,4]}), json!({"multipleOf":2}), json!([2,4])),
+        (json!({"type":"integer","enum":[1,2,3]}), json!({"multipleOf":0.3}), json!([3])),
+        (json!({"type":"string","enum":["a","bb","ccc"]}), json!({"minLength":2,"maxLength":2}), json!(["bb"])),
+        (json!({"type":"string","enum":["ab","bc"]}), json!({"pattern":"^a"}), json!(["ab"])),
+    ] {
+        for arms in [json!([literal,constraint]), json!([constraint,literal])] {
+            let schema = emission_fixture(json!({"allOf":arms}));
+            let rust = generate_synthetic_schema_code(&schema).unwrap();
+            assert_eq!(serde_json::to_value(&schema.properties["Probe"].query().enum_values).unwrap(), expected);
+            let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+            if expected == json!([2]) {
+                assert!(rust.contains("Some((Some(2), Some(2)))"), "{rust}");
+                assert!(!rust.contains("Some((Some(1), Some(1)))"), "{rust}");
+                assert!(markdown.contains("IntEnum([2])"), "{markdown}");
+            }
+        }
+    }
+}
+
+#[test]
+fn round3_literal_patterns_use_the_schema_dialect() {
+    let schema = emission_fixture(json!({"type":"string","enum":["1","１"],"pattern":r"^\d+$"}));
+    generate_synthetic_schema_code(&schema).unwrap();
+    assert_eq!(schema.properties["Probe"].query().enum_values, Some(vec![json!("1")]));
+    let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+    assert!(!markdown.contains('１'), "{markdown}");
+}
+
+#[test]
+fn round3_map_scalar_constraints_and_bounds_survive_nested_wrappers() {
+    let map = json!({"type":"object","patternProperties":{"^[a-z]+$":{"type":"string","enum":["alpha","beta"]}},
+        "additionalProperties":false,"minProperties":2,"maxProperties":5});
+    for property in [map.clone(), json!({"type":"array","items":map}), json!({"type":"object","properties":{"Entries":map}})] {
+        let schema = emission_fixture(property);
+        let rust = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(rust.contains("AttributeType::refined_map(") && rust.contains("Some((Some(2), Some(5)))"), "{rust}");
+        assert!(rust.contains("\"alpha\".to_string(), \"beta\".to_string()"), "{rust}");
+        let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+        assert!(markdown.contains("(entries: 2..=5)"), "{markdown}");
+    }
+}
+
+#[test]
+fn round3_empty_literal_intersections_are_typed_errors() {
+    for property in [
+        json!({"allOf":[{"type":"integer","const":1},{"minimum":2}]}),
+        json!({"type":"integer","enum":[1,2],"minimum":3}),
+        json!({"type":"string","const":"a","minLength":2}),
+        json!({"type":"string","enum":["a","b"],"pattern":"^c$"}),
+    ] {
+        round3_projection_error(&emission_fixture(property), "literal intersection");
+    }
+}
+
+#[test]
+fn round3_property_dependencies_reach_markdown_without_field_groups() {
+    for root in [false, true] {
+        let object = json!({"type":"object","properties":{
+            "Trigger":{"type":"integer"},"Needed":{"type":"boolean"}
+        },"dependencies":{"Trigger":["Needed"]}});
+        let source = if root {
+            json!({"typeName":"AWS::Test::Emission","properties":object["properties"],"dependencies":object["dependencies"]})
+        } else {
+            json!({"typeName":"AWS::Test::Emission","properties":{"Probe":object}})
+        };
+        let schema = ParsedCfnSchema::from_json(source).unwrap();
+        let rust = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(!rust.contains("FieldGroup::"), "{rust}");
+        let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+        assert!(markdown.contains("`trigger` requires `needed`"), "{markdown}");
+    }
+}
+
+#[test]
+fn round3_contains_is_a_typed_error_in_both_renderers() {
+    for contains in [json!({"type":"integer","minimum":1}), json!({"type":"integer","maximum":0})] {
+        round3_projection_error(&emission_fixture(json!({
+            "type":"array","items":{"type":"integer"},"contains":contains
+        })), "contains");
+    }
+}
+
+#[test]
+fn round3_ordinary_map_bounds_reach_rust_and_markdown() {
+    for value in [json!({"type":"string"}), json!({"type":"object","properties":{"Text":{"type":"string"}}})] {
+        let schema = emission_fixture(json!({"type":"object","patternProperties":{"^[a-z]+$":value},
+            "additionalProperties":false,"minProperties":2,"maxProperties":5}));
+        let rust = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(rust.contains("AttributeType::refined_map(") && rust.contains("Some((Some(2), Some(5)))"), "{rust}");
+        let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+        assert!(markdown.contains("(entries: 2..=5)"), "{markdown}");
+    }
+}
+
+#[test]
+fn round3_direct_string_map_values_use_shared_scalar_emission() {
+    for (value, rust_fragment, markdown_fragment) in [
+        (json!({"type":"string","minLength":2,"maxLength":5,"pattern":"^[a-z]+$"}), "AttributeType::refined_string(", "String(pattern, len: 2..=5)"),
+        (json!({"type":"string","enum":["alpha","beta"]}), "\"alpha\".to_string(), \"beta\".to_string()", "Enum (Probe)"),
+        (json!({"type":"string","const":"fixed"}), "\"fixed\".to_string()", "Enum (Probe)"),
+    ] {
+        let schema = emission_fixture(json!({"type":"object","patternProperties":{".*":value},"additionalProperties":false}));
+        let rust = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(rust.contains(rust_fragment), "{rust}");
+        let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+        assert!(markdown.contains(markdown_fragment), "{markdown}");
+    }
+}
+
+#[test]
+fn round3_exclusive_integer_bounds_are_exact() {
+    for (property, range, display) in [
+        (json!({"type":"integer","exclusiveMinimum":0}), "Some((Some(1), None))", "Int(1..)"),
+        (json!({"type":"integer","exclusiveMaximum":0}), "Some((None, Some(-1)))", "Int(..=-1)"),
+        (json!({"type":"integer","minimum":3,"exclusiveMinimum":0,"maximum":9,"exclusiveMaximum":8}), "Some((Some(3), Some(7)))", "Int(3..=7)"),
+        (json!({"type":"integer","exclusiveMinimum":9007199254740992_i64}), "Some((Some(9007199254740993), None))", "Int(9007199254740993..)"),
+    ] {
+        let schema = emission_fixture(property);
+        let rust = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(rust.contains(range), "{rust}");
+        let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+        assert!(markdown.contains(display), "{markdown}");
+    }
+}
+
+#[test]
+fn round3_unrepresentable_exclusive_bounds_are_typed_errors() {
+    for property in [
+        json!({"type":"number","exclusiveMinimum":0}),
+        json!({"type":"number","exclusiveMaximum":1}),
+        json!({"type":"integer","exclusiveMinimum":i64::MAX}),
+        json!({"type":"integer","exclusiveMaximum":i64::MIN}),
+    ] {
+        round3_projection_error(&emission_fixture(property), "exclusive");
+    }
+}
+
+#[test]
+fn round3_fractional_exclusive_integer_bounds_are_exact() {
+    for (lower, upper, range) in [
+        (json!(0.5), json!(3.5), "Some((Some(1), Some(3)))"),
+        (json!(-3.5), json!(-0.5), "Some((Some(-3), Some(-1)))"),
+        (json!(0.0), json!(3.0), "Some((Some(1), Some(2)))"),
+        (json!(1e-200), json!(3), "Some((Some(1), Some(2)))"),
+        (json!(-1e-200), json!(3), "Some((Some(0), Some(2)))"),
+    ] {
+        let schema = emission_fixture(json!({"type":"integer","exclusiveMinimum":lower,"exclusiveMaximum":upper}));
+        let rust = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(rust.contains(range), "{rust}");
+        generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+    }
+}
+
 #[test]
 fn round2_closed_allof_domains_are_typed_errors() {
     let closed = json!({"type":"object","properties":{"A":{"type":"boolean"}},"additionalProperties":false});

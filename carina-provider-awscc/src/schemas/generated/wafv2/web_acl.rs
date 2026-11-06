@@ -204,8 +204,8 @@ pub fn wafv2_web_acl_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_challenge_config_attribute());
     #[inline(never)]
     fn build_custom_response_bodies_attribute() -> AttributeSchema {
-        AttributeSchema::optional("custom_response_bodies", AttributeType::map_with_key(AttributeType::refined_string(None, Some("^[\\w\\-]+$".to_string()), Some((Some(1), Some(128))), None), AttributeType::struct_("CustomResponseBody".to_string(), vec![StructField::required("content", AttributeType::refined_string(None, None, Some((Some(1), Some(10240))), None)).with_provider_name("Content").build(),
-                    StructField::required("content_type", AttributeType::enum_(carina_core::schema::enum_identity("ResponseContentType", Some("aws.wafv2.WebAcl.CustomResponseBody")), Some(vec!["TEXT_PLAIN".to_string(), "TEXT_HTML".to_string(), "APPLICATION_JSON".to_string()]), vec![("TEXT_PLAIN".to_string(), "text_plain".to_string()), ("TEXT_HTML".to_string(), "text_html".to_string()), ("APPLICATION_JSON".to_string(), "application_json".to_string())], None, None)).with_provider_name("ContentType").build()])))
+        AttributeSchema::optional("custom_response_bodies", AttributeType::refined_map(AttributeType::refined_string(None, Some("^[\\w\\-]+$".to_string()), Some((Some(1), Some(128))), None), AttributeType::struct_("CustomResponseBody".to_string(), vec![StructField::required("content", AttributeType::refined_string(None, None, Some((Some(1), Some(10240))), None)).with_provider_name("Content").build(),
+                    StructField::required("content_type", AttributeType::enum_(carina_core::schema::enum_identity("ResponseContentType", Some("aws.wafv2.WebAcl.CustomResponseBody")), Some(vec!["TEXT_PLAIN".to_string(), "TEXT_HTML".to_string(), "APPLICATION_JSON".to_string()]), vec![("TEXT_PLAIN".to_string(), "text_plain".to_string()), ("TEXT_HTML".to_string(), "text_html".to_string()), ("APPLICATION_JSON".to_string(), "application_json".to_string())], None, None)).with_provider_name("ContentType").build()]), Some((Some(1), None))))
                 .with_provider_name("CustomResponseBodies")
             .build()
     }

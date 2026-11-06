@@ -5,12 +5,12 @@
             .build()
     }
     fn build_enum_modes_attribute() -> AttributeSchema {
-        AttributeSchema::optional("enum_modes", AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:.*)\\z".to_string()), None, None), AttributeType::string()))
+        AttributeSchema::optional("enum_modes", AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:.*)\\z".to_string()), None, None), AttributeType::enum_(carina_core::schema::enum_identity("EnumModes", Some("aws.ec2.Vpc")), Some(vec!["enabled".to_string(), "disabled".to_string()]), vec![("enabled".to_string(), "enabled".to_string()), ("disabled".to_string(), "disabled".to_string())], None, None)))
                 .with_provider_name("EnumModes")
             .build()
     }
     fn build_modes_attribute() -> AttributeSchema {
-        AttributeSchema::optional("modes", AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:.*)\\z".to_string()), None, None), AttributeType::string()))
+        AttributeSchema::optional("modes", AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:.*)\\z".to_string()), None, None), AttributeType::refined_string(None, Some("^[a-z]+$".to_string()), Some((Some(1), Some(256))), None)))
                 .with_provider_name("Modes")
             .build()
     }

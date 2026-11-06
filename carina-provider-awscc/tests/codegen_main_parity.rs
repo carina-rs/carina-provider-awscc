@@ -1,6 +1,7 @@
 //! Expected snippets originated from origin/main (d02e242) codegen.
 //! The Logs fixture includes the documented single-policy limit from #525.
 //! The VPC map fixtures include CFN-derived patternProperties keys from #525.
+//! Map value constraints and enums now follow the shared scalar projection.
 #![cfg(not(target_arch = "wasm32"))]
 
 use serde_json::{Value, json};
@@ -55,7 +56,7 @@ fn cases() -> Vec<(&'static str, Value, &'static [&'static str])> {
         json!({"$ref": "#/definitions/Association"});
     vpc["definitions"]["Association"] =
         json!({"type": "object", "properties": {"AssociationId": {"type": "string"}}});
-    vpc["properties"]["Modes"] = json!({"type": "object", "patternProperties": {".*": {"type": "string", "pattern": "^(?!aws:).*$", "minLength": 1, "maxLength": 256}}, "additionalProperties": false});
+    vpc["properties"]["Modes"] = json!({"type": "object", "patternProperties": {".*": {"type": "string", "pattern": "^[a-z]+$", "minLength": 1, "maxLength": 256}}, "additionalProperties": false});
     vpc["properties"]["EnumModes"] = json!({"type": "object", "patternProperties": {".*": {"type": "string", "enum": ["enabled", "disabled"]}}, "additionalProperties": false});
     vpc["properties"]["Tags"]["items"] = json!({"type": "object", "properties": {"Key": {"type": "string"}, "Value": {"type": "string"}}, "required": ["Key", "Value"]});
     let mut subscription: Value = serde_json::from_str(include_str!(

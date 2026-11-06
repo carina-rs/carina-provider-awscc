@@ -481,6 +481,11 @@ impl Classifier<'_> {
             && let (Some(key), Some(value)) = (properties.get("Key"), properties.get("Value"))
             && let (Some(key), Some(value)) = (self.string(key)?, self.string(value)?)
         {
+            if p.min_properties.is_some() || p.max_properties.is_some() {
+                return Err(p.emission_error(
+                    "Key/Value item property-count constraints cannot be preserved by a tag map",
+                ));
+            }
             return Ok(Some(TagMap {
                 key: TagKey::Property(key),
                 value,

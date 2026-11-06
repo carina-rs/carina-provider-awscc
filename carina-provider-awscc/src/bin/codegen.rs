@@ -3076,6 +3076,7 @@ struct StructDefInfo {
     /// Required fields
     required: Vec<String>,
     field_groups: FieldGroups,
+    conditional_requirements: Vec<schema_projection::ConditionalRequirement>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -3145,6 +3146,7 @@ enum MarkdownLinkedType {
     Map {
         key: Box<MarkdownLinkedType>,
         value: Box<MarkdownLinkedType>,
+        suffix: Option<String>,
     },
 }
 
@@ -3190,12 +3192,15 @@ impl MarkdownLinkedType {
                     page.push_str(suffix);
                 }
             }
-            Self::Map { key, value } => {
+            Self::Map { key, value, suffix } => {
                 page.push_str("Map\\<");
                 key.write_to(page);
                 page.push_str(", ");
                 value.write_to(page);
                 page.push_str("\\>");
+                if let Some(suffix) = suffix {
+                    page.push_str(suffix);
+                }
             }
         }
     }
@@ -3219,12 +3224,15 @@ impl MarkdownLinkedType {
                     cell.push_text(suffix);
                 }
             }
-            Self::Map { key, value } => {
+            Self::Map { key, value, suffix } => {
                 cell.push_text("Map\\<");
                 key.write_to_table_cell(cell);
                 cell.push_text(", ");
                 value.write_to_table_cell(cell);
                 cell.push_text("\\>");
+                if let Some(suffix) = suffix {
+                    cell.push_text(suffix);
+                }
             }
         }
     }
@@ -4105,20 +4113,23 @@ impl TypeDisplay {
     }
 }
 
-fn object_map_type_text(
+fn object_map_type_display(
     prop_name: &str,
     schema: &EmissionContext<'_>,
     property_path: CfnPropertyPath<'_>,
     prop: &SchemaProperty,
     provider_path: &[String],
     value: &SchemaProperty,
-) -> Result<String> {
+) -> Result<TypeDisplay> {
     let key = map_key_type(prop, schema, provider_path, property_path)?
         .as_ref()
         .map(map_key_display)
         .unwrap_or_else(|| "String".to_string());
-    Ok(match object_map_value(schema, property_path, value)? {
-        ObjectMapValueKind::DirectString => format!("Map<{key}, String>"),
+    let value = match object_map_value(schema, property_path, value)? {
+        ObjectMapValueKind::DirectString => {
+            let value_path = schema.collection_path(provider_path, PathSegment::MapValue);
+            string_leaf(schema.property_at(&value_path, value), property_path, None)?.display()
+        }
         ObjectMapValueKind::Struct => {
             let struct_name = value
                 .try_query()?
@@ -4126,8 +4137,15 @@ fn object_map_type_text(
                 .as_ref()
                 .map(|reference| reference.name.as_str())
                 .unwrap_or(prop_name);
-            format!("Map<{key}, Struct({struct_name})>")
+            format!("Struct({struct_name})")
         }
+    };
+    let (min_entries, max_entries) = prop.try_query()?.map_bounds()?;
+    Ok(TypeDisplay::Map {
+        key,
+        value,
+        min_entries,
+        max_entries,
     })
 }
 
@@ -4283,14 +4301,14 @@ fn type_display_at_resolved(
     }
     if projection.emission_type()? == EmissionType::Object {
         if let Some(value) = direct_object_map_value(prop) {
-            return Ok(TypeDisplay::Code(object_map_type_text(
+            return object_map_type_display(
                 prop_name,
                 schema,
                 cfn_property_path,
                 prop,
                 provider_path,
                 value,
-            )?));
+            );
         }
         return Err(prop.try_query()?.emission_error(format!(
                 "unsupported object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
@@ -4342,14 +4360,17 @@ fn scalar_type_display_at(
                     range_display_string(Some(*min), Some(*max))
                 )));
             }
-            let range: Option<(Option<i64>, Option<i64>)> =
-                if projection.minimum.is_some() || projection.maximum.is_some() {
-                    Some(projection.integer_bounds()?)
-                } else {
-                    known_int_range_overrides()
-                        .get(prop_name)
-                        .map(|&(min, max)| (Some(min), Some(max)))
-                };
+            let range: Option<(Option<i64>, Option<i64>)> = if projection.minimum.is_some()
+                || projection.maximum.is_some()
+                || projection.exclusive_minimum.is_some()
+                || projection.exclusive_maximum.is_some()
+            {
+                Some(projection.integer_bounds()?)
+            } else {
+                known_int_range_overrides()
+                    .get(prop_name)
+                    .map(|&(min, max)| (Some(min), Some(max)))
+            };
             if let Some((min, max)) = range {
                 let range_str = range_display_string(min, max);
                 if let Some(ref fmt) = prop.query().format {
@@ -4372,14 +4393,17 @@ fn scalar_type_display_at(
                     range_display_string(Some(*min), Some(*max))
                 )));
             }
-            let range: Option<(Option<i64>, Option<i64>)> =
-                if projection.minimum.is_some() || projection.maximum.is_some() {
-                    Some(projection.integer_bounds()?)
-                } else {
-                    known_int_range_overrides()
-                        .get(prop_name)
-                        .map(|&(min, max)| (Some(min), Some(max)))
-                };
+            let range: Option<(Option<i64>, Option<i64>)> = if projection.minimum.is_some()
+                || projection.maximum.is_some()
+                || projection.exclusive_minimum.is_some()
+                || projection.exclusive_maximum.is_some()
+            {
+                Some(projection.integer_bounds()?)
+            } else {
+                known_int_range_overrides()
+                    .get(prop_name)
+                    .map(|&(min, max)| (Some(min), Some(max)))
+            };
             if let Some((min, max)) = range {
                 let range_str = range_display_string(min, max);
                 if let Some(ref fmt) = prop.query().format {
@@ -4408,6 +4432,7 @@ struct MarkdownStructDef {
     properties: BTreeMap<String, SchemaProperty>,
     required: Vec<String>,
     field_groups: FieldGroups,
+    conditional_requirements: Vec<schema_projection::ConditionalRequirement>,
 }
 
 /// Classify exactly the property shapes that own a Markdown struct target.
@@ -4448,6 +4473,7 @@ fn markdown_struct_def(
             properties: properties.clone(),
             required: prop.query().required.clone(),
             field_groups: prop.query().field_groups.clone(),
+            conditional_requirements: prop.query().conditional_requirements()?,
         }),
         PropertyShape::Merged(properties) => Some(MarkdownStructDef {
             key,
@@ -4455,6 +4481,7 @@ fn markdown_struct_def(
             properties,
             required: prop.query().required.clone(),
             field_groups: prop.query().field_groups.clone(),
+            conditional_requirements: prop.query().conditional_requirements()?,
         }),
         PropertyShape::Inline | PropertyShape::Array { variant: _ } | PropertyShape::Unresolved => {
             None
@@ -4505,6 +4532,7 @@ fn markdown_enum_type(
         Ok(MarkdownLinkedType::Map {
             key: Box::new(MarkdownLinkedType::Text("String".to_string())),
             value: Box::new(markdown_enum_type(value, schema, key)?),
+            suffix: markdown_map_limits(prop.try_query()?)?,
         })
     } else {
         Ok(MarkdownLinkedType::Enum(key.clone()))
@@ -4547,7 +4575,7 @@ fn markdown_link_type(
         let value_kind = object_map_value(schema, cfn_path, value)?;
         let key_enum = key_enum_info(&key_type).is_some();
         // Without links, retain the ordinary code-span map display. Its key
-        // refinement still comes from map_key_type in object_map_type_text.
+        // refinement still comes from map_key_type in object_map_type_display.
         if !key_enum && enum_target.is_none() && value_kind == ObjectMapValueKind::DirectString {
             return Ok(None);
         }
@@ -4576,12 +4604,13 @@ fn markdown_link_type(
                     .value
                     .display()
             } else {
-                "String".to_string()
+                string_leaf(schema.property_at(&value_path, value), cfn_path, None)?.display()
             })
         };
         return Ok(Some(MarkdownLinkedType::Map {
             key: Box::new(key),
             value: Box::new(value),
+            suffix: markdown_map_limits(prop.try_query()?)?,
         }));
     }
     if map_key_enum_info(prop, schema, prop_name).is_some()
@@ -4635,6 +4664,7 @@ fn markdown_link_type(
             return Ok(Some(MarkdownLinkedType::Map {
                 key: Box::new(MarkdownLinkedType::Text("String".to_string())),
                 value: Box::new(value_type),
+                suffix: markdown_map_limits(prop.try_query()?)?,
             }));
         }
     }
@@ -5237,6 +5267,11 @@ fn render_markdown(
         &schema.root_projection()?.field_groups,
         |member| dsl_attribute_name(schema, member),
     )?;
+    write_conditional_requirement_notes(
+        &mut page,
+        &schema.root_projection()?.conditional_requirements()?,
+        |member| dsl_attribute_name(schema, member),
+    )?;
 
     for (prop_name, prop) in documented_top_level_properties(schema) {
         let property_path = [prop_name.clone()];
@@ -5492,6 +5527,11 @@ fn render_markdown(
             write_field_group_notes(&mut page, &def_info.field_groups, |member| {
                 Ok(member.to_snake_case())
             })?;
+            write_conditional_requirement_notes(
+                &mut page,
+                &def_info.conditional_requirements,
+                |member| Ok(member.to_snake_case()),
+            )?;
         }
     }
 
@@ -5628,6 +5668,7 @@ fn collect_struct_defs(
             properties,
             required,
             field_groups,
+            conditional_requirements,
         } = struct_def;
         let struct_cfn_parent = name.clone();
         let def_path = extend_struct_path(struct_path, &name);
@@ -5641,6 +5682,7 @@ fn collect_struct_defs(
                     properties: properties.clone(),
                     required,
                     field_groups,
+                    conditional_requirements,
                 });
                 true
             }
@@ -5838,6 +5880,27 @@ fn write_field_group_notes(
     Ok(())
 }
 
+fn write_conditional_requirement_notes(
+    page: &mut PageBuilder<MarkdownTarget>,
+    requirements: &[schema_projection::ConditionalRequirement],
+    name: impl Fn(&str) -> Result<String>,
+) -> Result<()> {
+    for requirement in requirements {
+        page.push_str(&format!(
+            "`{}` requires `{}`.\n\n",
+            name(&requirement.if_present)?,
+            name(&requirement.then_present)?
+        ));
+    }
+    Ok(())
+}
+
+fn markdown_map_limits(projection: &Projection) -> Result<Option<String>> {
+    let (min, max) = projection.map_bounds()?;
+    Ok((min.is_some() || max.is_some())
+        .then(|| TypeDisplay::collection_limits("entries", min, max)))
+}
+
 /// Produce the exact AttributeType expression used by a top-level generated
 /// attribute. Besides returning Rust source, this walks every nested struct
 /// that survives overrides and records its emitted read-only fields.
@@ -5936,13 +5999,14 @@ fn generate_attribute_type(
         return integer_from_number_type(prop, &schema.type_name, &property_path.to_string());
     }
 
-    // Map key enums publish ordinary enum metadata, but their generated map
-    // already contains that enum in the key slot. Never substitute it for values.
+    // Maps emit keys, scalar values and entry bounds together. Preserve those
+    // wrappers when publishing enum metadata for either leaf.
     if (!is_dsl_tags_property(schema, paths.provider)?
         || prop
             .try_query()
             .is_ok_and(|p| p.effective_type() == Some("object")))
-        && map_key_enum_info(prop, schema, prop_name).is_some()
+        && (map_key_enum_info(prop, schema, prop_name).is_some()
+            || contains_object_map(prop, schema))
     {
         return Ok(cfn_type_to_carina_type_with_enum_with_paths(
             prop, schema, namespace, enums, paths,
@@ -6509,6 +6573,8 @@ pub fn {}() -> AwsccSchemaConfig {{
     }
 
     // Portable field groups survive protocol transport and the WASM boundary.
+    // ConditionalRequirement facts remain Markdown notes: carina#4263 tracks
+    // the presence-conditioned rule missing from core's Rust validation API.
     for group in &field_groups.groups {
         let group = field_group_rust(group, |member| dsl_attribute_name(schema, member))?;
         body.push_str(&format!("    schema = schema.field_group({group});\n"));
@@ -7503,6 +7569,27 @@ fn property_object_map_value<'a>(
         .flatten()
 }
 
+fn contains_object_map<'a>(mut property: &'a SchemaProperty, schema: &'a CfnSchema) -> bool {
+    let mut visited = BTreeSet::new();
+    loop {
+        if let Some(origin) = &property.origin
+            && !visited.insert(origin.node)
+        {
+            return false;
+        }
+        if property_object_map_value(property, schema).is_some() {
+            return true;
+        }
+        if property.query().effective_type() != Some("array") {
+            return false;
+        }
+        let Some(items) = property.query().items.as_deref() else {
+            return false;
+        };
+        property = items;
+    }
+}
+
 struct StructGenerationPaths<'a> {
     structural: &'a [String],
     provider: &'a [String],
@@ -7618,6 +7705,9 @@ fn generate_struct_type(
         .collect::<Result<_>>()?;
 
     let fields_str = fields.join(",\n                    ");
+    // ConditionalRequirement facts stay in the shared projection and Markdown.
+    // carina#4263: core has no presence-conditioned rule; Rust validation must
+    // not strengthen these dependencies into unconditional FieldGroups.
     let struct_type = if projection.field_groups.groups.is_empty() {
         format!(
             "AttributeType::struct_({}.to_string(), vec![{}])",
@@ -13721,6 +13811,36 @@ struct CfnTypeGenerationPaths<'a> {
     cfn_parent: Option<&'a str>,
 }
 
+fn object_map_expression(
+    prop: &SchemaProperty,
+    key: Option<String>,
+    value: &str,
+) -> Result<String> {
+    let p = prop.try_query()?;
+    let (min, max) = p.map_bounds()?;
+    if min.is_some() || max.is_some() {
+        let bound = |value: Option<i64>| {
+            value
+                .map(|value| {
+                    u64::try_from(value).map_err(|error| {
+                        p.emission_error(format!("invalid map property-count bound: {error}"))
+                    })
+                })
+                .transpose()
+        };
+        let length = emit_length_option(bound(min)?, bound(max)?);
+        Ok(format!(
+            "AttributeType::refined_map({}, {value}, {length})",
+            key.unwrap_or_else(|| "AttributeType::string()".into())
+        ))
+    } else {
+        Ok(match key {
+            Some(key) => format!("AttributeType::map_with_key({key}, {value})"),
+            None => format!("AttributeType::map({value})"),
+        })
+    }
+}
+
 fn generate_object_map_type(
     prop: &SchemaProperty,
     value: &SchemaProperty,
@@ -13731,14 +13851,26 @@ fn generate_object_map_type(
     paths: CfnTypeGenerationPaths<'_>,
 ) -> Result<(String, Option<EnumInfo>)> {
     let property_path = CfnPropertyPath::new(paths.cfn_parent, prop_name);
-    let value_type = match object_map_value(schema, property_path, value)? {
+    let (value_type, value_enum) = match object_map_value(schema, property_path, value)? {
         ObjectMapValueKind::DirectString => {
             let value_path = schema.collection_path(paths.provider, PathSegment::MapValue);
             let value = schema.property_at(&value_path, value);
-            emission_reference(&value, property_path)?.map_or_else(
-                || "AttributeType::string()".to_string(),
-                |reference| reference.emit(&schema.type_name, prop_name).0,
-            )
+            if let Some(reference) = emission_reference(&value, property_path)? {
+                reference.emit(&schema.type_name, prop_name)
+            } else {
+                let (expression, info) =
+                    string_leaf(value, property_path, None)?.emit(&schema.type_name, prop_name);
+                let expression = info.as_ref().map_or(expression, |info| {
+                    string_enum_type(
+                        &schema.type_name,
+                        property_path,
+                        namespace,
+                        paths.structural,
+                        info,
+                    )
+                });
+                (expression, info)
+            }
         }
         ObjectMapValueKind::Struct => {
             let value_provider_path = schema.collection_path(paths.provider, PathSegment::MapValue);
@@ -13758,13 +13890,19 @@ fn generate_object_map_type(
                     .emission_error("typed object-map values must resolve to structs")
                     .into());
             }
-            value_type
+            (value_type, None)
         }
     };
     let Some(key) = map_key_type(prop, schema, paths.provider, property_path)? else {
-        return Ok((format!("AttributeType::map({value_type})"), None));
+        return Ok((object_map_expression(prop, None, &value_type)?, value_enum));
     };
     let info = key_enum_info(&key).cloned();
+    if info.is_some() && value_enum.is_some() {
+        return Err(prop
+            .try_query()?
+            .emission_error("simultaneous map key and value enums require separate enum identities")
+            .into());
+    }
     let key_type = emit_map_key(
         key,
         &schema.type_name,
@@ -13773,8 +13911,8 @@ fn generate_object_map_type(
         paths.structural,
     );
     Ok((
-        format!("AttributeType::map_with_key({key_type}, {value_type})"),
-        info,
+        object_map_expression(prop, Some(key_type), &value_type)?,
+        info.or(value_enum),
     ))
 }
 
@@ -14053,14 +14191,17 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 return Ok((int_enum_type(&schema.type_name, prop_name, values), None));
             }
             // Use CF min/max if available (including one-sided), otherwise check known overrides
-            let range: Option<(Option<i64>, Option<i64>)> =
-                if projection.minimum.is_some() || projection.maximum.is_some() {
-                    Some(projection.integer_bounds()?)
-                } else {
-                    known_int_range_overrides()
-                        .get(prop_name)
-                        .map(|&(min, max)| (Some(min), Some(max)))
-                };
+            let range: Option<(Option<i64>, Option<i64>)> = if projection.minimum.is_some()
+                || projection.maximum.is_some()
+                || projection.exclusive_minimum.is_some()
+                || projection.exclusive_maximum.is_some()
+            {
+                Some(projection.integer_bounds()?)
+            } else {
+                known_int_range_overrides()
+                    .get(prop_name)
+                    .map(|&(min, max)| (Some(min), Some(max)))
+            };
             if let Some((min, max)) = range {
                 (
                     refined_int_type("None", &emit_int_range_option(min, max)),
@@ -14083,14 +14224,17 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 ));
             }
             // Use CF min/max if available (including one-sided), otherwise check known overrides
-            let range: Option<(Option<i64>, Option<i64>)> =
-                if projection.minimum.is_some() || projection.maximum.is_some() {
-                    Some(projection.integer_bounds()?)
-                } else {
-                    known_int_range_overrides()
-                        .get(prop_name)
-                        .map(|&(min, max)| (Some(min), Some(max)))
-                };
+            let range: Option<(Option<i64>, Option<i64>)> = if projection.minimum.is_some()
+                || projection.maximum.is_some()
+                || projection.exclusive_minimum.is_some()
+                || projection.exclusive_maximum.is_some()
+            {
+                Some(projection.integer_bounds()?)
+            } else {
+                known_int_range_overrides()
+                    .get(prop_name)
+                    .map(|&(min, max)| (Some(min), Some(max)))
+            };
             if let Some((min, max)) = range {
                 (refined_float_type("None", Some((min, max))), None)
             } else if prop.query().format.is_some() {
@@ -15041,59 +15185,64 @@ mod tests {
     }
 
     #[test]
-    fn test_codegen_regex_patterns_ignore_unemitted_enum_patterns() {
-        for kind in ["explicit", "description", "known", "const", "alternation"] {
-            let name = if kind == "known" {
-                "ConnectivityType"
+    fn test_codegen_regex_patterns_preserve_declared_literal_intersections() {
+        for (kind, name, keywords, rejects_pattern) in [
+            (
+                "explicit",
+                "Mode",
+                serde_json::json!({"enum":["public","private"]}),
+                true,
+            ),
+            ("const", "Mode", serde_json::json!({"const":"public"}), true),
+            (
+                "description",
+                "Mode",
+                serde_json::json!({"description":"Valid values: public | private"}),
+                false,
+            ),
+            ("known", "ConnectivityType", serde_json::json!({}), false),
+            (
+                "alternation",
+                "Mode",
+                serde_json::json!({"pattern":"^(public|private)$"}),
+                false,
+            ),
+        ] {
+            let mut property =
+                serde_json::json!({"type":"string","pattern":"(?=x)x","minLength":1,"maxLength":8});
+            property
+                .as_object_mut()
+                .unwrap()
+                .extend(keywords.as_object().unwrap().clone());
+            let schema = ParsedCfnSchema::from_json(serde_json::json!({
+                "typeName":"AWS::Test::Resource", "properties":{name:property}
+            }))
+            .unwrap();
+            if rejects_pattern {
+                assert_projection_rejected(&schema, kind);
+                let error = schema.properties[name].try_query().unwrap_err();
+                assert!(
+                    error.to_string().contains("literal pattern intersection"),
+                    "{error}"
+                );
             } else {
-                "Mode"
-            };
-            let mut schema = empty_schema("AWS::Test::Resource");
-            let mut prop = CfnProperty {
-                prop_type: Some(TypeValue::Single("string".to_string())),
-                pattern: Some("(?=x)x".to_string()),
-                min_length: Some(1),
-                max_length: Some(8),
-                ..Default::default()
-            };
-            match kind {
-                "explicit" => {
-                    prop.enum_values = Some(vec![
-                        EnumValue::Str("public".to_string()),
-                        EnumValue::Str("private".to_string()),
-                    ])
-                }
-                "description" => {
-                    prop.description = Some("Valid values: public | private".to_string())
-                }
-                "const" => prop.const_value = Some(serde_json::json!("public")),
-                "alternation" => prop.pattern = Some("^(public|private)$".to_string()),
-                "known" => {}
-                _ => unreachable!(),
+                let (code, enum_info) = cfn_type_to_carina_type_with_enum(
+                    &schema.properties[name],
+                    name,
+                    &schema,
+                    "aws.test.Resource",
+                    &BTreeMap::new(),
+                );
+                assert!(enum_info.is_some(), "{kind}: {code}");
+                assert!(emitted_patterns(&code).is_empty(), "{kind}: {code}");
+                assert_eq!(
+                    type_display_string(name, &schema.properties[name], &schema),
+                    "String",
+                    "{kind}"
+                );
+                generate_synthetic_schema_code(&schema).unwrap();
+                generate_test_markdown(&schema, &schema.type_name).unwrap();
             }
-            let (code, enum_info) = cfn_type_to_carina_type_with_enum(
-                &prop,
-                name,
-                &schema,
-                "aws.test.Resource",
-                &BTreeMap::new(),
-            );
-            assert!(enum_info.is_some(), "{kind}: {code}");
-            assert!(emitted_patterns(&code).is_empty(), "{kind}: {code}");
-            assert_eq!(
-                type_display_string(name, &prop, &schema),
-                "String",
-                "{kind}"
-            );
-
-            schema.edit_json(|source| {
-                source["properties"]
-                    .as_object_mut()
-                    .unwrap()
-                    .insert(name.to_string(), serde_json::json!(prop));
-            });
-            generate_synthetic_schema_code(&schema).unwrap();
-            generate_test_markdown(&schema, &schema.type_name).unwrap();
         }
     }
 
@@ -15209,7 +15358,7 @@ mod tests {
             (
                 "AWS::Test::Resource",
                 "ValueArn",
-                json!({"type":"string","const":"constant","enum":["constant","explicit"],"description":"Valid values: public | private","pattern":"(?=x)x"}),
+                json!({"type":"string","const":"constant","enum":["constant","explicit"],"description":"Valid values: public | private","pattern":"^[a-z]+$"}),
                 Some(vec!["constant"]),
                 "AttributeType::string()",
                 "String",
@@ -15217,7 +15366,7 @@ mod tests {
             (
                 "AWS::Test::Resource",
                 "ValueArn",
-                json!({"type":"string","enum":["explicit"],"description":"Valid values: public | private","pattern":"(?=x)x"}),
+                json!({"type":"string","enum":["explicit"],"description":"Valid values: public | private","pattern":"^[a-z]+$"}),
                 Some(vec!["explicit"]),
                 "AttributeType::string()",
                 "String",
@@ -16886,7 +17035,7 @@ mod tests {
         #[test]
         fn test_one_of_object_refs_preserve_common_required_fields() {
             let definitions = json!({
-                "ObjDef":{"type":"object","properties":{"V":{"type":"integer"}},"required":["V"]},
+                "ObjDef":{"type":"object","properties":{"V":{"type":"integer"}},"required":["V"],"additionalProperties":false},
                 "Alias":{"$ref":"#/definitions/ObjDef"},
                 "Union":{"oneOf":[{"$ref":"#/definitions/Alias"}]}
             });
@@ -16895,7 +17044,7 @@ mod tests {
                     let mut variants = vec![json!({"$ref":format!("#/definitions/{target}")})];
                     if mixed {
                         variants
-                            .push(json!({"properties":{"W":{"type":"string"}},"required":["W"]}));
+                            .push(json!({"properties":{"W":{"type":"string"}},"required":["W"],"additionalProperties":false}));
                     }
                     for (position, properties, mut extra_defs) in
                         positions(&json!({"oneOf":variants}))
@@ -29043,6 +29192,7 @@ mod tests {
                                     ..Default::default()
                                 },
                             )])),
+                            additional_properties: Some(false),
                             required: vec!["Alpha".to_string()],
                             ..Default::default()
                         },
@@ -29054,6 +29204,7 @@ mod tests {
                                     ..Default::default()
                                 },
                             )])),
+                            additional_properties: Some(false),
                             required: vec!["Retries".to_string()],
                             ..Default::default()
                         },
@@ -29130,6 +29281,7 @@ mod tests {
                                     ..Default::default()
                                 },
                             )])),
+                            additional_properties: Some(false),
                             required: vec!["Alpha".to_string()],
                             ..Default::default()
                         },
@@ -29141,6 +29293,7 @@ mod tests {
                                     ..Default::default()
                                 },
                             )])),
+                            additional_properties: Some(false),
                             required: vec!["Retries".to_string()],
                             ..Default::default()
                         },

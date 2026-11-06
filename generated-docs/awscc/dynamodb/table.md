@@ -396,6 +396,8 @@ Used by: `global_secondary_indexes.on_demand_throughput`, `on_demand_throughput`
 | `point_in_time_recovery_enabled` | Bool | No | Indicates whether point in time recovery is enabled (true) or disabled (false) on the table. |
 | `recovery_period_in_days` | Int(1..=35) | No | The number of preceding days for which continuous backups are taken and maintained. Your table data is only recoverable to any point-in-time from within the configured recovery period. This parameter is optional. If no value is provided, the value will default to 35. |
 
+`recovery_period_in_days` requires `point_in_time_recovery_enabled`.
+
 ### projection
 
 Used by: `global_secondary_indexes.projection`, `local_secondary_indexes.projection`

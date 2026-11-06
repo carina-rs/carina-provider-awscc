@@ -199,9 +199,9 @@ fn shared_kms_definition_requires_a_decision_at_each_use_site() {
 }
 
 #[test]
-fn non_reference_string_maps_refine_keys_and_keep_existing_value_behavior() {
+fn non_reference_string_maps_refine_keys_and_preserve_scalar_values() {
     for value in [
-        json!({"type": "string", "pattern": "^(?!aws:).*$", "minLength": 1, "maxLength": 256}),
+        json!({"type": "string", "pattern": "^[a-z]+$", "minLength": 1, "maxLength": 256}),
         json!({"type": "string", "enum": ["enabled", "disabled"]}),
         json!({"type": "string", "description": "Allowed values: enabled | disabled"}),
     ] {
@@ -210,18 +210,38 @@ fn non_reference_string_maps_refine_keys_and_keep_existing_value_behavior() {
         schema["properties"]["Modes"] = map.clone();
         schema["properties"]["Settings"] = json!({"type": "object", "properties": {"Modes": map}});
         let rust = rendered(&schema, "rust");
-        assert_eq!(
-            rust.matches(r#"AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:.*)\\z".to_string()), None, None), AttributeType::string())"#)
-                .count(),
-            2,
-            "{rust}"
-        );
         let markdown = rendered(&schema, "markdown");
-        assert_eq!(
-            markdown.matches("Map<String(pattern), String>").count(),
-            2,
-            "{markdown}"
-        );
+        if value.get("pattern").is_some() {
+            assert_eq!(rust.matches(r#"AttributeType::refined_string(None, Some("^[a-z]+$".to_string()), Some((Some(1), Some(256))), None)"#).count(), 2, "{rust}");
+            assert_eq!(
+                markdown
+                    .matches("Map<String(pattern), String(pattern, len: 1..=256)>")
+                    .count(),
+                2,
+                "{markdown}"
+            );
+        } else if value.get("enum").is_some() {
+            assert_eq!(
+                rust.matches(r#"Some(vec!["enabled".to_string(), "disabled".to_string()])"#)
+                    .count(),
+                2,
+                "{rust}"
+            );
+            assert_eq!(
+                markdown
+                    .matches("Map\\<String(pattern), [Enum (Modes)]")
+                    .count(),
+                2,
+                "{markdown}"
+            );
+        } else {
+            assert_eq!(rust.matches(r#"AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:.*)\\z".to_string()), None, None), AttributeType::string())"#).count(), 2, "{rust}");
+            assert_eq!(
+                markdown.matches("Map<String(pattern), String>").count(),
+                2,
+                "{markdown}"
+            );
+        }
         assert_eq!(
             markdown
                 .matches("Map<String(len: ..=128), String(len: ..=256)>")
@@ -229,6 +249,34 @@ fn non_reference_string_maps_refine_keys_and_keep_existing_value_behavior() {
             1,
             "Tags retain their EC2 API length bounds: {markdown}"
         );
+    }
+}
+
+#[test]
+fn non_reference_string_maps_reject_unrepresentable_value_patterns() {
+    for nested in [false, true] {
+        let mut schema = vpc();
+        let map = json!({"type":"object","patternProperties":{".*":{
+            "type":"string","pattern":"^(?!aws:).*$","minLength":1,"maxLength":256
+        }},"additionalProperties":false});
+        let pointer = if nested {
+            schema["properties"]["Settings"] = json!({"type":"object","properties":{"Modes":map}});
+            "/properties/Settings/properties/Modes/patternProperties/.*"
+        } else {
+            schema["properties"]["Modes"] = map;
+            "/properties/Modes/patternProperties/.*"
+        };
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                !output.status.success()
+                    && error.contains(pointer)
+                    && error.contains("Invalid string pattern"),
+                "{format}: {error}"
+            );
+            assert!(output.stdout.is_empty());
+        }
     }
 }
 

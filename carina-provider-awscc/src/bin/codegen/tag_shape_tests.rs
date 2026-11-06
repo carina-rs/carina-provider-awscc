@@ -2,6 +2,31 @@ use super::*;
 use serde_json::{Value, json};
 
 #[test]
+fn round3_key_value_item_cardinality_is_rejected_before_caching() {
+    for constraint in [json!({"maxProperties":1}), json!({"minProperties":3})] {
+        for aliased in [false, true] {
+            let item = json!({"allOf":[{"type":"object","properties":{
+                "Key":{"type":"string"},"Value":{"type":"string"}
+            },"required":["Key","Value"]},constraint]});
+            let schema = ParsedCfnSchema::from_json(json!({
+                "typeName":"AWS::Test::Tags","properties":{"Tags":{"type":"array","items":
+                    if aliased { json!({"$ref":"#/definitions/Pair"}) } else { item.clone() }
+                }},"definitions":{"Pair":item}
+            })).unwrap();
+            let shape = schema.tag_shape(&schema.properties["Tags"]).unwrap();
+            assert!(matches!(shape, TagShape::Unreadable { source: schema_layer::SchemaError::Projection { pointer: _, reason }, candidate: _, pointer: _ }
+                if reason.contains("property-count")), "{shape:?}");
+            assert!(std::ptr::eq(shape, schema.tag_shape(&schema.properties["Tags"]).unwrap()));
+            for result in [generate_synthetic_schema_code(&schema), generate_test_markdown(&schema, "AWS::EC2::Route")] {
+                let error = result.expect_err("item property-count constraints cannot become tag entries");
+                assert!(matches!(error.downcast_ref::<TagShapeError>(), Some(TagShapeError::Unreadable { resource: _, pointer: _, source })
+                    if matches!(source.as_ref(), schema_layer::SchemaError::Projection { pointer: _, reason } if reason.contains("property-count"))), "{error:#}");
+            }
+        }
+    }
+}
+
+#[test]
 fn round2_exclusive_tag_alternatives_are_typed_errors() {
     for tags in [
         json!({"type":"array","items":{"type":"object","properties":{

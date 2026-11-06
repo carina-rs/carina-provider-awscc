@@ -77,6 +77,14 @@ fn unaccounted_raw_kms_nodes_fail_at_their_json_pointers() {
                         && error.contains("closed additionalProperties domain"),
                     "{format}: {error}"
                 );
+            } else if pointer == "/allOf/0/additionalProperties" {
+                // Each conjunct owns its additional-property domain. This
+                // shape fails projection before emitted-use KMS accounting.
+                assert!(
+                    error.contains("unsupported schema projection at #:")
+                        && error.contains("additionalProperties schema domain"),
+                    "{format}: {error}"
+                );
             } else if pointer == "/properties/Settings/patternProperties/.*" {
                 assert!(
                     error.contains("unsupported schema projection at #/properties/Settings:")

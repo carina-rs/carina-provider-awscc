@@ -348,8 +348,8 @@ fn step6_multifield_arms_factor_only_equivalent_common_requirements() {
                 "A":{"type":"boolean"}, "B":{"type":"boolean"}, "Always":{"type":"string"}
             }, keyword:[{"required":["Always","A"]},{"required":["Always","B"]}]}),
             json!({"type":"object", keyword:[
-                {"properties":{"A":{"type":"boolean"},"Always":{"type":"string"}},"required":["Always","A"]},
-                {"properties":{"B":{"type":"boolean"},"Always":{"type":"string"}},"required":["Always","B"]}
+                {"properties":{"A":{"type":"boolean"},"B":{"type":"boolean"},"Always":{"type":"string"}},"required":["Always","A"]},
+                {"properties":{"A":{"type":"boolean"},"B":{"type":"boolean"},"Always":{"type":"string"}},"required":["Always","B"]}
             ]}),
         ] {
             let schema = ParsedCfnSchema::from_json(json!({

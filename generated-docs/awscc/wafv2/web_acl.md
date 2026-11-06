@@ -57,7 +57,7 @@ Collection of application attributes.
 
 ### `custom_response_bodies`
 
-- **Type:** Map\<String(pattern, len: 1..=128), [Struct(CustomResponseBody)](#custom_response_bodies-1)\>
+- **Type:** Map\<String(pattern, len: 1..=128), [Struct(CustomResponseBody)](#custom_response_bodies-1)\> (entries: 1..)
 - **Required:** No
 
 ### `data_protection_config`
