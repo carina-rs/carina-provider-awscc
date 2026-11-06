@@ -180,9 +180,18 @@ const SHARED_UTILITIES: &[&str] = &[
     "AssumeRoleFailure",
     "AwsType",
     "AwsType::ALL",
+    "AwsType::Ec2FlowLogMaxAggregationInterval",
+    "AwsType::IamOidcProviderArn",
+    "AwsType::IamPolicyName",
+    "AwsType::IamRoleName",
+    "AwsType::KmsKeyArn",
     "AwsType::KmsKeyReference",
     "AwsType::LogsLogGroupRetentionInDays",
+    "AwsType::OrganizationsAccountArn",
+    "AwsType::OrganizationsAccountEmail",
+    "AwsType::OrganizationsOrganizationArn",
     "AwsType::Region",
+    "AwsType::S3BucketArn",
     "AwsType::identity",
     "FinalAttempt",
     "GuardedAssumeRoleProvider::new",
@@ -213,9 +222,20 @@ const SHARED_UTILITIES: &[&str] = &[
 // for its descendants (in particular, not AwsType or kms_reference).
 const SHARED_MODULE_PREFIXES: &[&str] = &["sdk"];
 
+const SHARED_CRATE_PREFIX: &str = "carina_aws_types::";
+
+fn shared_crate_identifiers() -> regex::Regex {
+    regex::Regex::new(&format!(
+        r"\b{}\b",
+        SHARED_CRATE_PREFIX.trim_end_matches("::")
+    ))
+    .unwrap()
+}
+
 struct SharedPathParser<'a> {
     source: &'a str,
     cursor: usize,
+    renames: Vec<usize>,
 }
 
 impl SharedPathParser<'_> {
@@ -277,9 +297,10 @@ impl SharedPathParser<'_> {
         (self.cursor > start).then_some(&self.source[start..self.cursor])
     }
 
-    // Parse Rust use-tree paths recursively. Recording the original item before
-    // `as` means importing or renaming a forbidden constructor cannot hide it.
+    // Flatten paths for the allowlist. Record rename syntax so the source rules
+    // can reject it; never resolve or follow an alias.
     fn tree(&mut self, prefix: &str, references: &mut Vec<(usize, String)>) -> Result<(), ()> {
+        let prefix = if self.take("::") { "" } else { prefix };
         if self.take("{") {
             while !self.take("}") {
                 self.tree(prefix, references)?;
@@ -306,6 +327,7 @@ impl SharedPathParser<'_> {
             self.tree(&path, references)
         } else {
             if self.take("as") {
+                self.renames.push(self.cursor - "as".len());
                 self.identifier().ok_or(())?;
             }
             references.push((offset, path));
@@ -317,12 +339,13 @@ impl SharedPathParser<'_> {
 fn shared_item_references(source: &str) -> Vec<(usize, String)> {
     // Scan the raw source, including codegen strings, rather than only parsed
     // Rust expressions. The parser expands grouped paths after each crate root.
-    let roots = regex::Regex::new(r"\bcarina_aws_types\b").unwrap();
+    let roots = shared_crate_identifiers();
     let mut references = Vec::new();
     for root in roots.find_iter(source) {
         let mut parser = SharedPathParser {
             source,
             cursor: root.end(),
+            renames: Vec::new(),
         };
         if parser.take("::") {
             parser.skip_trivia();
@@ -362,6 +385,69 @@ fn shared_item_is_allowlisted(name: &str) -> bool {
         || SHARED_MODULE_PREFIXES
             .iter()
             .any(|prefix| name == *prefix || name.starts_with(&format!("{prefix}::")))
+}
+
+fn shared_source_failures(source: &str) -> Vec<(usize, String)> {
+    let mut failures = Vec::new();
+
+    // Rule 1: every occurrence, including emitted code, must spell a crate path.
+    for identifier in shared_crate_identifiers().find_iter(source) {
+        if !source[identifier.end()..].starts_with("::") {
+            failures.push((
+                identifier.start(),
+                "shared crate identifier must be immediately followed by '::'".to_string(),
+            ));
+        }
+    }
+
+    // Rules 2 and 3 apply to complete use items, including nested groups. Check
+    // syntax before the allowlist so even an otherwise allowed item cannot be
+    // renamed, and the shared enum cannot hide its row behind an import.
+    for keyword in regex::Regex::new(r"\buse\b").unwrap().find_iter(source) {
+        let mut parser = SharedPathParser {
+            source,
+            cursor: keyword.end(),
+            renames: Vec::new(),
+        };
+        parser.take("::");
+        let mut imports = Vec::new();
+        if parser.tree("", &mut imports).is_err() || !parser.take(";") {
+            continue;
+        }
+        if !imports.iter().any(|(_, path)| {
+            path == SHARED_CRATE_PREFIX.trim_end_matches("::")
+                || path.starts_with(SHARED_CRATE_PREFIX)
+        }) {
+            continue;
+        }
+        for offset in parser.renames {
+            failures.push((offset, "shared use items must not contain 'as'".to_string()));
+        }
+        for (offset, path) in imports {
+            let Some(item) = path.strip_prefix(SHARED_CRATE_PREFIX) else {
+                continue;
+            };
+            if item == "AwsType" || item.starts_with("AwsType::") {
+                failures.push((
+                    offset,
+                    "AwsType imports are forbidden; use the fully qualified row path".to_string(),
+                ));
+            }
+            if item == "*" {
+                failures.push((
+                    offset,
+                    "shared crate glob imports are forbidden".to_string(),
+                ));
+            }
+        }
+    }
+
+    failures.extend(
+        shared_item_references(source)
+            .into_iter()
+            .filter(|(_, name)| !shared_item_is_allowlisted(name)),
+    );
+    failures
 }
 
 fn assert_callback_has_no_partition_decision(name: &str, validate: &CustomValidator) {
@@ -468,7 +554,7 @@ fn shared_type_allowlist_has_no_partition_decisions() {
 
 #[test]
 fn source_scan_requires_explicit_shared_type_allowlist() {
-    let prefix = concat!("carina_aws_types", "::");
+    let prefix = SHARED_CRATE_PREFIX;
     let enum_prefix = concat!("AwsType", "::");
     for name in ["arn", "iam_role_arn", "kms_key_id", "future_identifier"] {
         let calls = shared_item_references(&format!("{prefix}{name}()"));
@@ -515,7 +601,7 @@ fn source_scan_requires_explicit_shared_type_allowlist() {
 
 #[test]
 fn source_scan_detects_calls_and_function_references() {
-    let prefix = concat!("carina_aws_types", "::");
+    let prefix = SHARED_CRATE_PREFIX;
     for name in ["arn", "iam_role_arn"] {
         for source in [
             format!("{prefix}{name}()"),
@@ -527,13 +613,14 @@ fn source_scan_detects_calls_and_function_references() {
             assert_eq!(references.len(), 1, "{source}");
             assert_eq!(references[0].1, name, "{source}");
             assert!(!shared_item_is_allowlisted(&references[0].1), "{source}");
+            assert!(!shared_source_failures(&source).is_empty(), "{source}");
         }
     }
 }
 
 #[test]
 fn source_scan_detects_imported_renamed_and_grouped_items() {
-    let prefix = concat!("carina_aws_types", "::");
+    let prefix = SHARED_CRATE_PREFIX;
     for name in ["arn", "iam_role_arn"] {
         for source in [
             format!("use {prefix}{name}; {name}();"),
@@ -552,13 +639,14 @@ fn source_scan_detects_imported_renamed_and_grouped_items() {
                     .any(|(_, item)| item == name && !shared_item_is_allowlisted(item)),
                 "missed {name}: {source}; found {references:?}"
             );
+            assert!(!shared_source_failures(&source).is_empty(), "{source}");
         }
     }
 }
 
 #[test]
 fn source_scan_preserves_nested_paths_and_restricts_module_prefixes() {
-    let prefix = concat!("carina_aws_types", "::");
+    let prefix = SHARED_CRATE_PREFIX;
     let source = format!(
         "use ::{prefix}{{sdk::{{self as clients, s3::{{S3Client as Client, types::*}}}}, vpc_id as safe, {{arn as forbidden, iam_role_arn}}}};"
     );
@@ -585,7 +673,7 @@ fn source_scan_preserves_nested_paths_and_restricts_module_prefixes() {
 
 #[test]
 fn source_scan_handles_use_tree_trivia_and_rejects_incomplete_paths() {
-    let prefix = concat!("carina_aws_types", "::");
+    let prefix = SHARED_CRATE_PREFIX;
     for source in [
         format!(
             "use {prefix}{{\n r#arn /* outer /* nested */ comment */ as forbidden, // another\n vpc_id, }};"
@@ -620,6 +708,116 @@ fn source_scan_handles_use_tree_trivia_and_rejects_incomplete_paths() {
                 .any(|(_, item)| !shared_item_is_allowlisted(item)),
             "{source}"
         );
+    }
+}
+
+#[test]
+fn source_scan_requires_the_shared_crate_identifier_to_be_qualified() {
+    let root = "carina_aws_types::".trim_end_matches("::");
+    for source in [
+        format!("use {root} as shared; shared::arn()"),
+        format!("use {root};"),
+        format!("pub use {root} as shared;"),
+        format!("extern crate {root} as shared;"),
+        format!("extern crate {root};"),
+        format!("let shared = {root};"),
+        format!("use {root} ::vpc_id;"),
+    ] {
+        for source in [source.clone(), format!("let emitted = r#\"{source}\"#;")] {
+            assert!(
+                shared_source_failures(&source)
+                    .iter()
+                    .any(|(_, error)| error.contains("immediately followed by '::'")),
+                "{source}"
+            );
+        }
+    }
+}
+
+#[test]
+fn source_scan_forbids_renamed_shared_imports_at_every_depth() {
+    let prefix = "carina_aws_types::";
+    for source in [
+        format!("use {prefix}AwsType as Shared; Shared::Arn.attribute_type()"),
+        format!("use {prefix}vpc_id as safe; safe()"),
+        format!("use {prefix}{{vpc_id as safe, subnet_id}};"),
+        format!("use {prefix}sdk::{{s3::{{S3Client as Client}}, sts::StsClient}};"),
+        format!("use {{{prefix}sdk::{{s3::S3Client as Client}}}};"),
+        format!("use {{::{prefix}sdk::s3::S3Client as Client}};"),
+        format!("use {prefix}{{self as shared, vpc_id}}; shared::arn()"),
+    ] {
+        for source in [source.clone(), format!("let emitted = r#\"{source}\"#;")] {
+            assert!(
+                shared_source_failures(&source)
+                    .iter()
+                    .any(|(_, error)| error.contains("must not contain 'as'")),
+                "{source}"
+            );
+        }
+    }
+}
+
+#[test]
+fn source_scan_forbids_aws_type_and_shared_crate_glob_imports() {
+    let prefix = "carina_aws_types::";
+    for (import, reason) in [
+        (format!("{prefix}AwsType"), "AwsType imports are forbidden"),
+        (
+            format!("{prefix}{{AwsType, vpc_id}}"),
+            "AwsType imports are forbidden",
+        ),
+        (
+            format!("{prefix}AwsType::{{Arn}}"),
+            "AwsType imports are forbidden",
+        ),
+        (
+            format!("{prefix}AwsType::KmsKeyReference"),
+            "AwsType imports are forbidden",
+        ),
+        (
+            format!("{{::{prefix}AwsType}}"),
+            "AwsType imports are forbidden",
+        ),
+        (
+            format!("{prefix}*"),
+            "shared crate glob imports are forbidden",
+        ),
+        (
+            format!("{prefix}{{*}}"),
+            "shared crate glob imports are forbidden",
+        ),
+    ] {
+        let source = format!("use {import};");
+        for source in [source.clone(), format!("let emitted = r#\"{source}\"#;")] {
+            assert!(
+                shared_source_failures(&source)
+                    .iter()
+                    .any(|(_, error)| error.contains(reason)),
+                "{source}"
+            );
+        }
+    }
+}
+
+#[test]
+fn source_scan_accepts_qualified_paths_and_unrenamed_imports() {
+    let prefix = SHARED_CRATE_PREFIX;
+    for source in [
+        format!("{prefix}vpc_id()"),
+        format!("LazyLock::new({prefix}vpc_id)"),
+        format!("let constructor = {prefix}vpc_id as fn() -> AttributeType;"),
+        format!("use {prefix}vpc_id; vpc_id()"),
+        format!("use {prefix}{{vpc_id, subnet_id}};"),
+        format!("use ::{prefix}sdk::{{s3::{{S3Client, types::*}}, sts::StsClient}};"),
+        format!("pub use {{{prefix}vpc_id, std::vec::Vec}};"),
+        format!("{prefix}AwsType::KmsKeyReference.identity()"),
+        format!("let rows = {prefix}AwsType::ALL;"),
+        format!("use std::vec::Vec as Values; {prefix}vpc_id()"),
+    ] {
+        for source in [source.clone(), format!("let emitted = r#\"{source}\"#;")] {
+            let failures = shared_source_failures(&source);
+            assert!(failures.is_empty(), "{source}: {failures:?}");
+        }
     }
 }
 
@@ -669,23 +867,21 @@ fn schema_sources_use_only_allowlisted_shared_types() {
     let mut failures = Vec::new();
     for path in sources {
         let source = std::fs::read_to_string(&path).unwrap();
-        for (offset, name) in shared_item_references(&source) {
-            if !shared_item_is_allowlisted(&name) {
-                failures.push(format!(
-                    "{}:{}: {name}",
-                    path.strip_prefix(&root).unwrap().display(),
-                    source[..offset]
-                        .bytes()
-                        .filter(|byte| *byte == b'\n')
-                        .count()
-                        + 1
-                ));
-            }
+        for (offset, reason) in shared_source_failures(&source) {
+            failures.push(format!(
+                "{}:{}: {reason}",
+                path.strip_prefix(&root).unwrap().display(),
+                source[..offset]
+                    .bytes()
+                    .filter(|byte| *byte == b'\n')
+                    .count()
+                    + 1
+            ));
         }
     }
     assert!(
         failures.is_empty(),
-        "Shared type uses need an explicit partition-free allowlist entry:\n{}",
+        "Shared items must obey the source rules and explicit allowlist:\n{}",
         failures.join("\n")
     );
 }

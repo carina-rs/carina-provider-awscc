@@ -7,7 +7,6 @@
 
 use super::pattern::{ApprovedPattern, refined_string, refined_string_with_validator};
 use crate::partition::{Partition, arn_regex};
-use carina_aws_types::AwsType;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeType, CompiledPattern, TypeIdentity, legacy_validator};
 
@@ -601,7 +600,7 @@ carina_aws_types::define_aws_type_catalog! {
     /// Every identity and shared-identity refinement declared by AWSCC.
     pub enum AwsccType {
         identity_constructor: overlay_identity,
-        refinement_type: AwsType,
+        refinement_type: carina_aws_types::AwsType,
         constructor_path_prefix: "crate::schemas::catalog::",
         rows: {
         /// CloudFront distribution ARN.
@@ -711,7 +710,7 @@ carina_aws_types::define_aws_type_catalog! {
         },
         /// AWSCC keeps the stricter OIDC callback while reusing the shared identity.
         IamOidcProviderArn => iam_oidc_provider_arn {
-            refines: AwsType::IamOidcProviderArn,
+            refines: carina_aws_types::AwsType::IamOidcProviderArn,
             constructor: |identity| validated_iam_arn(
                 identity,
                 ApprovedPattern::whole(&arn_regex("iam::[^:]*:oidc-provider/.+$")),
@@ -721,7 +720,7 @@ carina_aws_types::define_aws_type_catalog! {
         },
         /// AWSCC keeps service validation around the shared Organizations account identity.
         OrganizationsAccountArn => organizations_account_arn {
-            refines: AwsType::OrganizationsAccountArn,
+            refines: carina_aws_types::AwsType::OrganizationsAccountArn,
             constructor: |identity| validated_service_arn(
                 identity,
                 ApprovedPattern::whole(&arn_regex("organizations:.*$")),
@@ -732,7 +731,7 @@ carina_aws_types::define_aws_type_catalog! {
         },
         /// Organizations Account email, with core email validation and API bounds.
         OrganizationsAccountEmail => organizations_account_email {
-            refines: AwsType::OrganizationsAccountEmail,
+            refines: carina_aws_types::AwsType::OrganizationsAccountEmail,
             constructor: validated_organizations_account_email,
         },
         /// Organizations-created role name, excluding the service-linked role prefix.
@@ -744,7 +743,7 @@ carina_aws_types::define_aws_type_catalog! {
         },
         /// AWSCC keeps service validation around the shared Organizations identity.
         OrganizationsOrganizationArn => organizations_organization_arn {
-            refines: AwsType::OrganizationsOrganizationArn,
+            refines: carina_aws_types::AwsType::OrganizationsOrganizationArn,
             constructor: |identity| validated_service_arn(
                 identity,
                 ApprovedPattern::whole(&arn_regex("organizations:.*$")),
@@ -755,7 +754,7 @@ carina_aws_types::define_aws_type_catalog! {
         },
         /// AWSCC keeps service validation around the shared S3 bucket identity.
         S3BucketArn => s3_bucket_arn {
-            refines: AwsType::S3BucketArn,
+            refines: carina_aws_types::AwsType::S3BucketArn,
             constructor: |identity| validated_service_arn(
                 identity,
                 ApprovedPattern::whole(&arn_regex("s3:::.+$")),
@@ -766,7 +765,7 @@ carina_aws_types::define_aws_type_catalog! {
         },
         /// Cloud Control FlowLog aggregation interval enum.
         Ec2FlowLogMaxAggregationInterval => ec2_flow_log_max_aggregation_interval {
-            refines: AwsType::Ec2FlowLogMaxAggregationInterval,
+            refines: carina_aws_types::AwsType::Ec2FlowLogMaxAggregationInterval,
             values: [60, 600],
             constructor: validated_int_enum,
         },

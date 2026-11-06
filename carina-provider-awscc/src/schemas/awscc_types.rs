@@ -1,6 +1,6 @@
 //! AWS Cloud Control-specific reusable attribute shapes.
 //!
-//! These types live here, instead of in `carina_aws_types`, until another
+//! These types live here, instead of in `carina-aws-types`, until another
 //! provider needs the same Cloud Control document shapes.
 
 use super::pattern::{ApprovedPattern, refined_string};

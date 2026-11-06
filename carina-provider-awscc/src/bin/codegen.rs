@@ -3286,7 +3286,7 @@ fn is_list_of_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
 }
 
 fn uses_core_schema_types_path(s: &str) -> bool {
-    // Qualified paths and identifiers such as `carina_aws_types` need no import.
+    // Paths such as `carina_aws_types::vpc_id()` already carry their namespace.
     s.match_indices("types::").any(|(index, _)| {
         s[..index]
             .chars()
