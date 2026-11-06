@@ -2366,36 +2366,24 @@ fn emit_exclusive_groups_slice(groups: &[Vec<String>]) -> String {
 /// This walk follows all of them except `properties`, `patternProperties` and
 /// `additionalProperties` of intermediate nodes, which are nested attributes and
 /// out of scope.
-/// Accumulate Key and Value across all nodes reached after an items or contains edge,
-/// including allOf/oneOf/anyOf branches, schema dependencies and $refs.
+/// Visit all nodes reached after an items or contains edge, including
+/// allOf/oneOf/anyOf branches, schema dependencies and $refs.
 /// Non-local or unresolvable refs are a codegen-wide opaque fallback with no
 /// visible shape, so they cannot be proven tag-shaped.
 /// Bare `#` and percent-encoded pointers that do not resolve remain opaque fallbacks.
-/// Over-approximation (e.g. Key and Value in different oneOf arms) is acceptable:
-/// it only requires an explicit classification, not tag-map projection.
-fn is_key_value_array_candidate<'a>(
+fn walk_array_item_schemas<'a>(
     properties: impl IntoIterator<Item = &'a serde_json::Value>,
     source: &'a serde_json::Value,
-) -> Result<bool> {
+    mut visit: impl FnMut(&'a serde_json::Value),
+) {
     let mut pending: Vec<_> = properties
         .into_iter()
         .map(|property| (property, false))
         .collect();
     let mut visited_refs = HashSet::new();
-    let mut saw_key = false;
-    let mut saw_value = false;
     while let Some((node, crossed_items)) = pending.pop() {
-        if crossed_items
-            && let Some(properties) = node
-                .get("properties")
-                .and_then(serde_json::Value::as_object)
-        {
-            saw_key |= properties
-                .keys()
-                .any(|name| name.eq_ignore_ascii_case("key"));
-            saw_value |= properties
-                .keys()
-                .any(|name| name.eq_ignore_ascii_case("value"));
+        if crossed_items {
+            visit(node);
         }
         // A reference can be reached both before and after an items/contains edge.
         // Visit each state once to terminate cycles without losing candidates.
@@ -2430,6 +2418,30 @@ fn is_key_value_array_candidate<'a>(
             }
         }
     }
+}
+
+/// Accumulate case-insensitive Key and Value across the raw item region.
+/// Over-approximation (e.g. Key and Value in different oneOf arms) is acceptable:
+/// it only requires an explicit classification, not tag-map projection.
+fn is_key_value_array_candidate<'a>(
+    properties: impl IntoIterator<Item = &'a serde_json::Value>,
+    source: &'a serde_json::Value,
+) -> Result<bool> {
+    let mut saw_key = false;
+    let mut saw_value = false;
+    walk_array_item_schemas(properties, source, |node| {
+        if let Some(properties) = node
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+        {
+            saw_key |= properties
+                .keys()
+                .any(|name| name.eq_ignore_ascii_case("key"));
+            saw_value |= properties
+                .keys()
+                .any(|name| name.eq_ignore_ascii_case("value"));
+        }
+    });
     Ok(saw_key && saw_value)
 }
 
@@ -33712,6 +33724,127 @@ mod tests {
                 }
             }
         });
+    }
+
+    fn check_budget_tag_item_extra_fields(keyword: &str) {
+        for (extension, extra_fields) in [
+            (
+                serde_json::json!({"properties": {"Extra": {"type": "string"}}}),
+                vec!["Extra"],
+            ),
+            (serde_json::json!({"required": ["Extra"]}), vec!["Extra"]),
+            (
+                serde_json::json!({
+                    "properties": {"key": {"type": "string"}},
+                    "required": ["value"]
+                }),
+                vec!["key", "value"],
+            ),
+            (
+                serde_json::json!({
+                    "properties": {"Extra": {"type": "string"}},
+                    "required": ["Another", "Extra"]
+                }),
+                vec!["Another", "Extra"],
+            ),
+        ] {
+            for referenced in [false, true] {
+                let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+                schema.edit_json(|source| {
+                    source["definitions"]["Tag/Extension~"] = extension.clone();
+                    let branch = if referenced {
+                        serde_json::json!({"$ref": "#/definitions/Tag~1Extension~0"})
+                    } else {
+                        extension.clone()
+                    };
+                    source["definitions"]["ResourceTag"][keyword] = if keyword == "dependencies" {
+                        serde_json::json!({"Key": branch, "Value": ["Key"]})
+                    } else {
+                        serde_json::json!([branch])
+                    };
+                });
+                for (generator, result) in [
+                    ("Rust", generate_schema_code(&schema, &schema.type_name)),
+                    (
+                        "Markdown",
+                        generate_test_markdown(&schema, &schema.type_name),
+                    ),
+                ] {
+                    let error = result
+                        .expect_err("extra fields in Budget ResourceTags must fail codegen")
+                        .to_string();
+                    for expected in [
+                        "AWS::Budgets::Budget#/properties/ResourceTags",
+                        "cannot be projected to a string-to-string map",
+                    ]
+                    .into_iter()
+                    .chain(extra_fields.iter().copied())
+                    {
+                        assert!(
+                            error.contains(expected),
+                            "{generator}, {keyword}, referenced={referenced}: {error}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn issue_521_budget_tag_all_of_extra_fields_fail_both_generators() {
+        check_budget_tag_item_extra_fields("allOf");
+    }
+
+    #[test]
+    fn issue_521_budget_tag_union_extra_fields_fail_both_generators() {
+        for keyword in ["oneOf", "anyOf"] {
+            check_budget_tag_item_extra_fields(keyword);
+        }
+    }
+
+    #[test]
+    fn issue_521_budget_tag_schema_dependency_extra_fields_fail_both_generators() {
+        check_budget_tag_item_extra_fields("dependencies");
+    }
+
+    #[test]
+    fn issue_521_budget_and_hosted_zone_tags_still_pass_both_generators() {
+        for resource in ["AWS::Budgets::Budget", "AWS::Route53::HostedZone"] {
+            let schema = cfn_schema_for_codegen_tests(resource);
+            generate_schema_code(&schema, resource).unwrap();
+            carina_docgen::check_page(&generate_test_markdown(&schema, resource).unwrap()).unwrap();
+        }
+    }
+
+    #[test]
+    fn issue_521_budget_tag_raw_item_walk_preserves_scope_and_ref_fallbacks() {
+        for keyword in ["allOf", "oneOf", "anyOf", "dependencies"] {
+            let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+            schema.edit_json(|source| {
+                // Array-level fields and children of item properties are out of scope.
+                source["properties"]["ResourceTags"]["required"] =
+                    serde_json::json!(["ArrayExtra"]);
+                source["definitions"]["ResourceTag"]["properties"]["Key"]["required"] =
+                    serde_json::json!(["NestedExtra"]);
+                let branch = serde_json::json!({
+                    "properties": {"Key": {"type": "string"}},
+                    "required": ["Value"],
+                    "anyOf": [
+                        {"$ref": "#"},
+                        {"$ref": "#/definitions/Missing"},
+                        {"$ref": "https://example.com/schema.json#/External"},
+                        {"$ref": "#/definitions/ResourceTag"}
+                    ]
+                });
+                source["definitions"]["ResourceTag"][keyword] = if keyword == "dependencies" {
+                    serde_json::json!({"Key": branch})
+                } else {
+                    serde_json::json!([branch])
+                };
+            });
+            generate_schema_code(&schema, &schema.type_name).unwrap();
+            generate_test_markdown(&schema, &schema.type_name).unwrap();
+        }
     }
 
     #[test]
