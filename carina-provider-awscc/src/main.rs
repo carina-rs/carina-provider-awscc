@@ -1346,60 +1346,17 @@ mod tests {
     }
 
     #[test]
-    fn desired_normalization_boundary_retains_typed_conversion_context() {
-        use carina_core::desired::NormalizationBatch;
-        use carina_provider_protocol::normalization::{
-            NormalizationError, NormalizationErrorKind, NormalizationPathSegment,
-        };
-        use std::error::Error;
+    fn desired_floats_reject_non_finite_input_at_admission() {
+        use carina_core::{FiniteF64, NonFiniteFloatError};
 
-        for number in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let resource =
-                CoreResource::with_provider("awscc", "s3.Bucket", "invalid-desired", None)
-                    .with_attribute(
-                        "values",
-                        CoreValue::Concrete(ConcreteValue::List(vec![CoreValue::Concrete(
-                            ConcreteValue::Map(indexmap::IndexMap::from([(
-                                "weight".into(),
-                                CoreValue::Concrete(ConcreteValue::Float(number)),
-                            )])),
-                        )])),
-                    );
-            // The production host uses this batch before invoking the SDK's
-            // default normalization, so invalid known leaves never reach a guest.
-            let error = NormalizationBatch::new(std::slice::from_ref(&resource))
-                .err()
-                .expect("non-finite desired input must fail before normalization dispatch");
-            assert_eq!(
-                *error.resource_id,
-                protocol_convert::resource_id_to_protocol(&resource.id)
-            );
-            assert_eq!(error.resource_index, Some(0));
-            assert_eq!(error.attribute, "values");
-            assert_eq!(
-                error.path,
-                vec![
-                    NormalizationPathSegment::Index(0),
-                    NormalizationPathSegment::Key("weight".into())
-                ]
-            );
-            assert!(matches!(error.kind, NormalizationErrorKind::Conversion));
-            assert!(matches!(
-                error.source().and_then(
-                    |cause| cause.downcast_ref::<protocol_convert::ProtocolConvertError>()
-                ),
-                Some(protocol_convert::ProtocolConvertError::NonFiniteFloat),
-            ));
-            let error: CoreProviderError = error.into();
-            assert_eq!(
-                error
-                    .detail()
-                    .resource_id
-                    .as_deref()
-                    .map(|id| id.as_resource_id()),
-                Some(&resource.id)
-            );
-            assert!(error.detail().cause().unwrap().is::<NormalizationError>());
+        for (number, expected) in [
+            (f64::NAN, NonFiniteFloatError::NaN),
+            (f64::INFINITY, NonFiniteFloatError::PositiveInfinity),
+            (f64::NEG_INFINITY, NonFiniteFloatError::NegativeInfinity),
+        ] {
+            let result: Result<CoreValue, _> = FiniteF64::new(number)
+                .map(|number| CoreValue::Concrete(ConcreteValue::Float(number)));
+            assert_eq!(result, Err(expected));
         }
     }
 
@@ -1504,7 +1461,11 @@ mod tests {
                 }
             }
             RawShape::List { element_type, .. } => collect_callbacks(element_type, bindings),
-            RawShape::Map { key, value } => {
+            RawShape::Map {
+                key,
+                value,
+                constraints: _,
+            } => {
                 collect_callbacks(key, bindings);
                 collect_callbacks(value, bindings);
             }
@@ -1536,7 +1497,8 @@ mod tests {
                 text.parse().expect("integer bridge probe"),
             )),
             CallbackScalar::Float => CoreValue::Concrete(ConcreteValue::Float(
-                text.parse().expect("float bridge probe"),
+                carina_core::FiniteF64::new(text.parse().expect("float bridge probe"))
+                    .expect("finite float bridge probe"),
             )),
         }
     }
@@ -1604,70 +1566,79 @@ mod tests {
         }
     }
 
-    fn non_finite_attributes() -> HashMap<String, CoreValue> {
+    fn out_of_range_duration_attributes() -> HashMap<String, CoreValue> {
         HashMap::from([(
             "value".to_string(),
-            CoreValue::Concrete(ConcreteValue::Float(f64::NAN)),
+            CoreValue::Concrete(ConcreteValue::Duration(std::time::Duration::from_secs(
+                u64::MAX,
+            ))),
         )])
     }
 
-    fn non_finite_state() -> CoreAppliedState {
+    fn out_of_range_duration_state() -> CoreAppliedState {
         CoreAppliedState::new(
-            CoreResourceId::pending_with_provider("awscc", "test.NonFiniteOutput", None),
+            CoreResourceId::pending_with_provider("awscc", "test.OutOfRangeDurationOutput", None),
             "provider-id",
-            non_finite_attributes(),
+            out_of_range_duration_attributes(),
         )
         .expect("fixture identifier is non-empty")
     }
 
     fn assert_typed_conversion_error(error: CoreProviderError, message: &str) {
+        assert!(
+            error
+                .detail()
+                .cause()
+                .is_some_and(|cause| cause.is::<protocol_convert::ProtocolConvertError>()),
+            "typed protocol-conversion cause must be retained: {error:?}"
+        );
         let error = error.to_wire();
         assert_eq!(error.kind, proto::ProviderErrorKind::Internal);
         assert_eq!(error.message, message);
         assert!(
-            error
-                .cause
-                .as_deref()
-                .is_some_and(|cause| cause.contains("non-finite float")),
+            error.cause.as_deref().is_some_and(|cause| cause
+                .contains("duration in seconds does not fit the provider protocol integer domain")),
             "typed protocol-conversion cause must be retained: {error:?}"
         );
     }
 
     #[test]
-    fn non_finite_read_output_surfaces_as_a_provider_error() {
-        let error = read_outcome_to_proto(&CoreReadOutcome::found(non_finite_state()))
-            .expect_err("non-finite provider output must be rejected without panicking");
+    fn out_of_range_duration_read_output_surfaces_as_a_provider_error() {
+        let error = read_outcome_to_proto(&CoreReadOutcome::found(out_of_range_duration_state()))
+            .expect_err(
+                "out-of-range duration in provider output must be rejected without panicking",
+            );
         assert_typed_conversion_error(error, "failed to encode read result");
     }
 
     #[test]
-    fn non_finite_issued_create_output_surfaces_as_a_provider_error() {
-        let error = issued_create_attributes_to_proto(&non_finite_attributes());
+    fn out_of_range_duration_issued_create_output_surfaces_as_a_provider_error() {
+        let error = issued_create_attributes_to_proto(&out_of_range_duration_attributes());
         assert_typed_conversion_error(
-            error.expect_err("non-finite issued-create output must be rejected"),
+            error.expect_err("out-of-range duration in issued-create output must be rejected"),
             "failed to encode create result",
         );
     }
 
     #[test]
-    fn non_finite_partial_create_output_surfaces_as_a_provider_error() {
-        let error = partial_create_attributes_to_proto(&non_finite_attributes());
+    fn out_of_range_duration_partial_create_output_surfaces_as_a_provider_error() {
+        let error = partial_create_attributes_to_proto(&out_of_range_duration_attributes());
         assert_typed_conversion_error(
-            error.expect_err("non-finite partial-create output must be rejected"),
+            error.expect_err("out-of-range duration in partial-create output must be rejected"),
             "failed to encode partial create result",
         );
     }
 
     #[test]
-    fn non_finite_resumed_create_output_surfaces_as_a_provider_error() {
-        let error = resumed_state_to_proto(&non_finite_state())
-            .expect_err("non-finite resumed-create output must be rejected");
+    fn out_of_range_duration_resumed_create_output_surfaces_as_a_provider_error() {
+        let error = resumed_state_to_proto(&out_of_range_duration_state())
+            .expect_err("out-of-range duration in resumed-create output must be rejected");
         assert_typed_conversion_error(error, "failed to encode resumed create result");
     }
 
     #[test]
-    fn non_finite_update_output_surfaces_as_a_provider_error() {
-        let state = non_finite_state();
+    fn out_of_range_duration_update_output_surfaces_as_a_provider_error() {
+        let state = out_of_range_duration_state();
         let id = state.id().clone();
         let outcome = carina_core::provider::UpdateOutcome::success(state);
         let state_after_patch = proto::PersistedState {
@@ -1677,7 +1648,7 @@ mod tests {
             exists: true,
         };
         let error = update_outcome_to_proto(&outcome, state_after_patch, &id)
-            .expect_err("non-finite update output must be rejected");
+            .expect_err("out-of-range duration in update output must be rejected");
         assert_typed_conversion_error(error, "failed to encode update result");
     }
 
@@ -2033,17 +2004,19 @@ mod tests {
     }
 
     #[test]
-    fn provider_config_decode_error_keeps_the_conversion_cause_in_text() {
-        let provider = AwsccProcessProvider::new();
-        let attrs = BTreeMap::from([("region".to_string(), proto::Value::Float(f64::NAN))]);
-        let error = provider
-            .validate_config(&attrs)
-            .expect_err("non-finite provider configuration must fail decoding");
-        assert!(
-            error.contains("failed to decode provider configuration")
-                && error.contains("non-finite float"),
-            "v12's string-only config error must retain the complete chain: {error}"
-        );
+    fn provider_config_floats_reject_non_finite_input_at_admission() {
+        use carina_provider_protocol::{FiniteF64, NonFiniteFloatError};
+
+        for (number, expected) in [
+            (f64::NAN, NonFiniteFloatError::NaN),
+            (f64::INFINITY, NonFiniteFloatError::PositiveInfinity),
+            (f64::NEG_INFINITY, NonFiniteFloatError::NegativeInfinity),
+        ] {
+            assert_eq!(
+                FiniteF64::new(number).map(proto::Value::Float),
+                Err(expected)
+            );
+        }
     }
 
     #[test]
@@ -2131,7 +2104,13 @@ mod tests {
                 ("enabled", proto::PersistedValue::Bool(true)),
                 (
                     "default_cache_behavior",
-                    persisted_map(&[("default_ttl", proto::PersistedValue::Float(60.5))]),
+                    persisted_map(&[(
+                        "default_ttl",
+                        proto::PersistedValue::Float(
+                            carina_provider_protocol::FiniteF64::new(60.5)
+                                .expect("finite persisted test value"),
+                        ),
+                    )]),
                 ),
                 (
                     "origins",

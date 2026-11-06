@@ -656,7 +656,10 @@ mod tests {
                                     ("notification_type", enum_value("actual")),
                                     (
                                         "threshold",
-                                        Value::Concrete(ConcreteValue::Float(threshold)),
+                                        Value::Concrete(ConcreteValue::Float(
+                                            carina_core::FiniteF64::new(threshold)
+                                                .expect("finite test threshold"),
+                                        )),
                                     ),
                                 ]),
                             ),

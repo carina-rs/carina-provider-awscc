@@ -213,7 +213,12 @@ fn seven_unique_tag_lists_remain_string_maps() {
             .schema()
             .as_schema();
         let tags = schema.attributes().get("tags").expect("generated tags");
-        let Shape::Map { key, value } = schema.shape_of(tags.attr_type()) else {
+        let Shape::Map {
+            key,
+            value,
+            constraints: _,
+        } = schema.shape_of(tags.attr_type())
+        else {
             panic!("{resource_type}.tags must retain its map shape");
         };
         assert!(matches!(schema.shape_of(key), Shape::String { .. }));

@@ -78,7 +78,9 @@ pub(crate) fn int(value: i64) -> Value {
 }
 
 pub(crate) fn float(value: f64) -> Value {
-    Value::Concrete(ConcreteValue::Float(value))
+    Value::Concrete(ConcreteValue::Float(
+        carina_core::FiniteF64::new(value).expect("finite test value"),
+    ))
 }
 
 pub(crate) fn list(items: Vec<Value>) -> Value {

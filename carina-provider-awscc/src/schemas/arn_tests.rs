@@ -532,7 +532,11 @@ fn assert_shared_type_has_no_partition_decision(name: &str, ty: &AttributeType) 
         RawShape::List { element_type, .. } => {
             assert_shared_type_has_no_partition_decision(name, element_type)
         }
-        RawShape::Map { key, value } => {
+        RawShape::Map {
+            key,
+            value,
+            constraints: _,
+        } => {
             assert_shared_type_has_no_partition_decision(name, key);
             assert_shared_type_has_no_partition_decision(name, value);
         }

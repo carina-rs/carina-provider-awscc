@@ -30,7 +30,12 @@ fn every_registered_tag_map_preserves_its_cfn_string_constraints() {
                 .unwrap();
         }
         let tags = field(&config.schema, "tags");
-        let RawShape::Map { key, value } = tags.as_type().raw_shape() else {
+        let RawShape::Map {
+            key,
+            value,
+            constraints: _,
+        } = tags.as_type().raw_shape()
+        else {
             panic!("{} must retain a map", config.aws_type_name);
         };
         let (key_source, value_source) = if let Some(properties) = tag.get("properties") {
@@ -213,9 +218,15 @@ fn unicode_tag_patterns_and_unrestricted_patterns_keep_their_source_meaning() {
 fn unconstrained_tags_keep_plain_strings_and_no_entry_count_limit_is_added() {
     let config = super::generated::get_config_by_type("ecs.Cluster").unwrap();
     let tags = field(&config.schema, "tags");
-    let RawShape::Map { key, value } = tags.as_type().raw_shape() else {
+    let RawShape::Map {
+        key,
+        value,
+        constraints,
+    } = tags.as_type().raw_shape()
+    else {
         panic!("Tags must remain a map");
     };
+    assert!(constraints.length().is_none());
     for entry in [key, value] {
         assert!(matches!(
             entry.raw_shape(),
