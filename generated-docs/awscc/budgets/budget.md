@@ -36,10 +36,9 @@ awscc.budgets.Budget {
     }]
   }]
 
-  resource_tags = [{
-    key   = 'Project'
-    value = 'carina-registry'
-  }]
+  tags = {
+    Project = 'carina-registry'
+  }
 }
 ```
 
@@ -56,9 +55,9 @@ awscc.budgets.Budget {
 - **Required:** No
 - **Create-only:** Yes
 
-### `resource_tags`
+### `tags`
 
-- **Type:** List\<[Struct(ResourceTag)](#resource_tags-1)\>
+- **Type:** `Map<String, String>`
 - **Required:** No
 
 ## Enum Values
@@ -355,13 +354,6 @@ Used by: `budget.filter_expression`, `budget.filter_expression.and`, `budget.fil
 |-------|------|----------|-------------|
 | `address` | String | Yes |  |
 | `subscription_type` | [Enum (SubscriptionType)](#notifications_with_subscriberssubscriberssubscription_type-subscriptiontype) | Yes |  |
-
-### resource_tags
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `key` | String | Yes |  |
-| `value` | String | No |  |
 
 ## Attribute Reference
 

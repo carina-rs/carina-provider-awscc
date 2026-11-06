@@ -33,8 +33,7 @@ awscc.budgets.Budget {
     }]
   }]
 
-  resource_tags = [{
-    key   = 'Project'
-    value = 'carina-registry'
-  }]
+  tags = {
+    Project = 'carina-registry'
+  }
 }

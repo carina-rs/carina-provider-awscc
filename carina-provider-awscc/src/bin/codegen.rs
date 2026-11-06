@@ -46,6 +46,11 @@ mod override_type_expression;
 mod parsed_cfn_schema;
 use override_type_expression::{OverrideTypeExpression, PatternLiteral};
 use parsed_cfn_schema::ParsedCfnSchema;
+#[path = "codegen/tagging.rs"]
+mod tagging;
+use tagging::{
+    TaggingOverride, dsl_attribute_name, tag_property_path, validate_tagging_classifications,
+};
 
 // carina#3340: in-progress recursion guard for cyclic CFN $ref
 // definitions (WAFv2 `WebACL.Statement` → `AndStatement` → `List<Statement>`).
@@ -82,11 +87,8 @@ fn rust_lit(s: &str) -> RustStrLit<'_> {
     RustStrLit(s)
 }
 
-fn emit_primary_identifier(
-    primary_identifier: Option<&[String]>,
-    properties: &BTreeMap<String, CfnProperty>,
-) -> Result<String> {
-    let Some(primary_identifier) = primary_identifier else {
+fn emit_primary_identifier(schema: &CfnSchema) -> Result<String> {
+    let Some(primary_identifier) = schema.primary_identifier.as_deref() else {
         return Ok("&[]".to_string());
     };
     let props: Vec<String> = primary_identifier
@@ -95,13 +97,13 @@ fn emit_primary_identifier(
             let prop = path.strip_prefix("/properties/").ok_or_else(|| {
                 anyhow::anyhow!("primaryIdentifier path {path:?} is not a property path")
             })?;
-            if !properties.contains_key(prop) {
+            if !schema.properties.contains_key(prop) {
                 anyhow::bail!("primaryIdentifier property {prop:?} is not declared in properties");
             }
             Ok(format!(
                 "crate::schemas::config::PrimaryIdentifierAttribute {{ provider_name: {}, dsl_name: {} }}",
                 rust_lit(prop),
-                rust_lit(&prop.to_snake_case())
+                rust_lit(&dsl_attribute_name(schema, prop))
             ))
         })
         .collect::<Result<_>>()?;
@@ -1188,19 +1190,16 @@ struct GeneratedTagsProperty {
     wire: GeneratedTagsWire,
 }
 
-/// Whether this CloudFormation property is generated as the canonical DSL
-/// `tags` string-map attribute, including schema-derived entry refinements.
-fn is_dsl_tags_property(schema: &CfnSchema, provider_name: &str) -> bool {
-    let Some(tagging) = schema.tagging.as_ref().filter(|tagging| tagging.taggable) else {
+/// Match the resource's declared tag property at its top-level source path.
+/// Nested properties with the same name retain their own CFN grammar.
+fn is_dsl_tags_property(schema: &CfnSchema, property_path: &[String]) -> bool {
+    let [provider_name] = property_path else {
         return false;
     };
-    let tag_property = tagging
-        .tag_property
-        .as_deref()
-        .unwrap_or("/properties/Tags");
-
-    tag_property.strip_prefix("/properties/") == Some(provider_name)
-        && provider_name.to_snake_case() == "tags"
+    tag_property_path(schema)
+        .unwrap_or_else(|error| panic!("{error}"))
+        .and_then(|path| path.strip_prefix("/properties/"))
+        == Some(provider_name.as_str())
 }
 
 /// The source leaves of one of Carina's canonical tag-map shapes.
@@ -2170,13 +2169,9 @@ struct CfnProperty {
 }
 
 fn derive_tags_property(schema: &CfnSchema) -> Result<Option<GeneratedTagsProperty>> {
-    let Some(tagging) = schema.tagging.as_ref().filter(|tagging| tagging.taggable) else {
+    let Some(tag_property) = tag_property_path(schema)? else {
         return Ok(None);
     };
-    let tag_property = tagging
-        .tag_property
-        .as_deref()
-        .unwrap_or("/properties/Tags");
     let Some(provider_name) = tag_property.strip_prefix("/properties/") else {
         anyhow::bail!(
             "{} has invalid tagging.tagProperty {tag_property:?}; expected /properties/<name>",
@@ -2191,14 +2186,10 @@ fn derive_tags_property(schema: &CfnSchema) -> Result<Option<GeneratedTagsProper
     }
     let property = schema.properties.get(provider_name).ok_or_else(|| {
         anyhow::anyhow!(
-            "{} is taggable but tag property {provider_name:?} does not exist",
+            "{}#{tag_property}: tag property cannot be emitted as a top-level attribute because it is absent from root properties; composition-only properties are not emitted",
             schema.type_name
         )
     })?;
-
-    if !is_dsl_tags_property(schema, provider_name) {
-        return Ok(None);
-    }
 
     let wire = if is_key_value_tag_array(property, schema) {
         GeneratedTagsWire::KeyValueList
@@ -2206,7 +2197,7 @@ fn derive_tags_property(schema: &CfnSchema) -> Result<Option<GeneratedTagsProper
         GeneratedTagsWire::Map
     } else {
         anyhow::bail!(
-            "{} tag property {provider_name:?} must be an array of Key/Value strings or an object map with string values",
+            "{}#{tag_property}: tag property cannot be projected to a string-to-string map; expected an array of objects with exactly the case-sensitive Key and Value string properties (no extra fields), or an object map with string values",
             schema.type_name
         );
     };
@@ -2262,7 +2253,7 @@ fn validate_mutually_exclusive_property_groups(
                     group_index + 1
                 );
             }
-            dsl_group.push(property_name.to_snake_case());
+            dsl_group.push(dsl_attribute_name(schema, property_name));
         }
         dsl_groups.push(dsl_group);
     }
@@ -2298,33 +2289,100 @@ fn emit_exclusive_groups_slice(groups: &[Vec<String>]) -> String {
     format!("&[{entries}]")
 }
 
-fn is_key_value_tag_array(property: &CfnProperty, schema: &CfnSchema) -> bool {
-    if property
-        .prop_type
-        .as_ref()
-        .and_then(TypeValue::effective_type)
-        != Some("array")
-    {
-        return false;
+/// Walk raw CFN JSON so compositions discarded by CfnProperty remain visible.
+/// The [CFN resource meta-schema](https://github.com/aws-cloudformation/cloudformation-resource-schema/blob/master/src/main/resources/schema/base.definition.schema.v1.json)
+/// (`definitions/properties`) permits these schema-valued keywords: `$ref`,
+/// `allOf`, `anyOf`, `oneOf`, `items`, `contains`, `dependencies`, `properties`,
+/// `patternProperties` and `additionalProperties`.
+/// This walk follows all of them except `properties`, `patternProperties` and
+/// `additionalProperties` of intermediate nodes, which are nested attributes and
+/// out of scope.
+/// Accumulate Key and Value across all nodes reached after an items or contains edge,
+/// including allOf/oneOf/anyOf branches, schema dependencies and $refs.
+/// Over-approximation (e.g. Key and Value in different oneOf arms) is acceptable:
+/// it only requires an explicit classification, not tag-map projection.
+fn is_key_value_array_candidate<'a>(
+    properties: impl IntoIterator<Item = &'a serde_json::Value>,
+    source: &'a serde_json::Value,
+) -> Result<bool> {
+    let mut pending: Vec<_> = properties
+        .into_iter()
+        .map(|property| (property, false))
+        .collect();
+    let mut visited_refs = HashSet::new();
+    let mut saw_key = false;
+    let mut saw_value = false;
+    while let Some((node, crossed_items)) = pending.pop() {
+        if crossed_items
+            && let Some(properties) = node
+                .get("properties")
+                .and_then(serde_json::Value::as_object)
+        {
+            saw_key |= properties
+                .keys()
+                .any(|name| name.eq_ignore_ascii_case("key"));
+            saw_value |= properties
+                .keys()
+                .any(|name| name.eq_ignore_ascii_case("value"));
+        }
+        // A reference can be reached both before and after an items/contains edge.
+        // Visit each state once to terminate cycles without losing candidates.
+        if let Some(reference) = node.get("$ref").and_then(serde_json::Value::as_str) {
+            let target = reference
+                .strip_prefix('#')
+                .filter(|pointer| pointer.starts_with('/'))
+                .and_then(|pointer| source.pointer(pointer))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "unsupported $ref {reference:?}: expected a resolvable local JSON pointer starting with #/"
+                    )
+                })?;
+            if visited_refs.insert((reference, crossed_items)) {
+                pending.push((target, crossed_items));
+            }
+        }
+        for keyword in ["allOf", "oneOf", "anyOf"] {
+            if let Some(branches) = node.get(keyword).and_then(serde_json::Value::as_array) {
+                pending.extend(branches.iter().map(|branch| (branch, crossed_items)));
+            }
+        }
+        if let Some(dependencies) = node
+            .get("dependencies")
+            .and_then(serde_json::Value::as_object)
+        {
+            pending.extend(
+                dependencies
+                    .values()
+                    .filter(|dependency| dependency.is_object())
+                    .map(|dependency| (dependency, crossed_items)),
+            );
+        }
+        for keyword in ["items", "contains"] {
+            if let Some(items) = node.get(keyword) {
+                pending.push((items, true));
+            }
+        }
     }
-    let Some(items) = property.items.as_deref() else {
+    Ok(saw_key && saw_value)
+}
+
+/// Keep projection strict: the wire format needs exactly Key/Value strings.
+fn is_key_value_tag_array(property: &CfnProperty, schema: &CfnSchema) -> bool {
+    let Some(array) = resolved_array_property(property, schema, &mut HashSet::new()) else {
         return false;
     };
-    let properties = items.properties.as_ref().or_else(|| {
-        items
-            .ref_path
-            .as_deref()
-            .and_then(|ref_path| resolve_ref(schema, ref_path))
-            .and_then(|resolved| resolved.property.properties.as_ref())
-    });
-    let Some(properties) = properties else {
+    let Some(items) = array.items.as_deref() else {
         return false;
     };
-    ["Key", "Value"].into_iter().all(|name| {
-        properties
-            .get(name)
-            .is_some_and(|property| is_string_property(schema, property))
-    })
+    let item = items
+        .ref_path
+        .as_deref()
+        .and_then(|reference| resolve_ref(schema, reference))
+        .map_or(items, |resolved| resolved.property);
+    matches!(
+        tag_map_shape(schema, item),
+        Some(TagMapShape::KeyValue { .. })
+    )
 }
 
 fn is_string_tag_map(property: &CfnProperty, schema: &CfnSchema) -> bool {
@@ -3755,7 +3813,7 @@ fn type_display_at_resolved(
     if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
         return TypeDisplay::Plain("PolicyDocument".to_string());
     }
-    if is_dsl_tags_property(schema, prop_name) {
+    if is_dsl_tags_property(schema, provider_path) {
         schema
             .classify_tag_value(provider_path)
             .unwrap_or_else(|error| panic!("{error}"));
@@ -3981,7 +4039,7 @@ fn markdown_struct_def(
     schema: &CfnSchema,
     property_path: &[String],
 ) -> Option<MarkdownStructDef> {
-    if is_dsl_tags_property(schema, prop_name) {
+    if is_dsl_tags_property(schema, property_path) {
         return None;
     }
     let key = MarkdownStructKey::Inline(property_path.to_vec());
@@ -4067,7 +4125,7 @@ fn markdown_link_type(
     cfn_parent: Option<&str>,
 ) -> Option<MarkdownLinkedType> {
     let cfn_path = CfnPropertyPath::new(cfn_parent, prop_name);
-    let tag_map = is_dsl_tags_property(schema, prop_name)
+    let tag_map = is_dsl_tags_property(schema, property_path)
         || prop
             .ref_path
             .as_deref()
@@ -4536,6 +4594,7 @@ fn render_markdown(
     type_name: &str,
     example: &DocExample,
 ) -> Result<String> {
+    validate_tagging_classifications(schema)?;
     checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
     reset_recursion_guard();
@@ -4744,7 +4803,7 @@ fn render_markdown(
             continue;
         }
 
-        let attr_name = prop_name.to_snake_case();
+        let attr_name = dsl_attribute_name(schema, prop_name);
         let is_required = required.contains(prop_name);
         let type_display = markdown_type(
             schema.property_at(&property_path, prop),
@@ -5011,7 +5070,7 @@ fn render_markdown(
                 continue;
             }
 
-            let attr_name = prop_name.to_snake_case();
+            let attr_name = dsl_attribute_name(schema, prop_name);
             let type_display = markdown_type(
                 schema.property_at(&property_path, prop),
                 enum_targets.properties.get(prop_name),
@@ -5076,6 +5135,11 @@ fn collect_struct_defs(
     cfn_parent: Option<&str>,
     struct_defs: &mut BTreeMap<MarkdownStructKey, StructDefInfo>,
 ) {
+    // A projected tag map has no item struct in the DSL, even when the CFN
+    // definition has a nonstandard name such as ResourceTag or HostedZoneTag.
+    if is_dsl_tags_property(schema, property_path) {
+        return;
+    }
     // Enum overlays and nested item expressions replace the source children.
     // Top-level item overrides retain source struct documentation, as on main.
     if resource_type_override(
@@ -5482,7 +5546,7 @@ fn checked_read_back_declarations(
         .get(type_name)
         .map_or(&[][..], |config| config.await_on_read_back);
     let attributes = documented_top_level_properties(schema)
-        .map(|(name, _)| name.to_snake_case())
+        .map(|(name, _)| dsl_attribute_name(schema, name))
         .chain(
             synthetic_attributes()
                 .iter()
@@ -5504,6 +5568,7 @@ fn checked_read_back_declarations(
 }
 
 fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<String> {
+    validate_tagging_classifications(schema)?;
     let read_back_declarations = checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
     // carina#3340: clear per-resource codegen state at function entry
@@ -5742,8 +5807,7 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
     // The provider name (`awscc`) is supplied separately by
     // `SchemaRegistry::insert("awscc", schema)` on the consumer side.
     let schema_name = dsl_resource.clone();
-    let primary_identifier =
-        emit_primary_identifier(schema.primary_identifier.as_deref(), &schema.properties)?;
+    let primary_identifier = emit_primary_identifier(schema)?;
 
     // Build every schema incrementally through non-inlined top-level helpers.
     // This keeps generated builder frame sizes bounded independently of how
@@ -5779,7 +5843,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         if should_omit_top_level_property(&schema.type_name, prop_name) {
             continue;
         }
-        let attr_name = prop_name.to_snake_case();
+        let attr_name = dsl_attribute_name(schema, prop_name);
         let property_path = [prop_name.clone()];
         let is_read_only = is_property_read_only(schema, prop, &property_path);
         let is_required = required.contains(prop_name) && !is_read_only;
@@ -5981,7 +6045,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         let fields_str = group
             .iter()
             .map(|f| {
-                let snake = f.to_snake_case();
+                let snake = dsl_attribute_name(schema, f);
                 rust_lit(&snake).to_string()
             })
             .collect::<Vec<_>>()
@@ -8124,6 +8188,8 @@ fn mutually_exclusive_property_groups()
 struct ResourceOverridesForType {
     top_level: HashMap<&'static str, TypeOverride>,
     nested: HashMap<&'static str, HashMap<&'static str, TypeOverride>>,
+    /// Raw CFN JSON pointers, independent of generated DSL names.
+    tagging: BTreeMap<&'static str, TaggingOverride>,
     /// DSL names, checked against every generated resource schema by tests.
     await_on_read_back: &'static [&'static str],
     read_back_budget_secs: Option<std::num::NonZeroU64>,
@@ -8138,6 +8204,26 @@ struct ResourceTypeOverrides {
 }
 
 impl ResourceTypeOverrides {
+    fn classify_tagging(
+        &mut self,
+        (cfn_type, path): (&'static str, &'static str),
+        classification: TaggingOverride,
+    ) {
+        let resource = self.by_type.entry(cfn_type).or_default();
+        assert!(
+            classification != TaggingOverride::TagProperty
+                || !resource
+                    .tagging
+                    .values()
+                    .any(|entry| *entry == TaggingOverride::TagProperty),
+            "duplicate tag property declaration for {cfn_type}"
+        );
+        assert!(
+            resource.tagging.insert(path, classification).is_none(),
+            "duplicate tagging classification for {cfn_type}#{path}"
+        );
+    }
+
     fn for_resource(
         &self,
         cfn_type: &str,
@@ -8269,6 +8355,51 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
     }
     static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
         let mut m = ResourceTypeOverrides::default();
+
+        // CFN omits tagging metadata for Budget. Cloud Control create/get in
+        // carina-test-008, us-east-1, 2026-11-06 accepted ResourceTags and read
+        // back [{"Value":"probe","Key":"env"},{"Value":"carina","Key":"team"}].
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-budgets-budget.html#cfn-budgets-budget-resourcetags
+        m.classify_tagging(
+            ("AWS::Budgets::Budget", "/properties/ResourceTags"),
+            TaggingOverride::TagProperty,
+        );
+        // This also agrees with CFN's tagging.tagProperty. Its nonstandard name
+        // previously escaped projection and default_tags just like ResourceTags.
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-route53-hostedzone.html#cfn-route53-hostedzone-hostedzonetags
+        m.classify_tagging(
+            ("AWS::Route53::HostedZone", "/properties/HostedZoneTags"),
+            TaggingOverride::TagProperty,
+        );
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-ipampool.html#cfn-ec2-ipampool-allocationresourcetags
+        m.classify_tagging(
+            ("AWS::EC2::IPAMPool", "/properties/AllocationResourceTags"),
+            TaggingOverride::NonTagList {
+                reason: "Required tags on resources allocating CIDRs from this pool; the pool's own tags are /properties/Tags.",
+            },
+        );
+        for (cfn_type, path, reason) in [
+            // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-elasticloadbalancingv2-listener-listenerattribute.html
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "/properties/ListenerAttributes",
+                "Listener configuration attributes such as tcp.idle_timeout.seconds; these are not resource tags.",
+            ),
+            // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-elasticloadbalancingv2-loadbalancer-loadbalancerattribute.html
+            (
+                "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                "/properties/LoadBalancerAttributes",
+                "Load balancer configuration attributes such as deletion_protection.enabled; resource tags are /properties/Tags.",
+            ),
+            // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-elasticloadbalancingv2-targetgroup-targetgroupattribute.html
+            (
+                "AWS::ElasticLoadBalancingV2::TargetGroup",
+                "/properties/TargetGroupAttributes",
+                "Target group configuration attributes such as deregistration_delay.timeout_seconds; resource tags are /properties/Tags.",
+            ),
+        ] {
+            m.classify_tagging((cfn_type, path), TaggingOverride::NonTagList { reason });
+        }
 
         // Deleting this Cloud Control resource closes the AWS member account;
         // require an explicit lifecycle opt-out before destruction (aws#572).
@@ -13360,9 +13491,9 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         );
     }
 
-    // The declared tag property is special when its generated DSL name is
-    // `tags`: it is a Map in Carina (Terraform-style).
-    if is_dsl_tags_property(schema, prop_name) {
+    // Every resource tag property is projected to the canonical DSL `tags` map,
+    // preserving the CFN property name only in the provider mapping.
+    if is_dsl_tags_property(schema, property_path) {
         schema
             .classify_tag_value(property_path)
             .unwrap_or_else(|error| panic!("{error}"));
@@ -17329,7 +17460,7 @@ mod tests {
             return;
         }
 
-        if is_dsl_tags_property(schema, prop_name)
+        if (parent_struct.is_none() && is_dsl_tags_property(schema, &[prop_name.to_string()]))
             || prop
                 .ref_path
                 .as_deref()
@@ -32604,6 +32735,877 @@ mod tests {
     }
 
     #[test]
+    fn issue_521_declared_tag_property_uses_tags_with_cfn_provider_name() {
+        let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        assert!(schema.tagging.is_none());
+        schema.edit_json(|source| {
+            source["properties"]["ResourceTags"]["maxItems"] = serde_json::json!(7);
+            source["definitions"]["ResourceTag"]["properties"]["Key"]["maxLength"] =
+                serde_json::json!(17);
+            source["definitions"]["ResourceTag"]["properties"]["Value"]["maxLength"] =
+                serde_json::json!(23);
+        });
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let tags = generated_dynamodb_field(&generated, "tags");
+        assert!(tags.starts_with("AttributeType::refined_map("), "{tags}");
+        assert!(generated.contains("AttributeSchema::optional(\"tags\","));
+        assert!(generated.contains(".with_provider_name(\"ResourceTags\")"));
+        assert!(!generated.contains("AttributeSchema::optional(\"resource_tags\","));
+        for expected in [
+            "Some((None, Some(17)))",
+            "Some((None, Some(23)))",
+            "Some((None, Some(7)))",
+        ] {
+            assert!(tags.contains(expected), "{tags}");
+        }
+        assert!(generated.contains("TagsKeyValueCheck"));
+        assert!(
+            generated.contains("provider_name: \"ResourceTags\", wire: TagsWire::KeyValueList")
+        );
+        let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(
+            docs.contains("Map<String(len: ..=17), String(len: ..=23)>` (entries: ..=7)"),
+            "{docs}"
+        );
+        assert!(!docs.contains("Struct(ResourceTag)"), "{docs}");
+        assert!(docs.contains("### `tags`\n"), "{docs}");
+        assert!(!docs.contains("### `resource_tags`\n"), "{docs}");
+        carina_docgen::check_page(&docs).unwrap();
+    }
+
+    #[test]
+    fn issue_521_tag_property_name_collision_fails_both_generators() {
+        for resource in ["AWS::Budgets::Budget", "AWS::Route53::HostedZone"] {
+            let mut schema = cfn_schema_for_codegen_tests(resource);
+            schema.edit_json(|source| {
+                source["properties"]["tags"] = serde_json::json!({"type": "string"});
+            });
+            for result in [
+                generate_schema_code(&schema, resource),
+                generate_test_markdown(&schema, resource),
+            ] {
+                let error = result
+                    .expect_err("tag name collisions must fail codegen")
+                    .to_string();
+                for expected in [resource, "DSL `tags`", "collision", "/properties/tags"] {
+                    assert!(error.contains(expected), "{error}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn issue_521_multiple_tag_properties_fail_both_generators() {
+        // Conflicting metadata and declarations, or an additional conventional
+        // Tags property, must fail rather than picking one source by precedence.
+        for conflicting_metadata in [false, true] {
+            let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+            schema.edit_json(|source| {
+                let other_name = if conflicting_metadata {
+                    "OtherTags"
+                } else {
+                    "Tags"
+                };
+                source["properties"][other_name] = source["properties"]["ResourceTags"].clone();
+                if conflicting_metadata {
+                    source["tagging"] = serde_json::json!({
+                        "taggable": true, "tagProperty": "/properties/OtherTags"
+                    });
+                }
+            });
+            for result in [
+                generate_schema_code(&schema, &schema.type_name),
+                generate_test_markdown(&schema, &schema.type_name),
+            ] {
+                let error = result
+                    .expect_err("multiple tag properties must fail codegen")
+                    .to_string();
+                for expected in [
+                    "AWS::Budgets::Budget",
+                    "multiple tag properties",
+                    "/properties/ResourceTags",
+                ] {
+                    assert!(error.contains(expected), "{error}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn issue_521_conventional_tags_property_needs_no_tagging_metadata() {
+        let mut schema = cfn_schema_for_codegen_tests("AWS::EC2::RouteTable");
+        schema.edit_json(|source| {
+            source.as_object_mut().unwrap().remove("tagging");
+        });
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert!(generated.contains("AttributeSchema::optional(\"tags\","));
+        assert!(generated.contains(".with_provider_name(\"Tags\")"));
+        assert!(generated.contains("TagsKeyValueCheck"));
+        assert!(
+            generate_test_markdown(&schema, &schema.type_name)
+                .unwrap()
+                .contains("### `tags`\n")
+        );
+    }
+
+    #[test]
+    fn issue_521_cfn_tag_property_uses_tags_with_cfn_provider_name() {
+        let mut schema = cfn_schema_for_codegen_tests("AWS::EC2::RouteTable");
+        schema.edit_json(|source| {
+            let tags = source["properties"]
+                .as_object_mut()
+                .unwrap()
+                .remove("Tags")
+                .unwrap();
+            source["properties"]["Labels"] = tags;
+            source["tagging"]["tagProperty"] = serde_json::json!("/properties/Labels");
+        });
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert!(generated.contains("AttributeSchema::optional(\"tags\","));
+        assert!(generated.contains(".with_provider_name(\"Labels\")"));
+        assert!(generated.contains("provider_name: \"Labels\", wire: TagsWire::KeyValueList"));
+        let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(docs.contains("### `tags`\n"), "{docs}");
+        assert!(!docs.contains("### `labels`\n"), "{docs}");
+    }
+
+    #[test]
+    fn issue_521_resource_level_composition_tag_candidates_fail_in_both_generators() {
+        for composition in ["allOf", "oneOf", "anyOf"] {
+            for wrapper in ["none", "composition", "dependencies"] {
+                for root_placeholder in [false, true] {
+                    let mut branch = serde_json::json!({"properties": {"Labels": {
+                        "type": "array", "items": {"$ref": "#/definitions/Pair"}
+                    }}});
+                    if wrapper == "composition" {
+                        branch = serde_json::json!({"allOf": [{"oneOf": [{"anyOf": [branch]}]}]});
+                    } else if wrapper == "dependencies" {
+                        branch = serde_json::json!({"dependencies": {
+                            "Trigger/With~Escapes": branch,
+                            "NamesOnly": ["Labels"]
+                        }});
+                    }
+                    let mut source = serde_json::json!({
+                        "typeName": "AWS::EC2::RouteTable",
+                        "properties": {},
+                        "definitions": {"Pair": {"type": "object", "properties": {
+                            "Key": {"type": "string"}, "Value": {"type": "string"}
+                        }}}
+                    });
+                    if root_placeholder {
+                        source["properties"]["Labels"] =
+                            serde_json::json!({"type": "array", "items": {}});
+                    }
+                    source[composition] = serde_json::json!([{"required": ["Labels"]}, branch]);
+                    let schema = ParsedCfnSchema::from_json(source)
+                        .expect("property-defining resource composition must pass schema intake");
+                    assert_eq!(schema.properties.contains_key("Labels"), root_placeholder);
+                    for result in [
+                        generate_schema_code(&schema, &schema.type_name),
+                        generate_test_markdown(&schema, &schema.type_name),
+                    ] {
+                        let error = result
+                            .expect_err(
+                                "resource composition tag candidates must require classification",
+                            )
+                            .to_string();
+                        for expected in [
+                            "AWS::EC2::RouteTable",
+                            "/properties/Labels",
+                            "unclassified tag-shaped",
+                            "TagProperty",
+                            "NonTagList",
+                        ] {
+                            assert!(
+                                error.contains(expected),
+                                "{composition}, wrapper={wrapper}, root_placeholder={root_placeholder}: {error}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn issue_521_composition_only_tag_property_fails_both_generators() {
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            overrides.classify_tagging(
+                ("AWS::EC2::RouteTable", "/properties/Labels"),
+                TaggingOverride::TagProperty,
+            );
+            overrides
+        });
+        with_resource_type_overrides(&OVERRIDES, || {
+            for composition in ["allOf", "oneOf", "anyOf"] {
+                let mut source = serde_json::json!({
+                    "typeName": "AWS::EC2::RouteTable",
+                    "properties": {}
+                });
+                source[composition] = serde_json::json!([{"properties": {"Labels": {
+                    "type": "array", "items": {"type": "object", "properties": {
+                        "Key": {"type": "string"}, "Value": {"type": "string"}
+                    }}
+                }}}]);
+                let schema = ParsedCfnSchema::from_json(source).unwrap();
+                assert!(!schema.properties.contains_key("Labels"));
+                for result in [
+                    generate_schema_code(&schema, &schema.type_name),
+                    generate_test_markdown(&schema, &schema.type_name),
+                ] {
+                    let error = result
+                        .expect_err("a declared tag property must be emitted as an attribute")
+                        .to_string();
+                    for expected in [
+                        "AWS::EC2::RouteTable#/properties/Labels",
+                        "cannot be emitted as a top-level attribute",
+                        "absent from root properties",
+                    ] {
+                        assert!(error.contains(expected), "{composition}: {error}");
+                    }
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn issue_521_resource_level_required_only_one_of_succeeds_in_both_generators() {
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::RouteTable",
+            "properties": {
+                "Labels": {"type": "array", "items": {"type": "string"}},
+                "Name": {"type": "string"}
+            },
+            "oneOf": [{"required": ["Labels"]}, {"required": ["Name"]}]
+        }))
+        .expect("required-only resource composition must pass schema intake");
+        generate_schema_code(&schema, &schema.type_name)
+            .expect("required-only resource composition must generate Rust");
+        generate_test_markdown(&schema, &schema.type_name)
+            .expect("required-only resource composition must generate Markdown");
+    }
+
+    #[test]
+    fn issue_521_raw_json_tag_candidates() {
+        let pair = serde_json::json!({"type": "object", "properties": {
+            "Key": {"type": "string"}, "Value": {"type": "string"}
+        }});
+        let array = serde_json::json!({"type": "array", "items": pair});
+        let definitions = serde_json::json!({
+            "Pair": pair,
+            "PairAlias": {"$ref": "#/definitions/Pair"},
+            "KeyOnly": {"properties": {"Key": {"type": "string"}}},
+            "ValueOnly": {"properties": {"Value": {"type": "string"}}},
+            "Pair/With~Escapes": pair,
+            "Array": array,
+            "ArrayAlias": {"$ref": "#/definitions/Array"},
+            "OneOfItems": {"oneOf": [
+                {"type": "string"}, {"$ref": "#/definitions/PairAlias"}
+            ]},
+            "AnyOfItems": {"anyOf": [
+                {"type": "string"}, {"$ref": "#/definitions/PairAlias"}
+            ]},
+            "ArrayUnion": {"anyOf": [{"oneOf": [
+                {"type": "array", "items": {"type": "string"}},
+                {"$ref": "#/definitions/ArrayAlias"}
+            ]}]},
+            "AllOfArray": {"allOf": [{"$ref": "#/definitions/ArrayAlias"}]},
+            "CycleA": {"$ref": "#/definitions/CycleB"},
+            "CycleB": {"$ref": "#/definitions/CycleA"},
+            "CycleWithItems": {
+                "properties": pair["properties"],
+                "items": {"$ref": "#/definitions/CycleWithItems"}
+            },
+            "Nested": {"type": "object", "properties": {"Tags": array}}
+        });
+        let cases = [
+            ("plain items", array.clone(), true),
+            (
+                "empty items with contains",
+                serde_json::json!({"type": "array", "items": {}, "contains": pair}),
+                true,
+            ),
+            (
+                "items ref to property",
+                serde_json::json!({"items": {"$ref": "#/properties/Pair"}}),
+                true,
+            ),
+            (
+                "items schema dependency",
+                serde_json::json!({"items": {
+                    "properties": {"Key": {"type": "string"}},
+                    "dependencies": {"Key": {
+                        "properties": {"Value": {"type": "string"}}
+                    }}
+                }}),
+                true,
+            ),
+            (
+                "items ref chain",
+                serde_json::json!({"type": "array", "items": {
+                    "$ref": "#/definitions/PairAlias"
+                }}),
+                true,
+            ),
+            (
+                "items escaped ref",
+                serde_json::json!({"items": {
+                    "$ref": "#/definitions/Pair~1With~0Escapes"
+                }}),
+                true,
+            ),
+            (
+                "items oneOf inline",
+                serde_json::json!({"type": "array", "items": {
+                    "oneOf": [{"type": "string"}, pair]
+                }}),
+                true,
+            ),
+            (
+                "items oneOf ref",
+                serde_json::json!({"type": "array", "items": {
+                    "oneOf": [{"type": "string"}, {"$ref": "#/definitions/PairAlias"}]
+                }}),
+                true,
+            ),
+            (
+                "items anyOf inline",
+                serde_json::json!({"type": "array", "items": {
+                    "anyOf": [{"type": "string"}, pair]
+                }}),
+                true,
+            ),
+            (
+                "items anyOf ref",
+                serde_json::json!({"type": "array", "items": {
+                    "anyOf": [{"type": "string"}, {"$ref": "#/definitions/PairAlias"}]
+                }}),
+                true,
+            ),
+            (
+                "items ref to oneOf",
+                serde_json::json!({"type": "array", "items": {
+                    "$ref": "#/definitions/OneOfItems"
+                }}),
+                true,
+            ),
+            (
+                "items ref to anyOf",
+                serde_json::json!({"type": "array", "items": {
+                    "$ref": "#/definitions/AnyOfItems"
+                }}),
+                true,
+            ),
+            (
+                "property oneOf first arm",
+                serde_json::json!({"oneOf": [
+                    array, {"type": "array", "items": {"type": "string"}}
+                ]}),
+                true,
+            ),
+            (
+                "property oneOf second arm",
+                serde_json::json!({"oneOf": [
+                    {"type": "array", "items": {"type": "string"}}, array
+                ]}),
+                true,
+            ),
+            (
+                "property anyOf first arm",
+                serde_json::json!({"anyOf": [
+                    array, {"type": "array", "items": {"type": "string"}}
+                ]}),
+                true,
+            ),
+            (
+                "property anyOf second arm",
+                serde_json::json!({"anyOf": [
+                    {"type": "array", "items": {"type": "string"}}, array
+                ]}),
+                true,
+            ),
+            (
+                "property ref through nested unions",
+                serde_json::json!({
+                    "$ref": "#/definitions/ArrayUnion"
+                }),
+                true,
+            ),
+            (
+                "allOf in items",
+                serde_json::json!({"type": "array", "items": {
+                    "allOf": [pair]
+                }}),
+                true,
+            ),
+            (
+                "allOf ref in items",
+                serde_json::json!({"type": "array", "items": {
+                    "allOf": [{"$ref": "#/definitions/PairAlias"}]
+                }}),
+                true,
+            ),
+            (
+                "allOf around items",
+                serde_json::json!({"allOf": [array]}),
+                true,
+            ),
+            (
+                "ref to allOf around items",
+                serde_json::json!({
+                    "$ref": "#/definitions/AllOfArray"
+                }),
+                true,
+            ),
+            (
+                "type and anyOf items on separate nodes",
+                serde_json::json!({
+                    "type": "array", "anyOf": [{"items": {"$ref": "#/definitions/Pair"}}]
+                }),
+                true,
+            ),
+            (
+                "type and allOf items on separate nodes",
+                serde_json::json!({"allOf": [
+                    {"type": "array"}, {"items": pair}
+                ]}),
+                true,
+            ),
+            (
+                "lowercase key value",
+                serde_json::json!({"items": {"properties": {
+                    "key": {"type": "string"}, "value": {"type": "string"}
+                }}}),
+                true,
+            ),
+            (
+                "mixed case key value",
+                serde_json::json!({"items": {"properties": {
+                    "kEy": {"type": "string"}, "VaLuE": {"type": "string"}
+                }}}),
+                true,
+            ),
+            (
+                "extra fields",
+                serde_json::json!({"items": {"properties": {
+                "Key": {"type": "string"}, "Value": {"type": "string"},
+                "Extra": {"type": "string"}
+            }, "required": ["Key", "Value", "Extra"]}}),
+                true,
+            ),
+            (
+                "non-string key value",
+                serde_json::json!({"items": {"properties": {
+                    "Key": {"type": "integer"}, "Value": {"type": "boolean"}
+                }}}),
+                true,
+            ),
+            (
+                "no explicit array type",
+                serde_json::json!({"items": pair}),
+                true,
+            ),
+            (
+                "ref cycle terminates",
+                serde_json::json!({"type": "array", "items": {
+                    "$ref": "#/definitions/CycleA"
+                }}),
+                false,
+            ),
+            (
+                "ref cycle preserves siblings",
+                serde_json::json!({"items": {
+                    "$ref": "#/definitions/CycleA", "allOf": [pair]
+                }}),
+                true,
+            ),
+            (
+                "ref cycle crosses items",
+                serde_json::json!({
+                    "$ref": "#/definitions/CycleWithItems"
+                }),
+                true,
+            ),
+            (
+                "nested properties array",
+                serde_json::json!({
+                    "type": "object", "properties": {"Tags": array}
+                }),
+                false,
+            ),
+            (
+                "ref to nested properties array",
+                serde_json::json!({
+                    "$ref": "#/definitions/Nested"
+                }),
+                false,
+            ),
+            (
+                "nested properties after items",
+                serde_json::json!({"items": {
+                    "properties": {"Tags": array}
+                }}),
+                false,
+            ),
+            (
+                "nested patternProperties array",
+                serde_json::json!({
+                    "patternProperties": {".*": array}
+                }),
+                false,
+            ),
+            (
+                "nested additionalProperties array",
+                serde_json::json!({
+                    "additionalProperties": array
+                }),
+                false,
+            ),
+            ("key value without items", pair.clone(), false),
+            (
+                "items with only key",
+                serde_json::json!({"items": {"properties": {
+                    "Key": {"type": "string"}
+                }}}),
+                false,
+            ),
+            (
+                "key value split across allOf inline nodes",
+                serde_json::json!({"items": {
+                    "allOf": [
+                        {"properties": {"Key": {"type": "string"}}},
+                        {"properties": {"Value": {"type": "string"}}}
+                    ]
+                }}),
+                true,
+            ),
+            (
+                "key value split across allOf refs",
+                serde_json::json!({"items": {
+                    "allOf": [
+                        {"$ref": "#/definitions/KeyOnly"},
+                        {"$ref": "#/definitions/ValueOnly"}
+                    ]
+                }}),
+                true,
+            ),
+            (
+                "key value split across oneOf arms",
+                serde_json::json!({"items": {
+                    "oneOf": [
+                        {"properties": {"Key": {"type": "string"}}},
+                        {"properties": {"Value": {"type": "string"}}}
+                    ]
+                }}),
+                true,
+            ),
+            (
+                "key value split across anyOf refs",
+                serde_json::json!({"items": {
+                    "anyOf": [
+                        {"$ref": "#/definitions/KeyOnly"},
+                        {"$ref": "#/definitions/ValueOnly"}
+                    ]
+                }}),
+                true,
+            ),
+            (
+                "key before items is excluded",
+                serde_json::json!({
+                    "properties": {"Key": {"type": "string"}},
+                    "items": {"$ref": "#/definitions/ValueOnly"}
+                }),
+                false,
+            ),
+            (
+                "value before items is excluded",
+                serde_json::json!({
+                    "properties": {"Value": {"type": "string"}},
+                    "items": {"$ref": "#/definitions/KeyOnly"}
+                }),
+                false,
+            ),
+            (
+                "items state stays on its path",
+                serde_json::json!({"anyOf": [
+                    {"items": {"type": "string"}}, pair
+                ]}),
+                false,
+            ),
+        ];
+        for (name, property, expected) in cases {
+            let source = serde_json::json!({
+                "typeName": "AWS::EC2::RouteTable",
+                "properties": {"Labels": property, "Pair": pair},
+                "definitions": definitions
+            });
+            assert_eq!(
+                is_key_value_array_candidate([&source["properties"]["Labels"]], &source).unwrap(),
+                expected,
+                "{name}"
+            );
+            if !expected {
+                continue;
+            }
+            let schema = ParsedCfnSchema::from_json(source).unwrap();
+            for result in [
+                generate_schema_code(&schema, &schema.type_name),
+                generate_test_markdown(&schema, &schema.type_name),
+            ] {
+                let error = result
+                    .expect_err(
+                        "raw JSON candidates must require classification in both generators",
+                    )
+                    .to_string();
+                for expected in [
+                    "AWS::EC2::RouteTable",
+                    "/properties/Labels",
+                    "unclassified tag-shaped",
+                    "TagProperty",
+                    "NonTagList",
+                ] {
+                    assert!(error.contains(expected), "{name}: {error}");
+                }
+            }
+        }
+        for (name, property, reference) in [
+            (
+                "missing ref",
+                serde_json::json!({"items": {
+                    "allOf": [{"$ref": "#/definitions/Missing"}, pair]
+                }}),
+                "#/definitions/Missing",
+            ),
+            (
+                "non-local ref",
+                serde_json::json!({"items": {
+                    "$ref": "https://example.com/schema.json#/Pair",
+                    "properties": pair["properties"]
+                }}),
+                "https://example.com/schema.json#/Pair",
+            ),
+        ] {
+            let source = serde_json::json!({
+                "typeName": "AWS::EC2::RouteTable",
+                "properties": {"Labels": property}
+            });
+            let candidate =
+                is_key_value_array_candidate([&source["properties"]["Labels"]], &source);
+            let schema = ParsedCfnSchema::from_json(source).unwrap();
+            for result in [
+                candidate.map(|_| ()),
+                generate_schema_code(&schema, &schema.type_name).map(|_| ()),
+                generate_test_markdown(&schema, &schema.type_name).map(|_| ()),
+            ] {
+                let error = result
+                    .expect_err("unsupported refs must fail codegen")
+                    .to_string();
+                assert!(error.contains("unsupported $ref"), "{name}: {error}");
+                assert!(error.contains(reference), "{name}: {error}");
+            }
+        }
+    }
+
+    fn inexact_key_value_items() -> [serde_json::Value; 5] {
+        [
+            serde_json::json!({"type": "object", "properties": {
+                "key": {"type": "string"}, "value": {"type": "string"}
+            }}),
+            serde_json::json!({"type": "object", "properties": {
+                "kEy": {"type": "string"}, "VaLuE": {"type": "string"}
+            }}),
+            serde_json::json!({"type": "object", "properties": {
+                "Key": {"type": "string"}, "Value": {"type": "string"},
+                "Extra": {"type": "string"}
+            }}),
+            serde_json::json!({"type": "object", "properties": {
+                "Key": {"type": "string"}, "Value": {"type": "string"},
+                "Extra": {"type": "string"}
+            }, "required": ["Key", "Value", "Extra"]}),
+            serde_json::json!({"type": "object", "properties": {
+                "Key": {"type": "integer"}, "Value": {"type": "boolean"}
+            }}),
+        ]
+    }
+
+    fn inexact_key_value_array_schema(
+        item: serde_json::Value,
+        referenced: bool,
+    ) -> ParsedCfnSchema {
+        ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::RouteTable",
+            "properties": {"Labels": {"type": "array", "items": if referenced {
+                serde_json::json!({"$ref": "#/definitions/Pair"})
+            } else {
+                item.clone()
+            }}},
+            "definitions": {"Pair": item}
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn issue_521_declared_unprojectable_tag_property_fails_both_generators() {
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            overrides.classify_tagging(
+                ("AWS::EC2::RouteTable", "/properties/Labels"),
+                TaggingOverride::TagProperty,
+            );
+            overrides
+        });
+        with_resource_type_overrides(&OVERRIDES, || {
+            for item in inexact_key_value_items() {
+                for referenced in [false, true] {
+                    let schema = inexact_key_value_array_schema(item.clone(), referenced);
+                    for result in [
+                        generate_schema_code(&schema, &schema.type_name),
+                        generate_test_markdown(&schema, &schema.type_name),
+                    ] {
+                        let error = result
+                            .expect_err("an unprojectable TagProperty must fail codegen")
+                            .to_string();
+                        for expected in [
+                            "AWS::EC2::RouteTable",
+                            "/properties/Labels",
+                            "cannot be projected to a string-to-string map",
+                            "case-sensitive Key and Value string properties",
+                            "no extra fields",
+                        ] {
+                            assert!(error.contains(expected), "{error}");
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn issue_521_nested_s3_tag_filters_remain_outside_the_guard() {
+        let schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert!(
+            generated
+                .contains("StructField::optional(\"tag_filters\", AttributeType::refined_list(")
+        );
+        let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(docs.contains("| `tag_filters` | `List<Map<String, String>>` |"));
+    }
+
+    #[test]
+    fn issue_521_classified_non_tag_lists_retain_their_existing_shapes() {
+        for (resource, property) in [
+            ("AWS::EC2::IPAMPool", "AllocationResourceTags"),
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "ListenerAttributes",
+            ),
+            (
+                "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                "LoadBalancerAttributes",
+            ),
+            (
+                "AWS::ElasticLoadBalancingV2::TargetGroup",
+                "TargetGroupAttributes",
+            ),
+        ] {
+            let schema = cfn_schema_for_codegen_tests(resource);
+            let generated = generate_schema_code(&schema, resource).unwrap();
+            let field = generated_dynamodb_field(&generated, property);
+            assert!(field.contains("list("), "{resource}.{property}: {field}");
+            assert!(!is_dsl_tags_property(&schema, &[property.to_string()]));
+            carina_docgen::check_page(&generate_test_markdown(&schema, resource).unwrap()).unwrap();
+        }
+    }
+
+    #[test]
+    fn issue_521_non_tag_classification_requires_a_reason() {
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::RouteTable",
+            "properties": {"Settings": {"type": "array", "items": {"$ref": "#/definitions/Pair"}}},
+            "definitions": {"Pair": {"type": "object", "properties": {
+                "Key": {"type": "string"}, "Value": {"type": "string"}
+            }}}
+        }))
+        .unwrap();
+        static CLASSIFIED: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            overrides.classify_tagging(
+                ("AWS::EC2::RouteTable", "/properties/Settings"),
+                TaggingOverride::NonTagList {
+                    reason: "Synthetic service settings rather than resource tags.",
+                },
+            );
+            overrides
+        });
+        static UNEXPLAINED: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            overrides.classify_tagging(
+                ("AWS::EC2::RouteTable", "/properties/Settings"),
+                TaggingOverride::NonTagList { reason: " " },
+            );
+            overrides
+        });
+        with_resource_type_overrides(&CLASSIFIED, || {
+            let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+            assert!(generated_dynamodb_field(&generated, "Settings").contains("list("));
+            generate_test_markdown(&schema, &schema.type_name).unwrap();
+        });
+        with_resource_type_overrides(&UNEXPLAINED, || {
+            for result in [
+                generate_schema_code(&schema, &schema.type_name),
+                generate_test_markdown(&schema, &schema.type_name),
+            ] {
+                let error = result.unwrap_err().to_string();
+                assert!(error.contains("/properties/Settings"), "{error}");
+                assert!(error.contains("requires a reason"), "{error}");
+            }
+        });
+    }
+
+    #[test]
+    fn issue_521_every_cached_tag_shaped_array_is_classified() {
+        let cache = Path::new(env!("CARGO_MANIFEST_DIR")).join("../cfn-schema-cache");
+        let mut seen = BTreeSet::new();
+        for entry in std::fs::read_dir(cache).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+            let source = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let schema = ParsedCfnSchema::from_json(source).unwrap();
+            let context = EmissionContext::from_source(&schema).unwrap();
+            validate_tagging_classifications(&context)
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            for name in context.top_level_property_names() {
+                let sources = context.top_level_property_sources(name);
+                if is_key_value_array_candidate(
+                    sources.iter().map(|pointer| {
+                        context
+                            .source()
+                            .pointer(pointer)
+                            .expect("top-level property source")
+                    }),
+                    context.source(),
+                )
+                .unwrap()
+                {
+                    seen.insert((schema.type_name.clone(), format!("/properties/{name}")));
+                }
+            }
+        }
+        for (resource_type, overrides) in &resource_type_overrides().by_type {
+            for path in overrides.tagging.keys() {
+                assert!(
+                    seen.contains(&(resource_type.to_string(), path.to_string())),
+                    "stale tagging classification {resource_type}#{path}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn tags_entry_count_bound_is_derived_from_cfn_max_items() {
         for referenced_array in [false, true] {
             for inline_tag in [false, true] {
@@ -32992,7 +33994,7 @@ mod tests {
     }
 
     #[test]
-    fn taggable_non_dsl_tag_property_has_no_tags_metadata() {
+    fn taggable_nonstandard_tag_property_has_tags_metadata() {
         let schema = ParsedCfnSchema::from_json(
             serde_json::from_str(
                 r#"{
@@ -33019,7 +34021,13 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(derive_tags_property(&schema).unwrap(), None);
+        assert_eq!(
+            derive_tags_property(&schema).unwrap(),
+            Some(GeneratedTagsProperty {
+                provider_name: "HostedZoneTags".to_string(),
+                wire: GeneratedTagsWire::KeyValueList,
+            })
+        );
     }
 
     fn schema_with_updatable_properties(names: &[&str]) -> ParsedCfnSchema {

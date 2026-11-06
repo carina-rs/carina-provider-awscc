@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 const VALID_VPC_VPC_REGION: &[&str] = &[
@@ -77,15 +77,14 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
     }
     schema = schema.attribute(build_hosted_zone_features_attribute());
     #[inline(never)]
-    fn build_hosted_zone_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("hosted_zone_tags", AttributeType::refined_list(AttributeType::struct_("HostedZoneTag".to_string(), vec![StructField::required("key", AttributeType::refined_string(None, None, Some((None, Some(128))), None)).with_description("The value of ``Key`` depends on the operation that you want to perform: + *Add a tag to a health check or hosted zone*: ``Key`` is the name that you want to give the new tag. + *Edit a tag*: ``Key`` is the name of the tag that you want to change the ``Value`` for. + *Delete a key*: ``Key`` is the name of the tag you want to remove. + *Give a name to a health check*: Edit the default ``Name`` tag. In the Amazon Route 53 console, the list of your health checks includes a *Name* column that lets you see the name that you've given to each health check.").with_provider_name("Key").build(),
-                    StructField::required("value", AttributeType::refined_string(None, None, Some((None, Some(256))), None)).with_description("The value of ``Value`` depends on the operation that you want to perform: + *Add a tag to a health check or hosted zone*: ``Value`` is the value that you want to give the new tag. + *Edit a tag*: ``Value`` is the new value that you want to assign the tag.").with_provider_name("Value").build()]), false, None, carina_core::schema::ListElements::Unique))
+    fn build_tags_attribute() -> AttributeSchema {
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((None, Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_description("Adds, edits, or deletes tags for a health check or a hosted zone. For information about using tags for cost allocation, see [Using Cost Allocation Tags](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-alloc-tags.html) in the *User Guide*.")
                 .with_provider_name("HostedZoneTags")
-                .with_block_name("hosted_zone_tag")
+                .with_block_name("tag")
             .build()
     }
-    schema = schema.attribute(build_hosted_zone_tags_attribute());
+    schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_id_attribute() -> AttributeSchema {
         AttributeSchema::provider_populated("id", carina_aws_types::route53_hosted_zone_id())
@@ -131,6 +130,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_vp_cs_attribute());
     schema = schema
         .with_coexisting_replacement();
+    schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);
     #[inline(never)]
     fn build_schema_def_0() -> AttributeType { AttributeType::struct_("HostedZoneConfig".to_string(), vec![StructField::optional("comment", AttributeType::refined_string(None, None, Some((None, Some(256))), None)).with_description("Any comments that you want to include about the hosted zone.").with_provider_name("Comment").build()]) }
     schema = schema.with_def("HostedZoneConfig", build_schema_def_0());
@@ -145,7 +145,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
         resource_type_name: "route53.HostedZone",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
         exclusive_groups: &[],
-        tags: None,
+        tags: Some(TagsProperty { provider_name: "HostedZoneTags", wire: TagsWire::KeyValueList }),
         await_on_read_back: vec![],
         schema: schema.validate().expect("generated schema must pass admission"),
     }

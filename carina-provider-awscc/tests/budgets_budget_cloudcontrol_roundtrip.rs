@@ -14,7 +14,11 @@ mod common;
 
 use std::sync::Arc;
 
-use carina_core::provider::{CreateOutcomeKind, Provider, ReadRequest};
+use carina_core::differ::{Diff, diff};
+use carina_core::parser::ProviderConfig;
+use carina_core::provider::{
+    CreateOutcomeKind, Provider, RawSavedAttrs, ReadRequest, merge_default_tags,
+};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_core::schema::RawShape;
 use carina_provider_awscc::AwsccProvider;
@@ -121,13 +125,7 @@ fn budget_resource() -> Resource {
                 ),
             ])]),
         )
-        .with_attribute(
-            "resource_tags",
-            list([map([
-                ("key", string("Project")),
-                ("value", string("carina-registry")),
-            ])]),
-        )
+        .with_attribute("tags", map([("Project", string("carina-registry"))]))
 }
 
 async fn winterbaume_provider() -> (AwsccProvider, Arc<CloudControlService>) {
@@ -326,13 +324,113 @@ async fn budgets_budget_create_then_read_preserves_recursive_expression_and_noti
         )
     );
     assert_eq!(
-        read.attributes().get("resource_tags"),
-        Some(
-            &list([map([
-                ("key", string("Project")),
-                ("value", string("carina-registry")),
-            ])])
-            .to_snapshot()
-        )
+        read.attributes().get("tags"),
+        Some(&map([("Project", string("carina-registry"))]).to_snapshot())
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn issue_521_budget_default_tags_round_trip_without_a_diff() {
+    let registry = carina_provider_awscc::schemas::schema_registry();
+    let config = ProviderConfig {
+        name: "awscc".into(),
+        attributes: IndexMap::new(),
+        default_tags: IndexMap::from([
+            ("team".to_string(), string("carina")),
+            ("env".to_string(), string("default")),
+        ]),
+        source: None,
+        version: None,
+        revision: None,
+        unresolved_attributes: IndexMap::new(),
+        binding: None,
+    };
+    // Exercise both default-only tags and resource-level precedence.
+    for explicit in [false, true] {
+        let mut resource = budget_resource();
+        resource.attributes.shift_remove("tags");
+        if explicit {
+            resource.set_attr("tags", map([("env", string("probe"))]));
+        }
+        merge_default_tags(&config, std::slice::from_mut(&mut resource), &registry).unwrap();
+        assert_budget_tags_round_trip(resource, if explicit { "probe" } else { "default" }).await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn issue_521_budget_tag_map_round_trip_without_a_diff() {
+    let resource = budget_resource().with_attribute(
+        "tags",
+        map([("team", string("carina")), ("env", string("probe"))]),
+    );
+    assert_budget_tags_round_trip(resource, "probe").await;
+}
+
+async fn assert_budget_tags_round_trip(resource: Resource, environment: &str) {
+    let (provider, cloudcontrol) = winterbaume_provider().await;
+    let registry = carina_provider_awscc::schemas::schema_registry();
+    let expected = map([("team", string("carina")), ("env", string(environment))]);
+    assert_eq!(resource.get_attr("tags"), Some(&expected));
+    assert!(!resource.attributes.contains_key("resource_tags"));
+
+    let id = resource.id.clone();
+    let request = common::create_request(resource.clone()).await;
+    common::dispatch_create(&provider, &id, request)
+        .await
+        .unwrap();
+    let (identifier, desired) = stored_budget(&cloudcontrol).await;
+    let mut tags = desired["ResourceTags"].as_array().unwrap().clone();
+    tags.sort_by(|left, right| left["Key"].as_str().cmp(&right["Key"].as_str()));
+    assert_eq!(
+        tags,
+        serde_json::json!([
+            {"Key": "env", "Value": environment},
+            {"Key": "team", "Value": "carina"}
+        ])
+        .as_array()
+        .unwrap()
+        .clone()
+    );
+
+    // Cloud Control returns a Key/Value list, in an arbitrary order.
+    // Measured carina-test-008, us-east-1, 2026-11-06: create ResourceTags
+    // team=carina/env=probe, then get ResourceTags env=probe/team=carina.
+    let mut view = cloudcontrol.snapshot(ACCOUNT_ID, REGION).await;
+    for stored in view.resources.values_mut() {
+        let mut model: serde_json::Value = serde_json::from_str(&stored.resource_model).unwrap();
+        model["ResourceTags"].as_array_mut().unwrap().reverse();
+        stored.resource_model = model.to_string();
+    }
+    cloudcontrol
+        .restore(ACCOUNT_ID, REGION, view)
+        .await
+        .unwrap();
+    let read = common::found_state(
+        Provider::read(
+            &provider,
+            &id,
+            &common::applied_identifier(identifier),
+            ReadRequest,
+        )
+        .await
+        .unwrap(),
+    );
+    assert_eq!(read.attributes().get("tags"), Some(&expected.to_snapshot()));
+    assert!(!read.attributes().contains_key("resource_tags"));
+
+    let current = read.into_state_for_writeback();
+    let desired = common::normalized_resolved_resource(resource).await;
+    let saved = RawSavedAttrs::default().lift(&registry);
+    let router = carina_provider_awscc::test_comparison_router();
+    let comparison = router.comparison_for(&registry, &desired.id).unwrap();
+    let result = comparison
+        .context()
+        .with_references(
+            &carina_core::references::prepare_empty_for_tests(),
+            &desired.id,
+            |context| diff(&desired, &current, &saved, None, comparison, context),
+        )
+        .unwrap()
+        .unwrap();
+    assert!(matches!(result, Diff::NoChange(_)), "{result:?}");
 }

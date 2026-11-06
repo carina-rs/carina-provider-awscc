@@ -5214,15 +5214,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_resource_does_not_fabricate_tags_for_schema_without_tags_attribute() {
+    async fn read_resource_maps_hosted_zone_tags_to_tags() {
         let config = get_schema_config("route53.HostedZone")
             .expect("route53.HostedZone schema should exist");
-        assert!(config.tags.is_none());
-        assert!(!config.schema.as_schema().attributes().contains_key("tags"));
+        assert_eq!(
+            config.tags.as_ref().unwrap().provider_name,
+            "HostedZoneTags"
+        );
+        assert_eq!(
+            config.schema.as_schema().attributes()["tags"].provider_name(),
+            Some("HostedZoneTags")
+        );
 
-        for (read_properties, label) in [
-            (r#"{}"#, "missing"),
-            (r#"{"Tags":[{"Key":"env","Value":"prod"}]}"#, "present"),
+        for (read_properties, label, expected) in [
+            (r#"{}"#, "missing", IndexMap::new()),
+            (
+                r#"{"Tags":[{"Key":"env","Value":"prod"}]}"#,
+                "unrelated Tags",
+                IndexMap::new(),
+            ),
+            (
+                r#"{"HostedZoneTags":[{"Key":"env","Value":"prod"}]}"#,
+                "present",
+                IndexMap::from([("env".to_string(), test_string("prod"))]),
+            ),
+            (
+                r#"{"HostedZoneTags":[{"Key":"env","Value":"prod"}],"Tags":[{"Key":"env","Value":"wrong"}]}"#,
+                "both wire keys",
+                IndexMap::from([("env".to_string(), test_string("prod"))]),
+            ),
         ] {
             let service =
                 PartialUpdateCloudControlService::with_read_properties(true, read_properties);
@@ -5246,8 +5266,13 @@ mod tests {
             };
 
             assert!(
-                !state.attributes().contains_key("tags"),
-                "{label} Cloud Control Tags must not fabricate a schema-unknown attribute"
+                !state.attributes().contains_key("hosted_zone_tags"),
+                "{label} must use the canonical DSL tag name"
+            );
+            assert_eq!(
+                state.attributes().get("tags"),
+                Some(&Value::Concrete(ConcreteValue::Map(expected)).to_snapshot()),
+                "{label}"
             );
         }
     }

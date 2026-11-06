@@ -218,6 +218,29 @@ impl<'a> EmissionProperty<'a> {
 }
 
 impl<'a> EmissionContext<'a> {
+    pub(super) fn source(&self) -> &Value {
+        self.source
+    }
+
+    /// Include properties declared only in resource-level composition branches.
+    pub(super) fn top_level_property_names(&self) -> BTreeSet<&str> {
+        self.same_site_sources([String::new()])
+            .iter()
+            .filter_map(|pointer| {
+                self.source
+                    .pointer(pointer)
+                    .and_then(|node| node.get("properties"))
+                    .and_then(Value::as_object)
+            })
+            .flat_map(|properties| properties.keys().map(String::as_str))
+            .collect()
+    }
+
+    /// Reuse the emitter's source collection, including resource composition.
+    pub(super) fn top_level_property_sources(&self, name: &str) -> Vec<String> {
+        self.collect_property_site(&[name.to_string()]).sources
+    }
+
     pub(super) fn from_source(schema: &'a ParsedCfnSchema) -> Result<Self> {
         Ok(Self {
             schema,
@@ -319,57 +342,7 @@ impl<'a> EmissionContext<'a> {
         property: &'b CfnProperty,
     ) -> EmissionProperty<'b> {
         if !self.sites.borrow().contains_key(path) {
-            let (name, parent_path) = path.split_last().expect("property path");
-            let parents = self
-                .sites
-                .borrow()
-                .get(parent_path)
-                .map(|site| site.sources.clone())
-                .unwrap_or_else(|| {
-                    if parent_path.is_empty() {
-                        self.same_site_sources([String::new()])
-                    } else {
-                        Vec::new()
-                    }
-                });
-            let mut sources = Vec::new();
-            let mut inherited = Evidence::default();
-            for parent in parents {
-                let value = self
-                    .source
-                    .pointer(&parent)
-                    .expect("recorded source pointer");
-                if name == "*" {
-                    // Collections retain same-site scalar constraints on their value.
-                    inherited.add_source(&parent, value);
-                    if self.dsl_path(path).ends_with("{}") {
-                        if let Some(patterns) =
-                            value.get("patternProperties").and_then(Value::as_object)
-                        {
-                            sources.extend(patterns.keys().map(|key| {
-                                pointer_child(&pointer_child(&parent, "patternProperties"), key)
-                            }));
-                        }
-                    } else if value.get("items").is_some() {
-                        sources.push(pointer_child(&parent, "items"));
-                    }
-                } else if value
-                    .get("properties")
-                    .and_then(|fields| fields.get(name))
-                    .is_some()
-                {
-                    sources.push(pointer_child(&pointer_child(&parent, "properties"), name));
-                }
-            }
-            let sources = self.same_site_sources(sources);
-            let mut site = EmittedSite {
-                sources,
-                evidence: inherited,
-            };
-            for pointer in &site.sources {
-                site.evidence
-                    .add_source(pointer, self.source.pointer(pointer).expect("source node"));
-            }
+            let site = self.collect_property_site(path);
             self.sites.borrow_mut().insert(path.to_vec(), site);
         }
         EmissionProperty {
@@ -377,6 +350,61 @@ impl<'a> EmissionContext<'a> {
             property,
             path,
         }
+    }
+
+    fn collect_property_site(&self, path: &[String]) -> EmittedSite {
+        let (name, parent_path) = path.split_last().expect("property path");
+        let parents = self
+            .sites
+            .borrow()
+            .get(parent_path)
+            .map(|site| site.sources.clone())
+            .unwrap_or_else(|| {
+                if parent_path.is_empty() {
+                    self.same_site_sources([String::new()])
+                } else {
+                    Vec::new()
+                }
+            });
+        let mut sources = Vec::new();
+        let mut inherited = Evidence::default();
+        for parent in parents {
+            let value = self
+                .source
+                .pointer(&parent)
+                .expect("recorded source pointer");
+            if name == "*" {
+                // Collections retain same-site scalar constraints on their value.
+                inherited.add_source(&parent, value);
+                if self.dsl_path(path).ends_with("{}") {
+                    if let Some(patterns) =
+                        value.get("patternProperties").and_then(Value::as_object)
+                    {
+                        sources.extend(patterns.keys().map(|key| {
+                            pointer_child(&pointer_child(&parent, "patternProperties"), key)
+                        }));
+                    }
+                } else if value.get("items").is_some() {
+                    sources.push(pointer_child(&parent, "items"));
+                }
+            } else if value
+                .get("properties")
+                .and_then(|fields| fields.get(name))
+                .is_some()
+            {
+                sources.push(pointer_child(&pointer_child(&parent, "properties"), name));
+            }
+        }
+        let sources = self.same_site_sources(sources);
+        let mut site = EmittedSite {
+            sources,
+            evidence: inherited,
+        };
+        for pointer in &site.sources {
+            site.evidence
+                .add_source(pointer, self.source.pointer(pointer).expect("source node"));
+        }
+        site
     }
 
     /// Follow only same-site evidence. Children are selected when the emitter visits them.
@@ -406,6 +434,13 @@ impl<'a> EmissionContext<'a> {
                             .rev()
                             .map(|index| format!("{pointer}/{keyword}/{index}")),
                     );
+                }
+            }
+            if let Some(dependencies) = value.get("dependencies").and_then(Value::as_object) {
+                for (trigger, dependency) in dependencies {
+                    if dependency.is_object() {
+                        pending.push(pointer_child(&format!("{pointer}/dependencies"), trigger));
+                    }
                 }
             }
         }

@@ -4,11 +4,51 @@ use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
 use crate::test_support::{
-    AssignmentContext, enum_identifier, field, float, int, list, string, validate_fixtures,
+    AssignmentContext, enum_identifier, field, float, int, list, string, try_validate_fixtures,
+    validate_fixtures,
 };
 
 fn budget_schema() -> ValidatedResourceSchema {
     super::generated::budgets::budget::budgets_budget_config().schema
+}
+
+#[test]
+fn issue_521_budget_tags_is_a_tag_map_with_metadata() {
+    let config = super::generated::budgets::budget::budgets_budget_config();
+    let tags = config.tags.expect("Budget must declare its tag property");
+    assert_eq!(tags.provider_name, "ResourceTags");
+    assert_eq!(tags.wire, super::config::TagsWire::KeyValueList);
+    let carina_core::schema::ResourceValidation::Declared(validators) =
+        config.schema.parts().validation
+    else {
+        panic!("Budget must declare portable tag validation");
+    };
+    assert!(
+        validators.contains(&carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck)
+    );
+    let tags = field(&config.schema, "tags");
+    let RawShape::Map { key, value, .. } = tags.as_type().raw_shape() else {
+        panic!("Budget.tags must be a map");
+    };
+    for leaf in [key, value] {
+        assert!(matches!(
+            leaf.raw_shape(),
+            RawShape::String { identity: None, .. }
+        ));
+    }
+    let attribute = &config.schema.as_schema().attributes()["tags"];
+    assert_eq!(attribute.provider_name(), Some("ResourceTags"));
+}
+
+#[test]
+fn issue_521_budget_tags_runs_tags_key_value_check() {
+    let fixture = include_str!("../../../examples/budgets_budget/main.crn").replace(
+        "Project = 'carina-registry'",
+        "Key = 'team'\n    Value = 'carina'",
+    );
+    let error = try_validate_fixtures(&[("budget_pair_instead_of_tags.crn", &fixture)])
+        .expect_err("TagsKeyValueCheck must reject pair-shaped tags");
+    assert!(error.contains("tags"), "{error}");
 }
 
 #[test]

@@ -32,9 +32,8 @@ awscc.route53.HostedZone {
     comment = 'Public hosted zone for example-carina.com.'
   }
 
-  hosted_zone_tag {
-    key   = 'Environment'
-    value = 'example'
+  tags = {
+    Environment = 'example'
   }
 }
 ```
@@ -55,9 +54,9 @@ A complex type that contains an optional comment. If you don't want to specify a
 
 The features configuration for the hosted zone, including accelerated recovery settings and status information.
 
-### `hosted_zone_tags`
+### `tags`
 
-- **Type:** List\<[Struct(HostedZoneTag)](#hosted_zone_tags-1)\>
+- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
 - **Required:** No
 
 Adds, edits, or deletes tags for a health check or a hosted zone. For information about using tags for cost allocation, see [Using Cost Allocation Tags](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-alloc-tags.html) in the *User Guide*.
@@ -151,13 +150,6 @@ Shorthand formats: `us_east_1` or `VPCRegion.us_east_1`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `enable_accelerated_recovery` | Bool | No |  |
-
-### hosted_zone_tags
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `key` | String(len: ..=128) | Yes | The value of ``Key`` depends on the operation that you want to perform: + *Add a tag to a health check or hosted zone*: ``Key`` is the name that you want to give the new tag. + *Edit a tag*: ``Key`` is the name of the tag that you want to change the ``Value`` for. + *Delete a key*: ``Key`` is the name of the tag you want to remove. + *Give a name to a health check*: Edit the default ``Name`` tag. In the Amazon Route 53 console, the list of your health checks includes a *Name* column that lets you see the name that you've given to each health check. |
-| `value` | String(len: ..=256) | Yes | The value of ``Value`` depends on the operation that you want to perform: + *Add a tag to a health check or hosted zone*: ``Value`` is the value that you want to give the new tag. + *Edit a tag*: ``Value`` is the new value that you want to assign the tag. |
 
 ### query_logging_config
 

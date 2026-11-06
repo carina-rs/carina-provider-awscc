@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 const VALID_AUTO_ADJUST_DATA_AUTO_ADJUST_TYPE: &[&str] = &["HISTORICAL", "FORECAST"];
@@ -178,16 +178,16 @@ pub fn budgets_budget_config() -> AwsccSchemaConfig {
     }
     schema = schema.attribute(build_notifications_with_subscribers_attribute());
     #[inline(never)]
-    fn build_resource_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("resource_tags", AttributeType::list(AttributeType::struct_("ResourceTag".to_string(), vec![StructField::required("key", AttributeType::string()).with_provider_name("Key").build(),
-                    StructField::optional("value", AttributeType::string()).with_provider_name("Value").build()])))
+    fn build_tags_attribute() -> AttributeSchema {
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
                 .with_provider_name("ResourceTags")
-                .with_block_name("resource_tag")
+                .with_block_name("tag")
             .build()
     }
-    schema = schema.attribute(build_resource_tags_attribute());
+    schema = schema.attribute(build_tags_attribute());
     schema = schema
         .with_conflicting_replacement();
+    schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);
     #[inline(never)]
     fn build_schema_def_0() -> AttributeType { AttributeType::struct_("AutoAdjustData".to_string(), vec![StructField::required("auto_adjust_type", AttributeType::enum_(carina_core::schema::enum_identity("AutoAdjustType", Some("aws.budgets.Budget.BudgetData.AutoAdjustData")), Some(vec!["HISTORICAL".to_string(), "FORECAST".to_string()]), vec![("HISTORICAL".to_string(), "historical".to_string()), ("FORECAST".to_string(), "forecast".to_string())], None, None)).with_provider_name("AutoAdjustType").build(),
                     StructField::optional("historical_options", AttributeType::struct_("HistoricalOptions".to_string(), vec![StructField::required("budget_adjustment_period", AttributeType::refined_int(None, Some((Some(1), Some(60))))).with_provider_name("BudgetAdjustmentPeriod").build()])).with_provider_name("HistoricalOptions").build()]) }
@@ -294,7 +294,7 @@ pub fn budgets_budget_config() -> AwsccSchemaConfig {
         resource_type_name: "budgets.Budget",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
         exclusive_groups: &[],
-        tags: None,
+        tags: Some(TagsProperty { provider_name: "ResourceTags", wire: TagsWire::KeyValueList }),
         await_on_read_back: vec![],
         schema: schema.validate().expect("generated schema must pass admission"),
     }
