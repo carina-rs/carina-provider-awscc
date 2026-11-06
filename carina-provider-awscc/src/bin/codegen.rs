@@ -48,7 +48,7 @@ mod parsed_cfn_schema;
 mod schema_layer;
 #[path = "codegen/schema_projection.rs"]
 mod schema_projection;
-use schema_projection::Projection;
+use schema_projection::{EmissionType, Projection};
 #[cfg(test)]
 #[path = "codegen/schema_projection_tests.rs"]
 mod schema_projection_tests;
@@ -1301,40 +1301,20 @@ fn needs_kms_classification(property: &CfnProperty, name: &str) -> bool {
 }
 
 /// CloudFormation Resource Schema
-#[derive(Debug, Deserialize)]
-#[cfg_attr(test, derive(Serialize))]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
+#[derive(Debug)]
+#[cfg_attr(test, derive(Serialize), serde(rename_all = "camelCase"))]
 struct CfnSchema {
-    #[serde(skip)]
+    #[cfg_attr(test, serde(skip))]
     layer: Option<std::sync::Arc<schema_layer::Layer>>,
-    #[serde(skip)]
+    #[cfg_attr(test, serde(skip))]
     query_nodes: BTreeMap<schema_layer::NodeId, CfnProperty>,
+    #[cfg_attr(test, serde(skip))]
+    root_projection: Projection,
     type_name: String,
-    description: Option<String>,
     properties: BTreeMap<String, CfnProperty>,
-    #[serde(default)]
-    required: Vec<String>,
-    #[serde(default)]
-    read_only_properties: Vec<String>,
-    #[serde(default)]
-    create_only_properties: Vec<String>,
-    #[serde(default)]
-    write_only_properties: Vec<String>,
-    primary_identifier: Option<Vec<String>>,
     definitions: Option<BTreeMap<String, CfnProperty>>,
+    // Tag metadata remains a compatibility carrier until STEP 5.
     tagging: Option<CfnTagging>,
-    /// Top-level oneOf variants (mutually exclusive required field groups)
-    #[serde(default, rename = "oneOf")]
-    one_of: Vec<CfnProperty>,
-    /// Top-level anyOf variants
-    #[serde(default, rename = "anyOf")]
-    any_of: Vec<CfnProperty>,
-    /// Cloud Control handlers (create/read/update/delete/list). Most
-    /// NON_PROVISIONABLE types omit this map, but the registry has known
-    /// provisionable exceptions; see [`HANDLERLESS_CLOUD_CONTROL_TYPES`].
-    #[serde(default)]
-    handlers: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug)]
@@ -2352,8 +2332,11 @@ fn checked_resource_type_override(
     schema: &CfnSchema,
     property_path: CfnPropertyPath<'_>,
     property: &CfnProperty,
-) -> Option<&'static TypeOverride> {
-    let override_type = resource_type_override(&schema.type_name, property_path)?;
+) -> Result<Option<&'static TypeOverride>> {
+    let Some(override_type) = resource_type_override(&schema.type_name, property_path) else {
+        return Ok(None);
+    };
+    property.try_query()?;
     // Value traversal retains the containing map's raw CFN property path.
     // Its length refinement belongs only to the map's key. validate_sources
     // validates the actual source map before either emitter walks its values.
@@ -2365,19 +2348,19 @@ fn checked_resource_type_override(
         }
     ) && property_pattern_map_entry(property, schema).is_none()
     {
-        return None;
+        return Ok(None);
     }
     override_type
         .validate_source_shape(schema, property_path, property)
-        .unwrap_or_else(|error| {
-            panic!(
+        .map_err(|error| {
+            property.query().emission_error(format!(
                 "{}: {error}",
                 override_type
                     .owner_name()
                     .unwrap_or("resource_type_overrides")
-            )
-        });
-    Some(override_type)
+            ))
+        })?;
+    Ok(Some(override_type))
 }
 
 fn validate_emitted_array_overrides(schema: &CfnSchema) -> Result<()> {
@@ -2450,23 +2433,23 @@ fn classify_bare_object(
     unique_bare_object_classification(cfn_type, property_path, matches)
 }
 
-fn classify_bare_object_or_panic(
+fn emission_bare_object(
+    prop: &CfnProperty,
     cfn_type: &str,
     property_path: CfnPropertyPath<'_>,
-) -> BareObjectClassification {
-    classify_bare_object(cfn_type, property_path).unwrap_or_else(|| {
-        panic!(
-            "unclassified bare object {cfn_type}.{property_path}; classify it in FREE_FORM_JSON_PROPERTIES, EMPTY_OBJECT_PROPERTIES, or STRING_MAP_PROPERTIES, or add a dedicated typed override; see CODEGEN.md#classifying-bare-objects"
-        )
-    })
+) -> Result<BareObjectClassification> {
+    classify_bare_object(cfn_type, property_path).ok_or_else(|| prop.query().emission_error(format!(
+        "unclassified bare object {cfn_type}.{property_path}; classify it in FREE_FORM_JSON_PROPERTIES, EMPTY_OBJECT_PROPERTIES, or STRING_MAP_PROPERTIES, or add a dedicated typed override; see CODEGEN.md#classifying-bare-objects"
+    )).into())
 }
 
 fn bare_object_attribute_type(
+    prop: &CfnProperty,
     cfn_type: &str,
     property_path: CfnPropertyPath<'_>,
     prop_name: &str,
-) -> String {
-    match classify_bare_object_or_panic(cfn_type, property_path) {
+) -> Result<String> {
+    Ok(match emission_bare_object(prop, cfn_type, property_path)? {
         BareObjectClassification::IamPolicyDocument(_) => {
             "carina_aws_types::iam_policy_document()".to_string()
         }
@@ -2482,11 +2465,16 @@ fn bare_object_attribute_type(
             display: _,
         } => expression.to_string(),
         BareObjectClassification::FreeFormJson(entry)
-        | BareObjectClassification::OmittedResource(entry) => panic!(
-            "omitted property {}.{} reached AttributeType generation: {}",
-            entry.cfn_type, entry.property_path, entry.reason
-        ),
-    }
+        | BareObjectClassification::OmittedResource(entry) => {
+            return Err(prop
+                .query()
+                .emission_error(format!(
+                    "omitted property {}.{} reached AttributeType generation: {}",
+                    entry.cfn_type, entry.property_path, entry.reason
+                ))
+                .into());
+        }
+    })
 }
 
 fn is_object_string_union(prop: &CfnProperty) -> bool {
@@ -2517,37 +2505,38 @@ fn object_string_union_is_iam_policy_document(
     prop: &CfnProperty,
     cfn_type: &str,
     property_path: CfnPropertyPath<'_>,
-) -> bool {
+) -> Result<bool> {
+    let projection = prop.try_query()?;
     if !is_object_string_union(prop) {
-        return false;
+        return Ok(false);
     }
 
     match classify_bare_object(cfn_type, property_path) {
-        Some(BareObjectClassification::IamPolicyDocument(_)) => return true,
+        Some(BareObjectClassification::IamPolicyDocument(_)) => return Ok(true),
         Some(
             BareObjectClassification::FreeFormJson(_)
             | BareObjectClassification::TypedOverride {
                 expression: _,
                 display: _,
             },
-        ) => return false,
-        Some(classification) => panic!(
+        ) => return Ok(false),
+        Some(classification) => return Err(projection.emission_error(format!(
             "object|string property {cfn_type}.{property_path} has incompatible classification in {}; classify it as an IAM policy document or an omitted free-form JSON document; see CODEGEN.md#classifying-bare-objects",
             classification.owner_name()
-        ),
+        )).into()),
         None => {}
     }
 
-    panic!(
+    Err(projection.emission_error(format!(
         "unclassified object|string property {cfn_type}.{property_path}; classify it as an IAM policy document in IAM_POLICY_DOCUMENT_PROPERTIES or NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES, or as an omitted document in FREE_FORM_JSON_PROPERTIES; see CODEGEN.md#classifying-bare-objects"
-    );
+    )).into())
 }
 
 /// Enum value can be a string or an integer in JSON Schema
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
 #[serde(untagged)]
-#[allow(dead_code)] // Legacy tag/emission carrier; shared enums are Layer literals.
+#[cfg(test)]
 enum EnumValue {
     Str(String),
     Int(i64),
@@ -2566,7 +2555,6 @@ impl EnumValue {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 struct CfnProperty {
     #[serde(skip)]
     origin: Option<schema_projection::Origin>,
@@ -2575,8 +2563,10 @@ struct CfnProperty {
     #[serde(rename = "type")]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     prop_type: Option<TypeValue>,
+    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     description: Option<String>,
+    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     #[serde(rename = "enum")]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     enum_values: Option<Vec<EnumValue>>,
@@ -2599,14 +2589,17 @@ struct CfnProperty {
     #[serde(default)]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pattern_properties: Option<BTreeMap<String, CfnProperty>>,
+    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Required fields for inline objects
     #[serde(default)]
     required: Vec<String>,
+    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Minimum value constraint (for integer/number types)
     #[serde(default)]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     #[serde(deserialize_with = "legacy_numeric_bound")]
     minimum: Option<i64>,
+    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Maximum value constraint (for integer/number types)
     #[serde(default)]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
@@ -2616,10 +2609,12 @@ struct CfnProperty {
     #[serde(default)]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     additional_properties: Option<bool>,
+    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Const value (single fixed value for this property)
     #[serde(rename = "const")]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     const_value: Option<serde_json::Value>,
+    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Default value for this property
     #[serde(rename = "default")]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
@@ -2636,14 +2631,17 @@ struct CfnProperty {
     #[serde(default)]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     max_items: Option<i64>,
+    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Minimum length constraint (for string types)
     #[serde(default, rename = "minLength")]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     min_length: Option<u64>,
+    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Maximum length constraint (for string types)
     #[serde(default, rename = "maxLength")]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     max_length: Option<u64>,
+    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Format constraint (e.g., "int64", "uri", "double")
     #[serde(default)]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
@@ -2652,14 +2650,16 @@ struct CfnProperty {
     #[serde(default, rename = "oneOf")]
     #[cfg_attr(test, serde(skip_serializing_if = "Vec::is_empty"))]
     one_of: Vec<CfnProperty>,
+    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     #[serde(default)]
     #[serde(rename = "anyOf")]
     #[cfg_attr(test, serde(skip_serializing_if = "Vec::is_empty"))]
     any_of: Vec<CfnProperty>,
 }
 
-// Emission compatibility only. Shared queries retain the original JSON Number
+// Fixture serialization only. Shared queries retain the original JSON Number
 // and can reject a projection instead of truncating a non-integral endpoint.
+#[cfg(test)]
 fn legacy_numeric_bound<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<Option<i64>, D::Error> {
@@ -3627,7 +3627,7 @@ fn validate_emitted_nested_read_only_properties(schema: &CfnSchema) -> Result<()
             .cloned()
             .collect::<BTreeSet<Vec<String>>>()
     });
-    for pointer in &schema.read_only_properties {
+    for pointer in schema.metadata().read_only_properties.iter().flatten() {
         let Some(path) = cfn_property_path(pointer) else {
             continue;
         };
@@ -3669,7 +3669,7 @@ fn validate_emitted_nested_write_only_properties(schema: &CfnSchema) -> Result<(
         .flatten()
         .filter_map(|pointer| cfn_property_path(pointer).map(|path| (path, pointer)))
         .collect::<BTreeMap<_, _>>();
-    for pointer in &schema.write_only_properties {
+    for pointer in schema.metadata().write_only_properties.iter().flatten() {
         let Some(path) = cfn_property_path(pointer) else {
             continue;
         };
@@ -3690,7 +3690,7 @@ fn validate_emitted_nested_write_only_properties(schema: &CfnSchema) -> Result<(
     });
     let skipped_deprecated =
         SKIPPED_DEPRECATED_WRITE_ONLY_PATHS.with(|paths| paths.borrow().clone());
-    for pointer in &schema.write_only_properties {
+    for pointer in schema.metadata().write_only_properties.iter().flatten() {
         let Some(path) = cfn_property_path(pointer) else {
             continue;
         };
@@ -4263,23 +4263,23 @@ fn object_map_type_text(
     prop: &CfnProperty,
     provider_path: &[String],
     value: &CfnProperty,
-) -> String {
-    let key = map_key_type(prop, schema, provider_path, property_path)
+) -> Result<String> {
+    let key = map_key_type(prop, schema, provider_path, property_path)?
         .as_ref()
         .map(map_key_display)
         .unwrap_or_else(|| "String".to_string());
-    match object_map_value_or_panic(schema, property_path, value) {
+    Ok(match object_map_value(schema, property_path, value)? {
         ObjectMapValueKind::DirectString => format!("Map<{key}, String>"),
         ObjectMapValueKind::Struct => {
             let struct_name = value
-                .ref_path
-                .as_deref()
-                .and_then(|ref_path| resolve_ref(schema, ref_path))
-                .map(|resolved| resolved.name)
+                .try_query()?
+                .reference
+                .as_ref()
+                .map(|reference| reference.name.as_str())
                 .unwrap_or(prop_name);
             format!("Map<{key}, Struct({struct_name})>")
         }
-    }
+    })
 }
 
 fn map_key_display(key: &StringLeaf<'_>) -> String {
@@ -4316,10 +4316,13 @@ fn type_display_at_resolved(
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> Result<TypeDisplay> {
+    if !is_dsl_tags_property(classified.schema(), classified.path())? {
+        classified.property().try_query()?;
+    }
     if let Some(identity) = top_level_arn_catalog_display(&classified) {
         return Ok(TypeDisplay::Code(identity.to_string()));
     }
-    if let Some(reference) = emission_reference(&classified, cfn_property_path) {
+    if let Some(reference) = emission_reference(&classified, cfn_property_path)? {
         return Ok(TypeDisplay::Plain(reference.display()));
     }
     let schema = classified.schema();
@@ -4331,27 +4334,22 @@ fn type_display_at_resolved(
         cfn_property_path,
         prop,
         resource_type_override(&schema.type_name, cfn_property_path),
-    ) {
+    )? {
         return Ok(TypeDisplay::Code(display));
     }
     if is_dsl_tags_property(schema, provider_path)? {
         schema.classify_tag_value(provider_path)?;
         return Ok(tag_map_type(classified, cfn_property_path)?.display());
     }
-    if let Some(intersection) = prop.query().intersection_view.as_deref() {
-        return type_display_at_resolved(
-            schema.property_at(provider_path, intersection),
-            cfn_property_path,
-            definition_name,
-        );
-    }
-    if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
+    let projection = prop.try_query()?;
+    projection.emission_type()?;
+    if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path)? {
         return Ok(TypeDisplay::Plain("PolicyDocument".to_string()));
     }
 
     if property_is_bare_object(prop, schema) {
         return Ok(
-            match classify_bare_object_or_panic(&schema.type_name, cfn_property_path) {
+            match emission_bare_object(prop, &schema.type_name, cfn_property_path)? {
                 BareObjectClassification::IamPolicyDocument(_) => {
                     TypeDisplay::Plain("PolicyDocument".to_string())
                 }
@@ -4364,10 +4362,14 @@ fn type_display_at_resolved(
                     expression: _,
                 } => TypeDisplay::Code(display.as_str().to_string()),
                 BareObjectClassification::FreeFormJson(entry)
-                | BareObjectClassification::OmittedResource(entry) => panic!(
-                    "omitted property {}.{} reached Markdown type generation: {}",
-                    entry.cfn_type, entry.property_path, entry.reason
-                ),
+                | BareObjectClassification::OmittedResource(entry) => {
+                    return Err(projection
+                        .emission_error(format!(
+                            "omitted property {}.{} reached Markdown type generation: {}",
+                            entry.cfn_type, entry.property_path, entry.reason
+                        ))
+                        .into());
+                }
             },
         );
     }
@@ -4385,10 +4387,9 @@ fn type_display_at_resolved(
                     Some(resolved.name),
                 )
             } else {
-                Ok(TypeDisplay::Plain(infer_string_type_display(
-                    prop_name,
-                    &schema.type_name,
-                )))
+                Err(projection
+                    .emission_error(format!("unresolved reference {path}"))
+                    .into())
             };
         }
         PropertyShape::Array {
@@ -4407,42 +4408,31 @@ fn type_display_at_resolved(
             )));
         }
         PropertyShape::Unresolved => {
-            let variant_types: Vec<Vec<String>> =
-                prop.one_of.iter().map(property_type_values).collect();
-            panic!(
-                "unresolved oneOf for {}.{}: variants {:?}",
-                schema.type_name, prop_name, variant_types
-            );
+            return Err(prop
+                .try_query()?
+                .emission_error("unresolved oneOf value projection")
+                .into());
         }
         PropertyShape::Inline => {}
     }
-    if inline_property_type(prop) == Some("array") {
-        let item = prop.items.as_deref().map_or_else(
-            || {
-                let default = schema_projection::materialize(Projection::default());
-                let item_path = schema.collection_path(provider_path, PathSegment::ListElement);
-                let item = schema.property_at(&item_path, &default);
-                Ok(TypeDisplay::Plain(
-                    emission_reference(&item, cfn_property_path)
-                        .map_or_else(|| "String".to_string(), |reference| reference.display()),
-                ))
-            },
-            |items| {
-                let item_path = schema.collection_path(provider_path, PathSegment::ListElement);
-                type_display_at_resolved(
-                    schema.property_at(&item_path, items),
-                    cfn_property_path,
-                    None,
-                )
-            },
+    if projection.emission_type()? == EmissionType::Array {
+        let items = projection
+            .items
+            .as_deref()
+            .ok_or_else(|| projection.emission_error("array has no items projection"))?;
+        let item_path = schema.collection_path(provider_path, PathSegment::ListElement);
+        let item = type_display_at_resolved(
+            schema.property_at(&item_path, items),
+            cfn_property_path,
+            None,
         )?;
         return Ok(TypeDisplay::List {
             item: Box::new(item),
-            min_items: prop.min_items,
-            max_items: prop.max_items,
+            min_items: prop.query().min_items,
+            max_items: prop.query().max_items,
         });
     }
-    if inline_property_type(prop) == Some("object") {
+    if projection.emission_type()? == EmissionType::Object {
         if let Some(value) = direct_object_map_value(prop) {
             return Ok(TypeDisplay::Code(object_map_type_text(
                 prop_name,
@@ -4451,21 +4441,21 @@ fn type_display_at_resolved(
                 prop,
                 provider_path,
                 value,
-            )));
+            )?));
         }
-        panic!(
-            "unsupported object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
-            schema.type_name, cfn_property_path
-        );
+        return Err(prop.try_query()?.emission_error(format!(
+                "unsupported object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
+                schema.type_name, cfn_property_path
+            )).into());
     }
-    Ok(scalar_type_display_at(
+    scalar_type_display_at(
         prop_name,
         prop,
         schema,
         provider_path,
         cfn_property_path,
         definition_name,
-    ))
+    )
 }
 
 fn scalar_type_display_at(
@@ -4475,37 +4465,37 @@ fn scalar_type_display_at(
     provider_path: &[String],
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
-) -> TypeDisplay {
-    if inline_property_type(prop) == Some("string") {
-        return string_leaf(
+) -> Result<TypeDisplay> {
+    let projection = prop.try_query()?;
+    if projection.emission_type()? == EmissionType::String {
+        return Ok(string_leaf(
             schema.property_at(provider_path, prop),
             cfn_property_path,
             definition_name,
-        )
-        .type_display(&schema.type_name, prop_name);
+        )?
+        .type_display(&schema.type_name, prop_name));
     }
-    if let Some(EnumLeaf::Integer(values)) = enum_leaf(prop, prop_name, definition_name) {
-        let constructor = int_enum_type(&schema.type_name, prop_name, &values);
-        return int_enum_type_display(&constructor, &values);
+    if let Some(leaf) = enum_leaf(prop, prop_name, definition_name)? {
+        return Ok(StringLeaf::Enum(leaf).type_display(&schema.type_name, prop_name));
     }
-    let display = match inline_property_type(prop) {
-        Some("boolean") => "Bool".to_string(),
-        Some("integer") => {
+    let display = match projection.emission_type()? {
+        EmissionType::Boolean => "Bool".to_string(),
+        EmissionType::Integer => {
             // Check resource-scoped overrides first
             let res_override = resource_type_override(&schema.type_name, cfn_property_path);
             if let Some(TypeOverride::IntEnum(values)) = res_override {
                 let constructor = int_enum_type(&schema.type_name, prop_name, values);
-                return int_enum_type_display(&constructor, values);
+                return Ok(int_enum_type_display(&constructor, values));
             }
             if let Some(TypeOverride::IntRange(min, max)) = res_override {
-                return TypeDisplay::Plain(format!(
+                return Ok(TypeDisplay::Plain(format!(
                     "Int({})",
                     range_display_string(Some(*min), Some(*max))
-                ));
+                )));
             }
             let range: Option<(Option<i64>, Option<i64>)> =
-                if prop.minimum.is_some() || prop.maximum.is_some() {
-                    Some((prop.minimum, prop.maximum))
+                if projection.minimum.is_some() || projection.maximum.is_some() {
+                    Some(projection.integer_bounds()?)
                 } else {
                     known_int_range_overrides()
                         .get(prop_name)
@@ -4513,29 +4503,29 @@ fn scalar_type_display_at(
                 };
             if let Some((min, max)) = range {
                 let range_str = range_display_string(min, max);
-                if let Some(ref fmt) = prop.format {
+                if let Some(ref fmt) = prop.query().format {
                     format!("Int({}, {})", range_str, fmt)
                 } else {
                     format!("Int({})", range_str)
                 }
-            } else if let Some(ref fmt) = prop.format {
+            } else if let Some(ref fmt) = prop.query().format {
                 format!("Int({})", fmt)
             } else {
                 "Int".to_string()
             }
         }
-        Some("number") => {
+        EmissionType::Number => {
             // Check resource-scoped overrides first
             let res_override = resource_type_override(&schema.type_name, cfn_property_path);
             if let Some(TypeOverride::IntRange(min, max)) = res_override {
-                return TypeDisplay::Plain(format!(
+                return Ok(TypeDisplay::Plain(format!(
                     "Float({})",
                     range_display_string(Some(*min), Some(*max))
-                ));
+                )));
             }
             let range: Option<(Option<i64>, Option<i64>)> =
-                if prop.minimum.is_some() || prop.maximum.is_some() {
-                    Some((prop.minimum, prop.maximum))
+                if projection.minimum.is_some() || projection.maximum.is_some() {
+                    Some(projection.integer_bounds()?)
                 } else {
                     known_int_range_overrides()
                         .get(prop_name)
@@ -4543,20 +4533,24 @@ fn scalar_type_display_at(
                 };
             if let Some((min, max)) = range {
                 let range_str = range_display_string(min, max);
-                if let Some(ref fmt) = prop.format {
+                if let Some(ref fmt) = prop.query().format {
                     format!("Float({}, {})", range_str, fmt)
                 } else {
                     format!("Float({})", range_str)
                 }
-            } else if let Some(ref fmt) = prop.format {
+            } else if let Some(ref fmt) = prop.query().format {
                 format!("Float({})", fmt)
             } else {
                 "Float".to_string()
             }
         }
-        _ => "String".to_string(),
+        EmissionType::String | EmissionType::Array | EmissionType::Object => {
+            return Err(projection
+                .emission_error("non-scalar projection reached scalar display")
+                .into());
+        }
     };
-    TypeDisplay::Plain(display)
+    Ok(TypeDisplay::Plain(display))
 }
 
 struct MarkdownStructDef {
@@ -4578,6 +4572,7 @@ fn markdown_struct_def(
     if is_dsl_tags_property(schema, property_path)? {
         return Ok(None);
     }
+    prop.try_query()?;
     let key = MarkdownStructKey::Inline(property_path.to_vec());
     let name = prop_name.to_string();
     Ok(match property_shape(prop, schema) {
@@ -4618,12 +4613,16 @@ fn markdown_struct_def(
 fn markdown_array<'a>(
     prop: &'a CfnProperty,
     schema: &'a CfnSchema,
-) -> Option<Cow<'a, CfnProperty>> {
-    resolved_array_property(prop, schema, &mut HashSet::new())
-        .filter(|property| property.items.is_some())
+) -> Result<Option<Cow<'a, CfnProperty>>> {
+    let projection = prop.try_query()?;
+    if projection.effective_type() != Some("array") {
+        return Ok(None);
+    }
+    projection.emission_type()?;
+    Ok(resolved_array_property(prop, schema, &mut HashSet::new()))
 }
 
-fn markdown_list_type(item: MarkdownLinkedType, prop: &CfnProperty) -> MarkdownLinkedType {
+fn markdown_list_type(item: MarkdownLinkedType, prop: &Projection) -> MarkdownLinkedType {
     let suffix = if prop.min_items.is_some() || prop.max_items.is_some() {
         Some(format!(
             " (items: {})",
@@ -4642,20 +4641,21 @@ fn markdown_enum_type(
     prop: &CfnProperty,
     schema: &CfnSchema,
     key: &MarkdownEnumKey,
-) -> MarkdownLinkedType {
+) -> Result<MarkdownLinkedType> {
+    prop.try_query()?;
     if let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new()) {
-        let item = array.items.as_deref().map_or_else(
-            || MarkdownLinkedType::Enum(key.clone()),
+        let item = array.query().items.as_deref().map_or_else(
+            || Ok(MarkdownLinkedType::Enum(key.clone())),
             |items| markdown_enum_type(items, schema, key),
-        );
-        markdown_list_type(item, &array)
+        )?;
+        Ok(markdown_list_type(item, array.try_query()?))
     } else if let Some(value) = property_object_map_value(prop, schema) {
-        MarkdownLinkedType::Map {
+        Ok(MarkdownLinkedType::Map {
             key: Box::new(MarkdownLinkedType::Text("String".to_string())),
-            value: Box::new(markdown_enum_type(value, schema, key)),
-        }
+            value: Box::new(markdown_enum_type(value, schema, key)?),
+        })
     } else {
-        MarkdownLinkedType::Enum(key.clone())
+        Ok(MarkdownLinkedType::Enum(key.clone()))
     }
 }
 
@@ -4667,12 +4667,16 @@ fn markdown_link_type(
     property_path: &[String],
     cfn_parent: Option<&str>,
 ) -> Result<Option<MarkdownLinkedType>> {
+    if !is_dsl_tags_property(schema, property_path)? {
+        prop.try_query()?;
+    }
     let cfn_path = CfnPropertyPath::new(cfn_parent, prop_name);
     let tag_map = is_dsl_tags_property(schema, property_path)?
         || prop
-            .ref_path
-            .as_deref()
-            .is_some_and(|reference| is_tag_map_ref(schema, reference));
+            .try_query()?
+            .reference
+            .as_ref()
+            .is_some_and(|reference| is_tag_map_ref(schema, &reference.path));
     let key = if tag_map
         && !prop
             .try_query()
@@ -4680,7 +4684,7 @@ fn markdown_link_type(
     {
         None
     } else {
-        map_key_type(prop, schema, property_path, cfn_path)
+        map_key_type(prop, schema, property_path, cfn_path)?
     };
     if tag_map && key.as_ref().and_then(key_enum_info).is_none() {
         return Ok(None);
@@ -4688,7 +4692,7 @@ fn markdown_link_type(
     if let Some(key_type) = key
         && let Some((_, value)) = property_pattern_map_entry(prop, schema)
     {
-        let value_kind = object_map_value_or_panic(schema, cfn_path, value);
+        let value_kind = object_map_value(schema, cfn_path, value)?;
         let key_enum = key_enum_info(&key_type).is_some();
         // Without links, retain the ordinary code-span map display. Its key
         // refinement still comes from map_key_type in object_map_type_text.
@@ -4698,7 +4702,10 @@ fn markdown_link_type(
         let key = if key_enum {
             MarkdownLinkedType::Enum(
                 enum_target
-                    .expect("derived map key enum must be discovered")
+                    .ok_or_else(|| {
+                        prop.query()
+                            .emission_error("derived map key enum must be discovered")
+                    })?
                     .clone(),
             )
         } else {
@@ -4706,7 +4713,7 @@ fn markdown_link_type(
         };
         let value_path = extend_property_path(property_path, "*");
         let value = if !key_enum && let Some(target) = enum_target {
-            markdown_enum_type(value, schema, target)
+            markdown_enum_type(value, schema, target)?
         } else if let Some(linked) =
             markdown_link_type(prop_name, value, schema, None, &value_path, cfn_parent)?
         {
@@ -4727,7 +4734,7 @@ fn markdown_link_type(
     }
     if map_key_enum_info(prop, schema, prop_name).is_some()
         && let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new())
-        && let Some(items) = array.items.as_deref()
+        && let Some(items) = array.query().items.as_deref()
     {
         let item_path = extend_property_path(property_path, "*");
         let item = markdown_link_type(
@@ -4738,10 +4745,10 @@ fn markdown_link_type(
             &item_path,
             cfn_parent,
         )?;
-        return Ok(item.map(|item| markdown_list_type(item, &array)));
+        return Ok(item.map(|item| markdown_list_type(item, array.query())));
     }
     if let Some(key) = enum_target {
-        return Ok(Some(markdown_enum_type(prop, schema, key)));
+        return Ok(Some(markdown_enum_type(prop, schema, key)?));
     }
 
     match property_shape(prop, schema) {
@@ -4768,7 +4775,7 @@ fn markdown_link_type(
     }
 
     if let Some(value) = property_object_map_value(prop, schema) {
-        object_map_value_or_panic(schema, CfnPropertyPath::new(cfn_parent, prop_name), value);
+        object_map_value(schema, CfnPropertyPath::new(cfn_parent, prop_name), value)?;
         let value_path = extend_property_path(property_path, "*");
         if let Some(value_type) =
             markdown_link_type(prop_name, value, schema, None, &value_path, cfn_parent)?
@@ -4787,12 +4794,12 @@ fn markdown_link_type(
         }));
     }
 
-    if let Some(array) = markdown_array(prop, schema)
-        && let Some(items) = array.items.as_deref()
+    if let Some(array) = markdown_array(prop, schema)?
+        && let Some(items) = array.query().items.as_deref()
     {
         let item_path = extend_property_path(property_path, "*");
         let item_type = markdown_link_type(prop_name, items, schema, None, &item_path, cfn_parent)?;
-        return Ok(item_type.map(|item| markdown_list_type(item, &array)));
+        return Ok(item_type.map(|item| markdown_list_type(item, array.query())));
     }
 
     Ok(None)
@@ -4803,6 +4810,9 @@ fn markdown_type(
     enum_target: Option<&MarkdownEnumKey>,
     cfn_parent: Option<&str>,
 ) -> Result<MarkdownType> {
+    if !is_dsl_tags_property(classified.schema(), classified.path())? {
+        classified.property().try_query()?;
+    }
     if let Some(identity) = top_level_arn_catalog_display(&classified) {
         return Ok(MarkdownType::Plain(
             TypeDisplay::Code(identity.to_string()).markdown(),
@@ -4811,7 +4821,7 @@ fn markdown_type(
     if let Some(reference) = emission_reference(
         &classified,
         CfnPropertyPath::new(cfn_parent, classified.name()),
-    ) {
+    )? {
         return Ok(MarkdownType::Plain(reference.display()));
     }
     let schema = classified.schema();
@@ -4823,20 +4833,22 @@ fn markdown_type(
     // Top-level properties retain source struct links, as on main. Nested
     // overrides replace the field's source type and take precedence over links.
     if cfn_parent.is_some()
-        && let Some(display) = override_type_display(schema, cfn_property_path, prop, override_type)
+        && let Some(display) =
+            override_type_display(schema, cfn_property_path, prop, override_type)?
     {
         return Ok(MarkdownType::Plain(TypeDisplay::Code(display).markdown()));
     }
     if let Some(override_type) = override_type.filter(|value| value.requires_array_source()) {
-        let array = override_type
-            .array_source(schema, cfn_property_path, prop)
-            .unwrap_or_else(|error| panic!("{error}"));
+        let array = override_type.array_source(schema, cfn_property_path, prop)?;
         if let Some(key) = enum_target {
-            let item = array.items.as_deref().map_or_else(
-                || MarkdownLinkedType::Enum(key.clone()),
+            let item = array.query().items.as_deref().map_or_else(
+                || Ok(MarkdownLinkedType::Enum(key.clone())),
                 |items| markdown_enum_type(items, schema, key),
-            );
-            return Ok(MarkdownType::Linked(markdown_list_type(item, &array)));
+            )?;
+            return Ok(MarkdownType::Linked(markdown_list_type(
+                item,
+                array.try_query()?,
+            )));
         }
         // Preserve source struct links while displaying the refined bounds
         // for both item-type overrides and bounds-only overrides.
@@ -4875,18 +4887,20 @@ fn override_type_display(
     path: CfnPropertyPath<'_>,
     property: &CfnProperty,
     override_type: Option<&TypeOverride>,
-) -> Option<String> {
-    let override_type = override_type?;
-    let display = override_type.display()?;
+) -> Result<Option<String>> {
+    let Some(override_type) = override_type else {
+        return Ok(None);
+    };
+    let Some(display) = override_type.display() else {
+        return Ok(None);
+    };
     let limits = if override_type.requires_array_source() {
-        let array = override_type
-            .array_source(schema, path, property)
-            .unwrap_or_else(|error| panic!("{error}"));
-        TypeDisplay::item_limits(array.min_items, array.max_items)
+        let array = override_type.array_source(schema, path, property)?;
+        TypeDisplay::item_limits(array.query().min_items, array.query().max_items)
     } else {
         String::new()
     };
-    Some(format!("{display}{limits}"))
+    Ok(Some(format!("{display}{limits}")))
 }
 
 fn markdown_heading_path(property_path: &[String]) -> Vec<String> {
@@ -5186,7 +5200,7 @@ fn render_markdown(
         .map(|p| p.trim_start_matches("/properties/").to_string())
         .collect();
 
-    let required: HashSet<String> = schema.required.iter().cloned().collect();
+    let required: HashSet<String> = schema.root_projection.required.iter().cloned().collect();
 
     // Collect enum info and struct definitions
     let mut property_enums: BTreeMap<String, EnumInfo> = BTreeMap::new();
@@ -5327,7 +5341,7 @@ fn render_markdown(
     page.push_str(&format!("CloudFormation Type: `{type_name}`\n\n"));
 
     // Description
-    if let Some(desc) = &schema.description {
+    if let Some(desc) = &schema.root_projection.description {
         page.push_str(&format!("{desc}\n\n"));
     }
 
@@ -5564,7 +5578,7 @@ fn render_markdown(
                 let nested_key = cfn_property_path.to_string();
                 let nested_override = resource_type_override(type_name, cfn_property_path);
                 let field_type_display = if let Some(display) =
-                    override_type_display(schema, cfn_property_path, field_prop, nested_override)
+                    override_type_display(schema, cfn_property_path, field_prop, nested_override)?
                 {
                     MarkdownType::Plain(TypeDisplay::Code(display).markdown())
                 } else if matches!(nested_override, Some(TypeOverride::IntegerFromNumber)) {
@@ -5572,7 +5586,7 @@ fn render_markdown(
                         field_prop,
                         type_name,
                         &nested_key,
-                    ))
+                    )?)
                 } else if let Some(enum_target) = enum_targets.struct_fields.get(&source_key) {
                     markdown_type(
                         schema.property_at(&field_path, field_prop),
@@ -5588,8 +5602,7 @@ fn render_markdown(
                 };
                 let mut desc = collapse_whitespace(
                     &field_prop
-                        .description
-                        .as_deref()
+                        .annotation_description()
                         .unwrap_or("")
                         .replace('\n', " "),
                 );
@@ -5649,7 +5662,7 @@ fn render_markdown(
             type_display.write_to(&mut page);
             page.push_str("\n");
 
-            if let Some(d) = &prop.description {
+            if let Some(d) = prop.annotation_description() {
                 let desc = collapse_whitespace(&d.replace('\n', " "));
                 page.push_str(&format!("\n{desc}\n\n"));
             } else {
@@ -5707,6 +5720,7 @@ fn collect_struct_defs(
     if is_dsl_tags_property(schema, property_path)? {
         return Ok(());
     }
+    prop.try_query()?;
     // Enum overlays and nested item expressions replace the source children.
     // Top-level item overrides retain source struct documentation, as on main.
     if resource_type_override(
@@ -5800,7 +5814,7 @@ fn collect_struct_defs(
     }
 
     if let Some(value) = property_object_map_value(prop, schema) {
-        object_map_value_or_panic(schema, CfnPropertyPath::new(cfn_parent, prop_name), value);
+        object_map_value(schema, CfnPropertyPath::new(cfn_parent, prop_name), value)?;
         let value_path = extend_property_path(property_path, "*");
         collect_struct_defs(
             value,
@@ -5814,18 +5828,18 @@ fn collect_struct_defs(
         return Ok(());
     }
 
-    let Some(array) = markdown_array(prop, schema) else {
+    let Some(array) = markdown_array(prop, schema)? else {
         return Ok(());
     };
-    let Some(items) = array.items.as_deref() else {
+    let Some(items) = array.query().items.as_deref() else {
         return Ok(());
     };
     let array_def_name = prop
-        .ref_path
-        .as_deref()
-        .and_then(|ref_path| resolve_ref(schema, ref_path))
-        .filter(|resolved| property_resolves_to_array(resolved.property, schema))
-        .map(|resolved| resolved.name);
+        .try_query()?
+        .reference
+        .as_ref()
+        .filter(|reference| property_resolves_to_array(&reference.property, schema))
+        .map(|reference| reference.name.as_str());
     let should_visit = array_def_name.is_none_or(|name| {
         IN_PROGRESS_DEFS.with(|defs| defs.borrow_mut().insert(name.to_string()))
     });
@@ -5857,12 +5871,12 @@ fn collect_struct_defs(
 fn detect_exclusive_from_oneof(schema: &CfnSchema) -> Vec<Vec<String>> {
     let mut groups = Vec::new();
 
-    for variants in [&schema.one_of, &schema.any_of] {
+    for variants in &schema.root_projection.declared_required_alternatives {
         if variants.len() < 2 {
             continue;
         }
         // Collect the required fields from each variant
-        let required_sets: Vec<&Vec<String>> = variants.iter().map(|v| &v.required).collect();
+        let required_sets: Vec<&Vec<String>> = variants.iter().collect();
 
         // Check that every variant has exactly one required field
         if required_sets.iter().all(|r| r.len() == 1) {
@@ -5905,7 +5919,7 @@ fn detect_exclusive_from_descriptions(schema: &CfnSchema) -> Vec<Vec<String>> {
     let mut seen_groups: HashSet<Vec<String>> = HashSet::new();
 
     for prop in schema.properties.values() {
-        let desc = match &prop.description {
+        let desc = match prop.annotation_description() {
             Some(d) => d,
             None => continue,
         };
@@ -6002,7 +6016,7 @@ fn generate_attribute_type(
     let prop_name = classified.name();
     let schema = classified.schema();
     let property_path = CfnPropertyPath::new(paths.cfn_parent, prop_name);
-    let override_type = checked_resource_type_override(schema, property_path, prop);
+    let override_type = checked_resource_type_override(schema, property_path, prop)?;
 
     if let Some(TypeOverride::NamedAttributeType {
         name,
@@ -6041,7 +6055,7 @@ fn generate_attribute_type(
             if matches!(override_type, Some(TypeOverride::StringType(_))) {
                 // StringType replaces a leaf; existing top-level uses include
                 // arrays such as VPC.CidrBlockAssociations. Retain their wrappers.
-                enum_property_type(prop, schema, expression, false)
+                enum_property_type(prop, schema, expression, false)?
             } else {
                 // Whole-attribute overrides discard source children. Do not walk
                 // them or record read-only fields that will never be emitted.
@@ -6050,18 +6064,15 @@ fn generate_attribute_type(
         );
     }
 
-    if let Some(item_type) = override_type.and_then(|override_type| {
-        emit_array_item_override(schema, property_path, prop, override_type)
-    }) {
+    if let Some(override_type) = override_type
+        && let Some(item_type) =
+            emit_array_item_override(schema, property_path, prop, override_type)?
+    {
         return Ok(item_type);
     }
 
     if matches!(override_type, Some(TypeOverride::IntegerFromNumber)) {
-        return Ok(integer_from_number_type(
-            prop,
-            &schema.type_name,
-            &property_path.to_string(),
-        ));
+        return integer_from_number_type(prop, &schema.type_name, &property_path.to_string());
     }
 
     // Map key enums publish ordinary enum metadata, but their generated map
@@ -6099,7 +6110,7 @@ fn generate_attribute_type(
     if paths.cfn_parent.is_none()
         && let Some(enum_info) = enums.get(prop_name)
     {
-        return Ok(emit_enum(enum_info));
+        return emit_enum(enum_info);
     }
 
     let (attribute_type, local_enum_info) =
@@ -6118,7 +6129,7 @@ fn generate_attribute_type(
             .get(&composite_key)
             .or_else(|| enums.get(prop_name))
             .unwrap_or(&local_enum_info);
-        return Ok(emit_enum(enum_info));
+        return emit_enum(enum_info);
     }
 
     Ok(attribute_type)
@@ -6211,7 +6222,7 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
         .map(|p| p.trim_start_matches("/properties/").to_string())
         .collect();
 
-    let required: HashSet<String> = schema.required.iter().cloned().collect();
+    let required: HashSet<String> = schema.root_projection.required.iter().cloned().collect();
 
     // Pre-scan properties to collect emitted struct definitions and enum info.
     // Numeric, length, and pattern constraints are represented declaratively in
@@ -6419,7 +6430,7 @@ pub fn {}() -> AwsccSchemaConfig {{
     ));
 
     // Add description
-    if let Some(desc) = &schema.description {
+    if let Some(desc) = &schema.root_projection.description {
         let escaped_desc = desc
             .replace('\\', "\\\\")
             .replace('"', "\\\"")
@@ -7250,6 +7261,7 @@ struct ResolvedRef<'a> {
 /// Resolve a local definition `$ref`, following definitions that are aliases
 /// to other definitions. A malformed path, missing definition, external ref,
 /// or alias cycle is unresolved rather than recursively looping.
+#[cfg(test)]
 fn resolve_ref<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<ResolvedRef<'a>> {
     let layer = schema.layer.as_ref()?;
     let pointer = schema_layer::canonical_reference("", ref_path).ok()?;
@@ -7379,17 +7391,16 @@ fn classify_object_map_value(
     property_generates_struct(value, schema).then_some(ObjectMapValueKind::Struct)
 }
 
-fn object_map_value_or_panic(
+fn object_map_value(
     schema: &CfnSchema,
     property_path: CfnPropertyPath<'_>,
     value: &CfnProperty,
-) -> ObjectMapValueKind {
-    classify_object_map_value(schema, value).unwrap_or_else(|| {
-        panic!(
-            "unsupported object map {}.{}; patternProperties values must be direct strings or structs; see CODEGEN.md#classifying-bare-objects",
-            schema.type_name, property_path
-        )
-    })
+) -> Result<ObjectMapValueKind> {
+    value.try_query()?;
+    classify_object_map_value(schema, value).ok_or_else(|| value.query().emission_error(format!(
+        "unsupported object map {}.{}; patternProperties values must be direct strings or structs; see CODEGEN.md#classifying-bare-objects",
+        schema.type_name, property_path
+    )).into())
 }
 
 fn direct_pattern_map_entry(prop: &CfnProperty) -> Option<(&str, &CfnProperty)> {
@@ -7477,26 +7488,38 @@ fn key_enum_info<'a>(key: &'a StringLeaf<'_>) -> Option<&'a EnumInfo> {
     }
 }
 
+fn project_pattern_map_key_type(
+    pattern: &str,
+    cfn_type: &str,
+    path: CfnPropertyPath<'_>,
+    source: &str,
+) -> Result<StringLeaf<'static>> {
+    if let Some(values) = pattern_map_key_values(pattern) {
+        return Ok(StringLeaf::Enum(EnumLeaf::string(path.property, values)));
+    }
+    let key = Projection {
+        source_pointer: source.to_string(),
+        pattern: Some(pattern.to_string()),
+        ..Default::default()
+    };
+    // A key's pattern uses the very same CFN provenance, review rewrites,
+    // whole-value approval and schema-dialect compiler as property patterns.
+    Ok(StringLeaf::Refined {
+        constraints: project_string_constraints(&key, cfn_type, path, source)?,
+        format: None,
+        to_dsl: None,
+    })
+}
+
+// STEP 5 retains the tag renderer's current boundary.
 fn pattern_map_key_type(
     pattern: &str,
     cfn_type: &str,
     path: CfnPropertyPath<'_>,
     source: &str,
 ) -> StringLeaf<'static> {
-    if let Some(values) = pattern_map_key_values(pattern) {
-        return StringLeaf::Enum(EnumLeaf::string(path.property, values));
-    }
-    let key = Projection {
-        pattern: Some(pattern.to_string()),
-        ..Default::default()
-    };
-    // A key's pattern uses the very same CFN provenance, review rewrites,
-    // whole-value approval and schema-dialect compiler as property patterns.
-    StringLeaf::Refined {
-        constraints: string_constraints(&key, cfn_type, path, source),
-        format: None,
-        to_dsl: None,
-    }
+    project_pattern_map_key_type(pattern, cfn_type, path, source)
+        .unwrap_or_else(|error| panic!("{error}"))
 }
 
 fn map_key_type(
@@ -7504,10 +7527,13 @@ fn map_key_type(
     schema: &EmissionContext<'_>,
     provider_path: &[String],
     path: CfnPropertyPath<'_>,
-) -> Option<StringLeaf<'static>> {
-    let (pattern, _) = property_pattern_map_entry(prop, schema)?;
+) -> Result<Option<StringLeaf<'static>>> {
+    let projection = prop.try_query()?;
+    let Some((pattern, _value)) = property_pattern_map_entry(prop, schema) else {
+        return Ok(None);
+    };
     let source = schema.pattern_source_path(provider_path, Some(pattern), path);
-    let mut key = pattern_map_key_type(pattern, &schema.type_name, path, &source);
+    let mut key = project_pattern_map_key_type(pattern, &schema.type_name, path, &source)?;
     if let Some(TypeOverride::MapKeyLength {
         min_length,
         max_length,
@@ -7519,10 +7545,12 @@ fn map_key_type(
             to_dsl: _,
         } = &mut key
         else {
-            panic!(
-                "{}.{}: MapKeyLength requires a derived string key",
-                schema.type_name, path
-            )
+            return Err(projection
+                .emission_error(format!(
+                    "{}.{}: MapKeyLength requires a derived string key",
+                    schema.type_name, path
+                ))
+                .into());
         };
         if let Some(min) = min_length {
             constraints.min_length = Some(
@@ -7538,17 +7566,20 @@ fn map_key_type(
                     .map_or(*max, |existing| existing.min(*max)),
             );
         }
-        assert!(
-            constraints
-                .min_length
-                .zip(constraints.max_length)
-                .is_none_or(|(min, max)| min <= max),
-            "{}.{}: incompatible map key length bounds",
-            schema.type_name,
-            path
-        );
+        if constraints
+            .min_length
+            .zip(constraints.max_length)
+            .is_some_and(|(min, max)| min > max)
+        {
+            return Err(projection
+                .emission_error(format!(
+                    "{}.{}: incompatible map key length bounds",
+                    schema.type_name, path
+                ))
+                .into());
+        }
     }
-    Some(key)
+    Ok(Some(key))
 }
 
 fn emit_map_key(
@@ -7680,7 +7711,7 @@ fn generate_struct_type(
             if identity_properties().contains_key(&(schema.type_name.as_str(), cfn_property_path)) {
                 field_code.push_str(".create_only().identity()");
             }
-            if let Some(desc) = &field_prop.description {
+            if let Some(desc) = field_prop.annotation_description() {
                 let escaped = collapse_whitespace(
                     &desc
                         .replace('\\', "\\\\")
@@ -8052,12 +8083,12 @@ struct StringConstraints {
 /// The single CFN-to-emitted-pattern seam, shared by Rust and Markdown.
 /// Never strip unsupported regex syntax: preserve its constraint explicitly
 /// and compile the normalized result in Carina's schema-pattern dialect.
-fn string_constraints(
+fn project_string_constraints(
     prop: &Projection,
     cfn_type: &str,
     property_path: CfnPropertyPath<'_>,
     source_path: &str,
-) -> StringConstraints {
+) -> Result<StringConstraints> {
     let mut constraints = StringConstraints {
         pattern: None,
         min_length: prop.min_length,
@@ -8075,24 +8106,24 @@ fn string_constraints(
                     .source_paths
                     .contains(&canonical_source_path.as_str()))
     }) {
-        assert_eq!(
-            source_pattern,
-            Some(rewrite.source),
+        if source_pattern != Some(rewrite.source) {
+            return Err(prop.emission_error(format!(
             "CloudFormation pattern changed for {cfn_type}.{property_path}#{source_path}; expected regex {}; review the string pattern rewrite",
             rewrite.source,
-        );
+        )).into());
+        }
     }
     for exception in SUBSTRING_PATTERN_EXCEPTIONS.iter().filter(|exception| {
         exception.resource_type == cfn_type
             && (exception.source_path == source_path
                 || exception.source_path == canonical_source_path)
     }) {
-        assert_eq!(
-            source_pattern,
-            Some(exception.source),
+        if source_pattern != Some(exception.source) {
+            return Err(prop.emission_error(format!(
             "CloudFormation pattern changed for {cfn_type}.{property_path}#{source_path}; expected regex {}; review the substring pattern exception",
             exception.source,
-        );
+        )).into());
+        }
     }
     // CFN's date-time format is RFC 3339, including a mandatory offset,
     // optional fractional seconds, lowercase t/z and leap-second spelling.
@@ -8102,10 +8133,11 @@ fn string_constraints(
         // No cached date-time property also has a pattern. Core exposes one
         // regex per string and no pattern intersection; do not silently lose
         // either constraint if a future schema introduces that combination.
-        assert!(
-            source_pattern.is_none(),
+        if source_pattern.is_some() {
+            return Err(prop.emission_error(format!(
             "{cfn_type}.{property_path}#{source_path}: date-time with an explicit pattern requires a reviewed intersection"
-        );
+        )).into());
+        }
         Some(
             r"^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:(?:[0-5][0-9]|60)(?:\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\z",
         )
@@ -8123,10 +8155,11 @@ fn string_constraints(
             let max = prop.max_length.map_or(max, |n| n.min(max));
             constraints.min_length = Some(min);
             constraints.max_length = Some(max);
-            assert!(
-                min <= max,
+            if min > max {
+                return Err(prop.emission_error(format!(
                 "Invalid string length bounds for {cfn_type}.{property_path}#{source_path}: {min} > {max}"
-            );
+            )).into());
+            }
         }
     }
     if let Some(source) = normalized {
@@ -8134,26 +8167,37 @@ fn string_constraints(
             .and_then(|source| ApprovedPattern::substring_exception(cfn_type, source_path, source))
             .unwrap_or_else(|| ApprovedPattern::whole(source));
         let pattern = approved.as_str();
-        carina_core::schema::CompiledPattern::try_new(pattern).unwrap_or_else(|error| {
-            panic!(
+        carina_core::schema::CompiledPattern::try_new(pattern).map_err(|error| prop.emission_error(format!(
                 "Invalid string pattern for {cfn_type}.{property_path}#{source_path}, source regex {:?}, emitted {pattern:?}: {error}",
                 prop.pattern,
-            )
-        });
-        assert!(
-            is_whole_anchored(pattern)
-                || SUBSTRING_PATTERN_EXCEPTIONS.iter().any(|exception| {
-                    exception.resource_type == cfn_type
-                        && exception.source_path == source_path
-                        && prop.pattern.as_deref() == Some(exception.source)
-                        && pattern == exception.emitted
-                }),
+            )))?;
+        if !(is_whole_anchored(pattern)
+            || SUBSTRING_PATTERN_EXCEPTIONS.iter().any(|exception| {
+                exception.resource_type == cfn_type
+                    && exception.source_path == source_path
+                    && prop.pattern.as_deref() == Some(exception.source)
+                    && pattern == exception.emitted
+            }))
+        {
+            return Err(prop.emission_error(format!(
             "Unapproved string pattern for {cfn_type}.{property_path}#{source_path}, source regex {:?}, emitted {pattern:?}",
             prop.pattern,
-        );
+        )).into());
+        }
         constraints.pattern = Some(approved);
     }
-    constraints
+    Ok(constraints)
+}
+
+// STEP 5 owns tag error behavior; non-tag emission propagates this Result.
+fn string_constraints(
+    prop: &Projection,
+    cfn_type: &str,
+    path: CfnPropertyPath<'_>,
+    source: &str,
+) -> StringConstraints {
+    project_string_constraints(prop, cfn_type, path, source)
+        .unwrap_or_else(|error| panic!("{error}"))
 }
 
 enum EnumLeaf {
@@ -8198,51 +8242,53 @@ fn enum_leaf(
     prop: &CfnProperty,
     prop_name: &str,
     definition_name: Option<&str>,
-) -> Option<EnumLeaf> {
+) -> Result<Option<EnumLeaf>> {
     use serde_json::Value;
-    let p = prop.query();
+    let p = prop.try_query()?;
+    p.emission_type()?;
     let name = definition_name.unwrap_or(prop_name);
     if let Some(value) = &p.const_value {
-        return match value {
-            Value::String(value) => Some(EnumLeaf::string(name, vec![value.clone()])),
-            Value::Number(value) => Some(EnumLeaf::Integer(vec![
-                value.as_i64().expect("validated integer constant"),
-            ])),
-            Value::Null => panic!("null constant requires a typed literal emitter"),
-            Value::Bool(value) => {
-                panic!("boolean constant {value} requires a typed literal emitter")
-            }
-            Value::Array(values) => {
-                panic!("array constant {values:?} requires a typed literal emitter")
-            }
-            Value::Object(values) => {
-                panic!("object constant {values:?} requires a typed literal emitter")
+        let leaf = match value {
+            Value::String(value) => EnumLeaf::string(name, vec![value.clone()]),
+            Value::Number(value) => EnumLeaf::Integer(vec![
+                value
+                    .as_i64()
+                    .ok_or_else(|| p.emission_error("non-integral constant"))?,
+            ]),
+            Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => {
+                return Err(p
+                    .emission_error("constant requires a typed literal emitter")
+                    .into());
             }
         };
+        return Ok(Some(leaf));
     }
     if let Some(values) = &p.enum_values {
         if values.iter().all(|v| v.as_i64().is_some()) {
-            return Some(EnumLeaf::Integer(
+            return Ok(Some(EnumLeaf::Integer(
                 values
                     .iter()
-                    .map(|v| v.as_i64().expect("integer enum member"))
-                    .collect(),
-            ));
+                    .map(|v| {
+                        v.as_i64()
+                            .ok_or_else(|| p.emission_error("non-integral enum member"))
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?,
+            )));
         }
-        let values: Vec<String> = values
+        let values = values
             .iter()
             .map(|v| {
                 v.as_str()
-                    .expect("validated string enum member")
-                    .to_string()
+                    .map(str::to_string)
+                    .ok_or_else(|| p.emission_error("non-string enum member"))
             })
-            .collect();
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         let values = deduplicate_enum_values(values.clone()).unwrap_or(values);
-        return Some(EnumLeaf::string(name, values));
+        return Ok(Some(EnumLeaf::string(name, values)));
     }
-    known_enum_overrides()
+    Ok(known_enum_overrides()
         .get(prop_name)
-        .map(|values| EnumLeaf::string(prop_name, values.iter().map(|v| v.to_string()).collect()))
+        .map(|values| EnumLeaf::string(prop_name, values.iter().map(|v| v.to_string()).collect())))
 }
 
 enum StringLeaf<'a> {
@@ -8337,40 +8383,40 @@ impl StringLeaf<'_> {
 fn emission_reference(
     classified: &EmissionProperty<'_>,
     cfn_property_path: CfnPropertyPath<'_>,
-) -> Option<StringLeaf<'static>> {
-    if is_dsl_tags_property(classified.schema(), classified.path()).unwrap_or(false) {
-        return None;
+) -> Result<Option<StringLeaf<'static>>> {
+    if is_dsl_tags_property(classified.schema(), classified.path())? {
+        return Ok(None);
     }
+    classified.property().try_query()?;
     let shape = property_shape(classified.property(), classified.schema());
     if matches!(
         shape,
         PropertyShape::Direct(_) | PropertyShape::Merged(_) | PropertyShape::Array { variant: _ }
     ) {
-        return None;
+        return Ok(None);
     }
     if matches!(shape, PropertyShape::Reference { resolved: Some(resolved), path: _ }
         if !needs_kms_classification(resolved.property, classified.name()))
     {
-        return None;
+        return Ok(None);
     }
     if matches!(
         inline_property_type(classified.property()),
         Some("array" | "object")
     ) && !needs_kms_classification(classified.property(), classified.name())
     {
-        return None;
+        return Ok(None);
     }
-    classified
-        .classify()
-        .unwrap_or_else(|error| panic!("{error}"))
-        .map(|kind| StringLeaf::Inferred {
-            rust_type: classified.schema().reference_constructor(
-                classified.path(),
-                kind,
-                cfn_property_path,
-            ),
-            display_type: "aws.kms.Key.Reference".to_string(),
-        })
+    let reference = classified.classify()?;
+    classified.property().try_query()?.emission_type()?;
+    Ok(reference.map(|kind| StringLeaf::Inferred {
+        rust_type: classified.schema().reference_constructor(
+            classified.path(),
+            kind,
+            cfn_property_path,
+        ),
+        display_type: "aws.kms.Key.Reference".to_string(),
+    }))
 }
 
 /// Classify a resolved string leaf once, before either Rust or Markdown
@@ -8380,12 +8426,13 @@ fn string_leaf<'a>(
     classified: EmissionProperty<'a>,
     property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
-) -> StringLeaf<'a> {
+) -> Result<StringLeaf<'a>> {
+    classified.property().try_query()?;
     let prop = classified.property();
     let prop_name = classified.name();
     let cfn_type = &classified.schema().type_name;
-    if let Some(leaf) = enum_leaf(prop, prop_name, definition_name) {
-        return StringLeaf::Enum(leaf);
+    if let Some(leaf) = enum_leaf(prop, prop_name, definition_name)? {
+        return Ok(StringLeaf::Enum(leaf));
     }
 
     // A transform takes precedence over named types and inferred enums.
@@ -8407,16 +8454,16 @@ fn string_leaf<'a>(
                     prop.query().format.as_deref(),
                 );
             }
-            return StringLeaf::Inferred {
+            return Ok(StringLeaf::Inferred {
                 rust_type,
                 display_type,
-            };
+            });
         }
         if is_iam_policy_document_property(cfn_type, property_path) {
-            return StringLeaf::Inferred {
+            return Ok(StringLeaf::Inferred {
                 rust_type: "carina_aws_types::iam_policy_document()".to_string(),
                 display_type: "PolicyDocument".to_string(),
-            };
+            });
         }
         if let Some(values) = prop
             .query()
@@ -8424,7 +8471,7 @@ fn string_leaf<'a>(
             .as_deref()
             .and_then(extract_enum_from_description)
         {
-            return StringLeaf::Enum(EnumLeaf::string(prop_name, values));
+            return Ok(StringLeaf::Enum(EnumLeaf::string(prop_name, values)));
         }
         if let Some(values) = prop
             .query()
@@ -8432,12 +8479,12 @@ fn string_leaf<'a>(
             .as_deref()
             .and_then(extract_enum_from_alternation_pattern)
         {
-            return StringLeaf::Enum(EnumLeaf::string(prop_name, values));
+            return Ok(StringLeaf::Enum(EnumLeaf::string(prop_name, values)));
         }
         None
     };
-    StringLeaf::Refined {
-        constraints: string_constraints(
+    Ok(StringLeaf::Refined {
+        constraints: project_string_constraints(
             prop.query(),
             cfn_type,
             property_path,
@@ -8446,10 +8493,10 @@ fn string_leaf<'a>(
                 prop.query().pattern.as_deref(),
                 property_path,
             ),
-        ),
+        )?,
         format: prop.query().format.as_deref(),
         to_dsl,
-    }
+    })
 }
 
 /// Render refinement text without making type or enum inference decisions.
@@ -8636,31 +8683,34 @@ fn integer_from_number_bounds(
     prop: &CfnProperty,
     type_name: &str,
     property_name: &str,
-) -> (Option<i64>, Option<i64>) {
-    assert_eq!(
-        prop.query().effective_type(),
-        Some("number"),
-        "IntegerFromNumber override for {type_name}.{property_name} requires a CFN number property"
-    );
-    let bounds = prop
-        .query()
-        .integer_bounds()
-        .unwrap_or_else(|error| panic!("{error}"));
-    assert!(
-        bounds.0.is_some() || bounds.1.is_some(),
-        "IntegerFromNumber override for {type_name}.{property_name} requires a CFN minimum or maximum"
-    );
-    bounds
+) -> Result<(Option<i64>, Option<i64>)> {
+    let projection = prop.try_query()?;
+    if projection.emission_type()? != EmissionType::Number {
+        return Err(projection.emission_error(format!("IntegerFromNumber override for {type_name}.{property_name} requires a CFN number property")).into());
+    }
+    let bounds = projection.integer_bounds()?;
+    if bounds.0.is_none() && bounds.1.is_none() {
+        return Err(projection.emission_error(format!("IntegerFromNumber override for {type_name}.{property_name} requires a CFN minimum or maximum")).into());
+    }
+    Ok(bounds)
 }
 
-fn integer_from_number_type(prop: &CfnProperty, type_name: &str, property_name: &str) -> String {
-    let (min, max) = integer_from_number_bounds(prop, type_name, property_name);
-    refined_int_type("None", &emit_int_range_option(min, max))
+fn integer_from_number_type(
+    prop: &CfnProperty,
+    type_name: &str,
+    property_name: &str,
+) -> Result<String> {
+    let (min, max) = integer_from_number_bounds(prop, type_name, property_name)?;
+    Ok(refined_int_type("None", &emit_int_range_option(min, max)))
 }
 
-fn integer_from_number_display(prop: &CfnProperty, type_name: &str, property_name: &str) -> String {
-    let (min, max) = integer_from_number_bounds(prop, type_name, property_name);
-    format!("Int({})", range_display_string(min, max))
+fn integer_from_number_display(
+    prop: &CfnProperty,
+    type_name: &str,
+    property_name: &str,
+) -> Result<String> {
+    let (min, max) = integer_from_number_bounds(prop, type_name, property_name)?;
+    Ok(format!("Int({})", range_display_string(min, max)))
 }
 
 /// Known integer range overrides for properties where CloudFormation schemas
@@ -13566,7 +13616,7 @@ fn list_constructor(insertion_order: Option<bool>, force_unordered: bool) -> &'s
 
 /// All list emission, including enum overlays, consumes the concrete array
 /// selected by property_shape and retains its ordering, item bounds, and uniqueness.
-fn array_attribute_type(element_type: &str, array: &CfnProperty, force_unordered: bool) -> String {
+fn array_attribute_type(element_type: &str, array: &Projection, force_unordered: bool) -> String {
     let list_ctor = list_constructor(array.insertion_order, force_unordered);
     let elements = if array.unique_items == Some(true) {
         ListElements::Unique
@@ -13595,16 +13645,18 @@ fn emit_array_item_override(
     path: CfnPropertyPath<'_>,
     property: &CfnProperty,
     override_type: &TypeOverride,
-) -> Option<String> {
-    let expression = override_type.array_item_type_expression()?;
-    Some(emit_array_override(
+) -> Result<Option<String>> {
+    let Some(expression) = override_type.array_item_type_expression() else {
+        return Ok(None);
+    };
+    Ok(Some(emit_array_override(
         schema,
         path,
         property,
         override_type,
         expression,
         false,
-    ))
+    )?))
 }
 
 fn emit_array_override(
@@ -13614,14 +13666,16 @@ fn emit_array_override(
     override_type: &TypeOverride,
     item_type: &str,
     force_unordered: bool,
-) -> String {
-    let array = override_type
-        .array_source(schema, path, property)
-        .unwrap_or_else(|error| panic!("{error}"));
+) -> Result<String> {
+    let array = override_type.array_source(schema, path, property)?;
     EMITTED_ARRAY_OVERRIDES.with(|emitted| {
         emitted.borrow_mut().insert(path.owned_key());
     });
-    array_attribute_type(item_type, &array, force_unordered)
+    Ok(array_attribute_type(
+        item_type,
+        array.try_query()?,
+        force_unordered,
+    ))
 }
 
 fn emit_enum_property_type(
@@ -13630,17 +13684,15 @@ fn emit_enum_property_type(
     property: &CfnProperty,
     enum_type: &str,
     force_unordered: bool,
-) -> String {
+) -> Result<String> {
     if let Some(override_type) = resource_type_override(&schema.type_name, path)
         .filter(|value| value.requires_array_source())
     {
-        let array = override_type
-            .array_source(schema, path, property)
-            .unwrap_or_else(|error| panic!("{error}"));
-        let item_type = array.items.as_deref().map_or_else(
-            || enum_type.to_string(),
+        let array = override_type.array_source(schema, path, property)?;
+        let item_type = array.query().items.as_deref().map_or_else(
+            || Ok(enum_type.to_string()),
             |items| enum_property_type(items, schema, enum_type, force_unordered),
-        );
+        )?;
         emit_array_override(
             schema,
             path,
@@ -13661,20 +13713,25 @@ fn enum_property_type(
     schema: &CfnSchema,
     enum_type: &str,
     force_unordered: bool,
-) -> String {
+) -> Result<String> {
+    prop.try_query()?;
     if let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new()) {
-        let item_type = array.items.as_deref().map_or_else(
-            || enum_type.to_string(),
+        let item_type = array.query().items.as_deref().map_or_else(
+            || Ok(enum_type.to_string()),
             |items| enum_property_type(items, schema, enum_type, force_unordered),
-        );
-        array_attribute_type(&item_type, &array, force_unordered)
+        )?;
+        Ok(array_attribute_type(
+            &item_type,
+            array.try_query()?,
+            force_unordered,
+        ))
     } else if let Some(value) = property_object_map_value(prop, schema) {
-        format!(
+        Ok(format!(
             "AttributeType::map({})",
-            enum_property_type(value, schema, enum_type, force_unordered)
-        )
+            enum_property_type(value, schema, enum_type, force_unordered)?
+        ))
     } else {
-        enum_type.to_string()
+        Ok(enum_type.to_string())
     }
 }
 
@@ -13700,19 +13757,6 @@ fn cfn_type_to_carina_type_with_enum(
             cfn_parent: None,
         },
     )
-}
-
-fn property_type_values(prop: &CfnProperty) -> Vec<String> {
-    let p = prop.query();
-    let mut values = p
-        .types
-        .iter()
-        .map(|kind| format!("{kind:?}").to_lowercase())
-        .collect::<Vec<_>>();
-    if let Some(reference) = &p.reference {
-        values.push(format!("$ref:{}", reference.path));
-    }
-    values
 }
 
 fn property_resolves_to_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
@@ -13798,11 +13842,11 @@ fn generate_object_map_type(
     paths: CfnTypeGenerationPaths<'_>,
 ) -> Result<(String, Option<EnumInfo>)> {
     let property_path = CfnPropertyPath::new(paths.cfn_parent, prop_name);
-    let value_type = match object_map_value_or_panic(schema, property_path, value) {
+    let value_type = match object_map_value(schema, property_path, value)? {
         ObjectMapValueKind::DirectString => {
             let value_path = schema.collection_path(paths.provider, PathSegment::MapValue);
             let value = schema.property_at(&value_path, value);
-            emission_reference(&value, property_path).map_or_else(
+            emission_reference(&value, property_path)?.map_or_else(
                 || "AttributeType::string()".to_string(),
                 |reference| reference.emit(&schema.type_name, prop_name).0,
             )
@@ -13819,14 +13863,16 @@ fn generate_object_map_type(
                     ..paths
                 },
             )?;
-            assert!(
-                enum_info.is_none(),
-                "typed object-map values must resolve to structs"
-            );
+            if enum_info.is_some() {
+                return Err(value
+                    .try_query()?
+                    .emission_error("typed object-map values must resolve to structs")
+                    .into());
+            }
             value_type
         }
     };
-    let Some(key) = map_key_type(prop, schema, paths.provider, property_path) else {
+    let Some(key) = map_key_type(prop, schema, paths.provider, property_path)? else {
         return Ok((format!("AttributeType::map({value_type})"), None));
     };
     let info = key_enum_info(&key).cloned();
@@ -13881,10 +13927,13 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     paths: CfnTypeGenerationPaths<'_>,
     ref_state: RefGenerationState<'_>,
 ) -> Result<(String, Option<EnumInfo>)> {
+    if !is_dsl_tags_property(classified.schema(), classified.path())? {
+        classified.property().try_query()?;
+    }
     if let Some(reference) = emission_reference(
         &classified,
         CfnPropertyPath::new(paths.cfn_parent, classified.name()),
-    ) {
+    )? {
         return Ok(reference.emit(&classified.schema().type_name, classified.name()));
     }
     let schema = classified.schema();
@@ -13906,10 +13955,11 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     // Collection items keep the provider name for inference, but are not the
     // property addressed by its override key.
     if ref_context == RefContext::Normal
-        && let Some(override_type) = checked_resource_type_override(schema, cfn_property_path, prop)
+        && let Some(override_type) =
+            checked_resource_type_override(schema, cfn_property_path, prop)?
     {
         if let Some(item_type) =
-            emit_array_item_override(schema, cfn_property_path, prop, override_type)
+            emit_array_item_override(schema, cfn_property_path, prop, override_type)?
         {
             return Ok((item_type, None));
         }
@@ -13921,7 +13971,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                     prop,
                     "AttributeType::string()",
                     override_forces_unordered(&schema.type_name, cfn_property_path),
-                ),
+                )?,
                 Some(enum_info_for_override(prop_name, values)),
             ));
         }
@@ -13937,22 +13987,15 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             paths.structural,
         );
     }
-    if let Some(intersection) = prop.query().intersection_view.as_deref() {
-        return cfn_type_to_carina_type_with_enum_resolved(
-            schema.property_at(property_path, intersection),
-            namespace,
-            enums,
-            paths,
-            ref_state,
-        );
-    }
-    if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
+    let projection = prop.try_query()?;
+    projection.emission_type()?;
+    if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path)? {
         return Ok(("carina_aws_types::iam_policy_document()".to_string(), None));
     }
 
     if property_is_bare_object(prop, schema) {
         return Ok((
-            bare_object_attribute_type(&schema.type_name, cfn_property_path, prop_name),
+            bare_object_attribute_type(prop, &schema.type_name, cfn_property_path, prop_name)?,
             None,
         ));
     }
@@ -13964,7 +14007,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             schema.property_at(property_path, prop),
             cfn_property_path,
             definition_name,
-        )
+        )?
         .emit(&schema.type_name, prop_name));
     }
 
@@ -13981,11 +14024,9 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             }
 
             let Some(resolved) = resolved else {
-                return Ok((
-                    infer_string_type(prop_name, &schema.type_name)
-                        .unwrap_or_else(|| "AttributeType::string()".to_string()),
-                    None,
-                ));
+                return Err(projection
+                    .emission_error(format!("unresolved reference {path}"))
+                    .into());
             };
             let def_name = resolved.name;
 
@@ -14067,12 +14108,10 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             );
         }
         PropertyShape::Unresolved => {
-            let variant_types: Vec<Vec<String>> =
-                prop.one_of.iter().map(property_type_values).collect();
-            panic!(
-                "unresolved oneOf for {}.{}: variants {:?}",
-                schema.type_name, prop_name, variant_types
-            );
+            return Err(prop
+                .try_query()?
+                .emission_error("unresolved oneOf value projection")
+                .into());
         }
         PropertyShape::Merged(properties) => {
             let mut projection = prop.query().clone();
@@ -14093,18 +14132,18 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     }
 
     if inline_property_type(prop) == Some("string") {
-        return Ok(string_leaf(classified, cfn_property_path, definition_name)
+        return Ok(string_leaf(classified, cfn_property_path, definition_name)?
             .emit(&schema.type_name, prop_name));
     }
 
-    if let Some(leaf) = enum_leaf(prop, prop_name, definition_name) {
+    if let Some(leaf) = enum_leaf(prop, prop_name, definition_name)? {
         return Ok(leaf.emit(&schema.type_name, prop_name));
     }
 
     // Handle type
-    Ok(match inline_property_type(prop) {
-        Some("boolean") => ("AttributeType::bool()".to_string(), None),
-        Some("integer") => {
+    Ok(match projection.emission_type()? {
+        EmissionType::Boolean => ("AttributeType::bool()".to_string(), None),
+        EmissionType::Integer => {
             // Check resource-scoped overrides first
             let res_override = resource_type_override(&schema.type_name, cfn_property_path);
             if let Some(TypeOverride::IntRange(min, max)) = res_override {
@@ -14118,8 +14157,8 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             }
             // Use CF min/max if available (including one-sided), otherwise check known overrides
             let range: Option<(Option<i64>, Option<i64>)> =
-                if prop.minimum.is_some() || prop.maximum.is_some() {
-                    Some((prop.minimum, prop.maximum))
+                if projection.minimum.is_some() || projection.maximum.is_some() {
+                    Some(projection.integer_bounds()?)
                 } else {
                     known_int_range_overrides()
                         .get(prop_name)
@@ -14130,14 +14169,14 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                     refined_int_type("None", &emit_int_range_option(min, max)),
                     None,
                 )
-            } else if prop.format.is_some() {
+            } else if prop.query().format.is_some() {
                 // Format-only integer (e.g., int64) - informational, no range validation
                 (refined_int_type("None", "None"), None)
             } else {
                 ("AttributeType::int()".to_string(), None)
             }
         }
-        Some("number") => {
+        EmissionType::Number => {
             // Check resource-scoped overrides first
             let res_override = resource_type_override(&schema.type_name, cfn_property_path);
             if let Some(TypeOverride::IntRange(min, max)) = res_override {
@@ -14148,8 +14187,8 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             }
             // Use CF min/max if available (including one-sided), otherwise check known overrides
             let range: Option<(Option<i64>, Option<i64>)> =
-                if prop.minimum.is_some() || prop.maximum.is_some() {
-                    Some((prop.minimum, prop.maximum))
+                if projection.minimum.is_some() || projection.maximum.is_some() {
+                    Some(projection.integer_bounds()?)
                 } else {
                     known_int_range_overrides()
                         .get(prop_name)
@@ -14157,43 +14196,41 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 };
             if let Some((min, max)) = range {
                 (refined_float_type("None", Some((min, max))), None)
-            } else if prop.format.is_some() {
+            } else if prop.query().format.is_some() {
                 // Format-only float (e.g., double) - informational, no range validation
                 (refined_float_type("None", None), None)
             } else {
                 ("AttributeType::float()".to_string(), None)
             }
         }
-        Some("array") => {
-            let (element_type, item_enum) = if let Some(items) = &prop.items {
-                let item_path = schema.collection_path(property_path, PathSegment::ListElement);
-                let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_resolved(
-                    schema.property_at(&item_path, items),
-                    namespace,
-                    enums,
-                    CfnTypeGenerationPaths {
-                        provider: &item_path,
-                        ..paths
-                    },
-                    RefGenerationState {
-                        definition_name: None,
-                        context: RefContext::ListItem,
-                    },
-                )?;
-                (item_type, item_enum)
-            } else {
-                let default = schema_projection::materialize(Projection::default());
-                let item_path = schema.collection_path(property_path, PathSegment::ListElement);
-                let item = schema.property_at(&item_path, &default);
-                emission_reference(&item, cfn_property_path).map_or_else(
-                    || ("AttributeType::string()".to_string(), None),
-                    |reference| reference.emit(&schema.type_name, prop_name),
-                )
-            };
+        EmissionType::Array => {
+            let items = projection
+                .items
+                .as_deref()
+                .ok_or_else(|| projection.emission_error("array has no items projection"))?;
+            let item_path = schema.collection_path(property_path, PathSegment::ListElement);
+            let (element_type, item_enum) = cfn_type_to_carina_type_with_enum_resolved(
+                schema.property_at(&item_path, items),
+                namespace,
+                enums,
+                CfnTypeGenerationPaths {
+                    provider: &item_path,
+                    ..paths
+                },
+                RefGenerationState {
+                    definition_name: None,
+                    context: RefContext::ListItem,
+                },
+            )?;
             let force_unordered = override_forces_unordered(&schema.type_name, cfn_property_path);
             let array_type = if ref_context == RefContext::Normal
-                && let Some(override_type @ TypeOverride::Array { items: None, .. }) =
-                    resource_type_override(&schema.type_name, cfn_property_path)
+                && let Some(
+                    override_type @ TypeOverride::Array {
+                        items: None,
+                        min_items: _,
+                        max_items: _,
+                    },
+                ) = resource_type_override(&schema.type_name, cfn_property_path)
             {
                 emit_array_override(
                     schema,
@@ -14202,13 +14239,13 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                     override_type,
                     &element_type,
                     force_unordered,
-                )
+                )?
             } else {
-                array_attribute_type(&element_type, prop, force_unordered)
+                array_attribute_type(&element_type, projection, force_unordered)
             };
             (array_type, item_enum)
         }
-        Some("object") => {
+        EmissionType::Object => {
             // Check known string type overrides first, mirroring the string branch
             // for CFN union types whose first type is object.
             let res_override = resource_type_override(&schema.type_name, cfn_property_path);
@@ -14219,7 +14256,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             }
 
             // Check if this object has inline properties -> Struct
-            if let Some(props) = &prop.properties
+            if let Some(props) = &prop.query().properties
                 && !props.is_empty()
             {
                 return Ok((
@@ -14243,16 +14280,13 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                     prop, value, prop_name, schema, namespace, enums, paths,
                 );
             }
-            panic!(
+            return Err(prop.try_query()?.emission_error(format!(
                 "unsupported object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
                 schema.type_name, cfn_property_path
-            );
+            )).into());
         }
-        _ => (
-            infer_string_type(prop_name, &schema.type_name)
-                .unwrap_or_else(|| "AttributeType::string()".to_string()),
-            None,
-        ),
+        EmissionType::String => string_leaf(classified, cfn_property_path, definition_name)?
+            .emit(&schema.type_name, prop_name),
     })
 }
 
@@ -14408,6 +14442,10 @@ fn collapse_whitespace(s: &str) -> String {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    mod emission_tests {
+        include!("codegen/schema_emission_tests.rs");
+    }
 
     thread_local! {
         pub(super) static TEST_RESOURCE_TYPE_OVERRIDES:
@@ -14568,6 +14606,60 @@ mod tests {
             cfn_parent,
         )
         .unwrap()
+    }
+
+    fn object_string_union_is_iam_policy_document(
+        prop: &CfnProperty,
+        resource: &str,
+        path: CfnPropertyPath<'_>,
+    ) -> bool {
+        super::object_string_union_is_iam_policy_document(prop, resource, path).unwrap()
+    }
+
+    fn map_key_type(
+        prop: &CfnProperty,
+        schema: &EmissionContext<'_>,
+        provider: &[String],
+        path: CfnPropertyPath<'_>,
+    ) -> Option<StringLeaf<'static>> {
+        super::map_key_type(prop, schema, provider, path).unwrap()
+    }
+
+    fn integer_from_number_bounds(
+        prop: &CfnProperty,
+        resource: &str,
+        property: &str,
+    ) -> (Option<i64>, Option<i64>) {
+        super::integer_from_number_bounds(prop, resource, property).unwrap()
+    }
+
+    fn object_map_value_or_panic(
+        schema: &CfnSchema,
+        path: CfnPropertyPath<'_>,
+        value: &CfnProperty,
+    ) -> ObjectMapValueKind {
+        super::object_map_value(schema, path, value).unwrap()
+    }
+
+    fn emit_array_override(
+        schema: &CfnSchema,
+        path: CfnPropertyPath<'_>,
+        property: &CfnProperty,
+        override_type: &TypeOverride,
+        item_type: &str,
+        unordered: bool,
+    ) -> String {
+        super::emit_array_override(schema, path, property, override_type, item_type, unordered)
+            .unwrap()
+    }
+
+    fn enum_property_type(
+        prop: &CfnProperty,
+        schema: &CfnSchema,
+        value: &str,
+        unordered: bool,
+    ) -> String {
+        super::enum_property_type(prop, schema, value, unordered).unwrap()
     }
 
     // Parse the emitted Rust literals, so these tests exercise the constraints
@@ -14792,9 +14884,10 @@ mod tests {
             }}}
         }))
         .unwrap();
-        let panic = std::panic::catch_unwind(|| generate_schema_code(&schema, &schema.type_name))
+        let error = generate_schema_code(&schema, &schema.type_name)
             .expect_err("invalid emitted pattern must fail generation");
-        let message = panic.downcast_ref::<String>().unwrap();
+        assert!(error.downcast_ref::<schema_layer::SchemaError>().is_some());
+        let message = error.to_string();
         for expected in [
             "AWS::Test::Resource",
             "/definitions/Settings/properties/Values/items",
@@ -15128,6 +15221,41 @@ mod tests {
                     ),
                 ] {
                     reset_recursion_guard();
+                    let has_literal = keywords.get("enum").is_some();
+                    let literal_is_integer = values.is_none();
+                    let compatible = !has_literal
+                        || if literal_is_integer {
+                            property_type == "integer"
+                        } else {
+                            property_type == "string"
+                        };
+                    if !compatible {
+                        let prop = fixture_property(&schema, "ConnectivityType", prop);
+                        let context = EmissionContext::from_source(&schema).unwrap();
+                        for result in [
+                            super::cfn_type_to_carina_type_with_enum(
+                                &prop,
+                                "ConnectivityType",
+                                &context,
+                                "aws.test.Resource",
+                                &BTreeMap::new(),
+                            )
+                            .map(|value| value.0),
+                            super::type_display_string_at(
+                                &prop,
+                                &context,
+                                &["ConnectivityType".into()],
+                                CfnPropertyPath::new(None, "ConnectivityType"),
+                            ),
+                        ] {
+                            let error = result.unwrap_err();
+                            assert!(
+                                error.downcast_ref::<schema_layer::SchemaError>().is_some(),
+                                "{error:#}"
+                            );
+                        }
+                        continue;
+                    }
                     let (code, info) = cfn_type_to_carina_type_with_enum(
                         prop,
                         "ConnectivityType",
@@ -15140,6 +15268,10 @@ mod tests {
                         let info = info.expect("string-valued enums must be registered");
                         assert_eq!(info.type_name, expected_name);
                         assert_eq!(&info.values, values);
+                        assert_eq!(
+                            type_display_string("ConnectivityType", prop, &schema),
+                            "String"
+                        );
                     } else {
                         assert!(info.is_none());
                         assert_eq!(
@@ -15201,7 +15333,7 @@ mod tests {
             (
                 "AWS::Test::Resource",
                 "Mode",
-                json!({"type":"string","enum":[1,2],"pattern":"(?=x)x"}),
+                json!({"type":"integer","enum":[1,2],"pattern":"(?=x)x"}),
                 None,
                 "AttributeType::union(vec![AttributeType::refined_int(None, Some((Some(1), Some(1)))), AttributeType::refined_int(None, Some((Some(2), Some(2))))])",
                 "IntEnum([1, 2])",
@@ -17093,32 +17225,16 @@ mod tests {
                         }
                         if wrapper_index >= 4 && !supports_one_of {
                             for (emitter, result) in [
-                                (
-                                    "schema",
-                                    std::panic::catch_unwind(|| {
-                                        reset_recursion_guard();
-                                        generate_schema_code(&schema, &schema.type_name)
-                                    }),
-                                ),
-                                (
-                                    "docs",
-                                    std::panic::catch_unwind(|| {
-                                        reset_recursion_guard();
-                                        generate_test_markdown(&schema, &schema.type_name)
-                                    }),
-                                ),
+                                ("schema", generate_schema_code(&schema, &schema.type_name)),
+                                ("docs", generate_test_markdown(&schema, &schema.type_name)),
                             ] {
-                                let panic = result.expect_err(&format!(
+                                let error = result.expect_err(&format!(
                                     "{case}: {emitter} must reject unresolved oneOf"
                                 ));
-                                let message = panic
-                                    .downcast_ref::<String>()
-                                    .map(String::as_str)
-                                    .or_else(|| panic.downcast_ref::<&str>().copied())
-                                    .expect("oneOf panic must contain a diagnostic");
                                 assert!(
-                                    message.contains("unresolved oneOf"),
-                                    "{case}/{emitter}: {message}"
+                                    matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+                                    Some(schema_layer::SchemaError::Projection { pointer: _, reason }) if reason.contains("unresolved oneOf")),
+                                    "{case}/{emitter}: {error:#}"
                                 );
                             }
                             rejected_cases += 1;
@@ -21546,18 +21662,6 @@ mod tests {
         .unwrap()
     }
 
-    fn pattern_key_panic(panic: Box<dyn std::any::Any + Send>) -> String {
-        panic
-            .downcast_ref::<String>()
-            .cloned()
-            .or_else(|| {
-                panic
-                    .downcast_ref::<&str>()
-                    .map(|message| message.to_string())
-            })
-            .expect("generator panic must contain a diagnostic")
-    }
-
     #[test]
     fn test_pattern_properties_without_additional_properties_false_keep_keys_unrestricted() {
         // Cloud Control create-resource AWS::ElasticLoadBalancingV2::Listener,
@@ -21798,10 +21902,10 @@ mod tests {
         )));
 
         let schema = pattern_key_schema(serde_json::json!({"(?=x)x": {"type": "string"}}));
-        let panic = std::panic::catch_unwind(|| generate_synthetic_schema_code(&schema));
-        let message = pattern_key_panic(
-            panic.expect_err("unsupported key regex must fail at schema admission"),
-        );
+        let error = generate_synthetic_schema_code(&schema)
+            .expect_err("unsupported key regex must fail at schema admission");
+        assert!(error.downcast_ref::<schema_layer::SchemaError>().is_some());
+        let message = error.to_string();
         assert!(
             message.contains("/definitions/Entries/patternProperties")
                 && message.contains("(?=x)x"),
@@ -21839,10 +21943,10 @@ mod tests {
         ] {
             let schema = pattern_key_schema(patterns);
             assert!(property_object_map_value(&schema.properties["Entries"], &schema).is_none());
-            let panic = std::panic::catch_unwind(|| generate_synthetic_schema_code(&schema));
-            let message = pattern_key_panic(
-                panic.expect_err("unclassified or ambiguous maps remain unsupported"),
-            );
+            let error = generate_synthetic_schema_code(&schema)
+                .expect_err("unclassified or ambiguous maps remain unsupported");
+            assert!(error.downcast_ref::<schema_layer::SchemaError>().is_some());
+            let message = error.to_string();
             assert!(message.contains(expected_error), "{message}");
         }
     }
@@ -25146,237 +25250,68 @@ mod tests {
 
     #[test]
     fn test_type_display_string_array_no_items() {
-        // Array with no items should display List<String>
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("array".to_string())),
-            description: None,
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
         let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::EC2::VPC".to_string(),
-            "properties": {}
+            "typeName":"AWS::Test::Resource", "properties":{"SomeList":{"type":"array"}}
         }))
         .unwrap();
-        assert_eq!(
-            type_display_string("SomeList", &prop, &schema),
-            "`List<String>`"
-        );
+        let context = EmissionContext::from_source(&schema).unwrap();
+        let error = super::type_display_string_at(
+            &schema.properties["SomeList"],
+            &context,
+            &["SomeList".into()],
+            CfnPropertyPath::new(None, "SomeList"),
+        )
+        .unwrap_err();
+        assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+            Some(schema_layer::SchemaError::Projection { pointer, reason })
+            if pointer == "/properties/SomeList" && reason.contains("array has no items projection")));
     }
 
     #[test]
     fn test_type_display_string_array_never_bare_list() {
-        // Regression guard: type_display_string for array types must never return
-        // bare "List" without element type information.
-        let mut schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::EC2::VPC".to_string(),
-            "properties": {}
-        }))
-        .unwrap();
-        // Case 1: array with no items
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("array".to_string())),
-            description: None,
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        let result = type_display_string("Prop1", &prop, &schema);
-        assert_ne!(
-            result, "List",
-            "array with no items should not return bare 'List'"
-        );
-
-        schema.edit_json(|source| {
-            source["definitions"] = serde_json::json!({"Tag":{
-                "type":"object","properties":{"Key":{"type":"string"},"Value":{"type":"string"}}
-            }});
-        });
-        // Case 2: array with Tag ref items
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("array".to_string())),
-            description: None,
-            enum_values: None,
-            items: Some(Box::new(CfnProperty {
-                prop_type: None,
-                description: None,
-                enum_values: None,
-                items: None,
-                ref_path: Some("#/definitions/Tag".to_string()),
-                insertion_order: None,
-                properties: None,
-                required: vec![],
-                minimum: None,
-                maximum: None,
-                additional_properties: None,
-                const_value: None,
-                default_value: None,
-                pattern: None,
-                min_items: None,
-                max_items: None,
-                min_length: None,
-                max_length: None,
-                format: None,
-                ..Default::default()
-            })),
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        let result = type_display_string("Prop2", &prop, &schema);
-        assert_ne!(
-            result, "List",
-            "array with Tag ref should not return bare 'List'"
-        );
-
-        // Case 3: array with unresolvable ref items
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("array".to_string())),
-            description: None,
-            enum_values: None,
-            items: Some(Box::new(CfnProperty {
-                prop_type: None,
-                description: None,
-                enum_values: None,
-                items: None,
-                ref_path: Some("#/definitions/Missing".to_string()),
-                insertion_order: None,
-                properties: None,
-                required: vec![],
-                minimum: None,
-                maximum: None,
-                additional_properties: None,
-                const_value: None,
-                default_value: None,
-                pattern: None,
-                min_items: None,
-                max_items: None,
-                min_length: None,
-                max_length: None,
-                format: None,
-                ..Default::default()
-            })),
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        schema.edit_json(|source| {
-            source["properties"]["Prop3"] = serde_json::json!(prop);
-        });
-        assert_projection_rejected(&schema, "Prop3");
-        schema.edit_json(|source| {
-            source["properties"]
-                .as_object_mut()
-                .unwrap()
-                .remove("Prop3");
-        });
-
-        // Case 4: array with items that have no type
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("array".to_string())),
-            description: None,
-            enum_values: None,
-            items: Some(Box::new(CfnProperty {
-                prop_type: None,
-                description: None,
-                enum_values: None,
-                items: None,
-                ref_path: None,
-                insertion_order: None,
-                properties: None,
-                required: vec![],
-                minimum: None,
-                maximum: None,
-                additional_properties: None,
-                const_value: None,
-                default_value: None,
-                pattern: None,
-                min_items: None,
-                max_items: None,
-                min_length: None,
-                max_length: None,
-                format: None,
-                ..Default::default()
-            })),
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        let result = type_display_string("Prop4", &prop, &schema);
-        assert_ne!(
-            result, "List",
-            "array with typeless items should not return bare 'List'"
-        );
+        // Missing item evidence is an error. Supported arrays always identify
+        // their element type, including tag-shaped elements inside lists.
+        for (property, supported) in [
+            (serde_json::json!({"type":"array"}), false),
+            (serde_json::json!({"type":"array","items":{}}), false),
+            (
+                serde_json::json!({"type":"array","items":{"$ref":"#/definitions/Missing"}}),
+                false,
+            ),
+            (
+                serde_json::json!({"type":"array","items":{"type":"string"}}),
+                true,
+            ),
+            (
+                serde_json::json!({"type":"array","items":{"$ref":"#/definitions/Tag"}}),
+                true,
+            ),
+        ] {
+            let schema = ParsedCfnSchema::from_json(serde_json::json!({
+                "typeName":"AWS::Test::Resource", "properties":{"Probe":property},
+                "definitions":{"Tag":{"type":"object","properties":{
+                    "Key":{"type":"string"},"Value":{"type":"string"}
+                }}}
+            }))
+            .unwrap();
+            let context = EmissionContext::from_source(&schema).unwrap();
+            let result = super::type_display_string_at(
+                &schema.properties["Probe"],
+                &context,
+                &["Probe".into()],
+                CfnPropertyPath::new(None, "Probe"),
+            );
+            if supported {
+                let display = result.unwrap();
+                assert!(display.starts_with("`List<"), "{display}");
+            } else {
+                let error = result.unwrap_err();
+                assert!(
+                    error.downcast_ref::<schema_layer::SchemaError>().is_some(),
+                    "{error:#}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -27045,8 +26980,7 @@ mod tests {
                 source["definitions"] = serde_json::json!({
                     "Methods": { "oneOf": [{
                         "type": ["null", "array"],
-                        "enum": ["GET", "HEAD"],
-                        "items": { "type": "string" },
+                        "items": { "type": "string", "enum": ["GET", "HEAD"] },
                         "minItems": 1
                     }] },
                     "DefaultCacheBehavior": { "properties": {
@@ -31458,11 +31392,12 @@ mod tests {
                 Ok(String::new())
             }),
             generation_failure(|| {
-                Ok(bare_object_attribute_type(
+                bare_object_attribute_type(
+                    &CfnProperty::default(),
                     "AWS::Logs::LogGroup",
                     path,
                     "FieldIndexPolicies",
-                ))
+                )
             }),
         ] {
             assert!(message.contains("ArrayItemType"), "{message}");
@@ -35674,7 +35609,13 @@ mod tests {
     fn test_budgets_budget_is_provisionable_without_schema_handlers() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
 
-        assert!(schema.handlers.is_empty());
+        assert!(
+            schema
+                .metadata()
+                .handlers
+                .as_ref()
+                .is_none_or(BTreeMap::is_empty)
+        );
         assert!(schema.is_cloud_control_provisionable());
     }
 

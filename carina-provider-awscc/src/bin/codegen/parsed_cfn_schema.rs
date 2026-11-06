@@ -2,7 +2,7 @@
 
 use super::CfnSchema;
 use super::schema_layer::{Layer, SchemaError};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::Value;
 
 #[derive(Debug)]
@@ -27,36 +27,41 @@ impl ParsedCfnSchema {
         if let Err(error) = &layer {
             return Err(error.clone().into());
         }
-        let mut schema: CfnSchema = serde_json::from_value(source.clone())
-            .context("Failed to parse CloudFormation schema")?;
-        if let Ok(layer) = &layer {
-            schema.layer = Some(std::sync::Arc::clone(layer));
-            schema.query_nodes = (0..layer.nodes().len())
-                .map(|index| {
-                    let id = super::schema_layer::NodeId(index);
-                    (id, super::schema_projection::bridge(layer, id))
-                })
-                .collect();
-            for (name, property) in &mut schema.properties {
-                attach(
-                    property,
-                    layer,
-                    &format!("/properties/{}", name.replace('~', "~0").replace('/', "~1")),
-                );
-            }
-            if let Some(definitions) = &mut schema.definitions {
-                for (name, property) in definitions {
-                    attach(
-                        property,
-                        layer,
-                        &format!(
-                            "/definitions/{}",
-                            name.replace('~', "~0").replace('/', "~1")
-                        ),
-                    );
-                }
+        let typed = layer.as_ref().map_err(Clone::clone)?;
+        let root_projection = super::schema_projection::direct(typed, typed.resource().root)?;
+        let mut properties = root_projection.properties.clone().unwrap_or_default();
+        for property in properties.values_mut() {
+            if let Some(origin) = &property.origin {
+                *property = tag_carrier(&source, typed, origin.node);
             }
         }
+        let definitions = typed.resource().definitions.as_ref().map(|definitions| {
+            definitions
+                .iter()
+                .map(|(name, id)| (name.clone(), tag_carrier(&source, typed, *id)))
+                .collect()
+        });
+        let schema = CfnSchema {
+            layer: Some(std::sync::Arc::clone(typed)),
+            query_nodes: (0..typed.nodes().len())
+                .map(|index| {
+                    let id = super::schema_layer::NodeId(index);
+                    (id, super::schema_projection::bridge(typed, id))
+                })
+                .collect(),
+            root_projection,
+            type_name: typed.resource().type_name.clone().unwrap_or_default(),
+            properties,
+            definitions,
+            tagging: typed
+                .resource()
+                .tagging
+                .as_ref()
+                .map(|tagging| super::CfnTagging {
+                    taggable: tagging.taggable.unwrap_or(false),
+                    tag_property: tagging.tag_property.clone(),
+                }),
+        };
         Ok(Self {
             schema,
             source,
@@ -113,41 +118,55 @@ impl std::ops::Deref for ParsedCfnSchema {
     }
 }
 
-// Compatibility conversion only: keep legacy tag/emission fields intact while
-// connecting every existing carrier to its immutable, lossless schema site.
-fn attach(property: &mut super::CfnProperty, layer: &std::sync::Arc<Layer>, pointer: &str) {
+/// Raw conversion boundary for the remaining STEP-5 tag fields. Value emission
+/// ignores these fields and uses the attached immutable Layer origin instead.
+/// Valid schema shapes the legacy tag model cannot deserialize (such as boolean
+/// schemas) still reach the typed projection and its errors.
+fn tag_carrier(
+    source: &Value,
+    layer: &std::sync::Arc<Layer>,
+    node: super::schema_layer::NodeId,
+) -> super::CfnProperty {
+    let pointer = layer.sources().pointer(node);
+    let mut property = source
+        .pointer(pointer)
+        .and_then(|value| serde_json::from_value(value.clone()).ok())
+        .unwrap_or_else(|| super::schema_projection::bridge(layer, node));
+    attach_tag_origin(&mut property, layer, pointer);
+    property
+}
+
+fn attach_tag_origin(
+    property: &mut super::CfnProperty,
+    layer: &std::sync::Arc<Layer>,
+    pointer: &str,
+) {
     if let Some(node) = layer.sources().node_at(pointer) {
-        property.origin = Some(super::schema_projection::Origin {
-            layer: std::sync::Arc::clone(layer),
-            node,
-        });
+        property.origin = Some(super::schema_projection::Origin::new(layer, node));
     }
     if let Some(items) = &mut property.items {
-        attach(items, layer, &format!("{pointer}/items"));
+        attach_tag_origin(items, layer, &format!("{pointer}/items"));
     }
     for (keyword, properties) in [
         ("properties", &mut property.properties),
         ("patternProperties", &mut property.pattern_properties),
     ] {
-        if let Some(properties) = properties {
-            for (name, child) in properties {
-                attach(
-                    child,
-                    layer,
-                    &format!(
-                        "{pointer}/{keyword}/{}",
-                        name.replace('~', "~0").replace('/', "~1")
-                    ),
-                );
-            }
+        for (name, child) in properties.iter_mut().flatten() {
+            attach_tag_origin(
+                child,
+                layer,
+                &format!(
+                    "{pointer}/{keyword}/{}",
+                    name.replace('~', "~0").replace('/', "~1")
+                ),
+            );
         }
     }
-    for (keyword, arms) in [
-        ("oneOf", &mut property.one_of),
-        ("anyOf", &mut property.any_of),
-    ] {
-        for (index, child) in arms.iter_mut().enumerate() {
-            attach(child, layer, &format!("{pointer}/{keyword}/{index}"));
-        }
+    for (index, child) in property.one_of.iter_mut().enumerate() {
+        attach_tag_origin(child, layer, &format!("{pointer}/oneOf/{index}"));
+    }
+    #[cfg(test)]
+    for (index, child) in property.any_of.iter_mut().enumerate() {
+        attach_tag_origin(child, layer, &format!("{pointer}/anyOf/{index}"));
     }
 }

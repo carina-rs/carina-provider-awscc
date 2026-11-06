@@ -249,7 +249,7 @@ fn inline_tag_pairs_render_in_rust_and_markdown() {
 }
 
 #[test]
-fn non_reference_fallbacks_do_not_gain_scalar_inference() {
+fn untyped_non_reference_properties_return_projection_errors() {
     for property in [
         json!({"pattern": "^(?!aws:).*$", "description": "Allowed values: enabled | disabled"}),
         json!({"$ref": "#/definitions/Missing", "pattern": "^(?!aws:).*$"}),
@@ -284,35 +284,37 @@ fn non_reference_fallbacks_do_not_gain_scalar_inference() {
             assert!(markdown.contains("aws.ec2.Vpc.Plain.enabled"), "{markdown}");
             continue;
         }
-        let rust = rendered(&schema, "rust");
-        assert!(
-            rust.contains("AttributeSchema::optional(\"ordinary\", AttributeType::string())"),
-            "{rust}"
-        );
-        let markdown = rendered(&schema, "markdown");
-        assert!(
-            markdown.contains("### `ordinary`\n\n- **Type:** String\n"),
-            "{markdown}"
-        );
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert_eq!(output.status.code(), Some(1), "{format}: {error}");
+            assert!(
+                error.contains("unsupported schema projection at #/properties/Ordinary:")
+                    && error.contains("no supported type or literal projection"),
+                "{format}: {error}"
+            );
+            assert!(output.stdout.is_empty());
+            assert!(!error.contains("panicked"), "{error}");
+        }
     }
 }
 
 #[test]
-fn implicit_array_items_keep_mains_plain_string_type() {
+fn implicit_array_items_return_projection_errors() {
     let mut schema = vpc();
     schema["properties"]["SubnetId"] = json!({"type": "array"});
-    let rust = rendered(&schema, "rust");
-    assert!(
-        rust.contains(
-            "AttributeSchema::optional(\"subnet_id\", AttributeType::list(AttributeType::string())"
-        ),
-        "{rust}"
-    );
-    let markdown = rendered(&schema, "markdown");
-    assert!(
-        markdown.contains("### `subnet_id`\n\n- **Type:** `List<String>`\n"),
-        "{markdown}"
-    );
+    for format in ["rust", "markdown"] {
+        let output = generate(&schema, format);
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{format}: {error}");
+        assert!(
+            error.contains("unsupported schema projection at #/properties/SubnetId:")
+                && error.contains("array has no items projection"),
+            "{format}: {error}"
+        );
+        assert!(output.stdout.is_empty());
+        assert!(!error.contains("panicked"), "{error}");
+    }
 }
 
 #[test]

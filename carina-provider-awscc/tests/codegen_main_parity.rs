@@ -6,6 +6,45 @@
 use serde_json::{Value, json};
 use std::process::Command;
 
+#[test]
+fn step4_unsupported_emission_reaches_cli_error_output() {
+    for property in [
+        json!({}),
+        json!(false),
+        json!({"type":"array"}),
+        json!({"oneOf":[{"type":"boolean"}]}),
+        json!({"type":"object","patternProperties":{".*":{"type":"integer"}}}),
+    ] {
+        let mut schema: Value =
+            serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__EC2__VPC.json"))
+                .unwrap();
+        schema["properties"]["UnsupportedProbe"] = property.clone();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), schema.to_string()).unwrap();
+        for format in ["rust", "markdown"] {
+            let output = Command::new(env!("CARGO_BIN_EXE_codegen"))
+                .args(["--type-name", "AWS::EC2::VPC", "--format", format, "--file"])
+                .arg(file.path())
+                .arg("--examples-dir")
+                .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples"))
+                .output()
+                .unwrap();
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert_eq!(
+                output.status.code(),
+                Some(1),
+                "{format}/{property}: {stderr}"
+            );
+            assert!(
+                stderr.contains("unsupported schema projection at #/properties/UnsupportedProbe"),
+                "{format}/{property}: {stderr}"
+            );
+            assert!(!stderr.contains("panicked"), "{stderr}");
+            assert!(output.stdout.is_empty(), "{format}/{property}");
+        }
+    }
+}
+
 fn cases() -> Vec<(&'static str, Value, &'static [&'static str])> {
     let mut vpc: Value =
         serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__EC2__VPC.json")).unwrap();

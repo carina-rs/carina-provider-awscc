@@ -1,17 +1,20 @@
 //! Shared, validated queries over the lossless Layer.
 //!
-//! CfnProperty is an emission/tag compatibility carrier only. Its query origin
-//! always points into the Layer; no query reconstructs facts from legacy fields.
+//! CfnProperty holds typed query handles and the remaining tag compatibility
+//! fields. Its query origin always points into the Layer; no query reconstructs
+//! facts from legacy fields.
 //! References and allOf intersect constraints. Same-type array alternatives must
 //! be equivalent, including children, bounds, ordering, and uniqueness. Object
 //! alternatives retain their required lists separately for the step-4/6 consumers.
 //! Mixed-type alternatives select one constrained arm and record bare arms.
 //! The object|string type set projects to a JSON document, regardless of its site.
+#[cfg(test)]
+use super::EnumValue;
 use super::schema_layer::{
     ArrayType, Dependency, JsonType, Layer, NodeId, PropertyKeywords, RefTarget, SchemaError,
     SchemaNode, TypeSet,
 };
-use super::{CfnProperty, EnumValue, TypeValue};
+use super::{CfnProperty, TypeValue};
 use serde_json::{Number, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, OnceLock};
@@ -20,6 +23,32 @@ use std::sync::{Arc, OnceLock};
 pub(super) struct Origin {
     pub(super) layer: Arc<Layer>,
     pub(super) node: NodeId,
+    annotations: AnnotationProjection,
+}
+
+/// Site annotations do not inherit through references. Keep their provenance
+/// separate from the effective constraints shared by both renderers.
+#[derive(Debug, Clone, Default)]
+struct AnnotationProjection {
+    description: Option<String>,
+    default: Option<Value>,
+}
+
+impl Origin {
+    pub(super) fn new(layer: &Arc<Layer>, node: NodeId) -> Self {
+        let annotations = match layer.node(node) {
+            SchemaNode::Boolean(_value) => AnnotationProjection::default(),
+            SchemaNode::Keywords(keywords) => AnnotationProjection {
+                description: keywords.description.clone(),
+                default: keywords.default.clone(),
+            },
+        };
+        Self {
+            layer: Arc::clone(layer),
+            node,
+            annotations,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +72,18 @@ pub(super) enum ProjectedType {
     JsonDocument,
 }
 
+/// Closed value grammar used by Rust and Markdown emission. An absent type
+/// requires literal evidence; neither renderer may infer a String for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EmissionType {
+    String,
+    Boolean,
+    Integer,
+    Number,
+    Array,
+    Object,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AlternativeKind {
     OneOf,
@@ -63,7 +104,6 @@ pub(super) struct Projection {
     pub(super) source_pointer: String,
     pub(super) source_name: String,
     pub(super) conjunction: bool,
-    pub(super) intersection_view: Option<Box<CfnProperty>>,
     pub(super) types: Vec<JsonType>,
     pub(super) projected_type: ProjectedType,
     pub(super) description: Option<String>,
@@ -95,6 +135,8 @@ pub(super) struct Projection {
     pub(super) reference: Option<Reference>,
     pub(super) concrete: Option<Box<CfnProperty>>,
     pub(super) alternatives: Vec<Vec<String>>,
+    /// Direct arm requirements only: STEP 6 owns changes to group semantics.
+    pub(super) declared_required_alternatives: Vec<Vec<Vec<String>>>,
     pub(super) dropped_bare_alternatives: Vec<DroppedBareAlternative>,
     pub(super) dependencies: BTreeMap<String, ConditionalDependency>,
     pub(super) contains: Option<Box<CfnProperty>>,
@@ -103,6 +145,90 @@ pub(super) struct Projection {
 }
 
 impl Projection {
+    /// Lists expand their item grammar inline. A cycle consisting only of
+    /// lists has no emitted named struct at which either renderer can stop.
+    /// Struct recursion remains supported through named definitions.
+    fn validate_array_emission(&self) -> Result<(), SchemaError> {
+        let mut projection = self;
+        let mut seen = BTreeSet::new();
+        while projection.effective_type() == Some("array") {
+            let Some(items) = projection.items.as_deref() else {
+                break;
+            };
+            if let Some(origin) = &items.origin
+                && !seen.insert(origin.node)
+            {
+                return Err(projection.emission_error(
+                    "recursive array projection requires a named collection definition",
+                ));
+            }
+            projection = items.try_query()?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn emission_error(&self, reason: impl Into<String>) -> SchemaError {
+        SchemaError::Projection {
+            pointer: self.source_pointer.clone(),
+            reason: reason.into(),
+        }
+    }
+
+    pub(super) fn emission_type(&self) -> Result<EmissionType, SchemaError> {
+        if let Some(literal) = self
+            .const_value
+            .as_ref()
+            .or_else(|| self.enum_values.as_ref()?.first())
+        {
+            let agrees = match self.effective_json_type() {
+                Some(JsonType::String) => literal.is_string(),
+                Some(JsonType::Integer) | Some(JsonType::Number) => literal.as_i64().is_some(),
+                Some(JsonType::Null)
+                | Some(JsonType::Boolean)
+                | Some(JsonType::Array)
+                | Some(JsonType::Object) => false,
+                None => true,
+            };
+            if !agrees {
+                return Err(self.emission_error("literal conflicts with the projected value type"));
+            }
+        }
+        match self.effective_json_type() {
+            Some(JsonType::String) => Ok(EmissionType::String),
+            Some(JsonType::Boolean) => Ok(EmissionType::Boolean),
+            Some(JsonType::Integer) => Ok(EmissionType::Integer),
+            Some(JsonType::Number) => Ok(EmissionType::Number),
+            Some(JsonType::Array) => {
+                if self.items.is_none() {
+                    return Err(self.emission_error("array has no items projection"));
+                }
+                Ok(EmissionType::Array)
+            }
+            Some(JsonType::Object) => Ok(EmissionType::Object),
+            Some(JsonType::Null) | None => {
+                let literal = self
+                    .const_value
+                    .as_ref()
+                    .or_else(|| self.enum_values.as_ref()?.first());
+                match literal {
+                    Some(Value::String(_value)) => Ok(EmissionType::String),
+                    Some(Value::Number(value)) if value.as_i64().is_some() => {
+                        Ok(EmissionType::Integer)
+                    }
+                    Some(Value::Number(_))
+                    | Some(Value::Null)
+                    | Some(Value::Bool(_))
+                    | Some(Value::Array(_))
+                    | Some(Value::Object(_))
+                    | None => {
+                        Err(self
+                            .emission_error("value has no supported type or literal projection"))
+                    }
+                }
+            }
+        }
+    }
+
     fn effective_json_type(&self) -> Option<JsonType> {
         if self.properties.as_ref().is_some_and(|p| !p.is_empty()) {
             return Some(JsonType::Object);
@@ -237,20 +363,14 @@ impl CfnProperty {
 
     pub(super) fn annotation_default(&self) -> Option<&Value> {
         if let Some(origin) = &self.origin {
-            return match origin.layer.node(origin.node) {
-                SchemaNode::Boolean(_value) => None,
-                SchemaNode::Keywords(keywords) => keywords.default.as_ref(),
-            };
+            return origin.annotations.default.as_ref();
         }
         self.query().default_value.as_ref()
     }
 
     pub(super) fn annotation_description(&self) -> Option<&str> {
         if let Some(origin) = &self.origin {
-            return match origin.layer.node(origin.node) {
-                SchemaNode::Boolean(_value) => None,
-                SchemaNode::Keywords(keywords) => keywords.description.as_deref(),
-            };
+            return origin.annotations.description.as_deref();
         }
         self.query().description.as_deref()
     }
@@ -395,7 +515,6 @@ pub(super) fn direct(layer: &Arc<Layer>, node: NodeId) -> Result<Projection, Sch
                         .unwrap_or(""),
                 ),
                 conjunction: false,
-                intersection_view: None,
                 projected_type: project_type(layer, node, &types)?,
                 types,
                 description: k.description.clone(),
@@ -435,6 +554,20 @@ pub(super) fn direct(layer: &Arc<Layer>, node: NodeId) -> Result<Projection, Sch
                 reference: None,
                 concrete: None,
                 alternatives: Vec::new(),
+                declared_required_alternatives: [&k.compositions.one_of, &k.compositions.any_of]
+                    .into_iter()
+                    .map(|arms| {
+                        arms.iter()
+                            .flatten()
+                            .map(|id| match layer.node(*id) {
+                                SchemaNode::Boolean(_value) => Vec::new(),
+                                SchemaNode::Keywords(arm) => {
+                                    arm.required.clone().unwrap_or_default()
+                                }
+                            })
+                            .collect()
+                    })
+                    .collect(),
                 dropped_bare_alternatives: Vec::new(),
                 dependencies,
                 contains: k.contains.map(|id| Box::new(bridge(layer, id))),
@@ -453,31 +586,31 @@ pub(super) fn bridge(layer: &Arc<Layer>, node: NodeId) -> CfnProperty {
         SchemaNode::Boolean(_value) => None,
         SchemaNode::Keywords(k) => k.reference.as_ref().map(|r| r.spelling.clone()),
     };
-    let (one_of, any_of) = match layer.node(node) {
-        SchemaNode::Boolean(_value) => (Vec::new(), Vec::new()),
-        SchemaNode::Keywords(k) => (
-            k.compositions
+    let mut property = materialize(p);
+    match layer.node(node) {
+        SchemaNode::Boolean(_value) => {}
+        SchemaNode::Keywords(k) => {
+            property.one_of = k
+                .compositions
                 .one_of
                 .iter()
                 .flatten()
                 .map(|id| bridge(layer, *id))
-                .collect(),
-            k.compositions
-                .any_of
-                .iter()
-                .flatten()
-                .map(|id| bridge(layer, *id))
-                .collect(),
-        ),
-    };
-    let mut property = materialize(p);
+                .collect();
+            #[cfg(test)]
+            {
+                property.any_of = k
+                    .compositions
+                    .any_of
+                    .iter()
+                    .flatten()
+                    .map(|id| bridge(layer, *id))
+                    .collect();
+            }
+        }
+    }
     property.ref_path = ref_path;
-    property.one_of = one_of;
-    property.any_of = any_of;
-    property.origin = Some(Origin {
-        layer: Arc::clone(layer),
-        node,
-    });
+    property.origin = Some(Origin::new(layer, node));
     property.projection = OnceLock::new();
     property
 }
@@ -506,6 +639,7 @@ pub(super) fn materialize(p: Projection) -> CfnProperty {
     } else {
         Some(TypeValue::Multiple(type_names))
     };
+    #[cfg(test)]
     let enum_values = p.enum_values.as_ref().and_then(|values| {
         values
             .iter()
@@ -521,7 +655,9 @@ pub(super) fn materialize(p: Projection) -> CfnProperty {
     });
     CfnProperty {
         prop_type,
+        #[cfg(test)]
         description: p.description.clone(),
+        #[cfg(test)]
         enum_values,
         items: p.items.clone(),
         ref_path: None,
@@ -529,19 +665,28 @@ pub(super) fn materialize(p: Projection) -> CfnProperty {
         unique_items: p.unique_items,
         properties: p.properties.clone(),
         pattern_properties: p.pattern_properties.clone(),
+        #[cfg(test)]
         required: p.required.clone(),
+        #[cfg(test)]
         minimum: p.minimum.as_ref().and_then(Number::as_i64),
+        #[cfg(test)]
         maximum: p.maximum.as_ref().and_then(Number::as_i64),
         additional_properties: p.additional_properties,
+        #[cfg(test)]
         const_value: p.const_value.clone(),
+        #[cfg(test)]
         default_value: p.default_value.clone(),
         pattern: p.pattern.clone(),
         min_items: p.min_items,
         max_items: p.max_items,
+        #[cfg(test)]
         min_length: p.min_length,
+        #[cfg(test)]
         max_length: p.max_length,
+        #[cfg(test)]
         format: p.format.clone(),
         one_of: Vec::new(),
+        #[cfg(test)]
         any_of: Vec::new(),
         origin: None,
         projection: OnceLock::from(Ok(p)),
@@ -577,14 +722,6 @@ fn complete_projection(mut p: Projection) -> Projection {
         concrete.reference = None;
         concrete.is_union = false;
         p.concrete = Some(Box::new(materialize(concrete)));
-    }
-    // This is a query result adapter, not a second schema reader. Staged
-    // emitters can keep their existing field access while receiving the full
-    // unconditional allOf intersection (including items and numeric bounds).
-    if p.conjunction && !p.is_union && p.reference.is_none() {
-        let mut intersection = p.clone();
-        intersection.conjunction = false;
-        p.intersection_view = Some(Box::new(materialize(intersection)));
     }
     p
 }
@@ -734,7 +871,6 @@ fn merge(
     q: Projection,
 ) -> Result<(), SchemaError> {
     p.concrete = None;
-    p.intersection_view = None;
     if p.types.is_empty() {
         p.types = q.types.clone();
     } else if !q.types.is_empty() {
@@ -1490,6 +1626,7 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
             return Ok(());
         }
         let p = property.try_query()?;
+        p.validate_array_emission()?;
         if matches!(p.effective_type(), Some("integer" | "number")) {
             p.integer_bounds()?;
         }
@@ -1522,7 +1659,12 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
                     continue;
                 }
                 let override_type = super::resource_type_override(&schema.type_name, path);
-                child.try_query()?;
+                let child_projection = child.try_query()?;
+                if override_type.is_some_and(|o| {
+                    matches!(o, super::TypeOverride::StringType(_)) || o.enum_values().is_some()
+                }) {
+                    child_projection.validate_array_emission()?;
+                }
                 if override_type.is_some_and(|o| {
                     o.attribute_type_expression().is_some()
                         || o.array_item_type_expression().is_some()
@@ -1548,7 +1690,12 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
         }
         let path = super::CfnPropertyPath::new(None, name);
         let override_type = super::resource_type_override(&schema.type_name, path);
-        property.try_query()?;
+        let projection = property.try_query()?;
+        if override_type.is_some_and(|o| {
+            matches!(o, super::TypeOverride::StringType(_)) || o.enum_values().is_some()
+        }) {
+            projection.validate_array_emission()?;
+        }
         if override_type.is_some_and(|o| {
             o.attribute_type_expression().is_some()
                 || o.array_item_type_expression().is_some()
