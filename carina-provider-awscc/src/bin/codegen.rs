@@ -1261,6 +1261,7 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
 struct TagMapType {
     key: StringLeaf<'static>,
     value: StringLeaf<'static>,
+    max_entries: Option<i64>,
 }
 
 impl TagMapType {
@@ -1272,26 +1273,31 @@ impl TagMapType {
         structural: &[String],
     ) -> (String, Option<EnumInfo>) {
         let info = key_enum_info(&self.key).cloned();
-        (
+        let key = emit_map_key(self.key, cfn_type, path, namespace, structural);
+        let value = self.value.emit(cfn_type, "Value").0;
+        let expression = if let Some(max) = self.max_entries {
+            let max = u64::try_from(max)
+                .unwrap_or_else(|_| panic!("{cfn_type}.{path}: Tags maxItems must be nonnegative"));
             format!(
-                "AttributeType::map_with_key({}, {})",
-                emit_map_key(self.key, cfn_type, path, namespace, structural),
-                self.value.emit(cfn_type, "Value").0,
-            ),
-            info,
-        )
+                "AttributeType::refined_map({key}, {value}, {})",
+                emit_length_option(None, Some(max)),
+            )
+        } else {
+            format!("AttributeType::map_with_key({key}, {value})")
+        };
+        (expression, info)
     }
 
-    fn display(&self) -> String {
-        format!(
-            "Map<{}, {}>",
-            if key_enum_info(&self.key).is_some() {
+    fn display(&self) -> TypeDisplay {
+        TypeDisplay::Map {
+            key: if key_enum_info(&self.key).is_some() {
                 map_key_display(&self.key)
             } else {
                 self.key.display()
             },
-            self.value.display()
-        )
+            value: self.value.display(),
+            max_entries: self.max_entries,
+        }
     }
 }
 
@@ -1318,6 +1324,27 @@ fn tag_map_type(classified: EmissionProperty<'_>, cfn_path: CfnPropertyPath<'_>)
 
     let schema = classified.schema();
     let prop = classified.property();
+    // Tags projects the CFN array into a map, so its maxItems counts map
+    // entries. Resolve the same array and bounds-only overrides as lists;
+    // resources without maxItems retain an unbounded map.
+    let array = resolved_array_property(prop, schema, &mut HashSet::new());
+    // An individual Tag ref inside an ordinary list retains its parent's CFN
+    // path. The list's override must not be consumed by that item's map.
+    let array = if array.is_some()
+        && let Some(override_type @ TypeOverride::Array { items: None, .. }) =
+            resource_type_override(&schema.type_name, cfn_path)
+    {
+        let array = override_type
+            .array_source(schema, cfn_path, prop)
+            .unwrap_or_else(|error| panic!("{error}"));
+        EMITTED_ARRAY_OVERRIDES.with(|emitted| {
+            emitted.borrow_mut().insert(cfn_path.owned_key());
+        });
+        Some(array)
+    } else {
+        array
+    };
+    let max_entries = array.as_ref().and_then(|array| array.max_items);
     let source = schema.pattern_source_path(classified.path(), prop.pattern.as_deref(), cfn_path);
     let (mut tag, mut source) = resolve(schema, prop, source);
     if let Some(items) = tag.items.as_deref() {
@@ -1350,6 +1377,7 @@ fn tag_map_type(classified: EmissionProperty<'_>, cfn_path: CfnPropertyPath<'_>)
         TagMapShape::KeyValue { key, value } => TagMapType {
             key: leaf(key, format!("{source}/properties/Key"), "Key"),
             value: leaf(value, format!("{source}/properties/Value"), "Value"),
+            max_entries,
         },
         TagMapShape::Pattern { pattern, value } => {
             let key_source = format!("{source}/patternProperties");
@@ -1367,6 +1395,7 @@ fn tag_map_type(classified: EmissionProperty<'_>, cfn_path: CfnPropertyPath<'_>)
                     }
                 },
                 value: leaf(value, value_source, "Value"),
+                max_entries,
             }
         }
     }
@@ -3557,7 +3586,7 @@ fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &ParsedCfnSc
     )
 }
 
-/// Keep type text and list limits separate from Markdown formatting so a
+/// Keep type text and collection limits separate from Markdown formatting so a
 /// nested collection never embeds an already-rendered inline-code span.
 enum TypeDisplay {
     Plain(String),
@@ -3567,6 +3596,11 @@ enum TypeDisplay {
         item: Box<TypeDisplay>,
         min_items: Option<i64>,
         max_items: Option<i64>,
+    },
+    Map {
+        key: String,
+        value: String,
+        max_entries: Option<i64>,
     },
 }
 
@@ -3579,8 +3613,12 @@ impl TypeDisplay {
     }
 
     fn item_limits(min: Option<i64>, max: Option<i64>) -> String {
+        Self::collection_limits("items", min, max)
+    }
+
+    fn collection_limits(kind: &str, min: Option<i64>, max: Option<i64>) -> String {
         if min.is_some() || max.is_some() {
-            format!(" (items: {})", range_display_string(min, max))
+            format!(" ({kind}: {})", range_display_string(min, max))
         } else {
             String::new()
         }
@@ -3599,6 +3637,14 @@ impl TypeDisplay {
                 item.type_text(),
                 Self::item_limits(*min_items, *max_items),
             ),
+            Self::Map {
+                key,
+                value,
+                max_entries,
+            } => format!(
+                "Map<{key}, {value}>{}",
+                Self::collection_limits("entries", None, *max_entries),
+            ),
         }
     }
 
@@ -3615,6 +3661,14 @@ impl TypeDisplay {
                 "`List<{}>`{}",
                 item.type_text(),
                 Self::item_limits(*min_items, *max_items),
+            ),
+            Self::Map {
+                key,
+                value,
+                max_entries,
+            } => format!(
+                "`Map<{key}, {value}>`{}",
+                Self::collection_limits("entries", None, *max_entries),
             ),
         }
     }
@@ -3705,7 +3759,7 @@ fn type_display_at_resolved(
         schema
             .classify_tag_value(provider_path)
             .unwrap_or_else(|error| panic!("{error}"));
-        return TypeDisplay::Code(tag_map_type(classified, cfn_property_path).display());
+        return tag_map_type(classified, cfn_property_path).display();
     }
     if property_is_bare_object(prop, schema) {
         return match classify_bare_object_or_panic(&schema.type_name, cfn_property_path) {
@@ -3732,7 +3786,7 @@ fn type_display_at_resolved(
                 schema
                     .classify_tag_value(provider_path)
                     .unwrap_or_else(|error| panic!("{error}"));
-                TypeDisplay::Code(tag_map_type(classified, cfn_property_path).display())
+                tag_map_type(classified, cfn_property_path).display()
             } else if let Some(resolved) = resolved {
                 let array = resolved_array_property(prop, schema, &mut HashSet::new());
                 type_display_at_resolved(
@@ -12092,6 +12146,20 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             TypeOverride::StringType(OverrideTypeExpression::raw(
                 "crate::schemas::catalog::scheduler_schedule_expression()",
             )),
+        );
+        // #587: Cloud Control CreateResource/GetResource, carina-test-008,
+        // ap-northeast-1, 2026-11-06: CFN declares maxItems:200, but only 50
+        // tags were accepted and read back as 50. 51, 100 and 200 failed:
+        // "Invalid request provided: The request exceeds the maximum number of
+        // tags allowed per resource. (Service: Scheduler)". 201 failed model
+        // validation. Tighten the derived count at the raw CFN Tags path.
+        m.insert(
+            ("AWS::Scheduler::ScheduleGroup", "Tags"),
+            TypeOverride::Array {
+                items: None,
+                min_items: None,
+                max_items: Some(50),
+            },
         );
         // Cloud Control CreateResource/GetResource, carina-test-008,
         // ap-northeast-1, 2026-11-05: only the millisecond UTC spelling was
@@ -32536,6 +32604,128 @@ mod tests {
     }
 
     #[test]
+    fn tags_entry_count_bound_is_derived_from_cfn_max_items() {
+        for referenced_array in [false, true] {
+            for inline_tag in [false, true] {
+                for maximum in [None, Some(0), Some(50)] {
+                    let tag = serde_json::json!({"type": "object", "properties": {
+                        "Key": {"type": "string"}, "Value": {"type": "string"}
+                    }});
+                    let mut array = serde_json::json!({
+                        "type": "array", "minItems": 0, "uniqueItems": true,
+                        "items": if inline_tag { tag.clone() } else {
+                            serde_json::json!({"$ref": "#/definitions/Tag"})
+                        }
+                    });
+                    if let Some(maximum) = maximum {
+                        array["maxItems"] = serde_json::json!(maximum);
+                    }
+                    let mut schema = tag_schema("{}");
+                    schema.edit_json(|source| {
+                        source["definitions"] = serde_json::json!({
+                            "Tag": tag,
+                            "TagList": array,
+                            "TagListAlias": {"$ref": "#/definitions/TagList"}
+                        });
+                        source["properties"]["Tags"] = if referenced_array {
+                            serde_json::json!({"$ref": "#/definitions/TagListAlias"})
+                        } else {
+                            array
+                        };
+                    });
+                    let generated = cfn_type_to_carina_type_with_enum(
+                        &schema.properties["Tags"],
+                        "Tags",
+                        &schema,
+                        "aws.test.Resource",
+                        &BTreeMap::new(),
+                    )
+                    .0;
+                    let expected = maximum.map_or_else(
+                        || "AttributeType::map_with_key(AttributeType::string(), AttributeType::string())".to_string(),
+                        |max| format!("AttributeType::refined_map(AttributeType::string(), AttributeType::string(), Some((None, Some({max}))))"),
+                    );
+                    assert_eq!(generated, expected);
+                    let docs = type_display_string("Tags", &schema.properties["Tags"], &schema);
+                    let expected_docs = maximum.map_or_else(
+                        || "`Map<String, String>`".to_string(),
+                        |max| format!("`Map<String, String>` (entries: ..={max})"),
+                    );
+                    assert_eq!(docs, expected_docs);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tag_map_items_do_not_consume_their_containing_list_override() {
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource",
+            "properties": {"Labels": {
+                "type": "array", "maxItems": 5,
+                "items": {"$ref": "#/definitions/Tag"}
+            }},
+            "definitions": {"Tag": {"type": "object", "properties": {
+                "Key": {"type": "string"}, "Value": {"type": "string"}
+            }}}
+        }))
+        .unwrap();
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            overrides.insert(
+                ("AWS::Test::Resource", "Labels"),
+                TypeOverride::Array {
+                    items: None,
+                    min_items: None,
+                    max_items: Some(3),
+                },
+            );
+            overrides
+        });
+        with_resource_type_overrides(&OVERRIDES, || {
+            let generated = cfn_type_to_carina_type_with_enum(
+                &schema.properties["Labels"],
+                "Labels",
+                &schema,
+                "aws.test.Resource",
+                &BTreeMap::new(),
+            )
+            .0;
+            assert_eq!(
+                generated,
+                concat!(
+                    "AttributeType::refined_list(",
+                    "AttributeType::map_with_key(AttributeType::string(), AttributeType::string()), ",
+                    "true, Some((None, Some(3))), carina_core::schema::ListElements::AllowDuplicates)"
+                )
+            );
+        });
+    }
+
+    #[test]
+    fn scheduler_tag_entry_count_override_tightens_the_derived_bound_and_docs() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Scheduler::ScheduleGroup");
+        assert_eq!(schema.properties["Tags"].max_items, Some(200));
+        assert_eq!(
+            resource_type_overrides().get(&("AWS::Scheduler::ScheduleGroup", "Tags")),
+            Some(&TypeOverride::Array {
+                items: None,
+                min_items: None,
+                max_items: Some(50),
+            })
+        );
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let tags = generated_dynamodb_field(&generated, "Tags");
+        assert!(tags.starts_with("AttributeType::refined_map("), "{tags}");
+        assert!(tags.contains("Some((None, Some(50)))"), "{tags}");
+        let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(docs.contains("(entries: ..=50)"), "{docs}");
+        assert!(!docs.contains("items:"), "{docs}");
+        assert!(!docs.contains("entries: ..=200"), "{docs}");
+        carina_docgen::check_page(&docs).unwrap();
+    }
+
+    #[test]
     fn tags_type_is_derived_from_the_resource_cfn_tag_definition() {
         for inline in [false, true] {
             let tag = serde_json::json!({
@@ -32572,9 +32762,9 @@ mod tests {
             assert_eq!(
                 generated,
                 concat!(
-                    "AttributeType::map_with_key(",
+                    "AttributeType::refined_map(",
                     "AttributeType::refined_string(None, Some(\"^(?:[a-z]+)\\\\z\".to_string()), Some((Some(2), Some(17))), None), ",
-                    "AttributeType::refined_string(None, Some(\"^(?:[A-Z]*)\\\\z\".to_string()), Some((None, Some(23))), None))",
+                    "AttributeType::refined_string(None, Some(\"^(?:[A-Z]*)\\\\z\".to_string()), Some((None, Some(23))), None), Some((None, Some(50))))",
                 )
             );
             schema.edit_json(|source| {
@@ -32588,7 +32778,7 @@ mod tests {
             assert!(emit(&schema).contains("Some((Some(2), Some(19)))"));
             let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
             assert!(
-                markdown.contains("Map<String(pattern, len: 2..=19), String(pattern, len: ..=23)>"),
+                markdown.contains("Map<String(pattern, len: 2..=19), String(pattern, len: ..=23)>` (entries: ..=50)"),
                 "{markdown}"
             );
         }
