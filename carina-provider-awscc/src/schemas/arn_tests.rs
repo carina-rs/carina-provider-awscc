@@ -100,6 +100,28 @@ fn collect_rust_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
     }
 }
 
+fn crate_source_failures(root: &Path) -> Vec<String> {
+    let mut sources = Vec::new();
+    collect_rust_sources(root, &mut sources);
+    sources.sort();
+    let mut failures = Vec::new();
+    for path in sources {
+        let source = std::fs::read_to_string(&path).unwrap();
+        for (offset, reason) in shared_source_failures(&source) {
+            failures.push(format!(
+                "{}:{}: {reason}",
+                path.strip_prefix(root).unwrap().display(),
+                source[..offset]
+                    .bytes()
+                    .filter(|byte| *byte == b'\n')
+                    .count()
+                    + 1
+            ));
+        }
+    }
+    failures
+}
+
 struct SharedType {
     name: &'static str,
     constructor: fn() -> AttributeType,
@@ -131,6 +153,7 @@ const SHARED_TYPES: &[SharedType] = shared_type_allowlist! {
         carina_aws_types::aws_region,
         carina_aws_types::aws_resource_id,
         carina_aws_types::carrier_gateway_id,
+        carina_aws_types::cloudfront_hosted_zone_id,
         carina_aws_types::egress_only_internet_gateway_id,
         carina_aws_types::elbv2_health_check_port,
         carina_aws_types::elbv2_target_group_grpc_code,
@@ -860,30 +883,49 @@ fn shared_type_audit_rejects_arn_patterns_and_hidden_partition_validators() {
 
 #[test]
 fn schema_sources_use_only_allowlisted_shared_types() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut sources = Vec::new();
-    collect_rust_sources(&root, &mut sources);
-    sources.sort();
-    let mut failures = Vec::new();
-    for path in sources {
-        let source = std::fs::read_to_string(&path).unwrap();
-        for (offset, reason) in shared_source_failures(&source) {
-            failures.push(format!(
-                "{}:{}: {reason}",
-                path.strip_prefix(&root).unwrap().display(),
-                source[..offset]
-                    .bytes()
-                    .filter(|byte| *byte == b'\n')
-                    .count()
-                    + 1
-            ));
-        }
-    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let failures = crate_source_failures(root);
     assert!(
         failures.is_empty(),
         "Shared items must obey the source rules and explicit allowlist:\n{}",
         failures.join("\n")
     );
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn source_scan_covers_every_crate_rust_source_root() {
+    // Keep fixture writes inside the workspace, outside the real crate scanned
+    // by the other test so the two tests can run concurrently.
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let fixture = tempfile::Builder::new()
+        .prefix(".issue-593-source-audit-")
+        .tempdir_in(workspace)
+        .unwrap();
+    let paths = [
+        "src/lib.rs",
+        "src/bin/codegen.rs",
+        "src/schemas/generated/resource.rs",
+        "tests/integration.rs",
+        "benches/benchmark.rs",
+        "examples/example.rs",
+        "build.rs",
+    ];
+    for relative in paths {
+        let path = fixture.path().join(relative);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, format!("{}arn()", SHARED_CRATE_PREFIX)).unwrap();
+    }
+    let failures = crate_source_failures(fixture.path());
+    assert_eq!(failures.len(), paths.len(), "{failures:?}");
+    for relative in paths {
+        assert!(
+            failures
+                .iter()
+                .any(|failure| failure == &format!("{relative}:1: arn")),
+            "missing {relative}: {failures:?}"
+        );
+    }
 }
 
 #[test]
