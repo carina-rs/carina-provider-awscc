@@ -1,4 +1,4 @@
-//! Keep the parsed schema inseparable from the JSON used by the classifier.
+//! Keep the legacy model and lossless Layer inseparable during migration.
 
 use super::CfnSchema;
 use super::schema_layer::{Layer, SchemaError};
@@ -9,8 +9,6 @@ use serde_json::Value;
 pub(super) struct ParsedCfnSchema {
     schema: CfnSchema,
     source: Value,
-    // Preserve diagnostics without changing legacy CLI behavior during migration.
-    #[allow(dead_code)]
     layer: std::result::Result<Layer, SchemaError>,
 }
 
@@ -18,7 +16,7 @@ impl ParsedCfnSchema {
     pub(super) fn from_json(source: Value) -> Result<Self> {
         let parsed = Self::parse(source)?;
         #[cfg(test)]
-        if let Err(error) = &parsed.layer {
+        if let Err(error) = parsed.checked_layer() {
             panic!("lossless CFN layer failed: {error}");
         }
         Ok(parsed)
@@ -27,7 +25,7 @@ impl ParsedCfnSchema {
     fn parse(source: Value) -> Result<Self> {
         let schema = serde_json::from_value(source.clone())
             .context("Failed to parse CloudFormation schema")?;
-        let layer = Layer::from_json(&source);
+        let layer = Layer::for_codegen(&source);
         Ok(Self {
             schema,
             source,
@@ -39,9 +37,17 @@ impl ParsedCfnSchema {
         &self.source
     }
 
-    #[cfg(test)]
     pub(super) fn layer(&self) -> &std::result::Result<Layer, SchemaError> {
         &self.layer
+    }
+
+    #[cfg(test)]
+    fn checked_layer(&self) -> std::result::Result<&Layer, &SchemaError> {
+        let layer = self.layer.as_ref()?;
+        if let Some(error) = layer.diagnostics().first() {
+            return Err(error);
+        }
+        Ok(layer)
     }
 
     /// Reparse edits atomically so neither an error nor a panic leaves a mismatched pair.
@@ -63,7 +69,7 @@ impl ParsedCfnSchema {
         let mut source = self.source.clone();
         edit(&mut source);
         let parsed = Self::parse(source).expect("edited legacy CFN fixture parses");
-        assert_eq!(parsed.layer.as_ref().unwrap_err(), &expected);
+        assert_eq!(parsed.checked_layer().unwrap_err(), &expected);
         *self = parsed;
     }
 }

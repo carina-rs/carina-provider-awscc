@@ -136,11 +136,12 @@ pub(super) fn validate_tagging_classifications(schema: &EmissionContext<'_>) -> 
         if !is_key_value_array_candidate(
             sources.iter().map(|pointer| {
                 schema
+                    .parsed_schema()
                     .source()
                     .pointer(pointer)
                     .expect("top-level property source")
             }),
-            schema.source(),
+            schema.parsed_schema().source(),
         )? || tags.as_ref().is_some_and(|tags| tags.provider_name == name)
         {
             continue;
@@ -173,11 +174,12 @@ fn validate_tag_item_fields(schema: &EmissionContext<'_>, provider_name: &str) -
     walk_array_item_schemas(
         sources.iter().map(|pointer| {
             schema
+                .parsed_schema()
                 .source()
                 .pointer(pointer)
                 .expect("top-level property source")
         }),
-        schema.source(),
+        schema.parsed_schema().source(),
         |node| {
             if let Some(properties) = node
                 .get("properties")

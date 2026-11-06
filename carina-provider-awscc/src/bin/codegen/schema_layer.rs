@@ -14,6 +14,10 @@ pub(super) struct NodeId(pub(super) usize);
 pub(super) struct SourceIndex {
     by_pointer: BTreeMap<String, NodeId>,
     pointers: Vec<String>,
+    // Accounting includes metadata and opaque JSON sites, not just schemas.
+    // In particular propertyTransform keys and unknown-keyword descendants
+    // must not disappear when a consumer projects only part of the schema.
+    evidence: BTreeMap<String, SourceEvidence>,
 }
 
 impl SourceIndex {
@@ -24,6 +28,30 @@ impl SourceIndex {
     pub(super) fn pointer(&self, node: NodeId) -> &str {
         &self.pointers[node.0]
     }
+
+    pub(super) fn evidence(&self) -> &BTreeMap<String, SourceEvidence> {
+        &self.evidence
+    }
+}
+
+/// Facts extracted once at conversion, including non-schema source sites.
+/// No JSON payload or inferred schema shape is retained here. Defaults and
+/// examples remain literals; their provenance can still require accounting.
+#[derive(Debug, Default)]
+pub(super) struct SourceEvidence {
+    pub(super) name: String,
+    pub(super) pattern: Option<String>,
+    pub(super) description: Option<String>,
+    pub(super) literals: Vec<String>,
+    pub(super) has_enum_or_const: bool,
+    pub(super) length: (Option<u64>, Option<u64>),
+    pub(super) reference: Option<SourceReference>,
+}
+
+#[derive(Debug)]
+pub(super) enum SourceReference {
+    Local { target: String, spelling: String },
+    Unresolved(SchemaError),
 }
 
 #[derive(Debug)]
@@ -31,14 +59,32 @@ pub(super) struct Layer {
     resource: Resource,
     nodes: Vec<SchemaNode>,
     sources: SourceIndex,
+    diagnostics: Vec<SchemaError>,
 }
 
 impl Layer {
     pub(super) fn from_json(source: &Value) -> Result<Self, SchemaError> {
+        let layer = Self::for_codegen(source)?;
+        if let Some(error) = layer.diagnostics.first() {
+            return Err(error.clone());
+        }
+        Ok(layer)
+    }
+
+    /// Retain known sites and conversion diagnostics during the staged legacy
+    /// migration. Accounting runs even for rejected keywords; finish() must
+    /// report remaining diagnostics before any generated output is accepted.
+    pub(super) fn for_codegen(source: &Value) -> Result<Self, SchemaError> {
         let mut builder = Builder::default();
+        index_source_evidence(source, "", "", &mut builder.sources.evidence);
+        resolve_source_references(&mut builder.sources.evidence);
         let resource = builder.resource(source, "")?;
         // Pass one indexes ALL syntactic schema sites, including forward targets.
-        let Builder { mut nodes, sources } = builder;
+        let Builder {
+            mut nodes,
+            sources,
+            diagnostics,
+        } = builder;
         // Pass two connects edges without expanding targets or following cycles.
         for (index, node) in nodes.iter_mut().enumerate() {
             match node {
@@ -46,15 +92,11 @@ impl Layer {
                 SchemaNode::Keywords(keywords) => {
                     if let Some(reference) = &mut keywords.reference {
                         let pointer = child(sources.pointer(NodeId(index)), "$ref");
-                        reference.target = match resolve_reference(
-                            source,
-                            &sources,
-                            &pointer,
-                            &reference.spelling,
-                        ) {
-                            Ok(target) => RefTarget::Node(target),
-                            Err(reason) => RefTarget::Unresolved(reason),
-                        };
+                        reference.target =
+                            match resolve_reference(&sources, &pointer, &reference.spelling) {
+                                Ok(target) => RefTarget::Node(target),
+                                Err(reason) => RefTarget::Unresolved(reason),
+                            };
                     }
                 }
             }
@@ -63,6 +105,7 @@ impl Layer {
             resource,
             nodes,
             sources,
+            diagnostics,
         })
     }
 
@@ -77,6 +120,9 @@ impl Layer {
     }
     pub(super) fn sources(&self) -> &SourceIndex {
         &self.sources
+    }
+    pub(super) fn diagnostics(&self) -> &[SchemaError] {
+        &self.diagnostics
     }
 }
 
@@ -480,6 +526,7 @@ impl PropertyKeyword {
 struct Builder {
     nodes: Vec<SchemaNode>,
     sources: SourceIndex,
+    diagnostics: Vec<SchemaError>,
 }
 
 impl Builder {
@@ -501,12 +548,7 @@ impl Builder {
                 let mut keywords = PropertyKeywords::default();
                 for (name, value) in object {
                     let at = child(pointer, name);
-                    self.keyword(
-                        &mut keywords,
-                        PropertyKeyword::from_name(name, &at)?,
-                        value,
-                        &at,
-                    )?;
+                    self.property_keyword(&mut keywords, name, value, &at);
                 }
                 SchemaNode::Keywords(Box::new(keywords))
             }
@@ -598,12 +640,7 @@ impl Builder {
                         "typeConfiguration" => {
                             resource.type_configuration = Some(Box::new(self.resource(value, &at)?))
                         }
-                        property => self.keyword(
-                            &mut keywords,
-                            PropertyKeyword::from_name(property, &at)?,
-                            value,
-                            &at,
-                        )?,
+                        property => self.property_keyword(&mut keywords, property, value, &at),
                     }
                 }
                 resource.root = self.allocate(pointer, SchemaNode::Keywords(Box::new(keywords)));
@@ -613,6 +650,20 @@ impl Builder {
             }
         }
         Ok(resource)
+    }
+
+    fn property_keyword(
+        &mut self,
+        node: &mut PropertyKeywords,
+        name: &str,
+        value: &Value,
+        at: &str,
+    ) {
+        let result = PropertyKeyword::from_name(name, at)
+            .and_then(|keyword| self.keyword(node, keyword, value, at));
+        if let Err(error) = result {
+            self.diagnostics.push(error);
+        }
     }
 
     fn keyword(
@@ -1027,12 +1078,109 @@ fn resource_link(value: &Value, at: &str) -> Result<ResourceLink, SchemaError> {
     Ok(link)
 }
 
+fn index_source_evidence(
+    value: &Value,
+    pointer: &str,
+    name: &str,
+    sites: &mut BTreeMap<String, SourceEvidence>,
+) {
+    let mut evidence = SourceEvidence {
+        name: name.into(),
+        ..SourceEvidence::default()
+    };
+    match value {
+        Value::Object(fields) => {
+            evidence.pattern = fields
+                .get("pattern")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            evidence.description = fields
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            evidence.has_enum_or_const =
+                fields.contains_key("enum") || fields.contains_key("const");
+            evidence.literals = fields
+                .get("enum")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .chain(fields.get("const"))
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect();
+            evidence.length = (
+                fields.get("minLength").and_then(Value::as_u64),
+                fields.get("maxLength").and_then(Value::as_u64),
+            );
+            if let Some(spelling) = fields.get("$ref").and_then(Value::as_str) {
+                evidence.reference = Some(
+                    match canonical_reference(&child(pointer, "$ref"), spelling) {
+                        Ok(target) => SourceReference::Local {
+                            target,
+                            spelling: spelling.into(),
+                        },
+                        Err(reason) => SourceReference::Unresolved(reason),
+                    },
+                );
+            }
+            for (key, value) in fields {
+                index_source_evidence(value, &child(pointer, key), key, sites);
+            }
+        }
+        Value::Array(values) => {
+            for (index, value) in values.iter().enumerate() {
+                index_source_evidence(value, &child(pointer, &index.to_string()), "", sites);
+            }
+        }
+        Value::Null => {}
+        Value::Bool(_boolean) => {}
+        Value::Number(_number) => {}
+        Value::String(_string) => {}
+    }
+    sites.insert(pointer.into(), evidence);
+}
+
+fn resolve_source_references(sites: &mut BTreeMap<String, SourceEvidence>) {
+    let pointers: BTreeSet<_> = sites.keys().cloned().collect();
+    for (pointer, evidence) in sites {
+        if let Some(SourceReference::Local { target, spelling }) = &evidence.reference
+            && !pointers.contains(target)
+        {
+            evidence.reference = Some(SourceReference::Unresolved(
+                SchemaError::MissingReferenceTarget {
+                    pointer: child(pointer, "$ref"),
+                    reference: spelling.clone(),
+                },
+            ));
+        }
+    }
+}
+
 fn resolve_reference(
-    source: &Value,
     sources: &SourceIndex,
     at: &str,
     spelling: &str,
 ) -> Result<NodeId, SchemaError> {
+    let canonical = canonical_reference(at, spelling)?;
+    if let Some(target) = sources.node_at(&canonical) {
+        return Ok(target);
+    }
+    if sources.evidence.contains_key(&canonical) {
+        Err(SchemaError::NonSchemaReferenceTarget {
+            pointer: at.into(),
+            reference: spelling.into(),
+            target: canonical,
+        })
+    } else {
+        Err(SchemaError::MissingReferenceTarget {
+            pointer: at.into(),
+            reference: spelling.into(),
+        })
+    }
+}
+
+fn canonical_reference(at: &str, spelling: &str) -> Result<String, SchemaError> {
     let invalid = |reason: &str| SchemaError::InvalidPointer {
         pointer: at.into(),
         reference: spelling.into(),
@@ -1086,20 +1234,7 @@ fn resolve_reference(
             canonical = child(&canonical, &unescaped);
         }
     }
-    if let Some(target) = sources.node_at(&canonical) {
-        return Ok(target);
-    }
-    match source.pointer(&canonical) {
-        Some(_non_schema_value) => Err(SchemaError::NonSchemaReferenceTarget {
-            pointer: at.into(),
-            reference: spelling.into(),
-            target: canonical,
-        }),
-        None => Err(SchemaError::MissingReferenceTarget {
-            pointer: at.into(),
-            reference: spelling.into(),
-        }),
-    }
+    Ok(canonical)
 }
 
 fn hex_digit(byte: u8) -> Option<u8> {

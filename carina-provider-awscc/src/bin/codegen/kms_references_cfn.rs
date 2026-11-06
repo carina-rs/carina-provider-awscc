@@ -1,13 +1,15 @@
-//! Record source pointers at emitter decisions, then account for raw KMS nodes once.
+//! Record Layer provenance at emitter decisions, then account for KMS sites once.
 
 use super::kms_references::{self, Classification, PathSegment, ReferenceKind, property_path};
+use super::schema_layer::{
+    Dependency, Layer, PropertyKeywords, RefTarget, SchemaNode, SourceEvidence, SourceReference,
+};
 use super::{
     CfnProperty, CfnPropertyPath, CfnSchema, ParsedCfnSchema, dsl_resource_name_from_type,
     emit_pattern_option, is_property_read_only, string_constraints,
 };
 use anyhow::{Result, bail};
 use heck::ToSnakeCase;
-use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -169,7 +171,7 @@ const UNEMITTED_KMS_NODES: &[UnemittedKmsNode] = &[
 
 pub(super) struct EmissionContext<'a> {
     schema: &'a ParsedCfnSchema,
-    source: &'a Value,
+    layer: &'a Layer,
     resource: String,
     visited: RefCell<BTreeSet<String>>,
     /// Each source node is covered separately at every emitted DSL path.
@@ -180,6 +182,8 @@ pub(super) struct EmissionContext<'a> {
     /// Cached struct identities follow the CFN tree before type overrides.
     definition_identity_paths: BTreeMap<String, Vec<String>>,
     enum_discovery: bool,
+    #[cfg(test)]
+    decisions: RefCell<BTreeMap<String, Classification>>,
 }
 
 pub(super) struct EmissionProperty<'a> {
@@ -218,20 +222,23 @@ impl<'a> EmissionProperty<'a> {
 }
 
 impl<'a> EmissionContext<'a> {
-    pub(super) fn source(&self) -> &Value {
-        self.source
+    pub(super) fn parsed_schema(&self) -> &ParsedCfnSchema {
+        self.schema
+    }
+
+    fn keywords_at(&self, pointer: &str) -> Option<&PropertyKeywords> {
+        let id = self.layer.sources().node_at(pointer)?;
+        match self.layer.node(id) {
+            SchemaNode::Boolean(_boolean) => None,
+            SchemaNode::Keywords(keywords) => Some(keywords),
+        }
     }
 
     /// Include properties declared only in resource-level composition branches.
     pub(super) fn top_level_property_names(&self) -> BTreeSet<&str> {
         self.same_site_sources([String::new()])
             .iter()
-            .filter_map(|pointer| {
-                self.source
-                    .pointer(pointer)
-                    .and_then(|node| node.get("properties"))
-                    .and_then(Value::as_object)
-            })
+            .filter_map(|pointer| self.keywords_at(pointer)?.properties.as_ref())
             .flat_map(|properties| properties.keys().map(String::as_str))
             .collect()
     }
@@ -244,7 +251,7 @@ impl<'a> EmissionContext<'a> {
     pub(super) fn from_source(schema: &'a ParsedCfnSchema) -> Result<Self> {
         Ok(Self {
             schema,
-            source: schema.source(),
+            layer: schema.layer().as_ref().map_err(Clone::clone)?,
             resource: dsl_resource_name_from_type(&schema.type_name)?,
             visited: RefCell::new(BTreeSet::new()),
             classified_sources: RefCell::new(BTreeMap::new()),
@@ -252,6 +259,8 @@ impl<'a> EmissionContext<'a> {
             sites: RefCell::new(BTreeMap::new()),
             definition_identity_paths: super::collect_definition_identity_paths(schema),
             enum_discovery: false,
+            #[cfg(test)]
+            decisions: RefCell::new(BTreeMap::new()),
         })
     }
 
@@ -272,21 +281,21 @@ impl<'a> EmissionContext<'a> {
             &fallback
         };
         for pointer in sources {
-            let Some(node) = self.source.pointer(pointer) else {
+            let Some(node) = self.keywords_at(pointer) else {
                 continue;
             };
             if node
-                .get("pattern")
-                .and_then(Value::as_str)
+                .pattern
+                .as_deref()
                 .is_some_and(|pattern| Some(pattern) == source)
             {
                 return pointer.clone();
             }
             if let Some(pattern) = source
                 && node
-                    .get("patternProperties")
-                    .and_then(|patterns| patterns.get(pattern))
-                    .is_some()
+                    .pattern_properties
+                    .as_ref()
+                    .is_some_and(|patterns| patterns.contains_key(pattern))
             {
                 // A key pattern is the sole dictionary key, not the value
                 // schema at /patternProperties/<regex> (which may have its
@@ -369,30 +378,27 @@ impl<'a> EmissionContext<'a> {
         let mut sources = Vec::new();
         let mut inherited = Evidence::default();
         for parent in parents {
-            let value = self
-                .source
-                .pointer(&parent)
-                .expect("recorded source pointer");
             if name == "*" {
                 // Collections retain same-site scalar constraints on their value.
-                inherited.add_source(&parent, value);
+                inherited.add_source(&parent, &self.layer.sources().evidence()[&parent]);
+            }
+            let Some(node) = self.keywords_at(&parent) else {
+                continue;
+            };
+            if name == "*" {
                 if self.dsl_path(path).ends_with("{}") {
-                    if let Some(patterns) =
-                        value.get("patternProperties").and_then(Value::as_object)
-                    {
-                        sources.extend(patterns.keys().map(|key| {
-                            pointer_child(&pointer_child(&parent, "patternProperties"), key)
-                        }));
+                    if let Some(patterns) = &node.pattern_properties {
+                        sources.extend(
+                            patterns
+                                .values()
+                                .map(|id| self.layer.sources().pointer(*id).to_string()),
+                        );
                     }
-                } else if value.get("items").is_some() {
-                    sources.push(pointer_child(&parent, "items"));
+                } else if let Some(items) = node.items {
+                    sources.push(self.layer.sources().pointer(items).to_string());
                 }
-            } else if value
-                .get("properties")
-                .and_then(|fields| fields.get(name))
-                .is_some()
-            {
-                sources.push(pointer_child(&pointer_child(&parent, "properties"), name));
+            } else if let Some(id) = node.properties.as_ref().and_then(|fields| fields.get(name)) {
+                sources.push(self.layer.sources().pointer(*id).to_string());
             }
         }
         let sources = self.same_site_sources(sources);
@@ -402,7 +408,7 @@ impl<'a> EmissionContext<'a> {
         };
         for pointer in &site.sources {
             site.evidence
-                .add_source(pointer, self.source.pointer(pointer).expect("source node"));
+                .add_source(pointer, &self.layer.sources().evidence()[pointer]);
         }
         site
     }
@@ -410,36 +416,49 @@ impl<'a> EmissionContext<'a> {
     /// Follow only same-site evidence. Children are selected when the emitter visits them.
     fn same_site_sources(&self, roots: impl IntoIterator<Item = String>) -> Vec<String> {
         let mut sources = Vec::new();
-        let mut pending: Vec<_> = roots.into_iter().collect();
+        let mut pending: Vec<_> = roots
+            .into_iter()
+            .filter_map(|pointer| self.layer.sources().node_at(&pointer))
+            .collect();
         let mut seen = BTreeSet::new();
-        while let Some(pointer) = pending.pop() {
-            if !seen.insert(pointer.clone()) {
+        while let Some(id) = pending.pop() {
+            if !seen.insert(id) {
                 continue;
             }
-            let Some(value) = self.source.pointer(&pointer) else {
-                continue;
-            };
-            sources.push(pointer.clone());
-            if let Some(reference) = value
-                .get("$ref")
-                .and_then(Value::as_str)
-                .and_then(|reference| reference.strip_prefix('#'))
-            {
-                pending.push(reference.to_string());
-            }
-            for keyword in ["oneOf", "anyOf", "allOf"] {
-                if let Some(branches) = value.get(keyword).and_then(Value::as_array) {
-                    pending.extend(
-                        (0..branches.len())
-                            .rev()
-                            .map(|index| format!("{pointer}/{keyword}/{index}")),
-                    );
-                }
-            }
-            if let Some(dependencies) = value.get("dependencies").and_then(Value::as_object) {
-                for (trigger, dependency) in dependencies {
-                    if dependency.is_object() {
-                        pending.push(pointer_child(&format!("{pointer}/dependencies"), trigger));
+            sources.push(self.layer.sources().pointer(id).to_string());
+            match self.layer.node(id) {
+                SchemaNode::Boolean(_boolean) => {}
+                SchemaNode::Keywords(node) => {
+                    if let Some(reference) = &node.reference {
+                        match &reference.target {
+                            RefTarget::Node(target) => pending.push(*target),
+                            // Preserve the emitter's opaque fallback. The use
+                            // site's own evidence still needs a decision.
+                            RefTarget::Unresolved(_reason) => {}
+                        }
+                    }
+                    // Deliberately retain the legacy stack/evidence order:
+                    // dependencies, allOf, anyOf, oneOf, then the ref target.
+                    for branches in [
+                        &node.compositions.one_of,
+                        &node.compositions.any_of,
+                        &node.compositions.all_of,
+                    ]
+                    .into_iter()
+                    .flatten()
+                    {
+                        pending.extend(branches.iter().rev().copied());
+                    }
+                    if let Some(dependencies) = &node.dependencies {
+                        for dependency in dependencies.values() {
+                            match dependency {
+                                Dependency::Schema(target) => match self.layer.node(*target) {
+                                    SchemaNode::Boolean(_boolean) => {}
+                                    SchemaNode::Keywords(_keywords) => pending.push(*target),
+                                },
+                                Dependency::PropertyList(_names) => {}
+                            }
+                        }
                     }
                 }
             }
@@ -490,6 +509,10 @@ impl<'a> EmissionContext<'a> {
             Some(&evidence.descriptions.join(" ")),
             evidence.literals.iter().map(String::as_str),
         )?;
+        #[cfg(test)]
+        self.decisions
+            .borrow_mut()
+            .extend(decision.map(|decision| (path.to_string(), decision)));
         if decision.is_some() {
             self.visited.borrow_mut().insert(path.to_string());
             if record_sources {
@@ -581,7 +604,7 @@ impl<'a> EmissionContext<'a> {
     }
 
     pub(super) fn finish(&self) -> Result<()> {
-        let candidates = kms_nodes(self.source);
+        let candidates = kms_nodes(self.layer);
         let classified = self.classified_sources.borrow();
         let sites = self.sites.borrow();
         let exceptions: Vec<_> = UNEMITTED_KMS_NODES
@@ -640,6 +663,9 @@ impl<'a> EmissionContext<'a> {
                 );
             }
         }
+        if let Some(error) = self.layer.diagnostics().first() {
+            return Err(error.clone().into());
+        }
         Ok(())
     }
 }
@@ -652,6 +678,7 @@ impl std::ops::Deref for EmissionContext<'_> {
 }
 
 #[derive(Clone, Default)]
+#[cfg_attr(test, derive(serde::Serialize))]
 struct Evidence {
     definition_names: Vec<String>,
     patterns: Vec<String>,
@@ -662,7 +689,7 @@ struct Evidence {
 }
 
 impl Evidence {
-    fn add_source(&mut self, pointer: &str, value: &Value) {
+    fn add_source(&mut self, pointer: &str, value: &SourceEvidence) {
         if let Some(name) = pointer.strip_prefix("/definitions/")
             && !name.contains('/')
         {
@@ -674,31 +701,19 @@ impl Evidence {
         self.add(value);
     }
 
-    fn add(&mut self, value: &Value) {
-        self.has_enum_or_const |= value.get("enum").is_some() || value.get("const").is_some();
-        self.literals.extend(
-            value
-                .get("enum")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .chain(value.get("const"))
-                .filter_map(Value::as_str)
-                .map(str::to_string),
-        );
-        if let Some(pattern) = value.get("pattern").and_then(Value::as_str)
+    fn add(&mut self, value: &SourceEvidence) {
+        self.has_enum_or_const |= value.has_enum_or_const;
+        self.literals.extend(value.literals.iter().cloned());
+        if let Some(pattern) = &value.pattern
             && !self.patterns.iter().any(|old| old == pattern)
         {
             self.patterns.push(pattern.to_string());
         }
-        let length = (
-            value.get("minLength").and_then(Value::as_u64),
-            value.get("maxLength").and_then(Value::as_u64),
-        );
+        let length = value.length;
         if length != (None, None) && !self.lengths.contains(&length) {
             self.lengths.push(length);
         }
-        if let Some(description) = value.get("description").and_then(Value::as_str)
+        if let Some(description) = &value.description
             && !self.descriptions.iter().any(|old| old == description)
         {
             self.descriptions.push(description.to_string());
@@ -707,6 +722,7 @@ impl Evidence {
 }
 
 #[derive(Clone, Default)]
+#[cfg_attr(test, derive(serde::Serialize))]
 struct EmittedSite {
     sources: Vec<String>,
     evidence: Evidence,
@@ -716,63 +732,42 @@ fn pointer_child(parent: &str, key: &str) -> String {
     format!("{parent}/{}", key.replace('~', "~0").replace('/', "~1"))
 }
 
-/// Pure JSON accounting: track local $ref edges without expanding schema shapes.
-fn kms_nodes(source: &Value) -> BTreeSet<String> {
-    fn scan(
-        value: &Value,
-        pointer: &str,
-        name: &str,
-        found: &mut BTreeSet<String>,
-        references: &mut BTreeMap<String, Vec<String>>,
-    ) {
+/// Account for typed source facts, including metadata and rejected opaque sites.
+/// Containment and reference propagation never expands the emission shape.
+fn kms_nodes(layer: &Layer) -> BTreeSet<String> {
+    let mut found = BTreeSet::new();
+    let mut references = BTreeMap::<String, Vec<String>>::new();
+    for (pointer, evidence) in layer.sources().evidence() {
         if kms_references::is_candidate(
-            name,
-            value.get("pattern").and_then(Value::as_str),
-            value.get("description").and_then(Value::as_str),
-            value
-                .get("enum")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .chain(value.get("const"))
-                .filter_map(Value::as_str),
+            &evidence.name,
+            evidence.pattern.as_deref(),
+            evidence.description.as_deref(),
+            evidence.literals.iter().map(String::as_str),
         ) {
             found.insert(pointer.to_string());
         }
-        if let Some(target) = value
-            .get("$ref")
-            .and_then(Value::as_str)
-            .and_then(|reference| reference.strip_prefix('#'))
-        {
-            references
-                .entry(target.to_string())
-                .or_default()
-                .push(pointer.to_string());
-        }
-        match value {
-            Value::Object(fields) => {
-                for (key, value) in fields {
-                    scan(value, &pointer_child(pointer, key), key, found, references);
+        if let Some(reference) = &evidence.reference {
+            match reference {
+                SourceReference::Local {
+                    target,
+                    spelling: _spelling,
+                } => {
+                    references
+                        .entry(target.clone())
+                        .or_default()
+                        .push(pointer.clone());
                 }
+                SourceReference::Unresolved(_reason) => {}
             }
-            Value::Array(values) => {
-                for (index, value) in values.iter().enumerate() {
-                    scan(value, &format!("{pointer}/{index}"), "", found, references);
-                }
-            }
-            _ => {}
         }
     }
-    let mut found = BTreeSet::new();
-    let mut references = BTreeMap::new();
-    scan(source, "", "", &mut found, &mut references);
     // Memoize subtree evidence at every source pointer, including definitions.
     // Propagation across containment and $ref edges visits each subtree once,
     // so shared definitions and cycles never require recursive rescanning.
     let mut subtrees_with_evidence = found.clone();
     let mut pending: Vec<_> = subtrees_with_evidence.iter().cloned().collect();
     while let Some(target) = pending.pop() {
-        if let Some((parent, _)) = target.rsplit_once('/')
+        if let Some((parent, _segment)) = target.rsplit_once('/')
             && subtrees_with_evidence.insert(parent.to_string())
         {
             pending.push(parent.to_string());
@@ -792,7 +787,11 @@ fn kms_nodes(source: &Value) -> BTreeSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
+
+    fn scan_json(source: &Value) -> BTreeSet<String> {
+        kms_nodes(&Layer::for_codegen(source).unwrap())
+    }
 
     #[test]
     fn scan_accounts_for_all_json_branches_and_escapes_pointer_segments() {
@@ -805,7 +804,7 @@ mod tests {
             "x-future": [null, true, 17, {"unknown": [{"description": "AWS KMS"}]}]
         });
         assert_eq!(
-            kms_nodes(&source),
+            scan_json(&source),
             BTreeSet::from([
                 "/properties/Kms~1a~0b".into(),
                 "/definitions/Ordinary".into(),
@@ -816,7 +815,7 @@ mod tests {
             ])
         );
         for unknown in [json!(null), json!(17), json!([false, {"items": true}])] {
-            assert!(kms_nodes(&unknown).is_empty());
+            assert!(Layer::for_codegen(&unknown).is_err());
         }
     }
 
@@ -840,7 +839,7 @@ mod tests {
             }
         });
         assert_eq!(
-            kms_nodes(&source),
+            scan_json(&source),
             BTreeSet::from([
                 "/definitions/Kms~1a~0b".into(),
                 "/definitions/Alias".into(),
@@ -879,7 +878,7 @@ mod tests {
             }
         });
         assert_eq!(
-            kms_nodes(&source),
+            scan_json(&source),
             BTreeSet::from([
                 "/definitions/First/properties/Nested".into(),
                 "/definitions/Second/anyOf/0".into(),
@@ -908,7 +907,7 @@ mod tests {
                 "properties": {"EncryptionMode": {"$ref": "#/definitions/Alias"}}
             });
             assert_eq!(
-                kms_nodes(&source),
+                scan_json(&source),
                 BTreeSet::from([
                     "/definitions/SharedString".into(),
                     "/definitions/Alias".into(),
@@ -918,7 +917,7 @@ mod tests {
             );
         }
         assert!(
-            kms_nodes(&json!({
+            scan_json(&json!({
                 "enum": ["AES256", 17, null, false],
                 "const": 17,
                 "default": "KMS",
@@ -1017,7 +1016,14 @@ mod tests {
         });
         assert!(schema.properties.contains_key("DisplayName"));
         assert_eq!(
-            schema.source()["propertyTransform"]["/properties/KmsMasterKeyId"],
+            schema
+                .layer()
+                .as_ref()
+                .unwrap()
+                .resource()
+                .property_transform
+                .as_ref()
+                .unwrap()["/properties/KmsMasterKeyId"],
             "mutated KMS transform"
         );
 
@@ -1103,3 +1109,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "kms_references_layer_tests.rs"]
+mod layer_tests;

@@ -33960,11 +33960,12 @@ mod tests {
                 if is_key_value_array_candidate(
                     sources.iter().map(|pointer| {
                         context
+                            .parsed_schema()
                             .source()
                             .pointer(pointer)
                             .expect("top-level property source")
                     }),
-                    context.source(),
+                    context.parsed_schema().source(),
                 )
                 .unwrap()
                 {
