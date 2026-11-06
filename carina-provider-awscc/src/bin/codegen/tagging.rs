@@ -8,9 +8,8 @@ use heck::ToSnakeCase;
 use std::collections::BTreeSet;
 
 use super::{
-    CfnSchema, EmissionContext, derive_tags_property, is_key_value_array_candidate,
-    resource_type_overrides, should_omit_top_level_property, synthetic_attributes,
-    walk_array_item_schemas,
+    CfnSchema, EmissionContext, TagShape, derive_tags_property, resource_type_overrides,
+    should_omit_top_level_property, synthetic_attributes, tag_shape,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +34,12 @@ pub(super) fn tag_property_path(schema: &CfnSchema) -> Result<Option<&str>> {
                 }),
         );
     }
-    if let Some(tagging) = schema.tagging.as_ref().filter(|tagging| tagging.taggable) {
+    if let Some(tagging) = schema
+        .metadata()
+        .tagging
+        .as_ref()
+        .filter(|tagging| tagging.taggable == Some(true))
+    {
         paths.insert(
             tagging
                 .tag_property
@@ -57,9 +61,8 @@ pub(super) fn tag_property_path(schema: &CfnSchema) -> Result<Option<&str>> {
 
 /// Core merges default_tags and validates tag pairs through this exact DSL name.
 pub(super) fn dsl_attribute_name(schema: &CfnSchema, provider_name: &str) -> Result<String> {
-    let tag_property = tag_property_path(schema)?;
     Ok(
-        if tag_property.and_then(|path| path.strip_prefix("/properties/")) == Some(provider_name) {
+        if super::is_dsl_tags_property(schema, &[provider_name.to_string()])? {
             "tags".to_string()
         } else {
             provider_name.to_snake_case()
@@ -70,11 +73,6 @@ pub(super) fn dsl_attribute_name(schema: &CfnSchema, provider_name: &str) -> Res
 /// A Key/Value list must never silently escape resource-tag classification.
 /// Names and definition prefixes cannot distinguish tags from ELB attributes.
 pub(super) fn validate_tagging_classifications(schema: &EmissionContext<'_>) -> Result<()> {
-    if let Some(provider_name) =
-        tag_property_path(schema)?.and_then(|path| path.strip_prefix("/properties/"))
-    {
-        validate_tag_item_fields(schema, provider_name)?;
-    }
     let tags = derive_tags_property(schema)?;
     if let Some(tags) = &tags {
         for name in schema
@@ -133,16 +131,14 @@ pub(super) fn validate_tagging_classifications(schema: &EmissionContext<'_>) -> 
     let mut unclassified = Vec::new();
     for name in schema.top_level_property_names() {
         let sources = schema.top_level_property_sources(name);
-        if !is_key_value_array_candidate(
-            sources.iter().map(|pointer| {
-                schema
-                    .parsed_schema()
-                    .source()
-                    .pointer(pointer)
-                    .expect("top-level property source")
-            }),
-            schema.parsed_schema().source(),
-        )? || tags.as_ref().is_some_and(|tags| tags.provider_name == name)
+        let layer = schema.layer.as_ref().expect("parsed schema has a Layer");
+        if !TagShape::candidates(sources.iter().map(|pointer| {
+            let node = layer
+                .sources()
+                .node_at(pointer)
+                .expect("top-level property source");
+            tag_shape::classify_tag_shape(layer, node)
+        })) || tags.as_ref().is_some_and(|tags| tags.provider_name == name)
         {
             continue;
         }
@@ -150,7 +146,7 @@ pub(super) fn validate_tagging_classifications(schema: &EmissionContext<'_>) -> 
         if overrides.is_some_and(|resource| {
             matches!(
                 resource.tagging.get(path.as_str()),
-                Some(TaggingOverride::NonTagList { .. })
+                Some(TaggingOverride::NonTagList { reason: _reason })
             )
         }) {
             continue;
@@ -162,46 +158,6 @@ pub(super) fn validate_tagging_classifications(schema: &EmissionContext<'_>) -> 
         "{} has unclassified tag-shaped top-level arrays: {}. Declare each raw CFN path in resource_type_overrides() with TagProperty or NonTagList {{ reason: ... }}; default_tags must not be silently dropped",
         schema.type_name,
         unclassified.join(", ")
-    );
-    Ok(())
-}
-
-/// CfnProperty omits allOf and dependencies, so check raw fields before projection.
-fn validate_tag_item_fields(schema: &EmissionContext<'_>, provider_name: &str) -> Result<()> {
-    let sources = schema.top_level_property_sources(provider_name);
-    let mut property_names = BTreeSet::new();
-    let mut required_names = BTreeSet::new();
-    walk_array_item_schemas(
-        sources.iter().map(|pointer| {
-            schema
-                .parsed_schema()
-                .source()
-                .pointer(pointer)
-                .expect("top-level property source")
-        }),
-        schema.parsed_schema().source(),
-        |node| {
-            if let Some(properties) = node
-                .get("properties")
-                .and_then(serde_json::Value::as_object)
-            {
-                property_names.extend(properties.keys().map(String::as_str));
-            }
-            if let Some(required) = node.get("required").and_then(serde_json::Value::as_array) {
-                required_names.extend(required.iter().filter_map(serde_json::Value::as_str));
-            }
-        },
-    );
-    let extra_fields: Vec<_> = property_names
-        .union(&required_names)
-        .copied()
-        .filter(|name| !matches!(*name, "Key" | "Value"))
-        .collect();
-    ensure!(
-        extra_fields.is_empty(),
-        "{}#/properties/{provider_name}: tag property cannot be projected to a string-to-string map; item properties and required entries must name only the case-sensitive Key and Value string properties (no extra fields); extra fields: {}",
-        schema.type_name,
-        extra_fields.join(", ")
     );
     Ok(())
 }

@@ -905,20 +905,20 @@ fn invalid_handler_and_resource_metadata_return_typed_errors_before_consumers_ru
 }
 
 #[test]
-fn tag_scalar_compositions_stay_on_the_step_two_compatibility_path() {
+fn budget_tag_scalar_all_of_is_validated_by_both_emitters() {
     let mut source: Value = serde_json::from_str(include_str!(
         "../../../../cfn-schema-cache/AWS__Budgets__Budget.json"
     ))
     .unwrap();
-    let render = |source: Value| {
-        let schema = super::ParsedCfnSchema::from_json(source).unwrap();
-        super::render_schema_code(
-            &super::EmissionContext::from_source(&schema).unwrap(),
-            &schema.type_name,
-        )
-        .unwrap()
-    };
-    let before = render(source.clone());
     source["definitions"]["ResourceTag"]["properties"]["Key"]["allOf"] = json!([{"minLength":999}]);
-    assert_eq!(render(source), before);
+    let schema = super::ParsedCfnSchema::from_json(source).unwrap();
+    let context = super::EmissionContext::from_source(&schema).unwrap();
+    let example = super::tests::markdown_example(&schema.type_name);
+    let rust = super::render_schema_code(&context, &schema.type_name).unwrap();
+    assert!(
+        rust.contains("Some((Some(999), None))"),
+        "allOf tag length must reach Rust"
+    );
+    let docs = super::render_markdown(&context, &schema.type_name, &example).unwrap();
+    assert!(docs.contains("Map<String(len: 999..), String>"), "{docs}");
 }

@@ -24,6 +24,7 @@ use carina_provider_awscc::schemas::pattern::{
 use clap::{Parser, ValueEnum};
 use heck::{ToPascalCase, ToSnakeCase};
 use regex::Regex;
+#[cfg(test)]
 use serde::Deserialize;
 #[cfg(test)]
 use serde::Serialize;
@@ -54,8 +55,9 @@ use schema_projection::{EmissionType, Projection};
 mod schema_projection_tests;
 use override_type_expression::{OverrideTypeExpression, PatternLiteral};
 use parsed_cfn_schema::ParsedCfnSchema;
-#[path = "codegen/tag_queries_compat.rs"]
-mod tag_queries_compat;
+#[path = "codegen/tag_shape.rs"]
+mod tag_shape;
+use tag_shape::{TagKey, TagShape, TagShapeError};
 #[path = "codegen/tagging.rs"]
 mod tagging;
 use tagging::{
@@ -753,7 +755,7 @@ impl TypeOverride {
         &self,
         schema: &CfnSchema,
         path: CfnPropertyPath<'_>,
-        property: &CfnProperty,
+        property: &SchemaProperty,
     ) -> Result<()> {
         self.validate_patterns(schema, path)?;
         property.try_query()?;
@@ -830,8 +832,8 @@ impl TypeOverride {
         &self,
         schema: &'a CfnSchema,
         path: CfnPropertyPath<'_>,
-        property: &'a CfnProperty,
-    ) -> Result<Cow<'a, CfnProperty>> {
+        property: &'a SchemaProperty,
+    ) -> Result<Cow<'a, SchemaProperty>> {
         property.try_query()?;
         let bounds_only = matches!(
             self,
@@ -1284,7 +1286,7 @@ impl TryFrom<&Args> for OutputMode {
 }
 
 // Enum and const constraints need a table decision regardless of their base type.
-fn needs_kms_classification(property: &CfnProperty, name: &str) -> bool {
+fn needs_kms_classification(property: &SchemaProperty, name: &str) -> bool {
     if property.query().const_value.is_some() || property.query().enum_values.is_some() {
         return true;
     }
@@ -1307,13 +1309,13 @@ struct CfnSchema {
     #[cfg_attr(test, serde(skip))]
     layer: Option<std::sync::Arc<schema_layer::Layer>>,
     #[cfg_attr(test, serde(skip))]
-    query_nodes: BTreeMap<schema_layer::NodeId, CfnProperty>,
+    query_nodes: BTreeMap<schema_layer::NodeId, SchemaProperty>,
     #[cfg_attr(test, serde(skip))]
     root_projection: Projection,
     type_name: String,
-    properties: BTreeMap<String, CfnProperty>,
-    definitions: Option<BTreeMap<String, CfnProperty>>,
-    // Tag metadata remains a compatibility carrier until STEP 5.
+    properties: BTreeMap<String, SchemaProperty>,
+    definitions: Option<BTreeMap<String, SchemaProperty>>,
+    #[cfg(test)]
     tagging: Option<CfnTagging>,
 }
 
@@ -1439,8 +1441,22 @@ impl CfnSchema {
             .resource()
     }
 
-    fn query_node(&self, id: schema_layer::NodeId) -> &CfnProperty {
+    fn query_node(&self, id: schema_layer::NodeId) -> &SchemaProperty {
         &self.query_nodes[&id]
+    }
+
+    fn tag_shape<'a>(&'a self, property: &'a SchemaProperty) -> Result<&'a TagShape> {
+        match &property.origin {
+            Some(origin) => Ok(tag_shape::classify_tag_shape(&origin.layer, origin.node)),
+            None => {
+                let layer = self.layer.as_ref().expect("parsed schema has a Layer");
+                let node = layer
+                    .sources()
+                    .node_at(&property.try_query()?.source_pointer)
+                    .context("projected tag property has no Layer source")?;
+                Ok(tag_shape::classify_tag_shape(layer, node))
+            }
+        }
     }
 
     /// Returns true if the schema declares any Cloud Control handlers.
@@ -1511,10 +1527,9 @@ fn emit_permissions_slice(permissions: &[String]) -> String {
 }
 
 /// CloudFormation Tagging metadata
-#[derive(Debug, Deserialize)]
-#[cfg_attr(test, derive(Serialize))]
+#[cfg(test)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 struct CfnTagging {
     #[serde(default)]
     taggable: bool,
@@ -1549,64 +1564,41 @@ fn is_dsl_tags_property(schema: &CfnSchema, property_path: &[String]) -> Result<
     let [provider_name] = property_path else {
         return Ok(false);
     };
-    Ok(
-        tag_property_path(schema)?.and_then(|path| path.strip_prefix("/properties/"))
-            == Some(provider_name.as_str()),
-    )
-}
-
-/// The source leaves of one of Carina's canonical tag-map shapes.
-enum TagMapShape<'a> {
-    KeyValue {
-        key: &'a CfnProperty,
-        value: &'a CfnProperty,
-    },
-    Pattern {
-        pattern: &'a str,
-        value: &'a CfnProperty,
-    },
-}
-
-/// Share shape admission with projection so empty `properties` cannot hide a
-/// pattern map, and unsupported shapes never reach unchecked field indexing.
-fn tag_map_shape<'a>(schema: &CfnSchema, property: &'a CfnProperty) -> Option<TagMapShape<'a>> {
-    use tag_queries_compat::{inline_property_type, is_string_property};
-    if inline_property_type(property) != Some("object") {
-        return None;
-    }
-    if let Some(properties) = &property.properties
-        && properties.len() == 2
-        && let (Some(key), Some(value)) = (properties.get("Key"), properties.get("Value"))
-        && is_string_property(schema, key)
-        && is_string_property(schema, value)
+    if tag_property_path(schema)?.and_then(|path| path.strip_prefix("/properties/"))
+        != Some(provider_name.as_str())
     {
-        return Some(TagMapShape::KeyValue { key, value });
+        return Ok(false);
     }
-    if property.properties.as_ref().is_none_or(BTreeMap::is_empty)
-        && let Some(patterns) = &property.pattern_properties
-        && patterns.len() == 1
-        && let Some((pattern, value)) = patterns.iter().next()
-        && is_string_property(schema, value)
-    {
-        return Some(TagMapShape::Pattern { pattern, value });
-    }
-    None
+    Ok(derive_tags_property(schema)?.is_some())
 }
 
-/// Whether a definition uses one of Carina's canonical tag-map shapes.
-///
-/// The final resolved definition's `Tag` prefix remains a namespace guard
-/// because cached schemas also use the exact same Key/Value string-object
-/// shape for non-tag ELB attributes. The shape check prevents unrelated
-/// `Tag*` objects from silently losing fields when converted to Carina's map
-/// representation. CloudFormation uses either a Key/Value object or a
-/// single-pattern string map for these refs.
+/// Nested Tag references preserve their existing map representation. Shape
+/// admission comes exclusively from the cached Layer judgement.
 fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
-    use tag_queries_compat::resolve_ref;
-    let Some(resolved) = resolve_ref(schema, ref_path) else {
+    let layer = schema.layer.as_ref().expect("parsed schema has a Layer");
+    let Ok(pointer) = schema_layer::canonical_reference("", ref_path) else {
         return false;
     };
-    resolved.name.starts_with("Tag") && tag_map_shape(schema, resolved.property).is_some()
+    let Some(node) = layer.sources().node_at(&pointer) else {
+        return false;
+    };
+    match tag_shape::classify_tag_shape(layer, node) {
+        TagShape::KeyValueObject(map) | TagShape::StringMap(map) => map
+            .definition_name
+            .as_deref()
+            .is_some_and(|name| name.starts_with("Tag")),
+        TagShape::KeyValueList(_map) => false,
+        TagShape::NotTag {
+            reason: _reason,
+            candidate: _candidate,
+            pointer: _pointer,
+        } => false,
+        TagShape::Unreadable {
+            source: _source,
+            candidate: _candidate,
+            pointer: _pointer,
+        } => false,
+    }
 }
 
 /// Project the source Tag shape into a DSL map without inferring named types
@@ -1655,182 +1647,102 @@ impl TagMapType {
     }
 }
 
-fn tag_map_type(
+/// Rendering consumes resolved leaves from TagShape; it never traverses schema.
+fn project_tag_map(
     classified: EmissionProperty<'_>,
     cfn_path: CfnPropertyPath<'_>,
 ) -> Result<TagMapType> {
-    use tag_queries_compat::{ResolvedArray, resolve_ref, resolved_array_shape};
-    fn resolve<'a>(
-        schema: &'a CfnSchema,
-        property: &'a CfnProperty,
-        source: String,
-    ) -> Result<(&'a CfnProperty, String)> {
-        match property.ref_path.as_deref() {
-            Some(reference) => {
-                let resolved = resolve_ref(schema, reference).with_context(|| {
-                    format!(
-                        "{}#{source}: unresolved Tag reference {reference}",
-                        schema.type_name
-                    )
-                })?;
-                let name = resolved.name.replace('~', "~0").replace('/', "~1");
-                Ok((resolved.property, format!("/definitions/{name}")))
-            }
-            None => Ok((property, source)),
-        }
-    }
-
-    // Locate the selected array's source without losing oneOf provenance when
-    // merged bounds require an owned property. Reference resolution is unchanged.
-    fn array_source_path<'a>(
-        schema: &'a CfnSchema,
-        property: &'a CfnProperty,
-        array: &CfnProperty,
-        source: String,
-        visiting: &mut HashSet<&'a str>,
-    ) -> Option<String> {
-        if std::ptr::eq(property, array) {
-            return Some(source);
-        }
-        if let Some(reference) = property.ref_path.as_deref() {
-            let resolved = resolve_ref(schema, reference)?;
-            if !visiting.insert(resolved.name) {
-                return None;
-            }
-            let name = resolved.name.replace('~', "~0").replace('/', "~1");
-            let source = array_source_path(
-                schema,
-                resolved.property,
-                array,
-                format!("/definitions/{name}"),
-                visiting,
-            );
-            visiting.remove(resolved.name);
-            return source;
-        }
-        property
-            .one_of
-            .iter()
-            .enumerate()
-            .find_map(|(index, variant)| {
-                array_source_path(
-                    schema,
-                    variant,
-                    array,
-                    format!("{source}/oneOf/{index}"),
-                    visiting,
-                )
-            })
-    }
-
     let schema = classified.schema();
-    let prop = classified.property();
-    // Tags projects the CFN array into a map, so its maxItems counts map
-    // entries. Resolve the same array and bounds-only overrides as lists;
-    // resources without maxItems retain an unbounded map.
-    let array = resolved_array_shape(prop, schema, &mut HashSet::new());
-    let source = schema.pattern_source_path(classified.path(), prop.pattern.as_deref(), cfn_path);
-    let source = if let Some(array) = &array {
-        array_source_path(schema, prop, array.property, source, &mut HashSet::new()).with_context(
-            || {
-                format!(
-                    "{}.{cfn_path}: unresolved Tag array source",
-                    schema.type_name
-                )
-            },
-        )?
-    } else {
-        source
+    let property = classified.property();
+    let map = schema.tag_shape(property)?.map(&schema.type_name)?;
+    let leaf = |leaf: &tag_shape::TagString, name: &str| -> Result<StringLeaf<'static>> {
+        let definition = leaf
+            .source
+            .strip_prefix("/definitions/")
+            .and_then(|path| path.split_once("/properties/"))
+            .map(|(definition, _field)| definition);
+        if let Some(override_type) = definition.and_then(|definition| {
+            resource_type_override(
+                &schema.type_name,
+                CfnPropertyPath::new(Some(definition), name),
+            )
+        }) && let Some(expression) = override_type.attribute_type_expression()
+        {
+            return Ok(StringLeaf::Inferred {
+                rust_type: expression.to_string(),
+                display_type: override_type
+                    .display()
+                    .context("Tag leaf override display")?,
+            });
+        }
+        let projection = Projection {
+            pattern: leaf.pattern.clone(),
+            min_length: leaf.min_length,
+            max_length: leaf.max_length,
+            ..Projection::default()
+        };
+        Ok(StringLeaf::Refined {
+            constraints: project_string_constraints(
+                &projection,
+                &schema.type_name,
+                cfn_path,
+                &leaf.source,
+            )?,
+            format: None,
+            to_dsl: None,
+        })
     };
-    let array = array.map(ResolvedArray::into_property);
-    // An individual Tag ref inside an ordinary list retains its parent's CFN
-    // path. The list's override must not be consumed by that item's map.
-    let array = if array.is_some()
-        && let Some(override_type @ TypeOverride::Array { items: None, .. }) =
-            resource_type_override(&schema.type_name, cfn_path)
+    let key = match &map.key {
+        TagKey::Property(key) => leaf(key, "Key")?,
+        TagKey::Pattern { pattern, source } => {
+            project_pattern_map_key_type(pattern, &schema.type_name, cfn_path, source)?
+        }
+    };
+    let mut max_entries = map.max_entries;
+    if matches!(schema.tag_shape(property)?, TagShape::KeyValueList(_map))
+        && let Some(TypeOverride::Array {
+            items: None,
+            min_items,
+            max_items,
+        }) = resource_type_override(&schema.type_name, cfn_path)
     {
-        let array = override_type.array_source(schema, cfn_path, prop)?;
+        for (name, bound, cfn_bound, lower) in [
+            ("minItems", *min_items, map.min_entries, true),
+            ("maxItems", *max_items, map.max_entries, false),
+        ] {
+            if let Some(bound) = bound {
+                anyhow::ensure!(
+                    bound >= 0,
+                    "{}.{cfn_path}: Array {name} must be nonnegative",
+                    schema.type_name
+                );
+                anyhow::ensure!(
+                    cfn_bound.is_none_or(|cfn| if lower { bound >= cfn } else { bound <= cfn }),
+                    "{}.{cfn_path}: Array {name} override {bound} would loosen CFN bound {cfn_bound:?}",
+                    schema.type_name
+                );
+            }
+        }
+        let min = min_items.or(map.min_entries);
+        max_entries = max_items.or(map.max_entries);
+        anyhow::ensure!(
+            min.zip(max_entries).is_none_or(|(min, max)| min <= max),
+            "{}.{cfn_path}: Array merged minItems {min:?} exceeds maxItems {max_entries:?}",
+            schema.type_name
+        );
         EMITTED_ARRAY_OVERRIDES.with(|emitted| {
             emitted.borrow_mut().insert(cfn_path.owned_key());
         });
-        Some(array)
-    } else {
-        array
-    };
-    let max_entries = array.as_ref().and_then(|array| array.max_items);
-    anyhow::ensure!(
-        max_entries.is_none_or(|max| max >= 0),
-        "{}.{cfn_path}: Tags maxItems must be nonnegative",
-        schema.type_name
-    );
-    // Admission uses this resolved array too; the original property may only
-    // contain a oneOf wrapper and have no items of its own.
-    let (mut tag, mut source) = resolve(schema, array.as_deref().unwrap_or(prop), source)?;
-    if let Some(items) = tag.items.as_deref() {
-        (tag, source) = resolve(schema, items, format!("{source}/items"))?;
     }
-    let tag_definition = source.strip_prefix("/definitions/");
-    let leaf =
-        |property: &CfnProperty, source: String, name: &str| -> Result<StringLeaf<'static>> {
-            let (property, source) = resolve(schema, property, source)?;
-            if let Some(override_type) = tag_definition.and_then(|definition| {
-                resource_type_override(
-                    &schema.type_name,
-                    CfnPropertyPath::new(Some(definition), name),
-                )
-            }) && let Some(expression) = override_type.attribute_type_expression()
-            {
-                return Ok(StringLeaf::Inferred {
-                    rust_type: expression.to_string(),
-                    display_type: override_type
-                        .display()
-                        .context("Tag leaf override display")?,
-                });
-            }
-            Ok(StringLeaf::Refined {
-                constraints: string_constraints(
-                    &tag_queries_compat::scalar_projection(property)?,
-                    &schema.type_name,
-                    cfn_path,
-                    &source,
-                ),
-                format: None,
-                to_dsl: None,
-            })
-        };
-    Ok(
-        match tag_map_shape(schema, tag)
-            .with_context(|| format!("{}#{source}: unsupported Tag map shape", schema.type_name))?
-        {
-            TagMapShape::KeyValue { key, value } => TagMapType {
-                key: leaf(key, format!("{source}/properties/Key"), "Key")?,
-                value: leaf(value, format!("{source}/properties/Value"), "Value")?,
-                max_entries,
-            },
-            TagMapShape::Pattern { pattern, value } => {
-                let key_source = format!("{source}/patternProperties");
-                let value_source = format!(
-                    "{key_source}/{}",
-                    pattern.replace('~', "~0").replace('/', "~1"),
-                );
-                TagMapType {
-                    key: if closed_pattern_map_entry(tag).is_some() {
-                        pattern_map_key_type(pattern, &schema.type_name, cfn_path, &key_source)
-                    } else {
-                        StringLeaf::Inferred {
-                            rust_type: "AttributeType::string()".to_string(),
-                            display_type: "String".to_string(),
-                        }
-                    },
-                    value: leaf(value, value_source, "Value")?,
-                    max_entries,
-                }
-            }
-        },
-    )
+    Ok(TagMapType {
+        key,
+        value: leaf(&map.value, "Value")?,
+        max_entries,
+    })
 }
 
-/// Type can be a string or an array of strings in JSON Schema
+/// Fixture input accepts the CFN type spellings.
+#[cfg(test)]
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
 #[serde(untagged)]
@@ -1839,6 +1751,7 @@ enum TypeValue {
     Multiple(Vec<String>),
 }
 
+#[cfg(test)]
 impl TypeValue {
     /// Ignore nullability when choosing the type to generate. For other
     /// unions, retain the first non-null member as the compatibility type.
@@ -2197,12 +2110,12 @@ fn unique_bare_object_classification(
 }
 
 #[cfg(test)]
-fn property_declares_object(prop: &CfnProperty) -> bool {
+fn property_declares_object(prop: &SchemaProperty) -> bool {
     prop.query().types.contains(&schema_layer::JsonType::Object)
 }
 
 #[cfg(test)]
-fn is_direct_bare_object(prop: &CfnProperty) -> bool {
+fn is_direct_bare_object(prop: &SchemaProperty) -> bool {
     let projection = prop.query();
     property_declares_object(prop)
         && projection.reference.is_none()
@@ -2217,7 +2130,7 @@ fn is_direct_bare_object(prop: &CfnProperty) -> bool {
             .is_none_or(BTreeMap::is_empty)
 }
 
-fn property_is_bare_object(prop: &CfnProperty, _schema: &CfnSchema) -> bool {
+fn property_is_bare_object(prop: &SchemaProperty, _schema: &CfnSchema) -> bool {
     let projection = prop.query();
     projection.effective_type() == Some("object")
         && projection
@@ -2240,7 +2153,7 @@ fn resource_type_override(
 fn cfn_override_property<'a>(
     schema: &'a CfnSchema,
     path: CfnPropertyPath<'_>,
-) -> std::result::Result<Option<&'a CfnProperty>, schema_layer::SchemaError> {
+) -> std::result::Result<Option<&'a SchemaProperty>, schema_layer::SchemaError> {
     let Some(parent) = path.parent else {
         return Ok(schema.properties.get(path.property));
     };
@@ -2274,11 +2187,11 @@ fn cfn_override_property<'a>(
 fn inline_override_property<'a>(
     schema: &'a CfnSchema,
     name: &'a str,
-    property: &'a CfnProperty,
+    property: &'a SchemaProperty,
     definition_name: Option<&'a str>,
     path: CfnPropertyPath<'_>,
     visiting_defs: &mut HashSet<&'a str>,
-) -> Option<&'a CfnProperty> {
+) -> Option<&'a SchemaProperty> {
     if property.try_query().is_err() {
         return None;
     }
@@ -2331,7 +2244,7 @@ fn inline_override_property<'a>(
 fn checked_resource_type_override(
     schema: &CfnSchema,
     property_path: CfnPropertyPath<'_>,
-    property: &CfnProperty,
+    property: &SchemaProperty,
 ) -> Result<Option<&'static TypeOverride>> {
     let Some(override_type) = resource_type_override(&schema.type_name, property_path) else {
         return Ok(None);
@@ -2434,7 +2347,7 @@ fn classify_bare_object(
 }
 
 fn emission_bare_object(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     cfn_type: &str,
     property_path: CfnPropertyPath<'_>,
 ) -> Result<BareObjectClassification> {
@@ -2444,7 +2357,7 @@ fn emission_bare_object(
 }
 
 fn bare_object_attribute_type(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     cfn_type: &str,
     property_path: CfnPropertyPath<'_>,
     prop_name: &str,
@@ -2477,7 +2390,7 @@ fn bare_object_attribute_type(
     })
 }
 
-fn is_object_string_union(prop: &CfnProperty) -> bool {
+fn is_object_string_union(prop: &SchemaProperty) -> bool {
     matches!(
         prop.query().projected_type,
         schema_projection::ProjectedType::JsonDocument
@@ -2502,7 +2415,7 @@ fn is_iam_policy_document_property(cfn_type: &str, property_path: CfnPropertyPat
 /// Unlisted documents still need an emission classification so a newly cached
 /// resource cannot silently become `Map<String, String>`.
 fn object_string_union_is_iam_policy_document(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     cfn_type: &str,
     property_path: CfnPropertyPath<'_>,
 ) -> Result<bool> {
@@ -2552,109 +2465,122 @@ impl EnumValue {
     }
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(test, derive(Deserialize))]
 #[cfg_attr(test, derive(Serialize))]
-#[serde(rename_all = "camelCase")]
-struct CfnProperty {
-    #[serde(skip)]
+#[cfg_attr(test, serde(rename_all = "camelCase"))]
+struct SchemaProperty {
+    #[cfg_attr(test, serde(skip))]
     origin: Option<schema_projection::Origin>,
-    #[serde(skip)]
+    #[cfg_attr(test, serde(skip))]
     projection: std::sync::OnceLock<std::result::Result<Projection, schema_layer::SchemaError>>,
-    #[serde(rename = "type")]
+    #[cfg_attr(test, serde(rename = "type"))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     prop_type: Option<TypeValue>,
-    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     description: Option<String>,
-    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
-    #[serde(rename = "enum")]
+    #[cfg_attr(test, serde(rename = "enum"))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     enum_values: Option<Vec<EnumValue>>,
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
-    items: Option<Box<CfnProperty>>,
-    #[serde(rename = "$ref")]
+    #[cfg(test)]
+    items: Option<Box<SchemaProperty>>,
+    #[cfg_attr(test, serde(rename = "$ref"))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     ref_path: Option<String>,
-    #[serde(default)]
+    #[cfg_attr(test, serde(default))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     insertion_order: Option<bool>,
     /// Whether array items must be unique.
-    #[serde(default)]
+    #[cfg_attr(test, serde(default))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     unique_items: Option<bool>,
     /// Inline object properties (for nested objects)
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
-    properties: Option<BTreeMap<String, CfnProperty>>,
+    #[cfg(test)]
+    properties: Option<BTreeMap<String, SchemaProperty>>,
     /// JSON object-map value schemas keyed by key-pattern.
-    #[serde(default)]
+    #[cfg_attr(test, serde(default))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
-    pattern_properties: Option<BTreeMap<String, CfnProperty>>,
-    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
+    #[cfg(test)]
+    pattern_properties: Option<BTreeMap<String, SchemaProperty>>,
     /// Required fields for inline objects
-    #[serde(default)]
+    #[cfg_attr(test, serde(default))]
+    #[cfg(test)]
     required: Vec<String>,
-    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Minimum value constraint (for integer/number types)
-    #[serde(default)]
+    #[cfg_attr(test, serde(default))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
-    #[serde(deserialize_with = "legacy_numeric_bound")]
+    #[cfg_attr(test, serde(deserialize_with = "legacy_numeric_bound"))]
+    #[cfg(test)]
     minimum: Option<i64>,
-    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Maximum value constraint (for integer/number types)
-    #[serde(default)]
+    #[cfg_attr(test, serde(default))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
-    #[serde(deserialize_with = "legacy_numeric_bound")]
+    #[cfg_attr(test, serde(deserialize_with = "legacy_numeric_bound"))]
+    #[cfg(test)]
     maximum: Option<i64>,
     /// Whether additional properties are allowed (for object types)
-    #[serde(default)]
+    #[cfg_attr(test, serde(default))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     additional_properties: Option<bool>,
-    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Const value (single fixed value for this property)
-    #[serde(rename = "const")]
+    #[cfg_attr(test, serde(rename = "const"))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     const_value: Option<serde_json::Value>,
-    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Default value for this property
-    #[serde(rename = "default")]
+    #[cfg_attr(test, serde(rename = "default"))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     default_value: Option<serde_json::Value>,
     /// Regex pattern constraint (for string types)
-    #[serde(default)]
+    #[cfg_attr(test, serde(default))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     pattern: Option<String>,
     /// Minimum number of items (for array types)
-    #[serde(default)]
+    #[cfg_attr(test, serde(default))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     min_items: Option<i64>,
     /// Maximum number of items (for array types)
-    #[serde(default)]
+    #[cfg_attr(test, serde(default))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     max_items: Option<i64>,
-    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Minimum length constraint (for string types)
-    #[serde(default, rename = "minLength")]
+    #[cfg_attr(test, serde(default, rename = "minLength"))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     min_length: Option<u64>,
-    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Maximum length constraint (for string types)
-    #[serde(default, rename = "maxLength")]
+    #[cfg_attr(test, serde(default, rename = "maxLength"))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     max_length: Option<u64>,
-    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
     /// Format constraint (e.g., "int64", "uri", "double")
-    #[serde(default)]
+    #[cfg_attr(test, serde(default))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(test)]
     format: Option<String>,
     /// Property-level oneOf variants (union types)
-    #[serde(default, rename = "oneOf")]
+    #[cfg_attr(test, serde(default, rename = "oneOf"))]
     #[cfg_attr(test, serde(skip_serializing_if = "Vec::is_empty"))]
-    one_of: Vec<CfnProperty>,
-    #[cfg(test)] // Fixture input only; not part of the production tag carrier.
-    #[serde(default)]
-    #[serde(rename = "anyOf")]
+    #[cfg(test)]
+    one_of: Vec<SchemaProperty>,
+    #[cfg_attr(test, serde(default))]
+    #[cfg_attr(test, serde(rename = "anyOf"))]
     #[cfg_attr(test, serde(skip_serializing_if = "Vec::is_empty"))]
-    any_of: Vec<CfnProperty>,
+    #[cfg(test)]
+    any_of: Vec<SchemaProperty>,
 }
 
 // Fixture serialization only. Shared queries retain the original JSON Number
@@ -2690,15 +2616,41 @@ fn derive_tags_property(schema: &CfnSchema) -> Result<Option<GeneratedTagsProper
         )
     })?;
 
-    let wire = if is_key_value_tag_array(property, schema) {
-        GeneratedTagsWire::KeyValueList
-    } else if is_string_tag_map(property, schema) {
-        GeneratedTagsWire::Map
-    } else {
-        anyhow::bail!(
-            "{}#{tag_property}: tag property cannot be projected to a string-to-string map; expected an array of objects with exactly the case-sensitive Key and Value string properties (no extra fields), or an object map with string values",
-            schema.type_name
-        );
+    let wire = match schema.tag_shape(property)? {
+        TagShape::KeyValueList(_map) => GeneratedTagsWire::KeyValueList,
+        TagShape::StringMap(_map) => GeneratedTagsWire::Map,
+        TagShape::KeyValueObject(_map) => {
+            return Err(TagShapeError::NotTag {
+                resource: schema.type_name.clone(),
+                pointer: tag_property.into(),
+                reason: tag_shape::NotTagReason::Shape,
+            }
+            .into());
+        }
+        TagShape::NotTag {
+            reason,
+            candidate: _candidate,
+            pointer: _pointer,
+        } => {
+            return Err(TagShapeError::NotTag {
+                resource: schema.type_name.clone(),
+                pointer: tag_property.into(),
+                reason: reason.clone(),
+            }
+            .into());
+        }
+        TagShape::Unreadable {
+            source,
+            candidate: _candidate,
+            pointer: _pointer,
+        } => {
+            return Err(TagShapeError::Unreadable {
+                resource: schema.type_name.clone(),
+                pointer: tag_property.into(),
+                source: Box::new(source.clone()),
+            }
+            .into());
+        }
     };
 
     Ok(Some(GeneratedTagsProperty {
@@ -2790,135 +2742,6 @@ fn emit_exclusive_groups_slice(groups: &[Vec<String>]) -> String {
     format!("&[{entries}]")
 }
 
-/// Walk raw CFN JSON so compositions discarded by CfnProperty remain visible.
-/// The [CFN resource meta-schema](https://github.com/aws-cloudformation/cloudformation-resource-schema/blob/master/src/main/resources/schema/base.definition.schema.v1.json)
-/// (`definitions/properties`) permits these schema-valued keywords: `$ref`,
-/// `allOf`, `anyOf`, `oneOf`, `items`, `contains`, `dependencies`, `properties`,
-/// `patternProperties` and `additionalProperties`.
-/// This walk follows all of them except `properties`, `patternProperties` and
-/// `additionalProperties` of intermediate nodes, which are nested attributes and
-/// out of scope.
-/// Visit all nodes reached after an items or contains edge, including
-/// allOf/oneOf/anyOf branches, schema dependencies and $refs.
-/// Non-local or unresolvable refs are a codegen-wide opaque fallback with no
-/// visible shape, so they cannot be proven tag-shaped.
-/// Bare `#` and percent-encoded pointers that do not resolve remain opaque fallbacks.
-fn walk_array_item_schemas<'a>(
-    properties: impl IntoIterator<Item = &'a serde_json::Value>,
-    source: &'a serde_json::Value,
-    mut visit: impl FnMut(&'a serde_json::Value),
-) {
-    let mut pending: Vec<_> = properties
-        .into_iter()
-        .map(|property| (property, false))
-        .collect();
-    let mut visited_refs = HashSet::new();
-    while let Some((node, crossed_items)) = pending.pop() {
-        if crossed_items {
-            visit(node);
-        }
-        // A reference can be reached both before and after an items/contains edge.
-        // Visit each state once to terminate cycles without losing candidates.
-        if let Some(reference) = node.get("$ref").and_then(serde_json::Value::as_str)
-            && let Some(target) = reference
-                .strip_prefix('#')
-                .filter(|pointer| pointer.starts_with('/'))
-                .and_then(|pointer| source.pointer(pointer))
-            && visited_refs.insert((reference, crossed_items))
-        {
-            pending.push((target, crossed_items));
-        }
-        for keyword in ["allOf", "oneOf", "anyOf"] {
-            if let Some(branches) = node.get(keyword).and_then(serde_json::Value::as_array) {
-                pending.extend(branches.iter().map(|branch| (branch, crossed_items)));
-            }
-        }
-        if let Some(dependencies) = node
-            .get("dependencies")
-            .and_then(serde_json::Value::as_object)
-        {
-            pending.extend(
-                dependencies
-                    .values()
-                    .filter(|dependency| dependency.is_object())
-                    .map(|dependency| (dependency, crossed_items)),
-            );
-        }
-        for keyword in ["items", "contains"] {
-            if let Some(items) = node.get(keyword) {
-                pending.push((items, true));
-            }
-        }
-    }
-}
-
-/// Accumulate case-insensitive Key and Value across the raw item region.
-/// Over-approximation (e.g. Key and Value in different oneOf arms) is acceptable:
-/// it only requires an explicit classification, not tag-map projection.
-fn is_key_value_array_candidate<'a>(
-    properties: impl IntoIterator<Item = &'a serde_json::Value>,
-    source: &'a serde_json::Value,
-) -> Result<bool> {
-    let mut saw_key = false;
-    let mut saw_value = false;
-    walk_array_item_schemas(properties, source, |node| {
-        if let Some(properties) = node
-            .get("properties")
-            .and_then(serde_json::Value::as_object)
-        {
-            saw_key |= properties
-                .keys()
-                .any(|name| name.eq_ignore_ascii_case("key"));
-            saw_value |= properties
-                .keys()
-                .any(|name| name.eq_ignore_ascii_case("value"));
-        }
-    });
-    Ok(saw_key && saw_value)
-}
-
-/// Keep projection strict: the wire format needs exactly Key/Value strings.
-fn is_key_value_tag_array(property: &CfnProperty, schema: &CfnSchema) -> bool {
-    use tag_queries_compat::{resolve_ref, resolved_array_property};
-    let Some(array) = resolved_array_property(property, schema, &mut HashSet::new()) else {
-        return false;
-    };
-    let Some(items) = array.items.as_deref() else {
-        return false;
-    };
-    let item = items
-        .ref_path
-        .as_deref()
-        .and_then(|reference| resolve_ref(schema, reference))
-        .map_or(items, |resolved| resolved.property);
-    matches!(
-        tag_map_shape(schema, item),
-        Some(TagMapShape::KeyValue { .. })
-    )
-}
-
-fn is_string_tag_map(property: &CfnProperty, schema: &CfnSchema) -> bool {
-    use tag_queries_compat::is_string_property;
-    if property
-        .prop_type
-        .as_ref()
-        .and_then(TypeValue::effective_type)
-        != Some("object")
-        || property.additional_properties != Some(false)
-    {
-        return false;
-    }
-    property
-        .pattern_properties
-        .as_ref()
-        .is_some_and(|patterns| {
-            !patterns.is_empty()
-                && patterns
-                    .values()
-                    .all(|value| is_string_property(schema, value))
-        })
-}
-
 /// Compute module name from CloudFormation type name
 /// e.g., "AWS::EC2::SecurityGroupEgress" -> "security_group_egress"
 fn module_name_from_type(type_name: &str) -> Result<String> {
@@ -2993,7 +2816,7 @@ fn generate_arn_helper_module(type_name: &str) -> Result<String> {
     ))
 }
 
-fn is_string_property(_schema: &CfnSchema, property: &CfnProperty) -> bool {
+fn is_string_property(_schema: &CfnSchema, property: &SchemaProperty) -> bool {
     property.query().effective_type() == Some("string")
 }
 
@@ -3227,7 +3050,7 @@ struct StructDefInfo {
     /// Every distinct property path through which this definition is reached.
     property_paths: BTreeSet<Vec<String>>,
     /// Properties of the definition
-    properties: BTreeMap<String, CfnProperty>,
+    properties: BTreeMap<String, SchemaProperty>,
     /// Required fields
     required: Vec<String>,
 }
@@ -3441,7 +3264,7 @@ fn has_nested_read_only_property_path(schema: &CfnSchema, property_path: &[Strin
 
 fn struct_fields_are_fully_read_only(
     schema: &CfnSchema,
-    properties: &BTreeMap<String, CfnProperty>,
+    properties: &BTreeMap<String, SchemaProperty>,
     property_path: &[String],
     visiting_defs: &mut HashSet<String>,
 ) -> bool {
@@ -3458,7 +3281,7 @@ fn struct_fields_are_fully_read_only(
 
 fn property_is_fully_read_only(
     schema: &CfnSchema,
-    property: &CfnProperty,
+    property: &SchemaProperty,
     property_path: &[String],
     visiting_defs: &mut HashSet<String>,
 ) -> bool {
@@ -3536,7 +3359,7 @@ fn property_is_fully_read_only(
 
 fn is_property_read_only(
     schema: &CfnSchema,
-    property: &CfnProperty,
+    property: &SchemaProperty,
     property_path: &[String],
 ) -> bool {
     property_is_fully_read_only(schema, property, property_path, &mut HashSet::new())
@@ -3778,7 +3601,7 @@ fn collect_definition_identity_paths(schema: &CfnSchema) -> BTreeMap<String, Vec
     fn visit(
         schema: &CfnSchema,
         prop_name: &str,
-        prop: &CfnProperty,
+        prop: &SchemaProperty,
         structural: &[String],
         state: RefGenerationState<'_>,
         visiting: &mut HashSet<String>,
@@ -3923,7 +3746,7 @@ fn collect_definition_identity_paths(schema: &CfnSchema) -> BTreeMap<String, Vec
     identities
 }
 
-fn is_deprecated_property(prop: &CfnProperty) -> bool {
+fn is_deprecated_property(prop: &SchemaProperty) -> bool {
     prop.annotation_description()
         .is_some_and(|description| description.starts_with("(Deprecated.)"))
 }
@@ -3935,7 +3758,7 @@ const SCHEDULER_GROUP_NAME_LIMITATION: &str = "Carina requires group_name to be 
 fn generated_property_description(
     schema: &CfnSchema,
     prop_name: &str,
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
 ) -> Option<String> {
     let mut description = prop.annotation_description().map(str::to_string);
     if schema.type_name == "AWS::Scheduler::Schedule" && prop_name == "GroupName" {
@@ -3951,18 +3774,18 @@ fn generated_property_description(
 
 fn documented_top_level_properties(
     schema: &CfnSchema,
-) -> impl Iterator<Item = (&String, &CfnProperty)> {
+) -> impl Iterator<Item = (&String, &SchemaProperty)> {
     schema.properties.iter().filter(|(name, property)| {
         !is_deprecated_property(property)
             && !should_omit_top_level_property(&schema.type_name, name)
     })
 }
 
-fn is_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
+fn is_struct_property(prop: &SchemaProperty, schema: &CfnSchema) -> bool {
     property_generates_struct(prop, schema)
 }
 
-fn is_list_of_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
+fn is_list_of_struct_property(prop: &SchemaProperty, schema: &CfnSchema) -> bool {
     resolved_array_property(prop, schema, &mut HashSet::new()).is_some_and(|property| {
         property
             .query()
@@ -4156,7 +3979,7 @@ fn override_type_to_display_name(override_type: &str) -> &str {
 
 /// Determine the display string for a property's type in markdown docs
 #[cfg(test)]
-fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &ParsedCfnSchema) -> String {
+fn type_display_string(prop_name: &str, prop: &SchemaProperty, schema: &ParsedCfnSchema) -> String {
     let property = tests::fixture_property(schema, prop_name, prop);
     let prop = &property;
     type_display_string_at(
@@ -4260,9 +4083,9 @@ fn object_map_type_text(
     prop_name: &str,
     schema: &EmissionContext<'_>,
     property_path: CfnPropertyPath<'_>,
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     provider_path: &[String],
-    value: &CfnProperty,
+    value: &SchemaProperty,
 ) -> Result<String> {
     let key = map_key_type(prop, schema, provider_path, property_path)?
         .as_ref()
@@ -4298,7 +4121,7 @@ fn map_key_display(key: &StringLeaf<'_>) -> String {
 }
 
 fn type_display_string_at(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     schema: &EmissionContext<'_>,
     provider_path: &[String],
     cfn_property_path: CfnPropertyPath<'_>,
@@ -4339,7 +4162,7 @@ fn type_display_at_resolved(
     }
     if is_dsl_tags_property(schema, provider_path)? {
         schema.classify_tag_value(provider_path)?;
-        return Ok(tag_map_type(classified, cfn_property_path)?.display());
+        return Ok(project_tag_map(classified, cfn_property_path)?.display());
     }
     let projection = prop.try_query()?;
     projection.emission_type()?;
@@ -4377,7 +4200,7 @@ fn type_display_at_resolved(
         PropertyShape::Reference { resolved, path } => {
             return if is_tag_map_ref(schema, path) {
                 schema.classify_tag_value(provider_path)?;
-                Ok(tag_map_type(classified, cfn_property_path)?.display())
+                Ok(project_tag_map(classified, cfn_property_path)?.display())
             } else if let Some(resolved) = resolved {
                 let array = resolved_array_property(prop, schema, &mut HashSet::new());
                 type_display_at_resolved(
@@ -4460,7 +4283,7 @@ fn type_display_at_resolved(
 
 fn scalar_type_display_at(
     prop_name: &str,
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     schema: &EmissionContext<'_>,
     provider_path: &[String],
     cfn_property_path: CfnPropertyPath<'_>,
@@ -4556,7 +4379,7 @@ fn scalar_type_display_at(
 struct MarkdownStructDef {
     key: MarkdownStructKey,
     name: String,
-    properties: BTreeMap<String, CfnProperty>,
+    properties: BTreeMap<String, SchemaProperty>,
     required: Vec<String>,
 }
 
@@ -4565,7 +4388,7 @@ struct MarkdownStructDef {
 /// cannot create a struct link unless the same property shape is collectable.
 fn markdown_struct_def(
     prop_name: &str,
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     schema: &CfnSchema,
     property_path: &[String],
 ) -> Result<Option<MarkdownStructDef>> {
@@ -4611,9 +4434,9 @@ fn markdown_struct_def(
 }
 
 fn markdown_array<'a>(
-    prop: &'a CfnProperty,
+    prop: &'a SchemaProperty,
     schema: &'a CfnSchema,
-) -> Result<Option<Cow<'a, CfnProperty>>> {
+) -> Result<Option<Cow<'a, SchemaProperty>>> {
     let projection = prop.try_query()?;
     if projection.effective_type() != Some("array") {
         return Ok(None);
@@ -4638,7 +4461,7 @@ fn markdown_list_type(item: MarkdownLinkedType, prop: &Projection) -> MarkdownLi
 }
 
 fn markdown_enum_type(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     schema: &CfnSchema,
     key: &MarkdownEnumKey,
 ) -> Result<MarkdownLinkedType> {
@@ -4661,7 +4484,7 @@ fn markdown_enum_type(
 
 fn markdown_link_type(
     prop_name: &str,
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     schema: &EmissionContext<'_>,
     enum_target: Option<&MarkdownEnumKey>,
     property_path: &[String],
@@ -4720,7 +4543,7 @@ fn markdown_link_type(
             linked
         } else {
             MarkdownLinkedType::Text(if tag_map {
-                tag_map_type(schema.property_at(property_path, prop), cfn_path)?
+                project_tag_map(schema.property_at(property_path, prop), cfn_path)?
                     .value
                     .display()
             } else {
@@ -4885,7 +4708,7 @@ fn markdown_type(
 fn override_type_display(
     schema: &CfnSchema,
     path: CfnPropertyPath<'_>,
-    property: &CfnProperty,
+    property: &SchemaProperty,
     override_type: Option<&TypeOverride>,
 ) -> Result<Option<String>> {
     let Some(override_type) = override_type else {
@@ -5707,7 +5530,7 @@ fn write_markdown_example(page: &mut PageBuilder<MarkdownTarget>, example: &str)
 
 /// Collect struct definitions from properties for markdown documentation
 fn collect_struct_defs(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     prop_name: &str,
     schema: &CfnSchema,
     struct_path: &[String],
@@ -7248,14 +7071,14 @@ fn ref_def_name(ref_path: &str) -> Option<&str> {
 /// The final definition reached by a local `$ref` chain.
 ///
 /// Definitions use the exact same representation as inline properties, so
-/// every keyword supported by `CfnProperty` automatically survives `$ref`
+/// every keyword supported by `SchemaProperty` automatically survives `$ref`
 /// resolution. `name` is the final target's name and is used only for stable
 /// struct identity and recursion handling; shape generation always consumes
 /// `property` through the normal inline path.
 #[derive(Clone, Copy)]
 struct ResolvedRef<'a> {
     name: &'a str,
-    property: &'a CfnProperty,
+    property: &'a SchemaProperty,
 }
 
 /// Resolve a local definition `$ref`, following definitions that are aliases
@@ -7279,7 +7102,7 @@ fn resolve_ref<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<ResolvedRef<
     }
 }
 
-fn inline_property_type(property: &CfnProperty) -> Option<&str> {
+fn inline_property_type(property: &SchemaProperty) -> Option<&str> {
     property.query().effective_type()
 }
 
@@ -7289,24 +7112,24 @@ enum PropertyShape<'a> {
         resolved: Option<ResolvedRef<'a>>,
     },
     Inline,
-    Direct(&'a BTreeMap<String, CfnProperty>),
+    Direct(&'a BTreeMap<String, SchemaProperty>),
     Array {
         /// Keep the winning variant's reference context for generation.
-        variant: &'a CfnProperty,
+        variant: &'a SchemaProperty,
     },
     /// Union of object fields; variant-local required lists do not apply.
-    Merged(BTreeMap<String, CfnProperty>),
+    Merged(BTreeMap<String, SchemaProperty>),
     Unresolved,
 }
 
-fn property_shape<'a>(property: &'a CfnProperty, schema: &'a CfnSchema) -> PropertyShape<'a> {
+fn property_shape<'a>(property: &'a SchemaProperty, schema: &'a CfnSchema) -> PropertyShape<'a> {
     property_shape_with_visited(property, schema, &mut HashSet::new())
 }
 
 /// Shared shape selection consumes the validated Layer projection. Every
 /// alternative and intermediate alias has already participated in validation.
 fn property_shape_with_visited<'a>(
-    property: &'a CfnProperty,
+    property: &'a SchemaProperty,
     _schema: &'a CfnSchema,
     _visiting_defs: &mut HashSet<&'a str>,
 ) -> PropertyShape<'a> {
@@ -7346,10 +7169,10 @@ fn property_shape_with_visited<'a>(
 }
 
 fn resolved_object_property_sources<'a>(
-    property: &'a CfnProperty,
+    property: &'a SchemaProperty,
     _schema: &'a CfnSchema,
     _visiting_defs: &mut HashSet<&'a str>,
-) -> BTreeMap<&'a str, &'a CfnProperty> {
+) -> BTreeMap<&'a str, &'a SchemaProperty> {
     property
         .query()
         .properties
@@ -7360,7 +7183,7 @@ fn resolved_object_property_sources<'a>(
 }
 
 /// Whether the inline generator will represent this property as a struct.
-fn property_generates_struct(property: &CfnProperty, _schema: &CfnSchema) -> bool {
+fn property_generates_struct(property: &SchemaProperty, _schema: &CfnSchema) -> bool {
     #[cfg(test)]
     property.bind_fixture(_schema);
     property
@@ -7376,14 +7199,14 @@ enum ObjectMapValueKind {
     Struct,
 }
 
-fn is_direct_string_property(property: &CfnProperty) -> bool {
+fn is_direct_string_property(property: &SchemaProperty) -> bool {
     let p = property.query();
     p.effective_type() == Some("string") && p.reference.is_none() && !p.is_union
 }
 
 fn classify_object_map_value(
     schema: &CfnSchema,
-    value: &CfnProperty,
+    value: &SchemaProperty,
 ) -> Option<ObjectMapValueKind> {
     if is_direct_string_property(value) {
         return Some(ObjectMapValueKind::DirectString);
@@ -7394,7 +7217,7 @@ fn classify_object_map_value(
 fn object_map_value(
     schema: &CfnSchema,
     property_path: CfnPropertyPath<'_>,
-    value: &CfnProperty,
+    value: &SchemaProperty,
 ) -> Result<ObjectMapValueKind> {
     value.try_query()?;
     classify_object_map_value(schema, value).ok_or_else(|| value.query().emission_error(format!(
@@ -7403,7 +7226,7 @@ fn object_map_value(
     )).into())
 }
 
-fn direct_pattern_map_entry(prop: &CfnProperty) -> Option<(&str, &CfnProperty)> {
+fn direct_pattern_map_entry(prop: &SchemaProperty) -> Option<(&str, &SchemaProperty)> {
     let patterns = prop.query().pattern_properties.as_ref()?;
     (patterns.len() == 1).then(|| {
         let (pattern, value) = patterns.iter().next().expect("one patternProperties entry");
@@ -7411,11 +7234,11 @@ fn direct_pattern_map_entry(prop: &CfnProperty) -> Option<(&str, &CfnProperty)> 
     })
 }
 
-fn direct_object_map_value(prop: &CfnProperty) -> Option<&CfnProperty> {
+fn direct_object_map_value(prop: &SchemaProperty) -> Option<&SchemaProperty> {
     direct_pattern_map_entry(prop).map(|(_, value)| value)
 }
 
-fn closed_pattern_map_entry(prop: &CfnProperty) -> Option<(&str, &CfnProperty)> {
+fn closed_pattern_map_entry(prop: &SchemaProperty) -> Option<(&str, &SchemaProperty)> {
     // A non-matching key remains an ordinary additional property unless this
     // very object explicitly forbids additional properties. Neither an omitted
     // flag nor additionalProperties:true restricts the map's key domain.
@@ -7426,9 +7249,9 @@ fn closed_pattern_map_entry(prop: &CfnProperty) -> Option<(&str, &CfnProperty)> 
 }
 
 fn property_pattern_map_entry<'a>(
-    prop: &'a CfnProperty,
+    prop: &'a SchemaProperty,
     _schema: &'a CfnSchema,
-) -> Option<(&'a str, &'a CfnProperty)> {
+) -> Option<(&'a str, &'a SchemaProperty)> {
     #[cfg(test)]
     prop.bind_fixture(_schema);
     (prop.query().effective_type() == Some("object"))
@@ -7446,7 +7269,7 @@ fn pattern_map_key_values(pattern: &str) -> Option<Vec<String>> {
     })
 }
 
-fn map_key_enum_info(prop: &CfnProperty, _schema: &CfnSchema, name: &str) -> Option<EnumInfo> {
+fn map_key_enum_info(prop: &SchemaProperty, _schema: &CfnSchema, name: &str) -> Option<EnumInfo> {
     #[cfg(test)]
     prop.bind_fixture(_schema);
     let mut property = prop;
@@ -7511,7 +7334,7 @@ fn project_pattern_map_key_type(
     })
 }
 
-// STEP 5 retains the tag renderer's current boundary.
+#[cfg(test)]
 fn pattern_map_key_type(
     pattern: &str,
     cfn_type: &str,
@@ -7523,7 +7346,7 @@ fn pattern_map_key_type(
 }
 
 fn map_key_type(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     schema: &EmissionContext<'_>,
     provider_path: &[String],
     path: CfnPropertyPath<'_>,
@@ -7623,9 +7446,9 @@ fn string_enum_type(
 }
 
 fn property_object_map_value<'a>(
-    prop: &'a CfnProperty,
+    prop: &'a SchemaProperty,
     _schema: &'a CfnSchema,
-) -> Option<&'a CfnProperty> {
+) -> Option<&'a SchemaProperty> {
     #[cfg(test)]
     prop.bind_fixture(_schema);
     (prop.query().effective_type() == Some("object"))
@@ -7641,7 +7464,7 @@ struct StructGenerationPaths<'a> {
 /// Generate Rust code for an AttributeType::Struct from a set of properties
 fn generate_struct_type(
     def_name: &str,
-    properties: &BTreeMap<String, CfnProperty>,
+    properties: &BTreeMap<String, SchemaProperty>,
     required: &[String],
     schema: &EmissionContext<'_>,
     namespace: &str,
@@ -8239,7 +8062,7 @@ impl EnumLeaf {
 /// Const and explicit enums use the resolved definition name when present;
 /// known overrides keep the property name.
 fn enum_leaf(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     prop_name: &str,
     definition_name: Option<&str>,
 ) -> Result<Option<EnumLeaf>> {
@@ -8680,7 +8503,7 @@ fn emit_float_range_option(min: Option<i64>, max: Option<i64>) -> String {
 }
 
 fn integer_from_number_bounds(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     type_name: &str,
     property_name: &str,
 ) -> Result<(Option<i64>, Option<i64>)> {
@@ -8696,7 +8519,7 @@ fn integer_from_number_bounds(
 }
 
 fn integer_from_number_type(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     type_name: &str,
     property_name: &str,
 ) -> Result<String> {
@@ -8705,7 +8528,7 @@ fn integer_from_number_type(
 }
 
 fn integer_from_number_display(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     type_name: &str,
     property_name: &str,
 ) -> Result<String> {
@@ -13643,7 +13466,7 @@ fn array_attribute_type(element_type: &str, array: &Projection, force_unordered:
 fn emit_array_item_override(
     schema: &CfnSchema,
     path: CfnPropertyPath<'_>,
-    property: &CfnProperty,
+    property: &SchemaProperty,
     override_type: &TypeOverride,
 ) -> Result<Option<String>> {
     let Some(expression) = override_type.array_item_type_expression() else {
@@ -13662,7 +13485,7 @@ fn emit_array_item_override(
 fn emit_array_override(
     schema: &CfnSchema,
     path: CfnPropertyPath<'_>,
-    property: &CfnProperty,
+    property: &SchemaProperty,
     override_type: &TypeOverride,
     item_type: &str,
     force_unordered: bool,
@@ -13681,7 +13504,7 @@ fn emit_array_override(
 fn emit_enum_property_type(
     schema: &CfnSchema,
     path: CfnPropertyPath<'_>,
-    property: &CfnProperty,
+    property: &SchemaProperty,
     enum_type: &str,
     force_unordered: bool,
 ) -> Result<String> {
@@ -13709,7 +13532,7 @@ fn emit_enum_property_type(
 /// Substitute the enum leaf while retaining every resolved list/map layer and
 /// list bounds/order, for top-level attributes and nested struct fields.
 fn enum_property_type(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     schema: &CfnSchema,
     enum_type: &str,
     force_unordered: bool,
@@ -13739,7 +13562,7 @@ fn enum_property_type(
 /// EnumInfo is the typed marker for a string-enum leaf (possibly inside lists).
 /// The provisional type uses a string leaf until the caller substitutes the enum.
 fn cfn_type_to_carina_type_with_enum(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     prop_name: &str,
     schema: &EmissionContext<'_>,
     namespace: &str,
@@ -13759,30 +13582,30 @@ fn cfn_type_to_carina_type_with_enum(
     )
 }
 
-fn property_resolves_to_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
+fn property_resolves_to_array(prop: &SchemaProperty, schema: &CfnSchema) -> bool {
     resolved_array_property(prop, schema, &mut HashSet::new()).is_some()
 }
 
 /// Keep shape classification small by borrowing the array and carrying only
 /// the list metadata that can be merged across reference siblings.
 struct ResolvedArray<'a> {
-    property: &'a CfnProperty,
+    property: &'a SchemaProperty,
 }
 
 impl<'a> ResolvedArray<'a> {
-    fn new(property: &'a CfnProperty) -> Self {
+    fn new(property: &'a SchemaProperty) -> Self {
         Self { property }
     }
-    fn into_property(self) -> Cow<'a, CfnProperty> {
+    fn into_property(self) -> Cow<'a, SchemaProperty> {
         Cow::Borrowed(self.property)
     }
 }
 
 fn resolved_array_property<'a>(
-    prop: &'a CfnProperty,
+    prop: &'a SchemaProperty,
     schema: &'a CfnSchema,
     visiting_defs: &mut HashSet<&'a str>,
-) -> Option<Cow<'a, CfnProperty>> {
+) -> Option<Cow<'a, SchemaProperty>> {
     resolved_array_shape(prop, schema, visiting_defs).map(ResolvedArray::into_property)
 }
 
@@ -13790,7 +13613,7 @@ fn resolved_array_property<'a>(
 /// for inline properties. Track definition visits because oneOf branches
 /// can refer back to their containing definition.
 fn resolved_array_shape<'a>(
-    prop: &'a CfnProperty,
+    prop: &'a SchemaProperty,
     _schema: &'a CfnSchema,
     _visiting_defs: &mut HashSet<&'a str>,
 ) -> Option<ResolvedArray<'a>> {
@@ -13802,7 +13625,7 @@ fn resolved_array_shape<'a>(
 }
 
 fn has_constrained_array_source<'a>(
-    property: &'a CfnProperty,
+    property: &'a SchemaProperty,
     _schema: &'a CfnSchema,
     inherited_constraints: bool,
     _visiting: &mut HashSet<&'a str>,
@@ -13815,9 +13638,9 @@ fn has_constrained_array_source<'a>(
 /// An item override must target an unambiguous array, including through aliases.
 /// A union's selected array arm is not the whole source property.
 fn array_item_override_source<'a>(
-    property: &'a CfnProperty,
+    property: &'a SchemaProperty,
     schema: &'a CfnSchema,
-) -> Option<Cow<'a, CfnProperty>> {
+) -> Option<Cow<'a, SchemaProperty>> {
     let projection = property.query();
     if projection.is_union || projection.effective_type() != Some("array") {
         return None;
@@ -13833,8 +13656,8 @@ struct CfnTypeGenerationPaths<'a> {
 }
 
 fn generate_object_map_type(
-    prop: &CfnProperty,
-    value: &CfnProperty,
+    prop: &SchemaProperty,
+    value: &SchemaProperty,
     prop_name: &str,
     schema: &EmissionContext<'_>,
     namespace: &str,
@@ -13890,7 +13713,7 @@ fn generate_object_map_type(
 }
 
 fn cfn_type_to_carina_type_with_enum_with_paths(
-    prop: &CfnProperty,
+    prop: &SchemaProperty,
     schema: &EmissionContext<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
@@ -13980,7 +13803,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     // preserving the CFN property name only in the provider mapping.
     if is_dsl_tags_property(schema, property_path)? {
         schema.classify_tag_value(property_path)?;
-        return tag_map_type(classified, cfn_property_path)?.emit(
+        return project_tag_map(classified, cfn_property_path)?.emit(
             &schema.type_name,
             cfn_property_path,
             namespace,
@@ -14015,7 +13838,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         PropertyShape::Reference { resolved, path } => {
             if is_tag_map_ref(schema, path) {
                 schema.classify_tag_value(property_path)?;
-                return tag_map_type(classified, cfn_property_path)?.emit(
+                return project_tag_map(classified, cfn_property_path)?.emit(
                     &schema.type_name,
                     cfn_property_path,
                     namespace,
@@ -14351,10 +14174,29 @@ fn json_default_to_markdown(val: &serde_json::Value) -> Option<String> {
 fn property_block_name(
     name: &str,
     attr_type: &str,
-    property: &CfnProperty,
+    property: &SchemaProperty,
     schema: &CfnSchema,
     override_type: Option<&TypeOverride>,
 ) -> Option<String> {
+    if property.origin.as_ref().is_some_and(|origin| {
+        cfn_property_path(origin.layer.sources().pointer(origin.node))
+            .is_some_and(|path| is_dsl_tags_property(schema, &path).unwrap_or(false))
+    }) {
+        return match schema.tag_shape(property).ok()? {
+            TagShape::KeyValueList(_map) => compute_block_name(name),
+            TagShape::KeyValueObject(_map) | TagShape::StringMap(_map) => None,
+            TagShape::NotTag {
+                reason: _reason,
+                candidate: _candidate,
+                pointer: _pointer,
+            } => None,
+            TagShape::Unreadable {
+                source: _source,
+                candidate: _candidate,
+                pointer: _pointer,
+            } => None,
+        };
+    }
     override_type
         .and_then(TypeOverride::block_name)
         .map(str::to_owned)
@@ -14365,16 +14207,7 @@ fn property_block_name(
                 .and_then(TypeOverride::array_item_type_expression)
                 .is_none();
             if attr_type.contains("list(AttributeType::struct_")
-                || (can_infer_from_source
-                    && if property.origin.as_ref().is_some_and(|origin| {
-                        cfn_property_path(origin.layer.sources().pointer(origin.node)).is_some_and(
-                            |path| is_dsl_tags_property(schema, &path).unwrap_or(false),
-                        )
-                    }) {
-                        tag_queries_compat::is_list_of_struct_property(property, schema)
-                    } else {
-                        is_list_of_struct_property(property, schema)
-                    })
+                || (can_infer_from_source && is_list_of_struct_property(property, schema))
             {
                 compute_block_name(name)
             } else {
@@ -14439,8 +14272,15 @@ fn collapse_whitespace(s: &str) -> String {
 }
 
 #[cfg(test)]
+type CfnProperty = SchemaProperty;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    mod tag_shape_tests {
+        include!("codegen/tag_shape_tests.rs");
+    }
     use std::path::Path;
 
     mod emission_tests {
@@ -14512,7 +14352,7 @@ mod tests {
                 return property.clone();
             }
         }
-        let mut source = schema.source().clone();
+        let mut source = schema.source.clone();
         source["properties"][name] = value;
         let layer = std::sync::Arc::new(schema_layer::Layer::for_codegen(&source).unwrap());
         let pointer = format!("/properties/{}", name.replace('~', "~0").replace('/', "~1"));
@@ -15644,7 +15484,7 @@ mod tests {
 
     const EXTRACT_ENUM_SNAPSHOT_PRE_365: &str = "tests/fixtures/extract_enum_snapshot_pre_365.json";
 
-    fn markdown_example(type_name: &str) -> DocExample {
+    pub(super) fn markdown_example(type_name: &str) -> DocExample {
         let dsl_name = dsl_resource_name_from_type(type_name).unwrap();
         let source = format!("awscc.{dsl_name} {{}}\n");
         example::check(
@@ -15689,7 +15529,7 @@ mod tests {
         let path = CfnPropertyPath::new(Some("VPC"), "VPCRegion");
         assert!(cfn_override_property(&schema, path).unwrap().is_some());
         assert_eq!(
-            schema.source()["properties"]["VPCs"]["items"]["$ref"],
+            schema.source["properties"]["VPCs"]["items"]["$ref"],
             "#/definitions/VPC"
         );
         let override_type =
@@ -15750,7 +15590,7 @@ mod tests {
         for type_name in ["AWS::ECS::Cluster", "AWS::DynamoDB::Table"] {
             let cached = cfn_schema_for_codegen_tests(type_name);
             assert!(
-                cached.source()["propertyTransform"].is_object(),
+                cached.source["propertyTransform"].is_object(),
                 "{type_name}"
             );
             generate_schema_code(&cached, type_name)
@@ -21050,7 +20890,7 @@ mod tests {
     #[test]
     fn catalog_displays_in_number_backed_integer_enum_markdown() {
         let cached = cfn_schema_for_codegen_tests("AWS::EC2::FlowLog");
-        let mut source = cached.source().clone();
+        let mut source = cached.source.clone();
         // Integer enum values are valid for a JSON Schema number too. Rust
         // selects the enum constructor before dispatching on the base type.
         source["properties"]["MaxAggregationInterval"]["type"] = serde_json::json!("number");
@@ -21079,7 +20919,7 @@ mod tests {
     #[test]
     fn catalog_displays_in_inferred_arn_struct_fields() {
         let cached = cfn_schema_for_codegen_tests("AWS::IAM::OIDCProvider");
-        let mut source = cached.source().clone();
+        let mut source = cached.source.clone();
         source["properties"]["ProviderReference"] = serde_json::json!({
             "type": "object",
             "properties": {"Arn": {"type": "string"}},
@@ -31280,13 +31120,13 @@ mod tests {
 
             let mut nested_schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
             nested_schema.edit_json(|source| {
-                for (name, definition) in schema.source()["definitions"].as_object().unwrap() {
+                for (name, definition) in schema.source["definitions"].as_object().unwrap() {
                     if name.starts_with("Override") {
                         source["definitions"][name] = definition.clone();
                     }
                 }
                 source["definitions"]["TagValues"]["properties"]["Values"] =
-                    schema.source()["properties"]["FieldIndexPolicies"].clone();
+                    schema.source["properties"]["FieldIndexPolicies"].clone();
             });
             assert_override_generation_rejected(
                 &nested_schema,
@@ -33201,7 +33041,7 @@ mod tests {
             schema.edit_json(|source| source["properties"]["ResourceTags"] = property);
             let context = EmissionContext::from_source(&schema).unwrap();
             let path = ["ResourceTags".to_string()];
-            let error = tag_map_type(
+            let error = project_tag_map(
                 context.property_at(&path, &schema.properties["ResourceTags"]),
                 CfnPropertyPath::new(None, "ResourceTags"),
             )
@@ -33211,16 +33051,6 @@ mod tests {
                 error.to_string().contains("AWS::Budgets::Budget#"),
                 "{error}"
             );
-            if schema.properties["ResourceTags"]
-                .pattern_properties
-                .is_some()
-            {
-                assert_eq!(
-                    derive_tags_property(&schema).unwrap().unwrap().wire,
-                    GeneratedTagsWire::Map,
-                    "exercise a TagProperty admitted before projection"
-                );
-            }
             for result in [
                 generate_schema_code(&schema, &schema.type_name),
                 generate_test_markdown(&schema, &schema.type_name),
@@ -33245,9 +33075,7 @@ mod tests {
         ] {
             let error = result.expect_err("negative tag bounds must return an error");
             assert!(
-                error
-                    .to_string()
-                    .contains("Tags maxItems must be nonnegative"),
+                matches!(error.downcast_ref::<schema_layer::SchemaError>(), Some(schema_layer::SchemaError::InvalidValue { pointer, reason: _reason }) if pointer == "/properties/ResourceTags/maxItems"),
                 "{error}"
             );
         }
@@ -33480,7 +33308,7 @@ mod tests {
     }
 
     #[test]
-    fn issue_521_raw_json_tag_candidates() {
+    fn issue_521_layer_tag_candidates() {
         let pair = serde_json::json!({"type": "object", "properties": {
             "Key": {"type": "string"}, "Value": {"type": "string"}
         }});
@@ -33845,15 +33673,18 @@ mod tests {
                 "properties": {"Labels": property, "Pair": pair},
                 "definitions": definitions
             });
+            let schema = ParsedCfnSchema::from_json(source).unwrap();
             assert_eq!(
-                is_key_value_array_candidate([&source["properties"]["Labels"]], &source).unwrap(),
+                schema
+                    .tag_shape(&schema.properties["Labels"])
+                    .unwrap()
+                    .candidate(),
                 expected,
                 "{name}"
             );
             if !expected {
                 continue;
             }
-            let schema = ParsedCfnSchema::from_json(source).unwrap();
             for result in [
                 generate_schema_code(&schema, &schema.type_name),
                 generate_test_markdown(&schema, &schema.type_name),
@@ -34041,7 +33872,7 @@ mod tests {
     }
 
     #[test]
-    fn issue_521_budget_tag_raw_item_walk_preserves_scope_and_ref_fallbacks() {
+    fn issue_521_budget_tag_nested_scopes_and_unreadable_refs() {
         for keyword in ["allOf", "oneOf", "anyOf", "dependencies"] {
             let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
             schema.edit_json(|source| {
@@ -34050,6 +33881,10 @@ mod tests {
                     serde_json::json!(["ArrayExtra"]);
                 source["definitions"]["ResourceTag"]["properties"]["Key"]["required"] =
                     serde_json::json!(["NestedExtra"]);
+            });
+            generate_schema_code(&schema, &schema.type_name).unwrap();
+            generate_test_markdown(&schema, &schema.type_name).unwrap();
+            schema.edit_json(|source| {
                 let branch = serde_json::json!({
                     "properties": {"Key": {"type": "string"}},
                     "required": ["Value"],
@@ -34066,8 +33901,16 @@ mod tests {
                     serde_json::json!([branch])
                 };
             });
-            generate_schema_code(&schema, &schema.type_name).unwrap();
-            generate_test_markdown(&schema, &schema.type_name).unwrap();
+            for result in [
+                generate_schema_code(&schema, &schema.type_name),
+                generate_test_markdown(&schema, &schema.type_name),
+            ] {
+                let error = result.expect_err("unreadable tag arms must fail");
+                assert!(
+                    error.downcast_ref::<TagShapeError>().is_some(),
+                    "{keyword}: {error:#}"
+                );
+            }
         }
     }
 
@@ -34170,18 +34013,11 @@ mod tests {
                 .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
             for name in context.top_level_property_names() {
                 let sources = context.top_level_property_sources(name);
-                if is_key_value_array_candidate(
-                    sources.iter().map(|pointer| {
-                        context
-                            .parsed_schema()
-                            .source()
-                            .pointer(pointer)
-                            .expect("top-level property source")
-                    }),
-                    context.parsed_schema().source(),
-                )
-                .unwrap()
-                {
+                let layer = schema.layer().as_ref().unwrap();
+                if TagShape::candidates(sources.iter().map(|pointer| {
+                    let node = layer.sources().node_at(pointer).unwrap();
+                    tag_shape::classify_tag_shape(layer, node)
+                })) {
                     seen.insert((schema.type_name.clone(), format!("/properties/{name}")));
                 }
             }
@@ -34392,16 +34228,24 @@ mod tests {
                     source["properties"]["Tags"]["items"] = tag;
                 }
             });
-            let panic = std::panic::catch_unwind(|| generate_synthetic_schema_code(&schema))
-                .expect_err("Tag patterns must pass the same compilation gate as other strings");
-            let message = panic.downcast_ref::<String>().unwrap();
             let path = if inline {
                 "/properties/Tags/items/properties/Key"
             } else {
                 "/definitions/Tag/properties/Key"
             };
-            for expected in ["AWS::Test::Resource", path, "(?=x)x"] {
-                assert!(message.contains(expected), "{message}");
+            for result in [
+                generate_synthetic_schema_code(&schema),
+                generate_test_markdown(&schema, &schema.type_name),
+            ] {
+                let error = result.expect_err("invalid tag patterns must return an error");
+                assert!(
+                    error.downcast_ref::<schema_layer::SchemaError>().is_some(),
+                    "{error:#}"
+                );
+                let message = error.to_string();
+                for expected in ["AWS::Test::Resource", path, "(?=x)x"] {
+                    assert!(message.contains(expected), "{message}");
+                }
             }
         }
     }
@@ -34495,30 +34339,19 @@ mod tests {
                         source["properties"]["Tags"]["items"] = tag;
                     }
                 });
-                let panic = std::panic::catch_unwind(|| {
-                    cfn_type_to_carina_type_with_enum(
-                        &schema.properties["Tags"],
-                        "Tags",
-                        &schema,
-                        "aws.test.Resource",
-                        &BTreeMap::new(),
-                    )
-                })
-                .expect_err("unsupported Tag shapes must fail with source context");
-                let message = panic
-                    .downcast_ref::<String>()
-                    .map(String::as_str)
-                    .or_else(|| panic.downcast_ref::<&str>().copied())
-                    .expect("panic should carry a diagnostic");
-                let source = if inline {
-                    "/properties/Tags/items"
-                } else {
-                    "/definitions/Tag"
-                };
-                assert!(
-                    message.contains(&format!("AWS::Test::Resource#{source}")),
-                    "{message}"
-                );
+                for result in [
+                    generate_synthetic_schema_code(&schema),
+                    generate_test_markdown(&schema, &schema.type_name),
+                ] {
+                    let error = result.expect_err("unsupported Tag shapes must return an error");
+                    assert!(error.downcast_ref::<TagShapeError>().is_some(), "{error:#}");
+                    assert!(
+                        error
+                            .to_string()
+                            .contains("AWS::Test::Resource#/properties/Tags"),
+                        "{error:#}"
+                    );
+                }
             }
         }
     }

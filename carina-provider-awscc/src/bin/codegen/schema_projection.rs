@@ -1,8 +1,7 @@
 //! Shared, validated queries over the lossless Layer.
 //!
-//! CfnProperty holds typed query handles and the remaining tag compatibility
-//! fields. Its query origin always points into the Layer; no query reconstructs
-//! facts from legacy fields.
+//! SchemaProperty holds typed query handles. Its query origin always points
+//! into the Layer; queries never reconstruct facts from fixture fields.
 //! References and allOf intersect constraints. Same-type array alternatives must
 //! be equivalent, including children, bounds, ordering, and uniqueness. Object
 //! alternatives retain their required lists separately for the step-4/6 consumers.
@@ -10,11 +9,13 @@
 //! The object|string type set projects to a JSON document, regardless of its site.
 #[cfg(test)]
 use super::EnumValue;
+use super::SchemaProperty;
+#[cfg(test)]
+use super::TypeValue;
 use super::schema_layer::{
     ArrayType, Dependency, JsonType, Layer, NodeId, PropertyKeywords, RefTarget, SchemaError,
     SchemaNode, TypeSet,
 };
-use super::{CfnProperty, TypeValue};
 use serde_json::{Number, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, OnceLock};
@@ -55,12 +56,12 @@ impl Origin {
 pub(super) struct Reference {
     pub(super) path: String,
     pub(super) name: String,
-    pub(super) property: Box<CfnProperty>,
+    pub(super) property: Box<SchemaProperty>,
 }
 
 #[derive(Debug, Clone)]
 pub(super) enum ConditionalDependency {
-    Schema(Box<CfnProperty>),
+    Schema(Box<SchemaProperty>),
     PropertyList(Vec<String>),
 }
 
@@ -120,26 +121,26 @@ pub(super) struct Projection {
     pub(super) min_properties: Option<Number>,
     pub(super) max_properties: Option<Number>,
     pub(super) array_type: Option<ArrayType>,
-    pub(super) additional_schema: Option<Box<CfnProperty>>,
+    pub(super) additional_schema: Option<Box<SchemaProperty>>,
     pub(super) min_length: Option<u64>,
     pub(super) max_length: Option<u64>,
     pub(super) min_items: Option<i64>,
     pub(super) max_items: Option<i64>,
     pub(super) unique_items: Option<bool>,
     pub(super) insertion_order: Option<bool>,
-    pub(super) items: Option<Box<CfnProperty>>,
-    pub(super) properties: Option<BTreeMap<String, CfnProperty>>,
-    pub(super) pattern_properties: Option<BTreeMap<String, CfnProperty>>,
+    pub(super) items: Option<Box<SchemaProperty>>,
+    pub(super) properties: Option<BTreeMap<String, SchemaProperty>>,
+    pub(super) pattern_properties: Option<BTreeMap<String, SchemaProperty>>,
     pub(super) additional_properties: Option<bool>,
     pub(super) required: Vec<String>,
     pub(super) reference: Option<Reference>,
-    pub(super) concrete: Option<Box<CfnProperty>>,
+    pub(super) concrete: Option<Box<SchemaProperty>>,
     pub(super) alternatives: Vec<Vec<String>>,
     /// Direct arm requirements only: STEP 6 owns changes to group semantics.
     pub(super) declared_required_alternatives: Vec<Vec<Vec<String>>>,
     pub(super) dropped_bare_alternatives: Vec<DroppedBareAlternative>,
     pub(super) dependencies: BTreeMap<String, ConditionalDependency>,
-    pub(super) contains: Option<Box<CfnProperty>>,
+    pub(super) contains: Option<Box<SchemaProperty>>,
     pub(super) is_union: bool,
     pub(super) constrained_array_evidence: bool,
 }
@@ -254,7 +255,7 @@ impl Projection {
 
     pub(super) fn constrained_array(&self) -> Result<bool, SchemaError> {
         fn property(
-            property: &CfnProperty,
+            property: &SchemaProperty,
             inherited_array: bool,
             visited: &mut BTreeSet<(NodeId, bool)>,
         ) -> Result<bool, SchemaError> {
@@ -340,7 +341,7 @@ impl Drop for QueryGuard {
     }
 }
 
-impl CfnProperty {
+impl SchemaProperty {
     #[cfg(test)]
     pub(super) fn bind_fixture(&self, schema: &super::CfnSchema) {
         if self.origin.is_none() && self.projection.get().is_none() {
@@ -578,27 +579,22 @@ pub(super) fn direct(layer: &Arc<Layer>, node: NodeId) -> Result<Projection, Sch
     }
 }
 
-/// Only this compatibility conversion writes legacy fields. Queries read Projection.
-/// It deliberately does not expand reference edges or interpret literal JSON.
-pub(super) fn bridge(layer: &Arc<Layer>, node: NodeId) -> CfnProperty {
-    let p = direct(layer, node).unwrap_or_default();
-    let ref_path = match layer.node(node) {
-        SchemaNode::Boolean(_value) => None,
-        SchemaNode::Keywords(k) => k.reference.as_ref().map(|r| r.spelling.clone()),
-    };
-    let mut property = materialize(p);
-    match layer.node(node) {
-        SchemaNode::Boolean(_value) => {}
-        SchemaNode::Keywords(k) => {
-            property.one_of = k
-                .compositions
-                .one_of
-                .iter()
-                .flatten()
-                .map(|id| bridge(layer, *id))
-                .collect();
-            #[cfg(test)]
-            {
+/// Query handles only carry their immutable Layer origin in production.
+pub(super) fn bridge(layer: &Arc<Layer>, node: NodeId) -> SchemaProperty {
+    #[cfg(test)]
+    let mut property = {
+        let mut property = materialize(direct(layer, node).unwrap_or_default());
+        match layer.node(node) {
+            SchemaNode::Boolean(_value) => {}
+            SchemaNode::Keywords(k) => {
+                property.ref_path = k.reference.as_ref().map(|r| r.spelling.clone());
+                property.one_of = k
+                    .compositions
+                    .one_of
+                    .iter()
+                    .flatten()
+                    .map(|id| bridge(layer, *id))
+                    .collect();
                 property.any_of = k
                     .compositions
                     .any_of
@@ -608,14 +604,23 @@ pub(super) fn bridge(layer: &Arc<Layer>, node: NodeId) -> CfnProperty {
                     .collect();
             }
         }
+        property
+    };
+    #[cfg(test)]
+    {
+        property.origin = Some(Origin::new(layer, node));
+        property.projection = OnceLock::new();
+        property
     }
-    property.ref_path = ref_path;
-    property.origin = Some(Origin::new(layer, node));
-    property.projection = OnceLock::new();
-    property
+    #[cfg(not(test))]
+    SchemaProperty {
+        origin: Some(Origin::new(layer, node)),
+        projection: OnceLock::new(),
+    }
 }
 
-pub(super) fn materialize(p: Projection) -> CfnProperty {
+pub(super) fn materialize(p: Projection) -> SchemaProperty {
+    #[cfg(test)]
     let type_names = p
         .types
         .iter()
@@ -632,6 +637,7 @@ pub(super) fn materialize(p: Projection) -> CfnProperty {
             .to_string()
         })
         .collect::<Vec<_>>();
+    #[cfg(test)]
     let prop_type = if type_names.is_empty() {
         None
     } else if type_names.len() == 1 {
@@ -653,17 +659,24 @@ pub(super) fn materialize(p: Projection) -> CfnProperty {
             })
             .collect()
     });
-    CfnProperty {
+    SchemaProperty {
+        #[cfg(test)]
         prop_type,
         #[cfg(test)]
         description: p.description.clone(),
         #[cfg(test)]
         enum_values,
+        #[cfg(test)]
         items: p.items.clone(),
+        #[cfg(test)]
         ref_path: None,
+        #[cfg(test)]
         insertion_order: p.insertion_order,
+        #[cfg(test)]
         unique_items: p.unique_items,
+        #[cfg(test)]
         properties: p.properties.clone(),
+        #[cfg(test)]
         pattern_properties: p.pattern_properties.clone(),
         #[cfg(test)]
         required: p.required.clone(),
@@ -671,13 +684,17 @@ pub(super) fn materialize(p: Projection) -> CfnProperty {
         minimum: p.minimum.as_ref().and_then(Number::as_i64),
         #[cfg(test)]
         maximum: p.maximum.as_ref().and_then(Number::as_i64),
+        #[cfg(test)]
         additional_properties: p.additional_properties,
         #[cfg(test)]
         const_value: p.const_value.clone(),
         #[cfg(test)]
         default_value: p.default_value.clone(),
+        #[cfg(test)]
         pattern: p.pattern.clone(),
+        #[cfg(test)]
         min_items: p.min_items,
+        #[cfg(test)]
         max_items: p.max_items,
         #[cfg(test)]
         min_length: p.min_length,
@@ -685,6 +702,7 @@ pub(super) fn materialize(p: Projection) -> CfnProperty {
         max_length: p.max_length,
         #[cfg(test)]
         format: p.format.clone(),
+        #[cfg(test)]
         one_of: Vec::new(),
         #[cfg(test)]
         any_of: Vec::new(),
@@ -780,7 +798,7 @@ fn cycle_projection(
         reference: Some(Reference {
             path: format!("#{}", layer.sources().pointer(node)),
             name,
-            property: Box::new(CfnProperty::default()),
+            property: Box::new(SchemaProperty::default()),
         }),
         ..Projection::default()
     })
@@ -812,7 +830,7 @@ fn project_inner(
             p.reference = Some(Reference {
                 path: reference.spelling.clone(),
                 name,
-                property: Box::new(CfnProperty::default()),
+                property: Box::new(SchemaProperty::default()),
             });
         }
         p.conjunction |= k
@@ -864,7 +882,7 @@ fn project_inner(
     Ok(p)
 }
 
-fn merge(
+pub(super) fn merge(
     layer: &Arc<Layer>,
     node: NodeId,
     p: &mut Projection,
@@ -1040,9 +1058,9 @@ fn merge(
 fn conjoin_child(
     layer: &Arc<Layer>,
     node: NodeId,
-    existing: Option<CfnProperty>,
-    child: CfnProperty,
-) -> Result<CfnProperty, SchemaError> {
+    existing: Option<SchemaProperty>,
+    child: SchemaProperty,
+) -> Result<SchemaProperty, SchemaError> {
     match existing {
         None => Ok(child),
         Some(existing) => {
@@ -1339,7 +1357,23 @@ fn equivalent(
     q: &Projection,
     seen: &mut BTreeSet<(NodeId, NodeId)>,
 ) -> Result<bool, SchemaError> {
-    if p.reference.as_ref().map(|r| &r.name) != q.reference.as_ref().map(|r| &r.name) {
+    equivalent_with_identity(p, q, seen, true)
+}
+
+pub(super) fn equivalent_tag_projection(
+    p: &Projection,
+    q: &Projection,
+) -> Result<bool, SchemaError> {
+    equivalent_with_identity(p, q, &mut BTreeSet::new(), false)
+}
+
+fn equivalent_with_identity(
+    p: &Projection,
+    q: &Projection,
+    seen: &mut BTreeSet<(NodeId, NodeId)>,
+    identity: bool,
+) -> Result<bool, SchemaError> {
+    if identity && p.reference.as_ref().map(|r| &r.name) != q.reference.as_ref().map(|r| &r.name) {
         return Ok(false);
     }
     if !equivalent_scalar(p, q)
@@ -1349,13 +1383,13 @@ fn equivalent(
     {
         return Ok(false);
     }
-    let mut child_equal = |a: &CfnProperty, b: &CfnProperty| -> Result<bool, SchemaError> {
+    let mut child_equal = |a: &SchemaProperty, b: &SchemaProperty| -> Result<bool, SchemaError> {
         if let (Some(a), Some(b)) = (&a.origin, &b.origin)
             && !seen.insert((a.node, b.node))
         {
             return Ok(true);
         }
-        equivalent(a.try_query()?, b.try_query()?, seen)
+        equivalent_with_identity(a.try_query()?, b.try_query()?, seen, identity)
     };
     for (a, b) in [
         (&p.items, &q.items),
@@ -1489,7 +1523,7 @@ fn number_cmp(a: &Number, b: &Number) -> std::cmp::Ordering {
     }
 }
 
-fn validate(layer: &Layer, node: NodeId, p: &Projection) -> Result<(), SchemaError> {
+pub(super) fn validate(layer: &Layer, node: NodeId, p: &Projection) -> Result<(), SchemaError> {
     for dropped in &p.dropped_bare_alternatives {
         if bare_type(layer, dropped.arm) != Some(dropped.json_type) {
             return Err(error(
@@ -1617,7 +1651,7 @@ fn validate(layer: &Layer, node: NodeId, p: &Projection) -> Result<(), SchemaErr
 pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Result<()> {
     fn visit(
         schema: &super::CfnSchema,
-        property: &CfnProperty,
+        property: &SchemaProperty,
         seen: &mut BTreeSet<NodeId>,
     ) -> Result<(), SchemaError> {
         if let Some(origin) = &property.origin
@@ -1711,16 +1745,15 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
 pub(super) struct DefinitionEnumFields {
     pub(super) source_name: String,
     pub(super) name: String,
-    pub(super) properties: BTreeMap<String, CfnProperty>,
+    pub(super) properties: BTreeMap<String, SchemaProperty>,
 }
 
 /// Discover declared definition fields from the Layer, including unconditional
 /// allOf fields. Pure aliases reuse their target's identity instead of creating
-/// a second set of enum identities. Tag enum bookkeeping remains on STEP 2.
+/// a second set of enum identities. Both renderers share these resolved fields.
 pub(super) fn definition_enum_fields(
     schema: &super::CfnSchema,
 ) -> anyhow::Result<Vec<DefinitionEnumFields>> {
-    let tag_definitions = super::tag_queries_compat::enum_definition_names(schema)?;
     let layer = schema.layer.as_ref().expect("parsed schema has a Layer");
     let mut fields = Vec::new();
     let mut seen = BTreeSet::new();
@@ -1732,35 +1765,15 @@ pub(super) fn definition_enum_fields(
         if !declared {
             continue;
         }
-        let tag = tag_definitions.contains(name)
-            || super::is_tag_map_ref(
-                schema,
-                &format!(
-                    "#/definitions/{}",
-                    name.replace('~', "~0").replace('/', "~1")
-                ),
-            );
-        let p = if tag {
-            direct(layer, *id)?
-        } else {
-            schema.query_node(*id).try_query()?.clone()
-        };
-        let identity = if tag {
-            name.clone()
-        } else {
-            p.reference
-                .as_ref()
-                .map_or_else(|| name.clone(), |r| r.name.clone())
-        };
+        let p = schema.query_node(*id).try_query()?.clone();
+        let identity = p
+            .reference
+            .as_ref()
+            .map_or_else(|| name.clone(), |r| r.name.clone());
         if !seen.insert(identity.clone()) {
             continue;
         }
-        if let Some(mut properties) = p.properties {
-            if tag {
-                for property in properties.values_mut() {
-                    *property = super::tag_queries_compat::enum_field(schema, property)?;
-                }
-            }
+        if let Some(properties) = p.properties {
             fields.push(DefinitionEnumFields {
                 source_name: name.clone(),
                 name: identity,

@@ -891,7 +891,7 @@ fn unexpected_layer_errors_in_test_fixtures_are_loud_and_edits_are_atomic() {
             .unwrap()
             .contains("lossless CFN layer failed: unknown schema keyword")
     );
-    assert_eq!(parsed.source(), &source);
+    assert_eq!(parsed.source, source);
     assert_eq!(
         keywords(parsed.layer().as_ref().unwrap(), "/properties/x").types,
         Some(TypeSet::Single(JsonType::String))

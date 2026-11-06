@@ -1,7 +1,7 @@
-//! Lossless, source-indexed CFN syntax graph. Projection belongs to future consumers.
+//! Lossless, source-indexed CFN syntax graph for shared projections.
 //!
-//! Deliberately separate from ParsedCfnSchema's legacy serde model: neither reference
-//! resolution nor conversion selects branches, merges constraints, or infers types.
+//! Reference resolution and conversion preserve every branch and constraint;
+//! projection consumers decide how supported shapes are emitted.
 #![allow(dead_code)] // Staged alongside the existing parser until consumers migrate.
 
 use serde_json::{Map, Number, Value};
@@ -60,6 +60,7 @@ pub(super) struct Layer {
     nodes: Vec<SchemaNode>,
     sources: SourceIndex,
     diagnostics: Vec<SchemaError>,
+    tag_shapes: Vec<std::sync::OnceLock<super::tag_shape::TagShape>>,
 }
 
 impl Layer {
@@ -71,8 +72,8 @@ impl Layer {
         Ok(layer)
     }
 
-    /// Retain known sites and conversion diagnostics during the staged legacy
-    /// migration. Accounting runs even for rejected keywords; finish() must
+    /// Retain known sites and conversion diagnostics. Accounting runs even
+    /// for rejected keywords; finish() must
     /// report remaining diagnostics before any generated output is accepted.
     pub(super) fn for_codegen(source: &Value) -> Result<Self, SchemaError> {
         let mut builder = Builder::default();
@@ -101,12 +102,23 @@ impl Layer {
                 }
             }
         }
+        let tag_shapes = (0..nodes.len())
+            .map(|_index| std::sync::OnceLock::new())
+            .collect();
         Ok(Self {
+            tag_shapes,
             resource,
             nodes,
             sources,
             diagnostics,
         })
+    }
+
+    pub(super) fn tag_shape_cache(
+        &self,
+        node: NodeId,
+    ) -> &std::sync::OnceLock<super::tag_shape::TagShape> {
+        &self.tag_shapes[node.0]
     }
 
     pub(super) fn resource(&self) -> &Resource {

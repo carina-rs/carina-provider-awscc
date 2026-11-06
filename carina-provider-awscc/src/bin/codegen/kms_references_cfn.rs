@@ -5,7 +5,7 @@ use super::schema_layer::{
     Dependency, Layer, PropertyKeywords, RefTarget, SchemaNode, SourceEvidence, SourceReference,
 };
 use super::{
-    CfnProperty, CfnPropertyPath, CfnSchema, ParsedCfnSchema, dsl_resource_name_from_type,
+    CfnPropertyPath, CfnSchema, ParsedCfnSchema, SchemaProperty, dsl_resource_name_from_type,
     emit_pattern_option, is_property_read_only, string_constraints,
 };
 use anyhow::{Result, bail};
@@ -188,7 +188,7 @@ pub(super) struct EmissionContext<'a> {
 
 pub(super) struct EmissionProperty<'a> {
     schema: &'a EmissionContext<'a>,
-    property: &'a CfnProperty,
+    property: &'a SchemaProperty,
     path: &'a [String],
 }
 
@@ -196,7 +196,7 @@ impl<'a> EmissionProperty<'a> {
     pub(super) fn schema(&self) -> &'a EmissionContext<'a> {
         self.schema
     }
-    pub(super) fn property(&self) -> &'a CfnProperty {
+    pub(super) fn property(&self) -> &'a SchemaProperty {
         self.property
     }
     pub(super) fn path(&self) -> &'a [String] {
@@ -222,10 +222,6 @@ impl<'a> EmissionProperty<'a> {
 }
 
 impl<'a> EmissionContext<'a> {
-    pub(super) fn parsed_schema(&self) -> &ParsedCfnSchema {
-        self.schema
-    }
-
     fn keywords_at(&self, pointer: &str) -> Option<&PropertyKeywords> {
         let id = self.layer.sources().node_at(pointer)?;
         match self.layer.node(id) {
@@ -348,7 +344,7 @@ impl<'a> EmissionContext<'a> {
     pub(super) fn property_at<'b>(
         &'b self,
         path: &'b [String],
-        property: &'b CfnProperty,
+        property: &'b SchemaProperty,
     ) -> EmissionProperty<'b> {
         if !self.sites.borrow().contains_key(path) {
             let site = self.collect_property_site(path);
