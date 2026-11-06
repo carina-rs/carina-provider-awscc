@@ -320,15 +320,15 @@ impl<'a> EmissionContext<'a> {
 
     pub(super) fn begin_definition_enum_discovery(&self, definition: &str) {
         assert!(self.enum_discovery);
-        // Definition pre-scans reuse paths such as [Name] for different
-        // definitions. Seed each scan at its actual source, not at resource
-        // properties with the same names, and discard the previous paths.
+        // Prefix field paths with the definition so they cannot look like
+        // top-level resource properties. Seed each scan at its actual source
+        // and discard the previous definition's paths.
         self.paths.borrow_mut().clear();
         let sources = self.same_site_sources([pointer_child("/definitions", definition)]);
         let mut sites = self.sites.borrow_mut();
         sites.clear();
         sites.insert(
-            Vec::new(),
+            vec![definition.to_string()],
             EmittedSite {
                 sources,
                 evidence: Evidence::default(),
@@ -978,7 +978,7 @@ mod tests {
                 .properties
                 .as_ref()
                 .unwrap()["Mapping"];
-            let root = ["Mapping".to_string()];
+            let root = [definition.to_string(), "Mapping".to_string()];
             context.property_at(&root, mapping);
             let value_path = context.collection_path(&root, PathSegment::MapValue);
             let value = &mapping.pattern_properties.as_ref().unwrap()["x/y"];
