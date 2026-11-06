@@ -134,7 +134,7 @@ The IDs of the subnets in which to create endpoint network interfaces. You must 
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
 - **Required:** No
 
 The tags to associate with the endpoint.

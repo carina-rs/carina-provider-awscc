@@ -89,7 +89,7 @@ An IPv4 IPAM pool ID for the subnet.
 
 ### `ipv4_netmask_length`
 
-- **Type:** Int(0..=32)
+- **Type:** Int(16..=28)
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -153,7 +153,7 @@ The hostname type for EC2 instances launched into this subnet and how DNS A and 
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
 - **Required:** No
 
 Any tags assigned to the subnet.

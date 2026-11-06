@@ -84,7 +84,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipv4_ipam_pool_id_attribute());
     #[inline(never)]
     fn build_ipv4_netmask_length_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipv4_netmask_length", AttributeType::refined_int(None, Some((Some(0), Some(32)))))
+        AttributeSchema::optional("ipv4_netmask_length", AttributeType::refined_int(None, Some((Some(16), Some(28)))))
                 .create_only()
                 .write_only()
                 .with_description("An IPv4 netmask length for the subnet.")
@@ -182,7 +182,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_subnet_id_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((None, Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_description("Any tags assigned to the subnet.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

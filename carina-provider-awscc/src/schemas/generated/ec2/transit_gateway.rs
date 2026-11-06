@@ -32,7 +32,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for AWS::EC2::TransitGateway");
     #[inline(never)]
     fn build_amazon_side_asn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("amazon_side_asn", AttributeType::refined_int(None, Some((Some(1), Some(4294967294)))))
+        AttributeSchema::optional("amazon_side_asn", AttributeType::union(vec![AttributeType::refined_int(None, Some((Some(64512), Some(65534)))), AttributeType::refined_int(None, Some((Some(4200000000), Some(4294967294))))]))
                 .create_only()
                 .with_provider_name("AmazonSideAsn")
             .build()
@@ -126,7 +126,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_security_group_referencing_support_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((None, Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_provider_name("Tags")
                 .with_block_name("tag")
             .build()

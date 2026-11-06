@@ -74,7 +74,7 @@ The ID of the VPC with which you are creating the VPC peering connection. You mu
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
 - **Required:** No
 
 ### `vpc_id`

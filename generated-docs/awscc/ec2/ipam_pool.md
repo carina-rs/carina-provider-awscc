@@ -47,21 +47,21 @@ The address family of the address space in this pool. Either IPv4 or IPv6.
 
 ### `allocation_default_netmask_length`
 
-- **Type:** Int
+- **Type:** Int(0..=128)
 - **Required:** No
 
 The default netmask length for allocations made from this pool. This value is used when the netmask length of an allocation isn't specified.
 
 ### `allocation_max_netmask_length`
 
-- **Type:** Int
+- **Type:** Int(0..=128)
 - **Required:** No
 
 The maximum allowed netmask length for allocations made from this pool.
 
 ### `allocation_min_netmask_length`
 
-- **Type:** Int
+- **Type:** Int(0..=128)
 - **Required:** No
 
 The minimum allowed netmask length for allocations made from this pool.
@@ -191,6 +191,14 @@ Shorthand formats: `public` or `IpamScopeType.public`
 
 Shorthand formats: `byoip` or `PublicIpSource.byoip`
 
+### source_resource.resource_type (ResourceType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `vpc` | `aws.ec2.IpamPool.SourceResource.ResourceType.vpc` |
+
+Shorthand formats: `vpc` or `ResourceType.vpc`
+
 ### state (State)
 
 | Value | DSL Identifier |
@@ -219,7 +227,7 @@ Shorthand formats: `create_in_progress` or `State.create_in_progress`
 | `resource_id` | String | Yes |  |
 | `resource_owner` | String | Yes |  |
 | `resource_region` | Region | Yes |  |
-| `resource_type` | String | Yes |  |
+| `resource_type` | [Enum (ResourceType)](#source_resourceresource_type-resourcetype) | Yes |  |
 
 ## Attribute Reference
 

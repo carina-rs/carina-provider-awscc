@@ -42,7 +42,7 @@ awscc.ec2.SecurityGroup {
 
 ### `group_description`
 
-- **Type:** String
+- **Type:** `String(pattern, len: ..=255)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -72,7 +72,7 @@ The inbound rules associated with the security group. There is a short interrupt
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
 - **Required:** No
 
 Any tags assigned to the security group.
@@ -119,7 +119,7 @@ Shorthand formats: `tcp` or `IpProtocol.tcp`
 |-------|------|----------|-------------|
 | `cidr_ip` | Ipv4Cidr | No |  |
 | `cidr_ipv6` | Ipv6Cidr | No |  |
-| `description` | String | No |  |
+| `description` | `String(pattern, len: ..=255)` | No |  |
 | `destination_prefix_list_id` | PrefixListId | No |  |
 | `destination_security_group_id` | SecurityGroupId | No |  |
 | `from_port` | Int(-1..=65535) | No |  |
@@ -132,7 +132,7 @@ Shorthand formats: `tcp` or `IpProtocol.tcp`
 |-------|------|----------|-------------|
 | `cidr_ip` | Ipv4Cidr | No |  |
 | `cidr_ipv6` | Ipv6Cidr | No |  |
-| `description` | String | No |  |
+| `description` | `String(pattern, len: ..=255)` | No |  |
 | `from_port` | Int(-1..=65535) | No |  |
 | `ip_protocol` | [Enum (IpProtocol)](#security_group_ingressip_protocol-ipprotocol) | Yes |  |
 | `source_prefix_list_id` | PrefixListId | No |  |

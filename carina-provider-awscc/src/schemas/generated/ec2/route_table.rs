@@ -22,7 +22,7 @@ pub fn ec2_route_table_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_route_table_id_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((None, Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_description("Any tags assigned to the route table.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

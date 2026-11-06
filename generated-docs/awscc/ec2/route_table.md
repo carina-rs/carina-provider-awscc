@@ -30,7 +30,7 @@ awscc.ec2.RouteTable {
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
 - **Required:** No
 
 Any tags assigned to the route table.

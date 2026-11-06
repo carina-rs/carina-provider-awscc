@@ -51,7 +51,7 @@ The IPv6 address range, in CIDR format. You must specify exactly one of the foll
 
 ### `description`
 
-- **Type:** String
+- **Type:** `String(pattern, len: ..=255)`
 - **Required:** No
 
 The description of an egress (outbound) security group rule. Constraints: Up to 255 characters in length. Allowed characters are a-z, A-Z, 0-9, spaces, and ._-:/()#,@[]+=;{}!$*

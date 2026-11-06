@@ -49,7 +49,7 @@ The IPv4 ranges
 
 ### `description`
 
-- **Type:** String
+- **Type:** `String(pattern, len: ..=255)`
 - **Required:** No
 
 Updates the description of an ingress (inbound) security group rule. You can replace an existing description, or add a description to a rule that did not have one previously

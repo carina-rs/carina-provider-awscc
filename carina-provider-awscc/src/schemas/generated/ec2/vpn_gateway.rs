@@ -16,7 +16,7 @@ pub fn ec2_vpn_gateway_config() -> AwsccSchemaConfig {
         .with_description("Specifies a virtual private gateway. A virtual private gateway is the endpoint on the VPC side of your VPN connection. You can create a virtual private gateway before creating the VPC itself.  For more information, see [](https://docs.aws.amazon.com/vpn/latest/s2svpn/VPC_VPN.html) in the *User Guide*.");
     #[inline(never)]
     fn build_amazon_side_asn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("amazon_side_asn", AttributeType::refined_int(None, Some((Some(1), Some(4294967294)))))
+        AttributeSchema::optional("amazon_side_asn", AttributeType::union(vec![AttributeType::refined_int(None, Some((Some(64512), Some(65534)))), AttributeType::refined_int(None, Some((Some(4200000000), Some(4294967294))))]))
                 .create_only()
                 .with_description("The private Autonomous System Number (ASN) for the Amazon side of a BGP session.")
                 .with_provider_name("AmazonSideAsn")
@@ -25,7 +25,7 @@ pub fn ec2_vpn_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_amazon_side_asn_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((None, Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_description("Any tags assigned to the virtual private gateway.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

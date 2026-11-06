@@ -109,7 +109,7 @@ The type of resource for which to create the flow log. For example, if you speci
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
 - **Required:** No
 
 The tags to apply to the flow logs.

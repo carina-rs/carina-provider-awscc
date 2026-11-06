@@ -24,7 +24,7 @@ awscc.ec2.VpnGateway {
 
 ### `amazon_side_asn`
 
-- **Type:** Int(1..=4294967294)
+- **Type:** `Int(64512..=65534) | Int(4200000000..=4294967294)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -32,7 +32,7 @@ The private Autonomous System Number (ASN) for the Amazon side of a BGP session.
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
 - **Required:** No
 
 Any tags assigned to the virtual private gateway.

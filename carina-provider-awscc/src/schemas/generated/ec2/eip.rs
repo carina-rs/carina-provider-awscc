@@ -85,7 +85,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_public_ipv4_pool_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::string(), AttributeType::string()))
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, None, Some((None, Some(128))), None), AttributeType::refined_string(None, None, Some((None, Some(256))), None)))
                 .with_description("Any tags assigned to the Elastic IP address. Updates to the ``Tags`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

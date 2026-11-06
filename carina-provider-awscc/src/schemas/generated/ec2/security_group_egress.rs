@@ -34,7 +34,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_cidr_ipv6_attribute());
     #[inline(never)]
     fn build_description_attribute() -> AttributeSchema {
-        AttributeSchema::optional("description", AttributeType::string())
+        AttributeSchema::optional("description", AttributeType::refined_string(None, Some(r"^[a-zA-Z0-9. _:/()#,@\[\]+=&;{}!$*-]*$".to_string()), Some((None, Some(255))), None))
                 .with_description("The description of an egress (outbound) security group rule. Constraints: Up to 255 characters in length. Allowed characters are a-z, A-Z, 0-9, spaces, and ._-:/()#,@[]+=;{}!$*")
                 .with_provider_name("Description")
             .build()

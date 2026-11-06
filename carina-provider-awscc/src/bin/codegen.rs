@@ -10725,14 +10725,13 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::EC2::VPNGateway", "Type"),
             TypeOverride::Enum(vec!["ipsec.1"]),
         );
-        // EC2 VPC InstanceTenancy is a pre-existing generated enum. The
-        // cached description lists `default` and `dedicated` as bullet
-        // leaders, but only mentions `host` inside a bullet body. Keep the
-        // heuristic scoped to leading value-list bullets and pin the full
-        // provider value set here.
+        // https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateVpc.html#API_CreateVpc_RequestParameters
+        // CreateVpc and Cloud Control create-resource, carina-test-008,
+        // ap-northeast-1, 2026-11-06: accepted tenancies not separately probed;
+        // rejected host. Keep the documented default/dedicated values.
         m.insert(
             ("AWS::EC2::VPC", "InstanceTenancy"),
-            TypeOverride::Enum(vec!["default", "dedicated", "host"]),
+            TypeOverride::Enum(vec!["default", "dedicated"]),
         );
 
         // ELBv2 TargetGroup TargetType / Protocol (awscc#357). The CFN
@@ -11860,6 +11859,171 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ),
         );
 
+        // === EC2 API constraints (#525) ===
+
+        // CIDR bounds wait for carina#4294: named identities reject Ipv4Cidr/Cidr
+        // references. Live in carina-test-008, ap-northeast-1, 2026-11-06:
+        // Subnet /16..=/28 (/29 rejected with InvalidSubnet.Range); TGW IPv4
+        // <=/24 and IPv6 <=/64 (/25 and /65 rejected).
+        // https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateSubnet.html
+        // https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_TransitGatewayRequestOptions.html
+
+        // The other four EC2 Tag definitions already have key max 128 and
+        // value max 256 in CFN. Retain their minima and patterns verbatim;
+        // IPAMPool's shared AllocationResourceTags definition is untouched.
+        for resource in [
+            "AWS::EC2::EIP",
+            "AWS::EC2::FlowLog",
+            "AWS::EC2::NatGateway",
+            "AWS::EC2::RouteTable",
+            "AWS::EC2::SecurityGroup",
+            "AWS::EC2::Subnet",
+            "AWS::EC2::TransitGateway",
+            "AWS::EC2::TransitGatewayAttachment",
+            "AWS::EC2::VPC",
+            "AWS::EC2::VPCEndpoint",
+            "AWS::EC2::VPCPeeringConnection",
+            "AWS::EC2::VPNGateway",
+        ] {
+            // https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Tag.html#API_Tag_Contents
+            // CreateTags, carina-test-008, ap-northeast-1, 2026-11-06:
+            // accepted key lengths 127 and 128; rejected 129. Cloud Control
+            // create-resource/get-resource also accepted/read back VPC key
+            // length 128. The documented 127 must not reject that value.
+            m.insert(
+                (resource, "Tag.Key"),
+                TypeOverride::AttributeType {
+                    expression: OverrideTypeExpression::string(
+                        None,
+                        Some((None, Some(128))),
+                        PatternLiteral::Quoted,
+                    ),
+                    display: const { OverrideTypeDisplay::new("String(len: ..=128)") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+            // https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Tag.html#API_Tag_Contents
+            // CreateTags, carina-test-008, ap-northeast-1, 2026-11-06:
+            // accepted value lengths 256 and 0; rejected 257.
+            m.insert(
+                (resource, "Tag.Value"),
+                TypeOverride::AttributeType {
+                    expression: OverrideTypeExpression::string(
+                        None,
+                        Some((None, Some(256))),
+                        PatternLiteral::Quoted,
+                    ),
+                    display: const { OverrideTypeDisplay::new("String(len: ..=256)") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
+
+        let ec2_description = || TypeOverride::AttributeType {
+            expression: OverrideTypeExpression::string(
+                Some(ApprovedPattern::whole(
+                    r"^[a-zA-Z0-9. _:/()#,@\[\]+=&;{}!$*-]*$",
+                )),
+                Some((None, Some(255))),
+                PatternLiteral::Raw,
+            ),
+            display: const { OverrideTypeDisplay::new("String(pattern, len: ..=255)") },
+            block_name: None,
+            default: None,
+        };
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-securitygroup.html#cfn-ec2-securitygroup-groupdescription
+        // CreateSecurityGroup, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 255 characters, the documented alphabet and &; rejected
+        // 256 characters, apostrophe, percent, newline and Japanese text.
+        m.insert(
+            ("AWS::EC2::SecurityGroup", "GroupDescription"),
+            ec2_description(),
+        );
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-ec2-securitygroup-ingress.html#cfn-ec2-securitygroup-ingress-description
+        // AuthorizeSecurityGroupIngress, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 255 characters, empty and &; rejected 256 characters,
+        // apostrophe, percent and Japanese text.
+        m.insert(
+            ("AWS::EC2::SecurityGroup", "Ingress.Description"),
+            ec2_description(),
+        );
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-ec2-securitygroup-egress.html#cfn-ec2-securitygroup-egress-description
+        // AuthorizeSecurityGroupEgress, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 255 characters, empty and &; rejected 256 characters,
+        // apostrophe, percent and Japanese text.
+        m.insert(
+            ("AWS::EC2::SecurityGroup", "Egress.Description"),
+            ec2_description(),
+        );
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-securitygroupingress.html#cfn-ec2-securitygroupingress-description
+        // AuthorizeSecurityGroupIngress, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 255 characters, empty and &; rejected 256 characters,
+        // apostrophe, percent and Japanese text.
+        m.insert(
+            ("AWS::EC2::SecurityGroupIngress", "Description"),
+            ec2_description(),
+        );
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-securitygroupegress.html#cfn-ec2-securitygroupegress-description
+        // AuthorizeSecurityGroupEgress, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 255 characters, empty and &; rejected 256 characters,
+        // apostrophe, percent and Japanese text.
+        m.insert(
+            ("AWS::EC2::SecurityGroupEgress", "Description"),
+            ec2_description(),
+        );
+
+        // https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateSubnet.html#API_CreateSubnet
+        // docs only, not probed: IPAM IPv4 subnet netmask lengths are 16..=28.
+        m.insert(
+            ("AWS::EC2::Subnet", "Ipv4NetmaskLength"),
+            TypeOverride::IntRange(16, 28),
+        );
+
+        // https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateNatGateway.html#API_CreateNatGateway_RequestParameters
+        // CreateNatGateway, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted counts not separately probed; rejected 32 (maximum 31)
+        // and 0. Preserve CFN's existing minimum of 1.
+        m.insert(
+            ("AWS::EC2::NatGateway", "SecondaryPrivateIpAddressCount"),
+            TypeOverride::IntRange(1, 31),
+        );
+
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-ipampool.html#cfn-ec2-ipampool-allocationminnetmasklength
+        // Cloud Control create-resource/get-resource, carina-test-008,
+        // ap-northeast-1, 2026-11-06: accepted IPv6 max 128; rejected IPv4 min
+        // 33 and IPv6 max 129. Use the shared documented 0..=128 envelope;
+        // the IPv4 cap of 32 depends on AddressFamily and is not a scalar bound.
+        m.insert(
+            ("AWS::EC2::IPAMPool", "AllocationMinNetmaskLength"),
+            TypeOverride::IntRange(0, 128),
+        );
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-ipampool.html#cfn-ec2-ipampool-allocationmaxnetmasklength
+        // Cloud Control create-resource/get-resource, carina-test-008,
+        // ap-northeast-1, 2026-11-06: accepted IPv6 max 128; rejected IPv6 max
+        // 129. The family-independent scalar envelope is 0..=128.
+        m.insert(
+            ("AWS::EC2::IPAMPool", "AllocationMaxNetmaskLength"),
+            TypeOverride::IntRange(0, 128),
+        );
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-ipampool.html#cfn-ec2-ipampool-allocationdefaultnetmasklength
+        // Cloud Control create-resource/get-resource, carina-test-008,
+        // ap-northeast-1, 2026-11-06: accepted IPv6 max 128; rejected IPv4
+        // default -1 and IPv6 max 129. Keep the documented 0..=128 envelope.
+        m.insert(
+            ("AWS::EC2::IPAMPool", "AllocationDefaultNetmaskLength"),
+            TypeOverride::IntRange(0, 128),
+        );
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-ec2-ipampool-sourceresource.html#cfn-ec2-ipampool-sourceresource-resourcetype
+        // Cloud Control create-resource, carina-test-008, ap-northeast-1,
+        // 2026-11-06: accepted source types not probed; rejected subnet
+        // (source resource type value subnet is not valid). Docs allow vpc.
+        m.insert(
+            ("AWS::EC2::IPAMPool", "SourceResource.ResourceType"),
+            TypeOverride::Enum(vec!["vpc"]),
+        );
+
         // AllowedPattern: CFN's cached schema omits the documented 0..=1024 bounds.
         // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ssm-parameter.html#cfn-ssm-parameter-allowedpattern
         // Cloud Control probe, carina-test-008, 2026-11-06: empty and 1024
@@ -11954,14 +12118,35 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
 
         // === IntRange overrides ===
 
-        // VPN Gateway and Transit Gateway ASN range
+        // https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateVpnGateway.html#API_CreateVpnGateway_RequestParameters
+        // CreateVpnGateway, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted 64512, 65534, 4200000000 and 4294967294; rejected 64511,
+        // 65535, 4199999999 and 7224. A single Int range cannot express this
+        // union. Anonymous ranges keep Int-typed references assignable.
+        let ec2_amazon_side_asn = || TypeOverride::AttributeType {
+            expression: OverrideTypeExpression::union(vec![
+                OverrideTypeExpression::raw(
+                    "AttributeType::refined_int(None, Some((Some(64512), Some(65534))))",
+                ),
+                OverrideTypeExpression::raw(
+                    "AttributeType::refined_int(None, Some((Some(4200000000), Some(4294967294))))",
+                ),
+            ]),
+            display: OverrideTypeDisplay::new("Int(64512..=65534) | Int(4200000000..=4294967294)"),
+            block_name: None,
+            default: None,
+        };
         m.insert(
             ("AWS::EC2::VPNGateway", "AmazonSideAsn"),
-            TypeOverride::IntRange(1, 4294967294),
+            ec2_amazon_side_asn(),
         );
+        // https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ModifyTransitGatewayOptions.html#API_ModifyTransitGatewayOptions_Contents
+        // CreateTransitGateway, carina-test-008, ap-northeast-1, 2026-11-06:
+        // accepted ASNs not separately probed; rejected 64511, 7224, 65535
+        // and 4199999999. Reuse the documented private union tested on VGW.
         m.insert(
             ("AWS::EC2::TransitGateway", "AmazonSideAsn"),
-            TypeOverride::IntRange(1, 4294967294),
+            ec2_amazon_side_asn(),
         );
         // CloudFormation publishes these Scheduler API integers as `number`.
         // Their ranges come from each property's CFN minimum/maximum.
@@ -20223,6 +20408,85 @@ mod tests {
     }
 
     #[test]
+    fn issue_525_ec2_overrides_use_exact_raw_cfn_paths() {
+        // Existing EC2 identity/inference overrides are part of the baseline.
+        let mut expected = BTreeSet::from([
+            ("AWS::EC2::Route", "GatewayId"),
+            ("AWS::EC2::EgressOnlyInternetGateway", "Id"),
+            ("AWS::EC2::TransitGateway", "Id"),
+            ("AWS::EC2::VPCPeeringConnection", "Id"),
+            ("AWS::EC2::VPCEndpoint", "Id"),
+            ("AWS::EC2::SecurityGroup", "Id"),
+            ("AWS::EC2::TransitGatewayAttachment", "Id"),
+            ("AWS::EC2::FlowLog", "Id"),
+            ("AWS::EC2::SubnetRouteTableAssociation", "Id"),
+            ("AWS::EC2::EIP", "Address"),
+            ("AWS::EC2::EIP", "TransferAddress"),
+            ("AWS::EC2::FlowLog", "LogDestination"),
+            ("AWS::EC2::VPC", "CidrBlockAssociations"),
+            ("AWS::EC2::TransitGateway", "AssociationDefaultRouteTableId"),
+            ("AWS::EC2::TransitGateway", "PropagationDefaultRouteTableId"),
+            ("AWS::EC2::TransitGateway", "TransitGatewayCidrBlocks"),
+            ("AWS::EC2::IPAMPool", "Cidr"),
+            ("AWS::EC2::IPAMPool", "Locale"),
+            ("AWS::EC2::VPNGateway", "Type"),
+            ("AWS::EC2::VPC", "InstanceTenancy"),
+            ("AWS::EC2::VPNGateway", "AmazonSideAsn"),
+            ("AWS::EC2::TransitGateway", "AmazonSideAsn"),
+            ("AWS::EC2::FlowLog", "MaxAggregationInterval"),
+            ("AWS::EC2::SecurityGroup", "GroupDescription"),
+            ("AWS::EC2::SecurityGroup", "Ingress.Description"),
+            ("AWS::EC2::SecurityGroup", "Egress.Description"),
+            ("AWS::EC2::SecurityGroupIngress", "Description"),
+            ("AWS::EC2::SecurityGroupEgress", "Description"),
+            ("AWS::EC2::Subnet", "Ipv4NetmaskLength"),
+            ("AWS::EC2::NatGateway", "SecondaryPrivateIpAddressCount"),
+            ("AWS::EC2::IPAMPool", "AllocationMinNetmaskLength"),
+            ("AWS::EC2::IPAMPool", "AllocationMaxNetmaskLength"),
+            ("AWS::EC2::IPAMPool", "AllocationDefaultNetmaskLength"),
+            ("AWS::EC2::IPAMPool", "SourceResource.ResourceType"),
+        ]);
+        // Four other Tag definitions already carry both bounds in CFN; in
+        // particular IPAMPool.AllocationResourceTags must retain its CFN type.
+        for resource in [
+            "AWS::EC2::EIP",
+            "AWS::EC2::FlowLog",
+            "AWS::EC2::NatGateway",
+            "AWS::EC2::RouteTable",
+            "AWS::EC2::SecurityGroup",
+            "AWS::EC2::Subnet",
+            "AWS::EC2::TransitGateway",
+            "AWS::EC2::TransitGatewayAttachment",
+            "AWS::EC2::VPC",
+            "AWS::EC2::VPCEndpoint",
+            "AWS::EC2::VPCPeeringConnection",
+            "AWS::EC2::VPNGateway",
+        ] {
+            expected.insert((resource, "Tag.Key"));
+            expected.insert((resource, "Tag.Value"));
+        }
+        assert_eq!(expected.len(), 58);
+        let actual = resource_type_overrides()
+            .iter()
+            .filter(|((resource, _), _)| resource.starts_with("AWS::EC2::"))
+            .map(|(&(resource, path), _)| (resource, path))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            actual, expected,
+            "only the decided EC2 paths and baseline overrides are allowed"
+        );
+        for (resource, path) in expected {
+            let schema = cfn_schema_for_codegen_tests(resource);
+            let generated = generate_schema_code(&schema, resource).unwrap();
+            let markdown = generate_test_markdown(&schema, resource).unwrap();
+            assert!(
+                !generated.is_empty() && !markdown.is_empty(),
+                "{resource}.{path}"
+            );
+        }
+    }
+
+    #[test]
     fn test_ssm_parameter_length_overrides_use_exact_raw_cfn_paths() {
         let schema = cfn_schema_for_codegen_tests("AWS::SSM::Parameter");
         assert_eq!(
@@ -22997,11 +23261,11 @@ mod tests {
         // `default`/`dedicated`/`host` via the broad backtick scoop. After
         // the scoop is deleted, the description's period+bullet shape no
         // longer anchors as a value list. The resource overlay supplies the
-        // canonical value set.
+        // canonical CreateVpc value set; host is an instance-only tenancy.
         let overrides = resource_type_overrides();
         assert_eq!(
             overrides.get(&("AWS::EC2::VPC", "InstanceTenancy")),
-            Some(&TypeOverride::Enum(vec!["default", "dedicated", "host"])),
+            Some(&TypeOverride::Enum(vec!["default", "dedicated"])),
         );
     }
 
@@ -23832,7 +24096,7 @@ mod tests {
             &BTreeMap::new(),
         );
         assert_eq!(
-            type_str, "AttributeType::int()",
+            type_str, "AttributeType::refined_int(None, Some((Some(1), Some(31))))",
             "SecondaryPrivateIpAddressCount should stay Int"
         );
     }
@@ -24011,7 +24275,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             type_display_string("ResourceTags", &prop, &schema),
-            "`List<Map<String, String>>`"
+            "`List<Map<String(len: ..=128), String(len: ..=256)>>`"
         );
     }
 
@@ -24630,7 +24894,7 @@ mod tests {
             ..Default::default()
         };
         let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::EC2::NatGateway".to_string(),
+            "typeName": "AWS::Test::Resource".to_string(),
             "properties": {}
         }))
         .unwrap();
@@ -26510,16 +26774,28 @@ mod tests {
     }
 
     #[test]
-    fn test_resource_type_overrides_int_range() {
+    fn test_resource_type_overrides_amazon_side_asn_uses_anonymous_union() {
         let overrides = resource_type_overrides();
-        assert_eq!(
-            overrides.get(&("AWS::EC2::VPNGateway", "AmazonSideAsn")),
-            Some(&TypeOverride::IntRange(1, 4294967294))
-        );
-        assert_eq!(
-            overrides.get(&("AWS::EC2::TransitGateway", "AmazonSideAsn")),
-            Some(&TypeOverride::IntRange(1, 4294967294))
-        );
+        for resource in ["AWS::EC2::VPNGateway", "AWS::EC2::TransitGateway"] {
+            assert_eq!(
+                overrides.get(&(resource, "AmazonSideAsn")),
+                Some(&TypeOverride::AttributeType {
+                    expression: OverrideTypeExpression::union(vec![
+                        OverrideTypeExpression::raw(
+                            "AttributeType::refined_int(None, Some((Some(64512), Some(65534))))",
+                        ),
+                        OverrideTypeExpression::raw(
+                            "AttributeType::refined_int(None, Some((Some(4200000000), Some(4294967294))))",
+                        ),
+                    ]),
+                    display: OverrideTypeDisplay::new(
+                        "Int(64512..=65534) | Int(4200000000..=4294967294)",
+                    ),
+                    block_name: None,
+                    default: None,
+                }),
+            );
+        }
     }
 
     #[test]
@@ -29037,10 +29313,10 @@ mod tests {
     fn test_type_display_string_tags_shows_map_string() {
         let schema = cfn_schema_for_codegen_tests("AWS::EC2::VPC");
         let prop = &schema.properties["Tags"];
-        // Tags property should display Map<String, String>
+        // Tags show the CFN map shape refined by EC2's API length bounds.
         assert_eq!(
             type_display_string("Tags", prop, &schema),
-            "`Map<String, String>`"
+            "`Map<String(len: ..=128), String(len: ..=256)>`"
         );
     }
 
@@ -33730,13 +34006,14 @@ mod tests {
         // strict-DSL validator gates on the presence of any rewrite
         // pair; identity rows are needed so legitimate same-spelling
         // values still validate.
-        for v in ["default", "dedicated", "host"] {
+        for v in ["default", "dedicated"] {
             let identity_pair = format!("(\"{v}\".to_string(), \"{v}\".to_string())");
             assert!(
                 generated.contains(&identity_pair),
                 "dsl_aliases must include identity row for `{v}`: {generated}"
             );
         }
+        assert!(!generated.contains("(\"host\".to_string(), \"host\".to_string())"));
         assert!(
             !generated.contains("|s: &str| match s"),
             "no `fn` closure should be emitted when every value is already snake_case: {generated}"
