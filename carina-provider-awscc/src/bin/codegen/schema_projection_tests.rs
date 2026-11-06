@@ -362,7 +362,7 @@ fn equivalent_alternatives_retain_all_nested_dropped_arm_provenance() {
         json!({"type":"string","minLength":2}),
     ] {
         let p = probe(
-            json!({"oneOf":[
+            json!({"anyOf":[
                 {"anyOf":[constrained.clone(),{"type":"boolean"}]},
                 {"anyOf":[{"type":"boolean"},constrained]}
             ]}),
@@ -419,7 +419,7 @@ fn cached_object_field_alternatives_preserve_both_required_scopes() {
 #[test]
 fn equivalent_array_alternatives_preserve_every_collection_constraint() {
     let array = json!({"type":"array","items":{"type":"string","enum":["A","B"]},"minItems":2,"maxItems":5,"uniqueItems":true,"insertionOrder":false});
-    let p = probe(json!({"oneOf":[array.clone(),array]}), json!({})).unwrap();
+    let p = probe(json!({"anyOf":[array.clone(),array]}), json!({})).unwrap();
     assert_eq!(
         (p.min_items, p.max_items, p.unique_items, p.insertion_order),
         (Some(2), Some(5), Some(true), Some(false))
@@ -529,7 +529,7 @@ fn later_object_alternative_map_and_dependency_constraints_are_not_discarded() {
             ),
             "later object facts were discarded: {extra}"
         );
-        let p = probe(json!({"oneOf":[later.clone(),later]}), json!({})).unwrap();
+        let p = probe(json!({"anyOf":[later.clone(),later]}), json!({})).unwrap();
         assert_eq!(p.effective_type(), Some("object"));
     }
 }
@@ -547,7 +547,7 @@ fn alternative_array_items_must_preserve_nested_required_alternatives() {
         })
     ));
     first["items"]["oneOf"][1]["required"] = json!(["B"]);
-    assert!(probe(json!({"oneOf":[first.clone(),first]}), json!({})).is_ok());
+    assert!(probe(json!({"anyOf":[first.clone(),first]}), json!({})).is_ok());
 }
 
 #[test]

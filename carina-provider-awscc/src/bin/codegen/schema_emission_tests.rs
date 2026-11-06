@@ -9,6 +9,131 @@ fn emission_fixture(property: serde_json::Value) -> ParsedCfnSchema {
 }
 
 #[test]
+fn round2_closed_allof_domains_are_typed_errors() {
+    let closed = json!({"type":"object","properties":{"A":{"type":"boolean"}},"additionalProperties":false});
+    let added = json!({"properties":{"B":{"type":"boolean"}}});
+    for arms in [json!([closed, added]), json!([added, closed])] {
+        let schema = emission_fixture(json!({"allOf":arms}));
+        for result in [generate_synthetic_schema_code(&schema), generate_test_markdown(&schema, "AWS::EC2::Route")] {
+            let error = result.expect_err("a conjunct's closed property domain cannot be widened");
+            assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+                Some(schema_layer::SchemaError::Projection { pointer, reason })
+                if pointer == "/properties/Probe" && reason.contains("closed") && reason.contains("additionalProperties")), "{error:#}");
+        }
+    }
+}
+
+#[test]
+fn round2_equivalent_exclusive_alternatives_are_typed_errors() {
+    for arm in [
+        json!({"type":"array","items":{"type":"string"}}),
+        json!({"anyOf":[{"required":["A"]},{"required":["B"]}]}),
+        json!({"anyOf":[{"required":["A"]},{"required":[]}]}),
+        json!({"type":"string","maxLength":7}),
+    ] {
+        let mut property = json!({"oneOf":[arm.clone(),arm]});
+        if arm.get("anyOf").is_some() {
+            property["properties"] = json!({"A":{"type":"boolean"},"B":{"type":"boolean"}});
+        }
+        let schema = emission_fixture(property);
+        for result in [generate_synthetic_schema_code(&schema), generate_test_markdown(&schema, "AWS::EC2::Route")] {
+            let error = result.expect_err("equivalent exclusive arms overlap");
+            assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+                Some(schema_layer::SchemaError::Projection { pointer, reason })
+                if pointer == "/properties/Probe" && reason.contains("oneOf") && reason.contains("overlap")), "{error:#}");
+        }
+    }
+}
+
+#[test]
+fn round2_closed_anyof_domains_are_typed_errors() {
+    let schema = emission_fixture(json!({"anyOf":[
+        {"type":"object","properties":{"A":{"type":"boolean"}},"required":["A"],"additionalProperties":false},
+        {"type":"object","properties":{"B":{"type":"boolean"}},"required":["B"],"additionalProperties":false}
+    ]}));
+    for result in [generate_synthetic_schema_code(&schema), generate_test_markdown(&schema, "AWS::EC2::Route")] {
+        let error = result.expect_err("closed anyOf arms cannot admit both fields together");
+        assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+            Some(schema_layer::SchemaError::Projection { pointer, reason })
+            if pointer == "/properties/Probe" && reason.contains("anyOf") && reason.contains("closed")), "{error:#}");
+    }
+}
+
+#[test]
+fn round2_overlapping_optional_oneof_arms_are_typed_errors() {
+    for arms in [
+        json!([
+            {"properties":{"A":{"type":"boolean"}}},
+            {"properties":{"B":{"type":"boolean"}}}
+        ]),
+        json!([
+            {"anyOf":[{"required":["A"]},{"required":[]}]},
+            {"anyOf":[{"required":["B"]},{"required":[]}]}
+        ]),
+    ] {
+        let schema = emission_fixture(json!({"properties":{
+            "A":{"type":"boolean"},"B":{"type":"boolean"}
+        },"oneOf":arms}));
+        for result in [generate_synthetic_schema_code(&schema), generate_test_markdown(&schema, "AWS::EC2::Route")] {
+            let error = result.expect_err("the empty object matches both optional arms");
+            assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+                Some(schema_layer::SchemaError::Projection { pointer, reason })
+                if pointer == "/properties/Probe" && reason.contains("oneOf") && reason.contains("overlap")), "{error:#}");
+        }
+    }
+}
+
+#[test]
+fn round2_schema_dependencies_are_typed_errors_in_both_renderers() {
+    let dependency = json!({"type":"object","properties":{
+        "A":{"type":"boolean"},"B":{"type":"boolean"}
+    },"oneOf":[{"required":["A"]},{"required":["B"]}]});
+    for root in [false, true] {
+        let object = json!({"type":"object","properties":{"Enabled":{"type":"boolean"}},
+            "dependencies":{"Enabled":dependency}});
+        let source = if root {
+            json!({"typeName":"AWS::Test::Emission","properties":object["properties"],"dependencies":object["dependencies"]})
+        } else {
+            json!({"typeName":"AWS::Test::Emission","properties":{"Probe":object}})
+        };
+        let schema = ParsedCfnSchema::from_json(source).unwrap();
+        for result in [generate_synthetic_schema_code(&schema), generate_test_markdown(&schema, "AWS::EC2::Route")] {
+            let error = result.expect_err("conditional schema constraints need an emission feature");
+            assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+                Some(schema_layer::SchemaError::Projection { pointer, reason })
+                if pointer == if root { "/dependencies/Enabled" } else { "/properties/Probe/dependencies/Enabled" }
+                    && reason.contains("schema dependency")), "{error:#}");
+        }
+    }
+}
+
+#[test]
+fn round2_resolved_scalar_alternatives_reach_both_renderers() {
+    for keyword in ["oneOf", "anyOf"] {
+        for (arm, rust_type, display) in [
+            (json!({"type":"string","minLength":2,"maxLength":7}), "AttributeType::refined_string(", "String(len: 2..=7)"),
+            (json!({"type":"integer","minimum":2,"maximum":7}), "AttributeType::refined_int(", "Int(2..=7)"),
+            (json!({"type":"number","minimum":2,"maximum":7}), "AttributeType::refined_float(", "Float(2..=7)"),
+            (json!({"type":"boolean","description":"Selected scalar."}), "AttributeType::bool()", "Bool"),
+        ] {
+            let bare = if arm["type"] == "boolean" { "string" } else { "boolean" };
+            for arms in [json!([arm,{"type":bare}]), json!([{"type":bare},arm])] {
+                let schema = emission_fixture(json!({keyword:arms}));
+                let rust = generate_synthetic_schema_code(&schema).unwrap();
+                assert!(rust.contains(rust_type), "{rust}");
+                if arm["type"] == "number" {
+                    assert!(rust.contains("FiniteF64::new(2.0)") && rust.contains("FiniteF64::new(7.0)"), "{rust}");
+                } else if bare == "boolean" {
+                    assert!(rust.contains("Some((Some(2), Some(7)))"), "{rust}");
+                }
+                let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+                assert!(markdown.contains(display), "{markdown}");
+            }
+        }
+    }
+}
+
+#[test]
 fn round1_root_composition_contributions_are_typed_errors() {
     for contribution in [
         json!({"properties":{"Tags":{"maxItems":3}}}),
@@ -156,7 +281,6 @@ fn step4_unsupported_emission_returns_typed_errors() {
         json!({"maxLength":5}),
         json!({"type":"array"}),
         json!({"type":"array","items":{}}),
-        json!({"oneOf":[{"type":"boolean"}]}),
         json!({"type":"object"}),
         json!({"type":"object","patternProperties":{".*":{"type":"integer"}}}),
         json!({"type":"object","additionalProperties":{"type":"integer"}}),

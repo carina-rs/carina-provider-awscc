@@ -14,10 +14,13 @@ pub(super) struct RequiredGroup {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct FieldGroups {
     pub(super) groups: Vec<RequiredGroup>,
+    // Keep declaration evidence even when simplification removes a group.
+    declared_members: BTreeSet<String>,
 }
 
 impl FieldGroups {
     pub(super) fn extend(&mut self, other: Self) {
+        self.declared_members.extend(other.declared_members);
         for group in other.groups {
             if !self.groups.contains(&group) {
                 self.groups.push(group);
@@ -33,6 +36,7 @@ impl FieldGroups {
             .groups
             .iter()
             .flat_map(|group| group.members.iter().cloned())
+            .chain(self.declared_members.iter().cloned())
             .collect();
         for mut members in groups {
             members.sort();
@@ -60,6 +64,12 @@ impl FieldGroups {
         pointer: &str,
     ) -> Result<(Vec<String>, Self), SchemaError> {
         if arms.iter().all(Vec::is_empty) {
+            if kind == AlternativeKind::OneOf && arms.len() > 1 {
+                return Err(SchemaError::Projection {
+                    pointer: pointer.into(),
+                    reason: "overlapping oneOf alternatives with no required members".into(),
+                });
+            }
             // Annotation-only alternatives (including relationshipRef) do not
             // declare any sibling requirement.
             return Ok((Vec::new(), Self::default()));
@@ -68,6 +78,7 @@ impl FieldGroups {
             pointer: pointer.into(),
             reason: format!("unsupported required alternatives for {kind:?}: {arms:?}"),
         };
+        let declared_members = arms.iter().flatten().cloned().collect();
         let mut sets: Vec<BTreeSet<String>> = arms
             .iter()
             .map(|arm| arm.iter().cloned().collect())
@@ -100,7 +111,13 @@ impl FieldGroups {
         }
         let required = common.iter().cloned().collect();
         if sets.len() == 1 {
-            return Ok((required, Self::default()));
+            return Ok((
+                required,
+                Self {
+                    groups: Vec::new(),
+                    declared_members,
+                },
+            ));
         }
         let mut members = Vec::new();
         for set in sets {
@@ -115,6 +132,7 @@ impl FieldGroups {
             required,
             Self {
                 groups: vec![RequiredGroup { kind, members }],
+                declared_members,
             },
         ))
     }

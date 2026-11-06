@@ -7202,7 +7202,12 @@ fn property_shape<'a>(property: &'a SchemaProperty, _schema: &'a CfnSchema) -> P
         {
             return PropertyShape::Array { variant: array };
         }
-        if projection.const_value.is_some() {
+        if projection.const_value.is_some()
+            || matches!(
+                projection.effective_type(),
+                Some("string" | "boolean" | "integer" | "number")
+            )
+        {
             return PropertyShape::Inline;
         }
         return PropertyShape::Unresolved;
@@ -17000,7 +17005,7 @@ mod tests {
         #[test]
         fn test_schema_and_docs_shape_probe_matrix() {
             // 27 leaves × 7 wrappers × 5 positions = 945 cases:
-            // 615 supported, 105 deferred emission shapes, and 225 typed rejections.
+            // 675 supported, 15 deferred emission shapes, and 255 typed rejections.
             let leaves = [
                 ("str_len", json!({"type":"string","maxLength":5})),
                 ("str_enum", json!({"type":"string","enum":["A","B"]})),
@@ -17093,6 +17098,10 @@ mod tests {
                 let property = &leaf_schema.properties["Probe"];
                 let supports_one_of = property.try_query().is_ok_and(|p| {
                     p.effective_type() == Some("array")
+                        || matches!(
+                            p.effective_type(),
+                            Some("string" | "boolean" | "integer" | "number")
+                        )
                         || p.properties.as_ref().is_some_and(|p| !p.is_empty())
                         || p.const_value.is_some()
                 });
@@ -17204,7 +17213,7 @@ mod tests {
             }
             assert_eq!(
                 (cases, rejected_cases, projection_rejections),
-                (615, 105, 225),
+                (675, 15, 255),
                 "keep all 945 probe outcomes explicit"
             );
         }
@@ -29034,6 +29043,7 @@ mod tests {
                                     ..Default::default()
                                 },
                             )])),
+                            required: vec!["Alpha".to_string()],
                             ..Default::default()
                         },
                         CfnProperty {
@@ -29044,6 +29054,7 @@ mod tests {
                                     ..Default::default()
                                 },
                             )])),
+                            required: vec!["Retries".to_string()],
                             ..Default::default()
                         },
                     ],
@@ -33943,9 +33954,22 @@ mod tests {
                         generate_test_markdown(&schema, &schema.type_name),
                     ),
                 ] {
-                    let error = result
-                        .expect_err("extra fields in Budget ResourceTags must fail codegen")
-                        .to_string();
+                    let error =
+                        result.expect_err("extra fields in Budget ResourceTags must fail codegen");
+                    if let Some(TagShapeError::Unreadable {
+                        resource: _,
+                        pointer: _,
+                        source,
+                    }) = error.downcast_ref::<TagShapeError>()
+                    {
+                        assert!(
+                            matches!(source.as_ref(), schema_layer::SchemaError::Projection { pointer, reason }
+                            if pointer == "/definitions/ResourceTag" && reason.contains("closed additionalProperties domain")),
+                            "{error:#}"
+                        );
+                        continue;
+                    }
+                    let error = error.to_string();
                     for expected in [
                         "AWS::Budgets::Budget#/properties/ResourceTags",
                         "cannot be projected to a string-to-string map",

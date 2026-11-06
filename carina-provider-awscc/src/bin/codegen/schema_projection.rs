@@ -2,8 +2,9 @@
 //!
 //! SchemaProperty holds typed query handles. Its query origin always points
 //! into the Layer; queries never reconstruct facts from fixture fields.
-//! References and allOf intersect constraints. Same-type array alternatives must
-//! be equivalent, including children, bounds, ordering, and uniqueness. Object
+//! References and allOf intersect constraints. Same-type array anyOf arms must
+//! be equivalent, including children, bounds, ordering, and uniqueness;
+//! overlapping equivalent oneOf arms are rejected. Object
 //! alternatives project portable sibling requirements for both renderers.
 //! Mixed-type alternatives select one constrained arm and record bare arms.
 //! The object|string type set projects to a JSON document, regardless of its site.
@@ -171,6 +172,20 @@ impl Projection {
                 ));
             }
             projection = items.try_query()?;
+        }
+        Ok(())
+    }
+
+    fn validate_schema_dependencies(&self) -> Result<(), SchemaError> {
+        for dependency in self.dependencies.values() {
+            match dependency {
+                ConditionalDependency::Schema(child) => {
+                    return Err(child.try_query()?.emission_error(
+                        "schema dependency requires conditional constraint emission",
+                    ));
+                }
+                ConditionalDependency::PropertyList(_names) => {}
+            }
         }
         Ok(())
     }
@@ -903,6 +918,13 @@ pub(super) fn merge(
     p: &mut Projection,
     q: Projection,
 ) -> Result<(), SchemaError> {
+    if widens_closed_domain(p, &q) || widens_closed_domain(&q, p) {
+        return Err(error(
+            layer,
+            node,
+            "closed additionalProperties domain in allOf/$ref cannot admit fields from another conjunct",
+        ));
+    }
     p.concrete = None;
     if p.types.is_empty() {
         p.types = q.types.clone();
@@ -1071,6 +1093,24 @@ pub(super) fn merge(
     Ok(())
 }
 
+/// Closure belongs to the declaring schema, rather than the eventual union
+/// of properties. Reject domain expansion before merging erases that scope.
+fn widens_closed_domain(closed: &Projection, other: &Projection) -> bool {
+    closed.additional_properties == Some(false)
+        && [
+            (&closed.properties, &other.properties),
+            (&closed.pattern_properties, &other.pattern_properties),
+        ]
+        .into_iter()
+        .any(|(domain, fields)| {
+            fields.iter().flat_map(|fields| fields.keys()).any(|name| {
+                domain
+                    .as_ref()
+                    .is_none_or(|domain| !domain.contains_key(name))
+            })
+        })
+}
+
 fn conjoin_child(
     layer: &Arc<Layer>,
     node: NodeId,
@@ -1159,6 +1199,19 @@ fn alternatives(
         result.dropped_bare_alternatives.extend(dropped);
         return Ok(AlternativeProjection::ConstrainedArm(result));
     }
+    if kind == AlternativeKind::OneOf {
+        for (index, (_id, arm)) in arms.iter().enumerate() {
+            for (_id, other) in arms.iter().skip(index + 1) {
+                if equivalent(arm, other, &mut BTreeSet::new())? {
+                    return Err(error(
+                        layer,
+                        node,
+                        "overlapping equivalent oneOf alternatives require exclusive constraint emission",
+                    ));
+                }
+            }
+        }
+    }
     let mut arms = arms.into_iter().map(|(_id, p)| p).collect::<Vec<_>>();
     let mut first = arms.remove(0);
     if group_only(&first) && arms.iter().all(group_only) {
@@ -1173,17 +1226,22 @@ fn alternatives(
                         "conflicting nested required alternatives",
                     ));
                 }
+                first.field_groups.extend(other.field_groups);
                 first
                     .dropped_bare_alternatives
                     .extend(other.dropped_bare_alternatives);
             }
             return Ok(AlternativeProjection::FieldGroup(first));
         }
-        let requirements = std::iter::once(first.required)
-            .chain(arms.into_iter().map(|p| p.required))
-            .collect();
-        let (required, field_groups) =
+        let mut declarations = first.field_groups;
+        let mut requirements = vec![first.required];
+        for arm in arms {
+            declarations.extend(arm.field_groups);
+            requirements.push(arm.required);
+        }
+        let (required, mut field_groups) =
             FieldGroups::project(kind, requirements, layer.sources().pointer(node))?;
+        field_groups.extend(declarations);
         let result = Projection::default().with_required_groups(required, field_groups);
         return Ok(AlternativeProjection::FieldGroup(result));
     }
@@ -1198,6 +1256,7 @@ fn alternatives(
                     "conflicting alternative array projections (shape, children, bounds, order, or uniqueness)",
                 ));
             }
+            first.field_groups.extend(other.field_groups);
             first
                 .dropped_bare_alternatives
                 .extend(other.dropped_bare_alternatives);
@@ -1207,6 +1266,40 @@ fn alternatives(
     if first.effective_type() == Some("object")
         && arms.iter().all(|p| p.effective_type() == Some("object"))
     {
+        // A closed singleton arm's domain is enforced by exactly-one itself
+        // (for example, two alternative object fields). Optional branch-local
+        // fields and inclusive alternatives need constraints we cannot emit.
+        let exclusive_single_fields = kind == AlternativeKind::OneOf
+            && std::iter::once(&first).chain(&arms).all(|arm| {
+                arm.additional_properties == Some(false)
+                    && arm.required.len() == 1
+                    && arm.properties.as_ref().is_some_and(|fields| {
+                        fields.len() == 1 && fields.contains_key(&arm.required[0])
+                    })
+                    && arm
+                        .pattern_properties
+                        .as_ref()
+                        .is_none_or(BTreeMap::is_empty)
+            });
+        for arm in std::iter::once(&first).chain(&arms) {
+            if !exclusive_single_fields
+                && std::iter::once(&first)
+                    .chain(&arms)
+                    .any(|other| widens_closed_domain(arm, other))
+            {
+                let keyword = match kind {
+                    AlternativeKind::OneOf => "oneOf",
+                    AlternativeKind::AnyOf => "anyOf",
+                };
+                return Err(error(
+                    layer,
+                    node,
+                    format!(
+                        "{keyword} closed additionalProperties branch domains require branch-local object emission"
+                    ),
+                ));
+            }
+        }
         // Object alternatives share all facts except their fields and
         // requirements. The containing struct owns the resulting group.
         let common_facts = |p: &Projection| {
@@ -1229,6 +1322,7 @@ fn alternatives(
                 ));
             }
             requirements.push(std::mem::take(&mut other.required));
+            result.field_groups.extend(other.field_groups);
             result
                 .dropped_bare_alternatives
                 .extend(other.dropped_bare_alternatives);
@@ -1269,6 +1363,7 @@ fn alternatives(
                 "conflicting alternative scalar projections",
             ));
         }
+        first.field_groups.extend(other.field_groups);
         first
             .dropped_bare_alternatives
             .extend(other.dropped_bare_alternatives);
@@ -1405,7 +1500,9 @@ fn equivalent_body(
     }
     if !equivalent_scalar(p, q)
         || p.required != q.required
-        || p.field_groups != q.field_groups
+        // Declaration membership is precedence evidence, not a value
+        // constraint. Equivalent alternatives merge that evidence separately.
+        || p.field_groups.groups != q.field_groups.groups
         || p.dependencies.len() != q.dependencies.len()
     {
         return Ok(false);
@@ -1739,6 +1836,7 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
     ) -> Result<(), SchemaError> {
         let p = property.try_query()?;
         p.validate_array_emission()?;
+        p.validate_schema_dependencies()?;
         let scope_name = p
             .reference
             .as_ref()
@@ -1808,21 +1906,6 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
                 visit(schema, child, name, &path, provider_populated, active)?;
             }
         }
-        for dependency in p.dependencies.values() {
-            match dependency {
-                ConditionalDependency::Schema(child) => {
-                    visit(
-                        schema,
-                        child,
-                        name,
-                        provider_path,
-                        provider_populated,
-                        active,
-                    )?;
-                }
-                ConditionalDependency::PropertyList(_names) => {}
-            }
-        }
         if let Some(origin) = &property.origin {
             active.remove(&origin.node);
         }
@@ -1830,6 +1913,7 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
     }
     schema.validate_root_emission()?;
     let root = schema.root_projection()?;
+    root.validate_schema_dependencies()?;
     validate_emitted_field_groups(schema, root, &root.field_groups, None, &[], false)?;
     let mut active = BTreeSet::new();
     for (name, property) in super::documented_top_level_properties(schema) {

@@ -12,7 +12,7 @@ fn step4_unsupported_emission_reaches_cli_error_output() {
         json!({}),
         json!(false),
         json!({"type":"array"}),
-        json!({"oneOf":[{"type":"boolean"}]}),
+        json!({"oneOf":[{"type":"boolean"},{"type":"boolean"}]}),
         json!({"type":"object","patternProperties":{".*":{"type":"integer"}}}),
     ] {
         let mut schema: Value =

@@ -536,6 +536,70 @@ impl PropertyKeyword {
     }
 }
 
+/// CFN redefines most schema children, but `contains` retains Draft-07's
+/// grammar. Its descendants inherit that grammar, including tuple items.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SchemaGrammar {
+    CfnProperty,
+    Draft07,
+}
+
+#[derive(Clone, Copy)]
+enum Draft07OnlyKeyword {
+    Id,
+    Schema,
+    Definitions,
+    AdditionalItems,
+    PropertyNames,
+    Not,
+    If,
+    Then,
+    Else,
+    ReadOnly,
+    WriteOnly,
+    ContentMediaType,
+    ContentEncoding,
+}
+
+impl Draft07OnlyKeyword {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "$id" => Some(Self::Id),
+            "$schema" => Some(Self::Schema),
+            "definitions" => Some(Self::Definitions),
+            "additionalItems" => Some(Self::AdditionalItems),
+            "propertyNames" => Some(Self::PropertyNames),
+            "not" => Some(Self::Not),
+            "if" => Some(Self::If),
+            "then" => Some(Self::Then),
+            "else" => Some(Self::Else),
+            "readOnly" => Some(Self::ReadOnly),
+            "writeOnly" => Some(Self::WriteOnly),
+            "contentMediaType" => Some(Self::ContentMediaType),
+            "contentEncoding" => Some(Self::ContentEncoding),
+            _unknown => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Id => "$id",
+            Self::Schema => "$schema",
+            Self::Definitions => "definitions",
+            Self::AdditionalItems => "additionalItems",
+            Self::PropertyNames => "propertyNames",
+            Self::Not => "not",
+            Self::If => "if",
+            Self::Then => "then",
+            Self::Else => "else",
+            Self::ReadOnly => "readOnly",
+            Self::WriteOnly => "writeOnly",
+            Self::ContentMediaType => "contentMediaType",
+            Self::ContentEncoding => "contentEncoding",
+        }
+    }
+}
+
 #[derive(Default)]
 struct Builder {
     nodes: Vec<SchemaNode>,
@@ -555,14 +619,19 @@ impl Builder {
         id
     }
 
-    fn schema(&mut self, value: &Value, pointer: &str) -> Result<NodeId, SchemaError> {
+    fn schema(
+        &mut self,
+        value: &Value,
+        pointer: &str,
+        grammar: SchemaGrammar,
+    ) -> Result<NodeId, SchemaError> {
         let node = match value {
             Value::Bool(boolean) => SchemaNode::Boolean(*boolean),
             Value::Object(object) => {
                 let mut keywords = PropertyKeywords::default();
                 for (name, value) in object {
                     let at = child(pointer, name);
-                    self.property_keyword(&mut keywords, name, value, &at);
+                    self.property_keyword(&mut keywords, name, value, &at, grammar);
                 }
                 SchemaNode::Keywords(Box::new(keywords))
             }
@@ -594,7 +663,10 @@ impl Builder {
                         "documentationUrl" => {
                             resource.documentation_url = Some(string(value, &at)?)
                         }
-                        "definitions" => resource.definitions = Some(self.schema_map(value, &at)?),
+                        "definitions" => {
+                            resource.definitions =
+                                Some(self.schema_map(value, &at, SchemaGrammar::CfnProperty)?)
+                        }
                         "readOnlyProperties" => {
                             resource.read_only_properties = Some(strings(value, &at)?)
                         }
@@ -654,7 +726,13 @@ impl Builder {
                         "typeConfiguration" => {
                             resource.type_configuration = Some(Box::new(self.resource(value, &at)?))
                         }
-                        property => self.property_keyword(&mut keywords, property, value, &at),
+                        property => self.property_keyword(
+                            &mut keywords,
+                            property,
+                            value,
+                            &at,
+                            SchemaGrammar::CfnProperty,
+                        ),
                     }
                 }
                 resource.root = self.allocate(pointer, SchemaNode::Keywords(Box::new(keywords)));
@@ -672,9 +750,22 @@ impl Builder {
         name: &str,
         value: &Value,
         at: &str,
+        grammar: SchemaGrammar,
     ) {
+        if grammar == SchemaGrammar::Draft07
+            && let Some(keyword) = Draft07OnlyKeyword::from_name(name)
+        {
+            self.diagnostics.push(SchemaError::Projection {
+                pointer: at.into(),
+                reason: format!(
+                    "Draft-07 keyword {} under contains requires an unsupported schema projection",
+                    keyword.as_str()
+                ),
+            });
+            return;
+        }
         let result = PropertyKeyword::from_name(name, at)
-            .and_then(|keyword| self.keyword(node, keyword, value, at));
+            .and_then(|keyword| self.keyword(node, keyword, value, at, grammar));
         if let Err(error) = result {
             self.diagnostics.push(error);
         }
@@ -686,6 +777,7 @@ impl Builder {
         keyword: PropertyKeyword,
         value: &Value,
         at: &str,
+        grammar: SchemaGrammar,
     ) -> Result<(), SchemaError> {
         match keyword {
             PropertyKeyword::Ref => {
@@ -727,8 +819,18 @@ impl Builder {
             PropertyKeyword::MinLength => node.min_length = Some(nonnegative_integer(value, at)?),
             PropertyKeyword::MaxLength => node.max_length = Some(nonnegative_integer(value, at)?),
             PropertyKeyword::Pattern => node.pattern = Some(string(value, at)?),
-            PropertyKeyword::Items => node.items = Some(self.schema(value, at)?),
-            PropertyKeyword::Contains => node.contains = Some(self.schema(value, at)?),
+            PropertyKeyword::Items => {
+                if grammar == SchemaGrammar::Draft07 && value.is_array() {
+                    return Err(SchemaError::Projection {
+                        pointer: at.into(),
+                        reason: "Draft-07 tuple items under contains require an unsupported schema projection".into(),
+                    });
+                }
+                node.items = Some(self.schema(value, at, grammar)?);
+            }
+            PropertyKeyword::Contains => {
+                node.contains = Some(self.schema(value, at, SchemaGrammar::Draft07)?)
+            }
             PropertyKeyword::MinItems => node.min_items = Some(nonnegative_integer(value, at)?),
             PropertyKeyword::MaxItems => node.max_items = Some(nonnegative_integer(value, at)?),
             PropertyKeyword::UniqueItems => node.unique_items = Some(boolean(value, at)?),
@@ -749,24 +851,26 @@ impl Builder {
                 node.max_properties = Some(nonnegative_integer(value, at)?)
             }
             PropertyKeyword::Required => node.required = Some(strings(value, at)?),
-            PropertyKeyword::Properties => node.properties = Some(self.schema_map(value, at)?),
+            PropertyKeyword::Properties => {
+                node.properties = Some(self.schema_map(value, at, grammar)?)
+            }
             PropertyKeyword::PatternProperties => {
-                node.pattern_properties = Some(self.schema_map(value, at)?)
+                node.pattern_properties = Some(self.schema_map(value, at, grammar)?)
             }
             PropertyKeyword::AdditionalProperties => {
-                node.additional_properties = Some(self.schema(value, at)?)
+                node.additional_properties = Some(self.schema(value, at, grammar)?)
             }
             PropertyKeyword::Dependencies => {
-                node.dependencies = Some(self.dependencies(value, at)?)
+                node.dependencies = Some(self.dependencies(value, at, grammar)?)
             }
             PropertyKeyword::AllOf => {
-                node.compositions.all_of = Some(self.schema_array(value, at)?)
+                node.compositions.all_of = Some(self.schema_array(value, at, grammar)?)
             }
             PropertyKeyword::AnyOf => {
-                node.compositions.any_of = Some(self.schema_array(value, at)?)
+                node.compositions.any_of = Some(self.schema_array(value, at, grammar)?)
             }
             PropertyKeyword::OneOf => {
-                node.compositions.one_of = Some(self.schema_array(value, at)?)
+                node.compositions.one_of = Some(self.schema_array(value, at, grammar)?)
             }
             PropertyKeyword::RelationshipRef => {
                 node.relationship_ref = Some(relationship_ref(value, at)?)
@@ -779,14 +883,25 @@ impl Builder {
         &mut self,
         value: &Value,
         pointer: &str,
+        grammar: SchemaGrammar,
     ) -> Result<BTreeMap<String, NodeId>, SchemaError> {
         object(value, pointer)?
             .iter()
-            .map(|(name, value)| Ok((name.clone(), self.schema(value, &child(pointer, name))?)))
+            .map(|(name, value)| {
+                Ok((
+                    name.clone(),
+                    self.schema(value, &child(pointer, name), grammar)?,
+                ))
+            })
             .collect()
     }
 
-    fn schema_array(&mut self, value: &Value, pointer: &str) -> Result<Vec<NodeId>, SchemaError> {
+    fn schema_array(
+        &mut self,
+        value: &Value,
+        pointer: &str,
+        grammar: SchemaGrammar,
+    ) -> Result<Vec<NodeId>, SchemaError> {
         let values = array(value, pointer)?;
         if values.is_empty() {
             return Err(invalid_value(pointer, "schema array must not be empty"));
@@ -794,7 +909,7 @@ impl Builder {
         values
             .iter()
             .enumerate()
-            .map(|(index, value)| self.schema(value, &child(pointer, &index.to_string())))
+            .map(|(index, value)| self.schema(value, &child(pointer, &index.to_string()), grammar))
             .collect()
     }
 
@@ -802,6 +917,7 @@ impl Builder {
         &mut self,
         value: &Value,
         pointer: &str,
+        grammar: SchemaGrammar,
     ) -> Result<BTreeMap<String, Dependency>, SchemaError> {
         object(value, pointer)?
             .iter()
@@ -810,7 +926,7 @@ impl Builder {
                 let dependency = match value {
                     Value::Array(_) => Dependency::PropertyList(strings(value, &at)?),
                     Value::Bool(_) | Value::Object(_) => {
-                        Dependency::Schema(self.schema(value, &at)?)
+                        Dependency::Schema(self.schema(value, &at, grammar)?)
                     }
                     Value::Null | Value::Number(_) | Value::String(_) => {
                         return Err(invalid_shape(value, &at, "schema or property-name array"));
@@ -847,7 +963,10 @@ impl Builder {
                         "timeoutInMinutes" => {
                             handler.timeout_in_minutes = Some(nonnegative_integer(value, &at)?)
                         }
-                        "handlerSchema" => handler.schema = Some(self.schema(value, &at)?),
+                        "handlerSchema" => {
+                            handler.schema =
+                                Some(self.schema(value, &at, SchemaGrammar::CfnProperty)?)
+                        }
                         unknown => {
                             return Err(SchemaError::UnknownKeyword {
                                 pointer: at,
@@ -875,8 +994,14 @@ impl Builder {
                     let at = child(&at, name);
                     match name.as_str() {
                         "$comment" => remote.comment = Some(string(value, &at)?),
-                        "properties" => remote.properties = Some(self.schema_map(value, &at)?),
-                        "definitions" => remote.definitions = Some(self.schema_map(value, &at)?),
+                        "properties" => {
+                            remote.properties =
+                                Some(self.schema_map(value, &at, SchemaGrammar::CfnProperty)?)
+                        }
+                        "definitions" => {
+                            remote.definitions =
+                                Some(self.schema_map(value, &at, SchemaGrammar::CfnProperty)?)
+                        }
                         annotation => {
                             remote.annotations.insert(annotation.into(), value.clone());
                         }

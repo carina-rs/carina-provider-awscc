@@ -312,10 +312,13 @@ impl Classifier<'_> {
                     result.evidence.extend(&other.evidence);
                     result.projection = self.intersect(node, result.projection, other.projection);
                 }
-                for arms in [&k.compositions.one_of, &k.compositions.any_of]
-                    .into_iter()
-                    .flatten()
-                {
+                for (exclusive, arms) in [
+                    (true, &k.compositions.one_of),
+                    (false, &k.compositions.any_of),
+                ] {
+                    let Some(arms) = arms else {
+                        continue;
+                    };
                     let mut projected = Vec::new();
                     for arm in arms {
                         let other = self.analyze(*arm, crossed_items);
@@ -355,6 +358,16 @@ impl Classifier<'_> {
                                     result.projection = Err(error.clone())
                                 }
                             }
+                        }
+                        if exclusive
+                            && projected.len() > 1
+                            && result.evidence.rejection.is_none()
+                            && result.projection.is_ok()
+                        {
+                            result.projection = Err(SchemaError::Projection {
+                                pointer: self.layer.sources().pointer(node).into(),
+                                reason: "overlapping equivalent oneOf tag alternatives require exclusive constraint emission".into(),
+                            });
                         }
                         result.projection = match &result.projection {
                             Ok(_projection) => first.clone(),
@@ -485,14 +498,26 @@ impl Classifier<'_> {
             && let Some((pattern, value)) = patterns.iter().next()
             && let Some(value) = self.string(value)?
         {
+            let bound = |number: &Option<serde_json::Number>, keyword| {
+                number
+                    .as_ref()
+                    .map(|number| {
+                        number.as_i64().ok_or_else(|| {
+                            p.emission_error(format!(
+                                "Tags {keyword} cannot fit the map projection exactly: {number}"
+                            ))
+                        })
+                    })
+                    .transpose()
+            };
             return Ok(Some(TagMap {
                 key: TagKey::Pattern {
                     pattern: pattern.clone(),
                     source: format!("{}/patternProperties", p.source_pointer),
                 },
                 value,
-                min_entries: None,
-                max_entries,
+                min_entries: bound(&p.min_properties, "minProperties")?,
+                max_entries: bound(&p.max_properties, "maxProperties")?,
                 definition_name,
                 candidate: TagCandidate::default(),
             }));

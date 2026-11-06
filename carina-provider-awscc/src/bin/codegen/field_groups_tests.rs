@@ -2,6 +2,45 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn round2_equivalent_groups_merge_declared_description_membership() {
+    let schema = ParsedCfnSchema::from_json(json!({
+        "typeName":"AWS::Test::Groups","properties":{
+            "A":{"type":"boolean"},"B":{"type":"boolean"},
+            "C":{"type":"boolean","description":"Specify either C or D."},"D":{"type":"boolean"}
+        },"anyOf":[
+            {"anyOf":[{"required":["A"]},{"required":["B"]}]},
+            {"anyOf":[{"required":["A"]},{"required":["B"]},{"required":["A","C"]}]}
+        ]
+    })).unwrap();
+    let rust = generate_synthetic_schema_code(&schema).unwrap();
+    assert_eq!(rust.matches("FieldGroup::at_least_one").count(), 1, "{rust}");
+    assert!(!rust.contains("FieldGroup::exactly_one"), "{rust}");
+    let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+    assert!(markdown.contains("At least one of `a`, `b` must be specified."), "{markdown}");
+    assert!(!markdown.contains("Exactly one of"), "{markdown}");
+}
+
+#[test]
+fn round2_simplified_declarations_suppress_overlapping_description_groups() {
+    for (arms, description) in [
+        (json!([{"required":["A"]},{"required":[]}]), "Specify either A or B."),
+        (json!([{"required":["A"]},{"required":["A","C"]}]), "Specify either A or B."),
+        (json!([{"required":["A"]},{"required":["A","C"]}]), "Specify either C or B."),
+    ] {
+        let schema = ParsedCfnSchema::from_json(json!({
+            "typeName":"AWS::Test::Groups","properties":{
+                "A":{"type":"boolean","description":description},
+                "B":{"type":"boolean"},"C":{"type":"boolean"}
+            },"allOf":[{"anyOf":arms}]
+        })).unwrap();
+        let rust = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(!rust.contains("FieldGroup::exactly_one"), "{rust}");
+        let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+        assert!(!markdown.contains("Exactly one of"), "{markdown}");
+    }
+}
+
+#[test]
 fn round1_definition_identity_includes_descendant_groups_in_both_orders() {
     for local_first in [false, true] {
         let local = if local_first { "A" } else { "Z" };

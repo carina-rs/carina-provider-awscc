@@ -70,11 +70,11 @@ fn unaccounted_raw_kms_nodes_fail_at_their_json_pointers() {
             let error = String::from_utf8_lossy(&output.stderr);
             assert!(!output.status.success(), "{pointer} passed {format}");
             if pointer == "/allOf/0/properties/KmsHidden" {
-                // Root property contributions now fail at the shared typed
-                // projection boundary, before emitted-use KMS accounting.
+                // The closed root forbids the conjunct's added field, before
+                // emitted-use KMS accounting or root contribution admission.
                 assert!(
                     error.contains("unsupported schema projection at #:")
-                        && error.contains("resource composition contributes to property KmsHidden"),
+                        && error.contains("closed additionalProperties domain"),
                     "{format}: {error}"
                 );
             } else if pointer == "/properties/Settings/patternProperties/.*" {
@@ -84,10 +84,11 @@ fn unaccounted_raw_kms_nodes_fail_at_their_json_pointers() {
                     "{format}: {error}"
                 );
             } else if pointer == "/properties/Settings/oneOf/1/allOf/0/properties/KmsHidden" {
-                // The Layer now exposes this allOf field to emission. Its own
-                // use must be classified, rather than silently discarded.
+                // Both optional arms admit the empty object. Reject this
+                // overlapping exclusive shape before emitted-use accounting.
                 assert!(
-                    error.contains("unclassified KMS string ec2.Vpc.settings.kms_hidden"),
+                    error.contains("unsupported schema projection at #/properties/Settings:")
+                        && error.contains("overlapping oneOf alternatives"),
                     "{error}"
                 );
             } else {

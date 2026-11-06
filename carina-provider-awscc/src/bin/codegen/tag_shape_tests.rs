@@ -2,6 +2,49 @@ use super::*;
 use serde_json::{Value, json};
 
 #[test]
+fn round2_exclusive_tag_alternatives_are_typed_errors() {
+    for tags in [
+        json!({"type":"array","items":{"type":"object","properties":{
+            "Key":{"type":"string"},"Value":{"type":"string"}
+        }}}),
+        json!({"type":"object","patternProperties":{".*":{"type":"string"}},"additionalProperties":false}),
+    ] {
+        let schema = ParsedCfnSchema::from_json(json!({
+            "typeName":"AWS::Test::Tags","properties":{"Tags":{"oneOf":[tags.clone(),tags]}}
+        })).unwrap();
+        for result in [generate_synthetic_schema_code(&schema), generate_test_markdown(&schema, "AWS::EC2::Route")] {
+            let error = result.expect_err("tag classification must also reject overlapping exclusive arms");
+            assert!(matches!(error.downcast_ref::<TagShapeError>(),
+                Some(TagShapeError::Unreadable { resource: _, pointer: _, source })
+                if matches!(source.as_ref(), schema_layer::SchemaError::Projection { pointer, reason }
+                    if pointer == "/properties/Tags" && reason.contains("oneOf") && reason.contains("overlap"))), "{error:#}");
+        }
+    }
+}
+
+#[test]
+fn round2_tag_map_property_bounds_reach_cache_rust_and_markdown() {
+    for tags in [
+        json!({"type":"object","patternProperties":{".*":{"type":"string"}},"additionalProperties":false,"minProperties":2,"maxProperties":5}),
+        json!({"$ref":"#/definitions/Bounded"}),
+        json!({"allOf":[{"$ref":"#/definitions/Map"},{"minProperties":2},{"maxProperties":5}]}),
+    ] {
+        let schema = ParsedCfnSchema::from_json(json!({
+            "typeName":"AWS::Test::Tags","properties":{"Tags":tags},"definitions":{
+                "Map":{"type":"object","patternProperties":{".*":{"type":"string"}},"additionalProperties":false},
+                "Bounded":{"$ref":"#/definitions/Map","minProperties":2,"maxProperties":5}
+            }
+        })).unwrap();
+        let map = schema.tag_shape(&schema.properties["Tags"]).unwrap().map("AWS::Test::Tags").unwrap();
+        assert_eq!((map.min_entries, map.max_entries), (Some(2), Some(5)));
+        let rust = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(rust.contains("Some((Some(2), Some(5)))"), "{rust}");
+        let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+        assert!(markdown.contains("Map<String, String>` (entries: 2..=5)"), "{markdown}");
+    }
+}
+
+#[test]
 fn round1_tag_literal_constraints_are_typed_errors() {
     for literal in [json!({"enum":["fixed"]}), json!({"const":"fixed"})] {
         for constrained in ["Key", "Value", "MapValue"] {
@@ -309,19 +352,19 @@ fn layer_tag_shape_matrix_checks_both_emitters() {
         rows.push((
             "agreeing list arms",
             json!({keyword:[array,array,array]}),
-            Expected::List,
+            if keyword == "oneOf" { Expected::Unreadable } else { Expected::List },
             true,
         ));
         rows.push((
             "agreeing item arms",
             list(json!({keyword:[pair,pair,pair]})),
-            Expected::List,
+            if keyword == "oneOf" { Expected::Unreadable } else { Expected::List },
             true,
         ));
         rows.push((
             "agreeing map arms",
             json!({keyword:[map,map,map]}),
-            Expected::Map,
+            if keyword == "oneOf" { Expected::Unreadable } else { Expected::Map },
             false,
         ));
         rows.push((

@@ -2,6 +2,48 @@ use super::*;
 use serde_json::json;
 use std::collections::BTreeSet;
 
+#[test]
+fn round2_contains_draft07_vocabulary_is_not_unknown() {
+    for (keyword, value) in [
+        ("not", json!({"type":"string"})),
+        ("if", json!({"type":"string"})),
+        ("then", json!({"const":"chosen"})),
+        ("else", json!({"type":"integer"})),
+        ("propertyNames", json!({"maxLength":5})),
+        ("additionalItems", json!(false)),
+        ("definitions", json!({"Local":{"type":"string"}})),
+        ("$id", json!("urn:test:contains")),
+        ("$schema", json!("http://json-schema.org/draft-07/schema#")),
+        ("readOnly", json!(true)),
+        ("writeOnly", json!(true)),
+        ("contentMediaType", json!("application/json")),
+        ("contentEncoding", json!("base64")),
+        ("items", json!([{"type":"string"},{"type":"integer"}])),
+    ] {
+        for nested in [false, true] {
+            let child = json!({keyword:value});
+            let contains = if nested {
+                json!({"properties":{"Child":child}})
+            } else {
+                child
+            };
+            let error = Layer::from_json(&json!({"properties":{"Probe":{
+                "type":"array","items":{"type":"string"},"contains":contains
+            }}}))
+            .expect_err("Draft-07 constructs need a precise unsupported diagnostic");
+            let pointer = format!(
+                "/properties/Probe/contains/{}{keyword}",
+                if nested { "properties/Child/" } else { "" }
+            );
+            assert!(
+                matches!(error, SchemaError::Projection { pointer: at, reason }
+                if at == pointer && reason.contains("Draft-07") && reason.contains(keyword)),
+                "{keyword}: {pointer}"
+            );
+        }
+    }
+}
+
 fn keywords<'a>(layer: &'a Layer, pointer: &str) -> &'a PropertyKeywords {
     let id = layer.sources().node_at(pointer).expect(pointer);
     match layer.node(id) {
