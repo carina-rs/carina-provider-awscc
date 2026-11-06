@@ -446,7 +446,14 @@ fn key_only_constraint_in_any_schema_branch_requires_reclassification() {
                     !output.status.success(),
                     "{keyword}, typed={typed} passed {format}"
                 );
-                assert!(String::from_utf8_lossy(&output.stderr).contains("KMS pattern changed"));
+                let error = String::from_utf8_lossy(&output.stderr);
+                assert!(
+                    error.contains("KMS pattern changed")
+                        || (error
+                            .contains("unsupported schema projection at #/properties/KmsKeyArn:")
+                            && error.contains("incompatible pattern")),
+                    "{keyword}/{typed}/{format}: {error}"
+                );
             }
         }
     }
@@ -517,9 +524,14 @@ fn overridden_objects_classify_their_own_evidence_and_hidden_children() {
         for format in ["rust", "markdown"] {
             let output = generate(&schema, format);
             assert!(!output.status.success(), "{source} passed {format}");
+            let error = String::from_utf8_lossy(&output.stderr);
             assert!(
-                String::from_utf8_lossy(&output.stderr)
-                    .contains("unaccounted KMS node sns.Subscription#/properties/DeliveryPolicy")
+                error.contains("unaccounted KMS node sns.Subscription#/properties/DeliveryPolicy")
+                    || (source.get("anyOf").is_some()
+                        && error.contains(
+                            "unclassified KMS string sns.Subscription.delivery_policy.value"
+                        )),
+                "{source}/{format}: {error}"
             );
         }
     }
@@ -592,7 +604,10 @@ fn reference_enum_and_const_constraints_require_reclassification() {
                 );
                 let error = String::from_utf8_lossy(&output.stderr);
                 assert!(
-                    error.contains("KMS enum/const constraint") && error.contains("revisit"),
+                    (error.contains("KMS enum/const constraint") && error.contains("revisit"))
+                        || (constraint.get("const") == Some(&Value::Null)
+                            && error.contains("unsupported schema projection")
+                            && error.contains("null const")),
                     "{error}"
                 );
             }

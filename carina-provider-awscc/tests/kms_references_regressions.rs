@@ -65,7 +65,7 @@ fn skipped_maps_of_string_arrays_keep_mains_projection() {
 }
 
 #[test]
-fn collapsed_anyof_leaves_unemitted_nodes_unaccounted() {
+fn constrained_anyof_object_arm_exposes_its_kms_fields_to_classification() {
     let mut schema = vpc();
     schema["properties"]["Settings"] = json!({"anyOf": [
         {"type": "string"},
@@ -74,9 +74,10 @@ fn collapsed_anyof_leaves_unemitted_nodes_unaccounted() {
     for format in ["rust", "markdown"] {
         let output = generate(&schema, format);
         assert!(!output.status.success(), "hidden KmsKeyId passed {format}");
+        let error = String::from_utf8_lossy(&output.stderr);
         assert!(
-            String::from_utf8_lossy(&output.stderr)
-                .contains("unaccounted KMS node ec2.Vpc#/properties/Settings")
+            error.contains("unclassified KMS string ec2.Vpc.settings.kms_key_id"),
+            "{format}: {error}"
         );
     }
 }
@@ -103,10 +104,21 @@ fn discarded_source_shapes_fail_raw_accounting() {
         for format in ["rust", "markdown"] {
             let output = generate(&schema, format);
             assert!(!output.status.success(), "{source} passed {format}");
-            assert!(
-                String::from_utf8_lossy(&output.stderr)
-                    .contains("unaccounted KMS node ec2.Vpc#/properties/Settings")
-            );
+            let error = String::from_utf8_lossy(&output.stderr);
+            if source.get("oneOf").is_some() {
+                assert!(
+                    error.contains("unsupported schema projection at #/properties/Settings:")
+                        && error.contains(
+                            "different JSON types require exactly one constrained alternative arm"
+                        ),
+                    "{format}: {error}"
+                );
+            } else {
+                assert!(
+                    error.contains("unclassified KMS string ec2.Vpc.settings.kms_key_id"),
+                    "{format}: {error}"
+                );
+            }
         }
     }
 }
@@ -244,8 +256,34 @@ fn non_reference_fallbacks_do_not_gain_scalar_inference() {
         json!({"type": "string", "$ref": "#/definitions/Plain", "const": "enabled"}),
     ] {
         let mut schema = vpc();
-        schema["properties"]["Ordinary"] = property;
+        schema["properties"]["Ordinary"] = property.clone();
         schema["definitions"]["Plain"] = json!({"type": "string"});
+        if property["$ref"] == "#/definitions/Missing" {
+            for format in ["rust", "markdown"] {
+                let output = generate(&schema, format);
+                let error = String::from_utf8_lossy(&output.stderr);
+                assert!(
+                    !output.status.success()
+                        && error.contains("reference")
+                        && error.contains("/properties/Ordinary/$ref")
+                        && error.contains("no target"),
+                    "{format}: {error}"
+                );
+                assert!(output.stdout.is_empty());
+            }
+            continue;
+        }
+        if property.get("const").is_some() {
+            let rust = rendered(&schema, "rust");
+            assert!(
+                rust.contains("enum_identity(\"Plain\"")
+                    && rust.contains("\"enabled\".to_string()"),
+                "{rust}"
+            );
+            let markdown = rendered(&schema, "markdown");
+            assert!(markdown.contains("aws.ec2.Vpc.Plain.enabled"), "{markdown}");
+            continue;
+        }
         let rust = rendered(&schema, "rust");
         assert!(
             rust.contains("AttributeSchema::optional(\"ordinary\", AttributeType::string())"),
@@ -325,8 +363,10 @@ fn policy_document_projections_require_raw_source_accounting() {
                 assert!(!output.status.success(), "{path} {source} passed {format}");
                 let error = String::from_utf8_lossy(&output.stderr);
                 assert!(
-                    error.contains("unaccounted KMS node")
-                        && error.contains(&format!("/properties/{name}")),
+                    (error.contains("unaccounted KMS node")
+                        && error.contains(&format!("/properties/{name}")))
+                        || (source.get("allOf").is_some()
+                            && error.contains(&format!("unclassified KMS string {path}.value"))),
                     "{error}"
                 );
             }

@@ -571,7 +571,7 @@ impl<'a> EmissionContext<'a> {
             let pattern = super::ApprovedPattern::whole(kind.default_pattern());
             return kind.constructor(entry.cfn_length, &pattern);
         };
-        let property = CfnProperty {
+        let property = super::Projection {
             pattern: Some(pattern.to_string()),
             ..Default::default()
         };

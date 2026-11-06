@@ -323,6 +323,8 @@ impl ValueKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub(super) enum SchemaError {
+    #[error("unsupported schema projection at #{pointer}: {reason}")]
+    Projection { pointer: String, reason: String },
     #[error("unknown schema keyword {keyword:?} at #{pointer}")]
     UnknownKeyword { pointer: String, keyword: String },
     #[error("invalid shape at #{pointer}: expected {expected}, got {actual:?}")]
@@ -1180,7 +1182,7 @@ fn resolve_reference(
     }
 }
 
-fn canonical_reference(at: &str, spelling: &str) -> Result<String, SchemaError> {
+pub(super) fn canonical_reference(at: &str, spelling: &str) -> Result<String, SchemaError> {
     let invalid = |reason: &str| SchemaError::InvalidPointer {
         pointer: at.into(),
         reference: spelling.into(),

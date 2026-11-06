@@ -47,7 +47,9 @@ impl OverrideTypeExpression {
                 }
                 format!("Some(r{hashes}\"{source}\"{hashes}.to_string())")
             }
-            _ => emit_pattern_option(pattern.as_ref()),
+            (PatternLiteral::Quoted, None)
+            | (PatternLiteral::Quoted, Some(_))
+            | (PatternLiteral::Raw, None) => emit_pattern_option(pattern.as_ref()),
         };
         Self {
             code: Cow::Owned(format!(

@@ -1,0 +1,1625 @@
+//! Shared, validated queries over the lossless Layer.
+//!
+//! CfnProperty is an emission/tag compatibility carrier only. Its query origin
+//! always points into the Layer; no query reconstructs facts from legacy fields.
+//! References and allOf intersect constraints. Same-type array alternatives must
+//! be equivalent, including children, bounds, ordering, and uniqueness. Object
+//! alternatives retain their required lists separately for the step-4/6 consumers.
+//! Mixed-type alternatives select one constrained arm and record bare arms.
+//! The object|string type set projects to a JSON document, regardless of its site.
+use super::schema_layer::{
+    ArrayType, Dependency, JsonType, Layer, NodeId, PropertyKeywords, RefTarget, SchemaError,
+    SchemaNode, TypeSet,
+};
+use super::{CfnProperty, EnumValue, TypeValue};
+use serde_json::{Number, Value};
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, OnceLock};
+
+#[derive(Debug, Clone)]
+pub(super) struct Origin {
+    pub(super) layer: Arc<Layer>,
+    pub(super) node: NodeId,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct Reference {
+    pub(super) path: String,
+    pub(super) name: String,
+    pub(super) property: Box<CfnProperty>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum ConditionalDependency {
+    Schema(Box<CfnProperty>),
+    PropertyList(Vec<String>),
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum ProjectedType {
+    #[default]
+    Unspecified,
+    Value(JsonType),
+    JsonDocument,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum AlternativeKind {
+    OneOf,
+    AnyOf,
+}
+
+/// The Layer keeps the complete arm; projection records every bare spelling
+/// discarded by the mixed-type policy, including its composition and type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DroppedBareAlternative {
+    pub(super) kind: AlternativeKind,
+    pub(super) arm: NodeId,
+    pub(super) json_type: JsonType,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(super) struct Projection {
+    pub(super) source_pointer: String,
+    pub(super) source_name: String,
+    pub(super) conjunction: bool,
+    pub(super) intersection_view: Option<Box<CfnProperty>>,
+    pub(super) types: Vec<JsonType>,
+    pub(super) projected_type: ProjectedType,
+    pub(super) description: Option<String>,
+    pub(super) enum_values: Option<Vec<Value>>,
+    pub(super) const_value: Option<Value>,
+    pub(super) default_value: Option<Value>,
+    pub(super) format: Option<String>,
+    pub(super) pattern: Option<String>,
+    pub(super) minimum: Option<Number>,
+    pub(super) maximum: Option<Number>,
+    pub(super) exclusive_minimum: Option<Number>,
+    pub(super) exclusive_maximum: Option<Number>,
+    pub(super) multiple_of: Option<Number>,
+    pub(super) min_properties: Option<Number>,
+    pub(super) max_properties: Option<Number>,
+    pub(super) array_type: Option<ArrayType>,
+    pub(super) additional_schema: Option<Box<CfnProperty>>,
+    pub(super) min_length: Option<u64>,
+    pub(super) max_length: Option<u64>,
+    pub(super) min_items: Option<i64>,
+    pub(super) max_items: Option<i64>,
+    pub(super) unique_items: Option<bool>,
+    pub(super) insertion_order: Option<bool>,
+    pub(super) items: Option<Box<CfnProperty>>,
+    pub(super) properties: Option<BTreeMap<String, CfnProperty>>,
+    pub(super) pattern_properties: Option<BTreeMap<String, CfnProperty>>,
+    pub(super) additional_properties: Option<bool>,
+    pub(super) required: Vec<String>,
+    pub(super) reference: Option<Reference>,
+    pub(super) concrete: Option<Box<CfnProperty>>,
+    pub(super) alternatives: Vec<Vec<String>>,
+    pub(super) dropped_bare_alternatives: Vec<DroppedBareAlternative>,
+    pub(super) dependencies: BTreeMap<String, ConditionalDependency>,
+    pub(super) contains: Option<Box<CfnProperty>>,
+    pub(super) is_union: bool,
+    pub(super) constrained_array_evidence: bool,
+}
+
+impl Projection {
+    fn effective_json_type(&self) -> Option<JsonType> {
+        if self.properties.as_ref().is_some_and(|p| !p.is_empty()) {
+            return Some(JsonType::Object);
+        }
+        match self.projected_type {
+            ProjectedType::Unspecified => None,
+            ProjectedType::Value(kind) => Some(kind),
+            ProjectedType::JsonDocument => Some(JsonType::Object),
+        }
+    }
+
+    pub(super) fn effective_type(&self) -> Option<&'static str> {
+        self.effective_json_type().and_then(|kind| match kind {
+            JsonType::Null => None,
+            JsonType::Boolean => Some("boolean"),
+            JsonType::Object => Some("object"),
+            JsonType::Array => Some("array"),
+            JsonType::Number => Some("number"),
+            JsonType::Integer => Some("integer"),
+            JsonType::String => Some("string"),
+        })
+    }
+
+    pub(super) fn constrained_array(&self) -> Result<bool, SchemaError> {
+        fn property(
+            property: &CfnProperty,
+            inherited_array: bool,
+            visited: &mut BTreeSet<(NodeId, bool)>,
+        ) -> Result<bool, SchemaError> {
+            if let Some(origin) = &property.origin
+                && !visited.insert((origin.node, inherited_array))
+            {
+                return Ok(false);
+            }
+            check(property.try_query()?, inherited_array, visited)
+        }
+        fn check(
+            p: &Projection,
+            inherited_array: bool,
+            visited: &mut BTreeSet<(NodeId, bool)>,
+        ) -> Result<bool, SchemaError> {
+            let array =
+                p.types.contains(&JsonType::Array) || (p.types.is_empty() && inherited_array);
+            if p.constrained_array_evidence
+                || (array
+                    && (p.min_items.is_some()
+                        || p.max_items.is_some()
+                        || p.unique_items.is_some()
+                        || p.contains.is_some()))
+            {
+                return Ok(true);
+            }
+            for dependency in p.dependencies.values() {
+                match dependency {
+                    ConditionalDependency::Schema(schema) => {
+                        if property(schema, array, visited)? {
+                            return Ok(true);
+                        }
+                        for child in schema
+                            .try_query()?
+                            .properties
+                            .iter()
+                            .flat_map(|p| p.values())
+                        {
+                            if property(child, false, visited)? {
+                                return Ok(true);
+                            }
+                        }
+                    }
+                    ConditionalDependency::PropertyList(_names) => {}
+                }
+            }
+            Ok(false)
+        }
+        check(self, false, &mut BTreeSet::new())
+    }
+
+    #[cfg(test)]
+    pub(super) fn has_constrained_array(&self) -> bool {
+        self.constrained_array()
+            .expect("valid dependency projections")
+    }
+
+    pub(super) fn integer_bounds(&self) -> Result<(Option<i64>, Option<i64>), SchemaError> {
+        let convert = |bound: &Option<Number>| {
+            bound
+                .as_ref()
+                .map(|n| {
+                    n.as_i64().ok_or_else(|| SchemaError::Projection {
+                        pointer: self.source_pointer.clone(),
+                        reason: format!("non-integral or overflowing integer bound {n}"),
+                    })
+                })
+                .transpose()
+        };
+        Ok((convert(&self.minimum)?, convert(&self.maximum)?))
+    }
+}
+
+thread_local! {
+    static PROJECTING: std::cell::RefCell<BTreeSet<(usize,NodeId)>> = const {std::cell::RefCell::new(BTreeSet::new())};
+}
+struct QueryGuard((usize, NodeId));
+impl Drop for QueryGuard {
+    fn drop(&mut self) {
+        PROJECTING.with(|active| {
+            active.borrow_mut().remove(&self.0);
+        });
+    }
+}
+
+impl CfnProperty {
+    #[cfg(test)]
+    pub(super) fn bind_fixture(&self, schema: &super::CfnSchema) {
+        if self.origin.is_none() && self.projection.get().is_none() {
+            self.projection.get_or_init(|| {
+                let mut source=serde_json::json!({
+                    "typeName":schema.type_name,
+                    "properties":schema.properties,
+                    "definitions":schema.definitions.as_ref().cloned().unwrap_or_default(),
+                    "readOnlyProperties":schema.metadata().read_only_properties.clone().unwrap_or_default(),
+                    "writeOnlyProperties":schema.metadata().write_only_properties.clone().unwrap_or_default(),
+                    "createOnlyProperties":schema.metadata().create_only_properties.clone().unwrap_or_default()
+                });
+                source["properties"]["__ProjectionFixture"]=serde_json::to_value(self).expect("fixture property serializes");
+                let layer=Arc::new(Layer::for_codegen(&source)?);
+                let node=layer.sources().node_at("/properties/__ProjectionFixture").expect("fixture node");
+                project(&layer,node)
+            });
+        }
+    }
+
+    pub(super) fn annotation_default(&self) -> Option<&Value> {
+        if let Some(origin) = &self.origin {
+            return match origin.layer.node(origin.node) {
+                SchemaNode::Boolean(_value) => None,
+                SchemaNode::Keywords(keywords) => keywords.default.as_ref(),
+            };
+        }
+        self.query().default_value.as_ref()
+    }
+
+    pub(super) fn annotation_description(&self) -> Option<&str> {
+        if let Some(origin) = &self.origin {
+            return match origin.layer.node(origin.node) {
+                SchemaNode::Boolean(_value) => None,
+                SchemaNode::Keywords(keywords) => keywords.description.as_deref(),
+            };
+        }
+        self.query().description.as_deref()
+    }
+
+    pub(super) fn try_query(&self) -> Result<&Projection, SchemaError> {
+        if self.projection.get().is_none()
+            && let Some(origin) = &self.origin
+        {
+            let key = (Arc::as_ptr(&origin.layer) as usize, origin.node);
+            if PROJECTING.with(|active| active.borrow().contains(&key)) {
+                return Err(error(
+                    &origin.layer,
+                    origin.node,
+                    "recursive child conjunction requires a named intersection projection",
+                ));
+            }
+        }
+        self.projection.get_or_init(|| {
+            if let Some(origin) = &self.origin {
+                let key=(Arc::as_ptr(&origin.layer) as usize,origin.node);
+                PROJECTING.with(|active| {active.borrow_mut().insert(key);});
+                let _guard=QueryGuard(key);
+                return project(&origin.layer, origin.node);
+            }
+            #[cfg(test)]
+            {
+                // Standalone legacy literals are test fixture input, not a production reader.
+                let source = serde_json::json!({"typeName":"AWS::Test::Standalone", "properties":{"Value":self}});
+                let layer = Arc::new(Layer::for_codegen(&source)?);
+                let node = layer.sources().node_at("/properties/Value").expect("fixture node");
+                direct(&layer, node)
+            }
+            #[cfg(not(test))]
+            Err(SchemaError::Projection { pointer: String::new(), reason: "property has no Layer origin".into() })
+        }).as_ref().map_err(Clone::clone)
+    }
+
+    pub(super) fn query(&self) -> &Projection {
+        self.try_query().unwrap_or_else(|error| panic!("{error}"))
+    }
+}
+
+fn error(layer: &Layer, node: NodeId, reason: impl Into<String>) -> SchemaError {
+    SchemaError::Projection {
+        pointer: layer.sources().pointer(node).into(),
+        reason: reason.into(),
+    }
+}
+
+fn types(value: &Option<TypeSet>) -> Vec<JsonType> {
+    let mut values = match value {
+        Some(TypeSet::Single(kind)) => vec![*kind],
+        Some(TypeSet::Multiple(kinds)) => kinds.clone(),
+        None => Vec::new(),
+    };
+    values.sort();
+    values.dedup();
+    values
+}
+
+fn project_type(
+    layer: &Layer,
+    node: NodeId,
+    types: &[JsonType],
+) -> Result<ProjectedType, SchemaError> {
+    let nonnull = types
+        .iter()
+        .copied()
+        .filter(|kind| *kind != JsonType::Null)
+        .collect::<Vec<_>>();
+    match nonnull.as_slice() {
+        [] => Ok(ProjectedType::Unspecified),
+        [kind] => Ok(ProjectedType::Value(*kind)),
+        [JsonType::Object, JsonType::String] => Ok(ProjectedType::JsonDocument),
+        unsupported => Err(error(
+            layer,
+            node,
+            format!("unsupported multiple non-null types: {unsupported:?}"),
+        )),
+    }
+}
+
+pub(super) fn direct(layer: &Arc<Layer>, node: NodeId) -> Result<Projection, SchemaError> {
+    match layer.node(node) {
+        SchemaNode::Boolean(value) => Err(error(
+            layer,
+            node,
+            format!("boolean schema {value} has no representable value projection"),
+        )),
+        SchemaNode::Keywords(k) => {
+            let children = |nodes: &Option<BTreeMap<String, NodeId>>| {
+                nodes.as_ref().map(|nodes| {
+                    nodes
+                        .iter()
+                        .map(|(name, id)| (name.clone(), bridge(layer, *id)))
+                        .collect()
+                })
+            };
+            let item_bound =
+                |bound: &Option<Number>, keyword: &str| -> Result<Option<i64>, SchemaError> {
+                    match bound {
+                        None => Ok(None),
+                        Some(number) => number.as_i64().map(Some).ok_or_else(|| {
+                            error(
+                                layer,
+                                node,
+                                format!("{keyword} cannot fit the collection projection: {number}"),
+                            )
+                        }),
+                    }
+                };
+            let mut dependencies = BTreeMap::new();
+            if let Some(entries) = &k.dependencies {
+                for (name, dependency) in entries {
+                    dependencies.insert(
+                        name.clone(),
+                        match dependency {
+                            Dependency::Schema(id) => {
+                                ConditionalDependency::Schema(Box::new(bridge(layer, *id)))
+                            }
+                            Dependency::PropertyList(names) => {
+                                ConditionalDependency::PropertyList(names.clone())
+                            }
+                        },
+                    );
+                }
+            }
+            let types = if k.types.is_none() && k.properties.as_ref().is_some_and(|p| !p.is_empty())
+            {
+                vec![JsonType::Object]
+            } else {
+                types(&k.types)
+            };
+            Ok(Projection {
+                source_pointer: layer.sources().pointer(node).to_string(),
+                source_name: super::decode_json_pointer_segment(
+                    layer
+                        .sources()
+                        .pointer(node)
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or(""),
+                ),
+                conjunction: false,
+                intersection_view: None,
+                projected_type: project_type(layer, node, &types)?,
+                types,
+                description: k.description.clone(),
+                enum_values: k.enum_values.clone(),
+                const_value: k.const_value.clone(),
+                default_value: k.default.clone(),
+                format: k.format.clone(),
+                pattern: k.pattern.clone(),
+                minimum: k.minimum.clone(),
+                maximum: k.maximum.clone(),
+                exclusive_minimum: k.exclusive_minimum.clone(),
+                exclusive_maximum: k.exclusive_maximum.clone(),
+                multiple_of: k.multiple_of.clone(),
+                min_properties: k.min_properties.clone(),
+                max_properties: k.max_properties.clone(),
+                array_type: k.array_type,
+                additional_schema: k.additional_properties.and_then(|id| match layer.node(id) {
+                    SchemaNode::Boolean(_value) => None,
+                    SchemaNode::Keywords(_keywords) => Some(Box::new(bridge(layer, id))),
+                }),
+                min_length: k.min_length.as_ref().and_then(Number::as_u64),
+                max_length: k.max_length.as_ref().and_then(Number::as_u64),
+                min_items: item_bound(&k.min_items, "minItems")?,
+                max_items: item_bound(&k.max_items, "maxItems")?,
+                unique_items: k.unique_items,
+                insertion_order: k.insertion_order,
+                items: k.items.map(|id| Box::new(bridge(layer, id))),
+                properties: children(&k.properties),
+                pattern_properties: children(&k.pattern_properties),
+                additional_properties: k.additional_properties.and_then(|id| {
+                    match layer.node(id) {
+                        SchemaNode::Boolean(value) => Some(*value),
+                        SchemaNode::Keywords(_keywords) => None,
+                    }
+                }),
+                required: k.required.clone().unwrap_or_default(),
+                reference: None,
+                concrete: None,
+                alternatives: Vec::new(),
+                dropped_bare_alternatives: Vec::new(),
+                dependencies,
+                contains: k.contains.map(|id| Box::new(bridge(layer, id))),
+                is_union: false,
+                constrained_array_evidence: false,
+            })
+        }
+    }
+}
+
+/// Only this compatibility conversion writes legacy fields. Queries read Projection.
+/// It deliberately does not expand reference edges or interpret literal JSON.
+pub(super) fn bridge(layer: &Arc<Layer>, node: NodeId) -> CfnProperty {
+    let p = direct(layer, node).unwrap_or_default();
+    let ref_path = match layer.node(node) {
+        SchemaNode::Boolean(_value) => None,
+        SchemaNode::Keywords(k) => k.reference.as_ref().map(|r| r.spelling.clone()),
+    };
+    let (one_of, any_of) = match layer.node(node) {
+        SchemaNode::Boolean(_value) => (Vec::new(), Vec::new()),
+        SchemaNode::Keywords(k) => (
+            k.compositions
+                .one_of
+                .iter()
+                .flatten()
+                .map(|id| bridge(layer, *id))
+                .collect(),
+            k.compositions
+                .any_of
+                .iter()
+                .flatten()
+                .map(|id| bridge(layer, *id))
+                .collect(),
+        ),
+    };
+    let mut property = materialize(p);
+    property.ref_path = ref_path;
+    property.one_of = one_of;
+    property.any_of = any_of;
+    property.origin = Some(Origin {
+        layer: Arc::clone(layer),
+        node,
+    });
+    property.projection = OnceLock::new();
+    property
+}
+
+pub(super) fn materialize(p: Projection) -> CfnProperty {
+    let type_names = p
+        .types
+        .iter()
+        .map(|t| {
+            match t {
+                JsonType::Null => "null",
+                JsonType::Boolean => "boolean",
+                JsonType::Object => "object",
+                JsonType::Array => "array",
+                JsonType::Number => "number",
+                JsonType::Integer => "integer",
+                JsonType::String => "string",
+            }
+            .to_string()
+        })
+        .collect::<Vec<_>>();
+    let prop_type = if type_names.is_empty() {
+        None
+    } else if type_names.len() == 1 {
+        Some(TypeValue::Single(type_names[0].clone()))
+    } else {
+        Some(TypeValue::Multiple(type_names))
+    };
+    let enum_values = p.enum_values.as_ref().and_then(|values| {
+        values
+            .iter()
+            .map(|v| match v {
+                Value::String(s) => Some(EnumValue::Str(s.clone())),
+                Value::Number(n) => n.as_i64().map(EnumValue::Int),
+                Value::Null => None,
+                Value::Bool(_boolean) => None,
+                Value::Array(_array) => None,
+                Value::Object(_object) => None,
+            })
+            .collect()
+    });
+    CfnProperty {
+        prop_type,
+        description: p.description.clone(),
+        enum_values,
+        items: p.items.clone(),
+        ref_path: None,
+        insertion_order: p.insertion_order,
+        unique_items: p.unique_items,
+        properties: p.properties.clone(),
+        pattern_properties: p.pattern_properties.clone(),
+        required: p.required.clone(),
+        minimum: p.minimum.as_ref().and_then(Number::as_i64),
+        maximum: p.maximum.as_ref().and_then(Number::as_i64),
+        additional_properties: p.additional_properties,
+        const_value: p.const_value.clone(),
+        default_value: p.default_value.clone(),
+        pattern: p.pattern.clone(),
+        min_items: p.min_items,
+        max_items: p.max_items,
+        min_length: p.min_length,
+        max_length: p.max_length,
+        format: p.format.clone(),
+        one_of: Vec::new(),
+        any_of: Vec::new(),
+        origin: None,
+        projection: OnceLock::from(Ok(p)),
+    }
+}
+
+pub(super) fn project(layer: &Arc<Layer>, node: NodeId) -> Result<Projection, SchemaError> {
+    let p = project_inner(layer, node, &mut Vec::new())?;
+    validate(layer, node, &p)?;
+    Ok(complete_projection(p))
+}
+
+fn complete_projection(mut p: Projection) -> Projection {
+    // A reference keeps its final definition identity, with ALL alias/site constraints.
+    if let Some(reference) = &p.reference {
+        let mut target = p.clone();
+        target.reference = None;
+        if target.effective_type() == Some("array") {
+            let mut array = target.clone();
+            array.is_union = false;
+            target.concrete = Some(Box::new(materialize(array)));
+        }
+        let name = reference.name.clone();
+        let path = reference.path.clone();
+        p.reference = Some(Reference {
+            path,
+            name,
+            property: Box::new(materialize(target)),
+        });
+    }
+    if p.effective_type() == Some("array") {
+        let mut concrete = p.clone();
+        concrete.reference = None;
+        concrete.is_union = false;
+        p.concrete = Some(Box::new(materialize(concrete)));
+    }
+    // This is a query result adapter, not a second schema reader. Staged
+    // emitters can keep their existing field access while receiving the full
+    // unconditional allOf intersection (including items and numeric bounds).
+    if p.conjunction && !p.is_union && p.reference.is_none() {
+        let mut intersection = p.clone();
+        intersection.conjunction = false;
+        p.intersection_view = Some(Box::new(materialize(intersection)));
+    }
+    p
+}
+
+/// A productive reference/allOf SCC contributes each conjunct once. Returning
+/// the neutral projection at a back edge is the fixed point of these idempotent
+/// intersections; siblings are still applied on unwind. Pure alias cycles have
+/// no value shape and fail. Identity is the lexicographically smallest named
+/// definition in the SCC, independent of the entry alias or arm order.
+fn cycle_projection(
+    layer: &Arc<Layer>,
+    node: NodeId,
+    cycle: &[NodeId],
+) -> Result<Projection, SchemaError> {
+    let mut pending = vec![node];
+    let mut seen = BTreeSet::new();
+    let mut productive = false;
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        match layer.node(id) {
+            SchemaNode::Boolean(_value) => {}
+            SchemaNode::Keywords(k) => {
+                productive |= types(&k.types).iter().any(|kind| *kind != JsonType::Null)
+                    || k.properties.as_ref().is_some_and(|p| !p.is_empty())
+                    || k.enum_values.is_some()
+                    || k.const_value.is_some();
+                if let Some(reference) = &k.reference {
+                    match &reference.target {
+                        RefTarget::Node(target) => pending.push(*target),
+                        RefTarget::Unresolved(_reason) => {}
+                    }
+                }
+                pending.extend(k.compositions.all_of.iter().flatten().copied());
+            }
+        }
+    }
+    if !productive {
+        return Err(error(
+            layer,
+            node,
+            "unproductive reference/composition cycle",
+        ));
+    }
+    let name = layer
+        .resource()
+        .definitions
+        .iter()
+        .flat_map(|defs| defs.iter())
+        .filter(|(_name, id)| cycle.contains(id))
+        .map(|(name, _id)| name.clone())
+        .min()
+        .unwrap_or_else(|| layer.sources().pointer(node).to_string());
+    Ok(Projection {
+        reference: Some(Reference {
+            path: format!("#{}", layer.sources().pointer(node)),
+            name,
+            property: Box::new(CfnProperty::default()),
+        }),
+        ..Projection::default()
+    })
+}
+
+fn project_inner(
+    layer: &Arc<Layer>,
+    node: NodeId,
+    visiting: &mut Vec<NodeId>,
+) -> Result<Projection, SchemaError> {
+    if let Some(start) = visiting.iter().position(|id| *id == node) {
+        return cycle_projection(layer, node, &visiting[start..]);
+    }
+    visiting.push(node);
+    let mut p = direct(layer, node)?;
+    if let SchemaNode::Keywords(k) = layer.node(node) {
+        if let Some(reference) = &k.reference {
+            let target = match &reference.target {
+                RefTarget::Node(id) => *id,
+                RefTarget::Unresolved(reason) => return Err(reason.clone()),
+            };
+            let q = project_inner(layer, target, visiting)?;
+            let name = q
+                .reference
+                .as_ref()
+                .map_or_else(|| q.source_name.clone(), |r| r.name.clone());
+            merge(layer, node, &mut p, q)?;
+            // Filled by project() after every sibling has been applied.
+            p.reference = Some(Reference {
+                path: reference.spelling.clone(),
+                name,
+                property: Box::new(CfnProperty::default()),
+            });
+        }
+        p.conjunction |= k
+            .compositions
+            .all_of
+            .as_ref()
+            .is_some_and(|arms| !arms.is_empty());
+        for id in k.compositions.all_of.iter().flatten() {
+            let q = project_inner(layer, *id, visiting)?;
+            merge(layer, node, &mut p, q)?;
+        }
+        for (kind, composition) in [
+            (AlternativeKind::OneOf, &k.compositions.one_of),
+            (AlternativeKind::AnyOf, &k.compositions.any_of),
+        ] {
+            if let Some(arms) = composition
+                && !arms.is_empty()
+            {
+                let mut projected = Vec::new();
+                for id in arms {
+                    projected.push((*id, project_inner(layer, *id, visiting)?));
+                }
+                let (q, retained_reference) = match alternatives(layer, node, kind, projected)? {
+                    AlternativeProjection::ConstrainedArm(q) => {
+                        let reference = q.reference.clone();
+                        (q, reference)
+                    }
+                    AlternativeProjection::EquivalentArms(q) => {
+                        let reference = if q.effective_type() == Some("array") {
+                            q.reference.clone()
+                        } else {
+                            None
+                        };
+                        (q, reference)
+                    }
+                    AlternativeProjection::FieldGroup(q) => (q, None),
+                };
+                let shape_union = !group_only(&q);
+                merge(layer, node, &mut p, q)?;
+                if p.reference.is_none() {
+                    p.reference = retained_reference;
+                }
+                p.is_union |= shape_union;
+            }
+        }
+    }
+    visiting.pop();
+    validate(layer, node, &p)?;
+    Ok(p)
+}
+
+fn merge(
+    layer: &Arc<Layer>,
+    node: NodeId,
+    p: &mut Projection,
+    q: Projection,
+) -> Result<(), SchemaError> {
+    p.concrete = None;
+    p.intersection_view = None;
+    if p.types.is_empty() {
+        p.types = q.types.clone();
+    } else if !q.types.is_empty() {
+        let mut intersection = BTreeSet::new();
+        for a in &p.types {
+            for b in &q.types {
+                if a == b {
+                    intersection.insert(*a);
+                } else if (*a == JsonType::Integer && *b == JsonType::Number)
+                    || (*a == JsonType::Number && *b == JsonType::Integer)
+                {
+                    intersection.insert(JsonType::Integer);
+                }
+            }
+        }
+        p.types = intersection.into_iter().collect();
+        if p.types.is_empty() {
+            return Err(error(layer, node, "incompatible conjunctive types"));
+        }
+    }
+    p.projected_type = project_type(layer, node, &p.types)?;
+    macro_rules! same { ($($field:ident),+) => {$({
+        if p.$field.is_some() && q.$field.is_some() && p.$field!=q.$field {return Err(error(layer,node,concat!("incompatible ",stringify!($field))));}
+        if p.$field.is_none() {p.$field=q.$field.clone();}
+    })+}; }
+    same!(
+        pattern,
+        format,
+        const_value,
+        default_value,
+        multiple_of,
+        additional_properties,
+        array_type
+    );
+    for (target, source, lower) in [
+        (&mut p.min_properties, q.min_properties, true),
+        (&mut p.max_properties, q.max_properties, false),
+    ] {
+        if let Some(value) = source
+            && target.as_ref().is_none_or(|old| {
+                if lower {
+                    number_cmp(&value, old).is_gt()
+                } else {
+                    number_cmp(&value, old).is_lt()
+                }
+            })
+        {
+            *target = Some(value);
+        }
+    }
+    if let Some(child) = q.additional_schema {
+        p.additional_schema = Some(Box::new(conjoin_child(
+            layer,
+            node,
+            p.additional_schema.take().map(|p| *p),
+            *child,
+        )?));
+    }
+    p.description = p.description.clone().or(q.description.clone());
+    if let Some(values) = q.enum_values {
+        p.enum_values = Some(match p.enum_values.take() {
+            Some(existing) => existing
+                .into_iter()
+                .filter(|v| values.contains(v))
+                .collect(),
+            None => values,
+        });
+    }
+    macro_rules! bound {
+        ($field:ident,$method:ident) => {
+            p.$field = match (p.$field, q.$field) {
+                (Some(a), Some(b)) => Some(a.$method(b)),
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (None, None) => None,
+            };
+        };
+    }
+    bound!(min_length, max);
+    bound!(max_length, min);
+    bound!(min_items, max);
+    bound!(max_items, min);
+    for (target, source, lower) in [
+        (&mut p.minimum, q.minimum, true),
+        (&mut p.maximum, q.maximum, false),
+        (&mut p.exclusive_minimum, q.exclusive_minimum, true),
+        (&mut p.exclusive_maximum, q.exclusive_maximum, false),
+    ] {
+        if let Some(value) = source
+            && target.as_ref().is_none_or(|old| {
+                if lower {
+                    number_cmp(&value, old).is_gt()
+                } else {
+                    number_cmp(&value, old).is_lt()
+                }
+            })
+        {
+            *target = Some(value);
+        }
+    }
+    p.unique_items = match (p.unique_items, q.unique_items) {
+        (Some(a), Some(b)) => Some(a || b),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    };
+    // Explicit ordering is a wire contract, not a validation bound. Conflicting
+    // annotations cannot be silently replaced by target or sibling precedence.
+    if p.insertion_order.is_some()
+        && q.insertion_order.is_some()
+        && p.insertion_order != q.insertion_order
+    {
+        return Err(error(layer, node, "incompatible insertionOrder"));
+    }
+    p.insertion_order = p.insertion_order.or(q.insertion_order);
+    if let Some(items) = q.items {
+        p.items = Some(Box::new(conjoin_child(
+            layer,
+            node,
+            p.items.take().map(|p| *p),
+            *items,
+        )?));
+    }
+    for (target, source) in [
+        (&mut p.properties, q.properties),
+        (&mut p.pattern_properties, q.pattern_properties),
+    ] {
+        if let Some(properties) = source {
+            let target = target.get_or_insert_with(BTreeMap::new);
+            for (name, property) in properties {
+                let combined = conjoin_child(layer, node, target.remove(&name), property)?;
+                target.insert(name, combined);
+            }
+        }
+    }
+    for name in q.required {
+        if !p.required.contains(&name) {
+            p.required.push(name);
+        }
+    }
+    p.alternatives.extend(q.alternatives);
+    p.dropped_bare_alternatives
+        .extend(q.dropped_bare_alternatives);
+    for (name, dependency) in q.dependencies {
+        if p.dependencies.insert(name, dependency).is_some() {
+            return Err(error(
+                layer,
+                node,
+                "overlapping dependency scopes require a conjunctive dependency projection",
+            ));
+        }
+    }
+    if p.contains.is_some() && q.contains.is_some() {
+        return Err(error(
+            layer,
+            node,
+            "multiple contains schemas require a conjunctive contains projection",
+        ));
+    }
+    p.contains = p.contains.take().or(q.contains);
+    p.conjunction |= q.conjunction;
+    p.constrained_array_evidence |= q.constrained_array_evidence;
+    p.is_union |= q.is_union;
+    Ok(())
+}
+
+fn conjoin_child(
+    layer: &Arc<Layer>,
+    node: NodeId,
+    existing: Option<CfnProperty>,
+    child: CfnProperty,
+) -> Result<CfnProperty, SchemaError> {
+    match existing {
+        None => Ok(child),
+        Some(existing) => {
+            if let (Some(a), Some(b)) = (&existing.origin, &child.origin)
+                && Arc::ptr_eq(&a.layer, &b.layer)
+                && (a.node == b.node || a.layer.node(a.node) == b.layer.node(b.node))
+            {
+                return Ok(existing);
+            }
+            let mut p = existing.try_query()?.clone();
+            let q = child.try_query()?.clone();
+            if let (Some(a), Some(b)) = (&p.reference, &q.reference)
+                && a.name != b.name
+            {
+                return Err(error(
+                    layer,
+                    node,
+                    "conjunctive fields have incompatible definition identities",
+                ));
+            }
+            let reference = p.reference.clone().or(q.reference.clone());
+            merge(layer, node, &mut p, q)?;
+            p.reference = reference;
+            validate(layer, node, &p)?;
+            Ok(materialize(complete_projection(p)))
+        }
+    }
+}
+
+enum AlternativeProjection {
+    ConstrainedArm(Projection),
+    EquivalentArms(Projection),
+    FieldGroup(Projection),
+}
+
+fn alternatives(
+    layer: &Arc<Layer>,
+    node: NodeId,
+    kind: AlternativeKind,
+    arms: Vec<(NodeId, Projection)>,
+) -> Result<AlternativeProjection, SchemaError> {
+    // Object arms are field-group alternatives, even when one is bare. Only
+    // different projected JSON types use the constrained-arm policy.
+    let first_type = arms[0].1.effective_json_type();
+    if arms
+        .iter()
+        .any(|(_id, p)| p.effective_json_type() != first_type)
+    {
+        let mut constrained = None;
+        let mut dropped = Vec::new();
+        for (arm, projection) in arms {
+            if projection.effective_json_type().is_none() {
+                return Err(error(
+                    layer,
+                    node,
+                    "alternative arm has no projected JSON type",
+                ));
+            }
+            if let Some(json_type) = bare_type(layer, arm) {
+                dropped.push(DroppedBareAlternative {
+                    kind,
+                    arm,
+                    json_type,
+                });
+            } else if constrained.replace(projection).is_some() {
+                return Err(error(
+                    layer,
+                    node,
+                    "different JSON types require exactly one constrained alternative arm",
+                ));
+            }
+        }
+        let mut result = constrained.ok_or_else(|| {
+            error(
+                layer,
+                node,
+                "different JSON types have no constrained alternative arm",
+            )
+        })?;
+        result.dropped_bare_alternatives.extend(dropped);
+        return Ok(AlternativeProjection::ConstrainedArm(result));
+    }
+    let mut arms = arms.into_iter().map(|(_id, p)| p).collect::<Vec<_>>();
+    let mut first = arms.remove(0);
+    if group_only(&first) && arms.iter().all(group_only) {
+        if !first.alternatives.is_empty() || arms.iter().any(|p| !p.alternatives.is_empty()) {
+            for other in arms {
+                if !equivalent(&first, &other, &mut BTreeSet::new())? {
+                    return Err(error(
+                        layer,
+                        node,
+                        "conflicting nested required alternatives",
+                    ));
+                }
+                first
+                    .dropped_bare_alternatives
+                    .extend(other.dropped_bare_alternatives);
+            }
+            return Ok(AlternativeProjection::FieldGroup(first));
+        }
+        let mut result = Projection::default();
+        result.alternatives.push(first.required.clone());
+        result
+            .alternatives
+            .extend(arms.iter().map(|p| p.required.clone()));
+        return Ok(AlternativeProjection::FieldGroup(result));
+    }
+    let any_array = first.effective_type() == Some("array")
+        || arms.iter().any(|p| p.effective_type() == Some("array"));
+    if any_array {
+        for other in arms {
+            if !equivalent(&first, &other, &mut BTreeSet::new())? {
+                return Err(error(
+                    layer,
+                    node,
+                    "conflicting alternative array projections (shape, children, bounds, order, or uniqueness)",
+                ));
+            }
+            first
+                .dropped_bare_alternatives
+                .extend(other.dropped_bare_alternatives);
+        }
+        return Ok(AlternativeProjection::EquivalentArms(first));
+    }
+    if first.effective_type() == Some("object")
+        && arms.iter().all(|p| p.effective_type() == Some("object"))
+    {
+        // A single required alternative is unconditional within its own arm.
+        // Fold it into that arm's required list before retaining outer scopes.
+        let normalize_required = |mut p: Projection| {
+            if p.alternatives.len() == 1 {
+                for name in p.alternatives.pop().expect("one required alternative") {
+                    if !p.required.contains(&name) {
+                        p.required.push(name);
+                    }
+                }
+            }
+            p
+        };
+        let first = normalize_required(first);
+        // The containing union owns the combined struct identity. Its fields
+        // and outer required lists are handled below; every other fact must
+        // agree, including map schemas and conditional dependency scopes.
+        let common_facts = |p: &Projection| Projection {
+            properties: None,
+            required: Vec::new(),
+            reference: None,
+            ..p.clone()
+        };
+        let common = common_facts(&first);
+        let mut result = first;
+        result
+            .alternatives
+            .push(std::mem::take(&mut result.required));
+        for other in arms {
+            let mut other = normalize_required(other);
+            if !equivalent(&common, &common_facts(&other), &mut BTreeSet::new())? {
+                return Err(error(
+                    layer,
+                    node,
+                    "conflicting alternative object constraints",
+                ));
+            }
+            result
+                .alternatives
+                .push(std::mem::take(&mut other.required));
+            result
+                .dropped_bare_alternatives
+                .extend(other.dropped_bare_alternatives);
+            // Fields are optional at the containing alternative scope. Duplicate
+            // fields must agree; intersection would strengthen an alternative.
+            if let Some(properties) = other.properties.take() {
+                let target = result.properties.get_or_insert_with(BTreeMap::new);
+                for (name, property) in properties {
+                    if let Some(existing) = target.get(&name) {
+                        if !equivalent(
+                            existing.try_query()?,
+                            property.try_query()?,
+                            &mut BTreeSet::new(),
+                        )? {
+                            return Err(error(
+                                layer,
+                                node,
+                                format!("conflicting alternative field {name}"),
+                            ));
+                        }
+                    } else {
+                        target.insert(name, property);
+                    }
+                }
+            }
+        }
+        return Ok(AlternativeProjection::FieldGroup(result));
+    }
+    for other in arms {
+        if !equivalent(&first, &other, &mut BTreeSet::new())? {
+            return Err(error(
+                layer,
+                node,
+                "conflicting alternative scalar projections",
+            ));
+        }
+        first
+            .dropped_bare_alternatives
+            .extend(other.dropped_bare_alternatives);
+    }
+    Ok(AlternativeProjection::EquivalentArms(first))
+}
+
+fn group_only(p: &Projection) -> bool {
+    p.types.is_empty()
+        && p.properties.is_none()
+        && p.pattern_properties.is_none()
+        && p.items.is_none()
+        && p.minimum.is_none()
+        && p.maximum.is_none()
+        && p.exclusive_minimum.is_none()
+        && p.exclusive_maximum.is_none()
+        && p.multiple_of.is_none()
+        && p.min_length.is_none()
+        && p.max_length.is_none()
+        && p.pattern.is_none()
+        && p.format.is_none()
+        && p.enum_values.is_none()
+        && p.const_value.is_none()
+        && p.default_value.is_none()
+        && p.array_type.is_none()
+        && p.min_items.is_none()
+        && p.max_items.is_none()
+        && p.unique_items.is_none()
+        && p.insertion_order.is_none()
+        && p.min_properties.is_none()
+        && p.max_properties.is_none()
+        && p.dependencies.is_empty()
+        && p.contains.is_none()
+        && p.additional_properties.is_none()
+        && p.additional_schema.is_none()
+}
+
+fn bare_type(layer: &Layer, node: NodeId) -> Option<JsonType> {
+    match layer.node(node) {
+        SchemaNode::Boolean(_value) => None,
+        SchemaNode::Keywords(k) => {
+            let spelling = match &k.types {
+                Some(TypeSet::Single(kind)) => TypeSet::Single(*kind),
+                Some(TypeSet::Multiple(kinds)) => TypeSet::Multiple(kinds.clone()),
+                None => return None,
+            };
+            let nonnull = types(&k.types)
+                .into_iter()
+                .filter(|kind| *kind != JsonType::Null)
+                .collect::<Vec<_>>();
+            let [kind] = nonnull.as_slice() else {
+                return None;
+            };
+            // Compare the typed source, not the flattened projection: even an
+            // empty properties/items schema, a reference, or an annotation
+            // makes this more than a bare type spelling.
+            let type_only = PropertyKeywords {
+                types: Some(spelling),
+                ..PropertyKeywords::default()
+            };
+            (k.as_ref() == &type_only).then_some(*kind)
+        }
+    }
+}
+
+fn equivalent_scalar(p: &Projection, q: &Projection) -> bool {
+    p.types == q.types
+        && p.projected_type == q.projected_type
+        && p.enum_values == q.enum_values
+        && p.const_value == q.const_value
+        && p.default_value == q.default_value
+        && p.minimum == q.minimum
+        && p.maximum == q.maximum
+        && p.exclusive_minimum == q.exclusive_minimum
+        && p.exclusive_maximum == q.exclusive_maximum
+        && p.multiple_of == q.multiple_of
+        && p.format == q.format
+        && p.pattern == q.pattern
+        && p.min_length == q.min_length
+        && p.max_length == q.max_length
+        && p.min_items == q.min_items
+        && p.max_items == q.max_items
+        && p.min_properties == q.min_properties
+        && p.max_properties == q.max_properties
+        && p.array_type == q.array_type
+        && p.unique_items == q.unique_items
+        && p.insertion_order == q.insertion_order
+        && p.additional_properties == q.additional_properties
+}
+fn equivalent(
+    p: &Projection,
+    q: &Projection,
+    seen: &mut BTreeSet<(NodeId, NodeId)>,
+) -> Result<bool, SchemaError> {
+    if p.reference.as_ref().map(|r| &r.name) != q.reference.as_ref().map(|r| &r.name) {
+        return Ok(false);
+    }
+    if !equivalent_scalar(p, q)
+        || p.required != q.required
+        || p.alternatives != q.alternatives
+        || p.dependencies.len() != q.dependencies.len()
+    {
+        return Ok(false);
+    }
+    let mut child_equal = |a: &CfnProperty, b: &CfnProperty| -> Result<bool, SchemaError> {
+        if let (Some(a), Some(b)) = (&a.origin, &b.origin)
+            && !seen.insert((a.node, b.node))
+        {
+            return Ok(true);
+        }
+        equivalent(a.try_query()?, b.try_query()?, seen)
+    };
+    for (a, b) in [
+        (&p.items, &q.items),
+        (&p.contains, &q.contains),
+        (&p.additional_schema, &q.additional_schema),
+    ] {
+        match (a, b) {
+            (Some(a), Some(b)) => {
+                if !child_equal(a, b)? {
+                    return Ok(false);
+                }
+            }
+            (None, None) => {}
+            (Some(_a), None) => return Ok(false),
+            (None, Some(_b)) => return Ok(false),
+        }
+    }
+    for (name, a) in &p.dependencies {
+        let Some(b) = q.dependencies.get(name) else {
+            return Ok(false);
+        };
+        match (a, b) {
+            (ConditionalDependency::PropertyList(a), ConditionalDependency::PropertyList(b)) => {
+                if a != b {
+                    return Ok(false);
+                }
+            }
+            (ConditionalDependency::Schema(a), ConditionalDependency::Schema(b)) => {
+                if !child_equal(a, b)? {
+                    return Ok(false);
+                }
+            }
+            (ConditionalDependency::Schema(_a), ConditionalDependency::PropertyList(_b)) => {
+                return Ok(false);
+            }
+            (ConditionalDependency::PropertyList(_a), ConditionalDependency::Schema(_b)) => {
+                return Ok(false);
+            }
+        }
+    }
+    for (a, b) in [
+        (&p.properties, &q.properties),
+        (&p.pattern_properties, &q.pattern_properties),
+    ] {
+        match (a, b) {
+            (Some(a), Some(b)) => {
+                if a.len() != b.len() {
+                    return Ok(false);
+                }
+                for (name, child) in a {
+                    let Some(other) = b.get(name) else {
+                        return Ok(false);
+                    };
+                    if !child_equal(child, other)? {
+                        return Ok(false);
+                    }
+                }
+            }
+            (None, None) => {}
+            (Some(_a), None) => return Ok(false),
+            (None, Some(_b)) => return Ok(false),
+        }
+    }
+    Ok(true)
+}
+
+// Compare canonical JSON decimals directly. Converting an integer endpoint to
+// f64 would make 9007199254740993 equal to 9007199254740992.0 and make an
+// allOf intersection depend on arm order. No endpoint is rounded or truncated.
+fn number_cmp(a: &Number, b: &Number) -> std::cmp::Ordering {
+    fn decimal(number: &Number) -> (bool, String, i32) {
+        let spelling = number.to_string();
+        let negative = spelling.starts_with('-');
+        let magnitude = spelling.strip_prefix('-').unwrap_or(&spelling);
+        let (mantissa, exponent) =
+            magnitude
+                .split_once(['e', 'E'])
+                .map_or((magnitude, 0), |(digits, exponent)| {
+                    (
+                        digits,
+                        exponent
+                            .parse::<i32>()
+                            .expect("finite JSON number exponent"),
+                    )
+                });
+        let fraction = mantissa
+            .split_once('.')
+            .map_or(0, |(_whole, fraction)| fraction.len() as i32);
+        let digits = mantissa
+            .replace('.', "")
+            .trim_start_matches('0')
+            .to_string();
+        if digits.is_empty() {
+            (false, "0".into(), 0)
+        } else {
+            (negative, digits, exponent - fraction)
+        }
+    }
+    let (negative_a, digits_a, power_a) = decimal(a);
+    let (negative_b, digits_b, power_b) = decimal(b);
+    if negative_a != negative_b {
+        return if negative_a {
+            std::cmp::Ordering::Less
+        } else {
+            std::cmp::Ordering::Greater
+        };
+    }
+    if digits_a == "0" && digits_b == "0" {
+        return std::cmp::Ordering::Equal;
+    }
+    if digits_a == "0" {
+        return std::cmp::Ordering::Less;
+    }
+    if digits_b == "0" {
+        return std::cmp::Ordering::Greater;
+    }
+    let magnitude_a = digits_a.len() as i32 + power_a;
+    let magnitude_b = digits_b.len() as i32 + power_b;
+    let length = digits_a.len().max(digits_b.len());
+    let ordering = magnitude_a.cmp(&magnitude_b).then_with(|| {
+        digits_a
+            .chars()
+            .chain(std::iter::repeat('0'))
+            .take(length)
+            .cmp(digits_b.chars().chain(std::iter::repeat('0')).take(length))
+    });
+    if negative_a {
+        ordering.reverse()
+    } else {
+        ordering
+    }
+}
+
+fn validate(layer: &Layer, node: NodeId, p: &Projection) -> Result<(), SchemaError> {
+    for dropped in &p.dropped_bare_alternatives {
+        if bare_type(layer, dropped.arm) != Some(dropped.json_type) {
+            return Err(error(
+                layer,
+                node,
+                format!("invalid {:?} bare alternative provenance", dropped.kind),
+            ));
+        }
+    }
+    for (min, max, name) in [
+        (p.min_length, p.max_length, "length"),
+        (
+            p.min_items.and_then(|n| u64::try_from(n).ok()),
+            p.max_items.and_then(|n| u64::try_from(n).ok()),
+            "items",
+        ),
+    ] {
+        if min.zip(max).is_some_and(|(min, max)| min > max) {
+            return Err(error(layer, node, format!("incompatible {name} bounds")));
+        }
+    }
+    for (lower, lower_strict) in p
+        .minimum
+        .as_ref()
+        .map(|n| (n, false))
+        .into_iter()
+        .chain(p.exclusive_minimum.as_ref().map(|n| (n, true)))
+    {
+        for (upper, upper_strict) in p
+            .maximum
+            .as_ref()
+            .map(|n| (n, false))
+            .into_iter()
+            .chain(p.exclusive_maximum.as_ref().map(|n| (n, true)))
+        {
+            let order = number_cmp(lower, upper);
+            if order.is_gt() || (order.is_eq() && (lower_strict || upper_strict)) {
+                return Err(error(layer, node, "incompatible numeric bounds"));
+            }
+        }
+    }
+    if p.min_properties
+        .as_ref()
+        .zip(p.max_properties.as_ref())
+        .is_some_and(|(a, b)| number_cmp(a, b).is_gt())
+    {
+        return Err(error(layer, node, "incompatible property-count bounds"));
+    }
+    if let Some(value) = &p.const_value {
+        if p.enum_values
+            .as_ref()
+            .is_some_and(|values| !values.contains(value))
+        {
+            return Err(error(
+                layer,
+                node,
+                "incompatible const and enum constraints",
+            ));
+        }
+        if p.effective_type() == Some("array") || p.effective_type() == Some("object") {
+            return Err(error(
+                layer,
+                node,
+                "scalar constant conflicts with collection shape",
+            ));
+        }
+        match value {
+            Value::String(_value) => {}
+            Value::Number(value) if value.as_i64().is_some() => {}
+            Value::Number(_value) => {
+                return Err(error(
+                    layer,
+                    node,
+                    "non-integral const requires a typed literal projection",
+                ));
+            }
+            Value::Bool(_value) => {
+                return Err(error(
+                    layer,
+                    node,
+                    "boolean const requires a typed literal projection",
+                ));
+            }
+            Value::Null => {
+                return Err(error(
+                    layer,
+                    node,
+                    "null const requires a typed literal projection",
+                ));
+            }
+            Value::Array(_value) => {
+                return Err(error(
+                    layer,
+                    node,
+                    "array const requires a typed literal projection",
+                ));
+            }
+            Value::Object(_value) => {
+                return Err(error(
+                    layer,
+                    node,
+                    "object const requires a typed literal projection",
+                ));
+            }
+        }
+    }
+    if let Some(values) = &p.enum_values
+        && !(values.iter().all(Value::is_string) || values.iter().all(|v| v.as_i64().is_some()))
+    {
+        return Err(error(
+            layer,
+            node,
+            "mixed or non-integral enum requires a typed literal projection",
+        ));
+    }
+    if p.enum_values.as_ref().is_some_and(Vec::is_empty) {
+        return Err(error(layer, node, "empty enum intersection"));
+    }
+    Ok(())
+}
+
+/// Query validation precedes either renderer. A renderer cannot turn a failed
+/// query into a fallback String, an inferred type, or a panic at the CLI boundary.
+/// Tag classification and tag projection remain on their STEP-2 path.
+pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Result<()> {
+    fn visit(
+        schema: &super::CfnSchema,
+        property: &CfnProperty,
+        seen: &mut BTreeSet<NodeId>,
+    ) -> Result<(), SchemaError> {
+        if let Some(origin) = &property.origin
+            && !seen.insert(origin.node)
+        {
+            return Ok(());
+        }
+        let p = property.try_query()?;
+        if matches!(p.effective_type(), Some("integer" | "number")) {
+            p.integer_bounds()?;
+        }
+        for child in p
+            .items
+            .iter()
+            .chain(p.contains.iter())
+            .chain(p.additional_schema.iter())
+        {
+            visit(schema, child, seen)?;
+        }
+        for properties in [&p.properties, &p.pattern_properties].into_iter().flatten() {
+            for (name, child) in properties {
+                if super::is_deprecated_property(child) {
+                    continue;
+                }
+                // Whole-attribute and item replacements discard child grammar,
+                // but their own source shape and collection constraints are
+                // validated separately by the override registry.
+                let parent = property.origin.as_ref().and_then(|o| {
+                    o.layer
+                        .resource()
+                        .definitions
+                        .as_ref()
+                        .and_then(|defs| defs.iter().find(|(_name, id)| **id == o.node))
+                        .map(|(name, _id)| name.as_str())
+                });
+                let path = super::CfnPropertyPath::new(parent, name);
+                if super::should_omit_property(&schema.type_name, path) {
+                    continue;
+                }
+                let override_type = super::resource_type_override(&schema.type_name, path);
+                child.try_query()?;
+                if override_type.is_some_and(|o| {
+                    o.attribute_type_expression().is_some()
+                        || o.array_item_type_expression().is_some()
+                        || o.enum_values().is_some()
+                }) {
+                    continue;
+                }
+                visit(schema, child, seen)?;
+            }
+        }
+        for dependency in p.dependencies.values() {
+            match dependency {
+                ConditionalDependency::Schema(child) => visit(schema, child, seen)?,
+                ConditionalDependency::PropertyList(_names) => {}
+            }
+        }
+        Ok(())
+    }
+    let mut seen = BTreeSet::new();
+    for (name, property) in super::documented_top_level_properties(schema) {
+        if super::is_dsl_tags_property(schema, std::slice::from_ref(name))? {
+            continue;
+        }
+        let path = super::CfnPropertyPath::new(None, name);
+        let override_type = super::resource_type_override(&schema.type_name, path);
+        property.try_query()?;
+        if override_type.is_some_and(|o| {
+            o.attribute_type_expression().is_some()
+                || o.array_item_type_expression().is_some()
+                || o.enum_values().is_some()
+        }) {
+            continue;
+        }
+        visit(schema, property, &mut seen)?;
+    }
+    Ok(())
+}
+
+pub(super) struct DefinitionEnumFields {
+    pub(super) source_name: String,
+    pub(super) name: String,
+    pub(super) properties: BTreeMap<String, CfnProperty>,
+}
+
+/// Discover declared definition fields from the Layer, including unconditional
+/// allOf fields. Pure aliases reuse their target's identity instead of creating
+/// a second set of enum identities. Tag enum bookkeeping remains on STEP 2.
+pub(super) fn definition_enum_fields(
+    schema: &super::CfnSchema,
+) -> anyhow::Result<Vec<DefinitionEnumFields>> {
+    let tag_definitions = super::tag_queries_compat::enum_definition_names(schema)?;
+    let layer = schema.layer.as_ref().expect("parsed schema has a Layer");
+    let mut fields = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (name, id) in layer.resource().definitions.iter().flatten() {
+        let declared = match layer.node(*id) {
+            SchemaNode::Boolean(_value) => false,
+            SchemaNode::Keywords(k) => k.properties.is_some() || k.compositions.all_of.is_some(),
+        };
+        if !declared {
+            continue;
+        }
+        let tag = tag_definitions.contains(name)
+            || super::is_tag_map_ref(
+                schema,
+                &format!(
+                    "#/definitions/{}",
+                    name.replace('~', "~0").replace('/', "~1")
+                ),
+            );
+        let p = if tag {
+            direct(layer, *id)?
+        } else {
+            schema.query_node(*id).try_query()?.clone()
+        };
+        let identity = if tag {
+            name.clone()
+        } else {
+            p.reference
+                .as_ref()
+                .map_or_else(|| name.clone(), |r| r.name.clone())
+        };
+        if !seen.insert(identity.clone()) {
+            continue;
+        }
+        if let Some(mut properties) = p.properties {
+            if tag {
+                for property in properties.values_mut() {
+                    *property = super::tag_queries_compat::enum_field(schema, property)?;
+                }
+            }
+            fields.push(DefinitionEnumFields {
+                source_name: name.clone(),
+                name: identity,
+                properties,
+            });
+        }
+    }
+    Ok(fields)
+}

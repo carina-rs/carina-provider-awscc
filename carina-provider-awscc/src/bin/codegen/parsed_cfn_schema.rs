@@ -9,7 +9,7 @@ use serde_json::Value;
 pub(super) struct ParsedCfnSchema {
     schema: CfnSchema,
     source: Value,
-    layer: std::result::Result<Layer, SchemaError>,
+    layer: std::result::Result<std::sync::Arc<Layer>, SchemaError>,
 }
 
 impl ParsedCfnSchema {
@@ -23,9 +23,40 @@ impl ParsedCfnSchema {
     }
 
     fn parse(source: Value) -> Result<Self> {
-        let schema = serde_json::from_value(source.clone())
+        let layer = Layer::for_codegen(&source).map(std::sync::Arc::new);
+        if let Err(error) = &layer {
+            return Err(error.clone().into());
+        }
+        let mut schema: CfnSchema = serde_json::from_value(source.clone())
             .context("Failed to parse CloudFormation schema")?;
-        let layer = Layer::for_codegen(&source);
+        if let Ok(layer) = &layer {
+            schema.layer = Some(std::sync::Arc::clone(layer));
+            schema.query_nodes = (0..layer.nodes().len())
+                .map(|index| {
+                    let id = super::schema_layer::NodeId(index);
+                    (id, super::schema_projection::bridge(layer, id))
+                })
+                .collect();
+            for (name, property) in &mut schema.properties {
+                attach(
+                    property,
+                    layer,
+                    &format!("/properties/{}", name.replace('~', "~0").replace('/', "~1")),
+                );
+            }
+            if let Some(definitions) = &mut schema.definitions {
+                for (name, property) in definitions {
+                    attach(
+                        property,
+                        layer,
+                        &format!(
+                            "/definitions/{}",
+                            name.replace('~', "~0").replace('/', "~1")
+                        ),
+                    );
+                }
+            }
+        }
         Ok(Self {
             schema,
             source,
@@ -37,7 +68,7 @@ impl ParsedCfnSchema {
         &self.source
     }
 
-    pub(super) fn layer(&self) -> &std::result::Result<Layer, SchemaError> {
+    pub(super) fn layer(&self) -> &std::result::Result<std::sync::Arc<Layer>, SchemaError> {
         &self.layer
     }
 
@@ -79,5 +110,44 @@ impl std::ops::Deref for ParsedCfnSchema {
 
     fn deref(&self) -> &Self::Target {
         &self.schema
+    }
+}
+
+// Compatibility conversion only: keep legacy tag/emission fields intact while
+// connecting every existing carrier to its immutable, lossless schema site.
+fn attach(property: &mut super::CfnProperty, layer: &std::sync::Arc<Layer>, pointer: &str) {
+    if let Some(node) = layer.sources().node_at(pointer) {
+        property.origin = Some(super::schema_projection::Origin {
+            layer: std::sync::Arc::clone(layer),
+            node,
+        });
+    }
+    if let Some(items) = &mut property.items {
+        attach(items, layer, &format!("{pointer}/items"));
+    }
+    for (keyword, properties) in [
+        ("properties", &mut property.properties),
+        ("patternProperties", &mut property.pattern_properties),
+    ] {
+        if let Some(properties) = properties {
+            for (name, child) in properties {
+                attach(
+                    child,
+                    layer,
+                    &format!(
+                        "{pointer}/{keyword}/{}",
+                        name.replace('~', "~0").replace('/', "~1")
+                    ),
+                );
+            }
+        }
+    }
+    for (keyword, arms) in [
+        ("oneOf", &mut property.one_of),
+        ("anyOf", &mut property.any_of),
+    ] {
+        for (index, child) in arms.iter_mut().enumerate() {
+            attach(child, layer, &format!("{pointer}/{keyword}/{index}"));
+        }
     }
 }

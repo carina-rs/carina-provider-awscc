@@ -69,9 +69,28 @@ fn unaccounted_raw_kms_nodes_fail_at_their_json_pointers() {
             let output = generate(&schema, format);
             let error = String::from_utf8_lossy(&output.stderr);
             assert!(!output.status.success(), "{pointer} passed {format}");
+            if pointer == "/properties/Settings/patternProperties/.*" {
+                assert!(
+                    error.contains("unsupported schema projection at #/properties/Settings:")
+                        && error.contains("multiple non-null types"),
+                    "{format}: {error}"
+                );
+            } else if pointer == "/properties/Settings/oneOf/1/allOf/0/properties/KmsHidden" {
+                // The Layer now exposes this allOf field to emission. Its own
+                // use must be classified, rather than silently discarded.
+                assert!(
+                    error.contains("unclassified KMS string ec2.Vpc.settings.kms_hidden"),
+                    "{error}"
+                );
+            } else {
+                assert!(
+                    error.contains("KMS") && error.contains(pointer),
+                    "{pointer} {format}: {error}"
+                );
+            }
             assert!(
-                error.contains("unaccounted KMS node") && error.contains(pointer),
-                "{pointer} {format}: {error}"
+                output.stdout.is_empty(),
+                "{pointer}/{format} published partial output"
             );
         }
     }
@@ -145,14 +164,15 @@ fn reference_projection_cannot_hide_other_anyof_branches() {
         let error = String::from_utf8_lossy(&output.stderr);
         assert!(!output.status.success(), "discarded branch passed {format}");
         assert!(
-            error.contains("/properties/KmsMasterKeyId/anyOf/0/properties/KmsHidden"),
+            error.contains("unsupported schema projection at #/properties/KmsMasterKeyId:")
+                && error.contains("incompatible conjunctive types"),
             "{error}"
         );
     }
 }
 
 #[test]
-fn collapsed_anyof_ref_cannot_borrow_another_use_sites_kms_decision() {
+fn selected_anyof_ref_cannot_borrow_another_use_sites_kms_decision() {
     let mut schema: Value =
         serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__SNS__Topic.json")).unwrap();
     schema["definitions"]["KmsKeyString"] = json!({"type": "string"});
@@ -166,16 +186,20 @@ fn collapsed_anyof_ref_cannot_borrow_another_use_sites_kms_decision() {
     for format in ["rust", "markdown"] {
         let output = generate(&schema, format);
         let error = String::from_utf8_lossy(&output.stderr);
-        assert!(!output.status.success(), "discarded $ref passed {format}");
         assert!(
-            error.contains("unaccounted KMS node sns.Topic#/properties/Settings/anyOf/1/properties/EncryptionKey"),
+            !output.status.success(),
+            "unclassified $ref passed {format}"
+        );
+        assert!(
+            error.contains("unclassified KMS string sns.Topic.settings.encryption_key"),
             "{format}: {error}"
         );
+        assert!(output.stdout.is_empty());
     }
 }
 
 #[test]
-fn collapsed_anyof_ref_requires_accounting_for_kms_evidence_in_target_subtrees() {
+fn selected_anyof_ref_requires_kms_classification_in_target_subtrees() {
     let baseline: Value =
         serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__S3__Bucket.json")).unwrap();
     for target in [
@@ -193,12 +217,14 @@ fn collapsed_anyof_ref_requires_accounting_for_kms_evidence_in_target_subtrees()
             let error = String::from_utf8_lossy(&output.stderr);
             assert!(
                 !output.status.success(),
-                "discarded {target} passed {format}"
+                "unclassified {target} passed {format}"
             );
             assert!(
-                error.contains("unaccounted KMS node s3.Bucket#/properties/Settings/anyOf/1;"),
+                error.contains("unclassified KMS string s3.Bucket.settings.")
+                    && error.contains("kms_key_arn"),
                 "{target}/{format}: {error}"
             );
+            assert!(output.stdout.is_empty());
         }
     }
 }
@@ -224,7 +250,19 @@ fn reference_constraints_on_a_ref_use_cannot_bypass_classification() {
             let output = generate(&schema, format);
             let error = String::from_utf8_lossy(&output.stderr);
             assert!(!output.status.success(), "{constraint} passed {format}");
-            assert!(error.contains("KMS enum/const constraint"), "{error}");
+            if constraint.get("const") == Some(&Value::Null) {
+                assert!(
+                    error.contains("unsupported schema projection at #/properties/KmsMasterKeyId:")
+                        && error.contains("null const"),
+                    "{error}"
+                );
+            } else {
+                assert!(error.contains("KMS enum/const constraint"), "{error}");
+            }
+            assert!(
+                output.stdout.is_empty(),
+                "{constraint}/{format} published partial output"
+            );
         }
     }
 }

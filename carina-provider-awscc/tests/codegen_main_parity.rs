@@ -9,7 +9,9 @@ use std::process::Command;
 fn cases() -> Vec<(&'static str, Value, &'static [&'static str])> {
     let mut vpc: Value =
         serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__EC2__VPC.json")).unwrap();
-    vpc["properties"]["Ratio"] = json!({"type": "number", "allOf": [{"minimum": 0.1}]});
+    // Fractional allOf endpoints are now retained and explicitly rejected by
+    // the staged integer-endpoint emitter; keep this unrelated-output pin plain.
+    vpc["properties"]["Ratio"] = json!({"type": "number"});
     vpc["properties"]["CidrBlockAssociations"]["items"] =
         json!({"$ref": "#/definitions/Association"});
     vpc["definitions"]["Association"] =
@@ -136,4 +138,29 @@ fn string_override_keeps_the_linked_source_struct_heading() {
     let markdown = String::from_utf8(output.stdout).unwrap();
     assert!(markdown.contains("### cidr_block_associations\n"));
     assert!(markdown.contains("| `association_id` |"));
+}
+
+#[test]
+fn fractional_all_of_bounds_fail_explicitly_instead_of_becoming_an_unbounded_float() {
+    let (_, mut schema, _) = cases().remove(0);
+    schema["properties"]["Ratio"] = json!({"type":"number","allOf":[{"minimum":0.1}]});
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(file.path(), schema.to_string()).unwrap();
+    for format in ["rust", "markdown"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_codegen"))
+            .args(["--type-name", "AWS::EC2::VPC", "--file"])
+            .arg(file.path())
+            .args(["--format", format, "--examples-dir"])
+            .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples"))
+            .output()
+            .unwrap();
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success()
+                && error.contains("unsupported schema projection at #/properties/Ratio:")
+                && error.contains("non-integral"),
+            "{format}: {error}"
+        );
+        assert!(output.stdout.is_empty());
+    }
 }
