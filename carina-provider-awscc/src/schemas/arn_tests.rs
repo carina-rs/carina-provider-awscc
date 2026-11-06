@@ -108,15 +108,15 @@ struct SharedType {
 // The identifiers are explicit: adding a shared type requires reviewing its
 // constructor, not inferring safety from its name or its current source uses.
 macro_rules! shared_type_allowlist {
-    (functions: [$($function:ident),* $(,)?], rows: [$($row:ident),* $(,)?] $(,)?) => {
+    (functions: [$($module:ident::$function:ident),* $(,)?], rows: [$($row_module:ident::AwsType::$row:ident),* $(,)?] $(,)?) => {
         &[
             $(SharedType {
                 name: stringify!($function),
-                constructor: carina_aws_types::$function,
+                constructor: $module::$function,
             },)*
             $(SharedType {
                 name: concat!("AwsType::", stringify!($row)),
-                constructor: || carina_aws_types::AwsType::$row.attribute_type(),
+                constructor: || $row_module::AwsType::$row.attribute_type(),
             },)*
         ]
     };
@@ -124,83 +124,244 @@ macro_rules! shared_type_allowlist {
 
 const SHARED_TYPES: &[SharedType] = shared_type_allowlist! {
     functions: [
-        allocation_id,
-        availability_zone,
-        availability_zone_id,
-        aws_account_id,
-        aws_region,
-        aws_resource_id,
-        carrier_gateway_id,
-        egress_only_internet_gateway_id,
-        elbv2_health_check_port,
-        elbv2_target_group_grpc_code,
-        elbv2_target_group_http_code,
-        flow_log_id,
-        gateway_id,
-        iam_path,
-        iam_policy_document,
-        iam_policy_name,
-        iam_role_id,
-        iam_role_name,
-        identity_store_id,
-        instance_id,
-        internet_gateway_id,
-        ipam_id,
-        ipam_pool_id,
+        carina_aws_types::allocation_id,
+        carina_aws_types::availability_zone,
+        carina_aws_types::availability_zone_id,
+        carina_aws_types::aws_account_id,
+        carina_aws_types::aws_region,
+        carina_aws_types::aws_resource_id,
+        carina_aws_types::carrier_gateway_id,
+        carina_aws_types::egress_only_internet_gateway_id,
+        carina_aws_types::elbv2_health_check_port,
+        carina_aws_types::elbv2_target_group_grpc_code,
+        carina_aws_types::elbv2_target_group_http_code,
+        carina_aws_types::flow_log_id,
+        carina_aws_types::gateway_id,
+        carina_aws_types::iam_path,
+        carina_aws_types::iam_policy_document,
+        carina_aws_types::iam_policy_name,
+        carina_aws_types::iam_role_id,
+        carina_aws_types::iam_role_name,
+        carina_aws_types::identity_store_id,
+        carina_aws_types::instance_id,
+        carina_aws_types::internet_gateway_id,
+        carina_aws_types::ipam_id,
+        carina_aws_types::ipam_pool_id,
         // The sole partition-bearing exception is the cross-provider KMS
         // comparison reference. It remains shared under #541.
-        kms_key_reference,
-        local_gateway_id,
-        logs_log_group_retention_in_days,
-        nat_gateway_id,
-        network_acl_id,
-        network_interface_id,
-        prefix_list_id,
-        route53_hosted_zone_id,
-        route_table_id,
-        security_group_id,
-        sso_principal_id,
-        subnet_id,
-        subnet_route_table_association_id,
-        tgw_route_table_id,
-        transit_gateway_attachment_id,
-        transit_gateway_id,
-        vpc_cidr_block_association_id,
-        vpc_endpoint_id,
-        vpc_id,
-        vpc_peering_connection_id,
-        vpn_gateway_id,
+        carina_aws_types::kms_key_reference,
+        carina_aws_types::local_gateway_id,
+        carina_aws_types::logs_log_group_retention_in_days,
+        carina_aws_types::nat_gateway_id,
+        carina_aws_types::network_acl_id,
+        carina_aws_types::network_interface_id,
+        carina_aws_types::prefix_list_id,
+        carina_aws_types::route53_hosted_zone_id,
+        carina_aws_types::route_table_id,
+        carina_aws_types::security_group_id,
+        carina_aws_types::sso_principal_id,
+        carina_aws_types::subnet_id,
+        carina_aws_types::subnet_route_table_association_id,
+        carina_aws_types::tgw_route_table_id,
+        carina_aws_types::transit_gateway_attachment_id,
+        carina_aws_types::transit_gateway_id,
+        carina_aws_types::vpc_cidr_block_association_id,
+        carina_aws_types::vpc_endpoint_id,
+        carina_aws_types::vpc_id,
+        carina_aws_types::vpc_peering_connection_id,
+        carina_aws_types::vpn_gateway_id,
     ],
     rows: [],
 };
 
-// These APIs produce strings, SDK configuration or completion data, rather
-// than AttributeType values. New utility calls also require explicit review.
+// These items supply metadata, SDK support or non-type utilities. They are
+// exact paths, not prefixes: new items also require explicit review.
 const SHARED_UTILITIES: &[&str] = &[
+    "AssumeRoleFailure",
+    "AwsType",
+    "AwsType::ALL",
+    "AwsType::KmsKeyReference",
+    "AwsType::LogsLogGroupRetentionInDays",
+    "AwsType::Region",
+    "AwsType::identity",
+    "FinalAttempt",
+    "GuardedAssumeRoleProvider::new",
+    "Idempotency",
+    // Part of the existing #541 KMS reference exception, not another type.
+    "KMS_KEY_REFERENCE_PATTERN",
+    "ResendGuard",
+    "SendClassification",
+    "SendClassification::MaybeSent",
+    "Transience",
+    "canonicalize_enum_value",
     "condition_operator_to_aws",
     "condition_operator_to_snake",
+    "define_aws_type_catalog",
+    "dsl_enum_value",
+    "find_matching_enum_value",
+    "kms_reference::DescribeKeyClient",
+    "kms_reference::DescribeKeyFailure",
+    "kms_reference::describe_key_failure",
+    "kms_reference::resolve_core_reference_batch",
+    "kms_reference::resolve_reference_batch",
     "load_sdk_config",
     "region_completions",
+    "validate_iam_policy_document",
 ];
 
-fn shared_type_calls(source: &str) -> Vec<(usize, String)> {
-    let calls = regex::Regex::new(
-        r"(?:(?:carina_aws_types::)?AwsType::([A-Za-z_][A-Za-z0-9_]*|\{[^}\n]+\})\.attribute_type\s*\(|carina_aws_types::([A-Za-z_][A-Za-z0-9_]*)\s*\()",
-    ).unwrap();
-    calls
-        .captures_iter(source)
-        .map(|capture| {
-            let name = capture.get(1).map_or_else(
-                || capture.get(2).unwrap().as_str().to_string(),
-                |row| format!("AwsType::{}", row.as_str()),
-            );
-            (capture.get(0).unwrap().start(), name)
-        })
-        .collect()
+// SDK access is deliberately shared. No other module gets an implicit exemption
+// for its descendants (in particular, not AwsType or kms_reference).
+const SHARED_MODULE_PREFIXES: &[&str] = &["sdk"];
+
+struct SharedPathParser<'a> {
+    source: &'a str,
+    cursor: usize,
 }
 
-fn shared_call_is_allowlisted(name: &str) -> bool {
-    SHARED_TYPES.iter().any(|entry| entry.name == name) || SHARED_UTILITIES.contains(&name)
+impl SharedPathParser<'_> {
+    fn skip_trivia(&mut self) {
+        loop {
+            let rest = &self.source[self.cursor..];
+            self.cursor += rest.len() - rest.trim_start().len();
+            let rest = &self.source[self.cursor..];
+            if rest.starts_with("//") {
+                self.cursor += rest.find('\n').unwrap_or(rest.len());
+            } else if rest.starts_with("/*") {
+                self.cursor += 2;
+                let mut depth = 1;
+                while depth > 0 && self.cursor < self.source.len() {
+                    let rest = &self.source[self.cursor..];
+                    if rest.starts_with("/*") {
+                        depth += 1;
+                        self.cursor += 2;
+                    } else if rest.starts_with("*/") {
+                        depth -= 1;
+                        self.cursor += 2;
+                    } else {
+                        self.cursor += rest.chars().next().unwrap().len_utf8();
+                    }
+                }
+            } else if ["\\n", "\\r", "\\t"]
+                .iter()
+                .any(|escape| rest.starts_with(escape))
+            {
+                // Codegen also emits use trees inside escaped string literals.
+                self.cursor += 2;
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn take(&mut self, token: &str) -> bool {
+        self.skip_trivia();
+        if self.source[self.cursor..].starts_with(token) {
+            self.cursor += token.len();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn identifier(&mut self) -> Option<&str> {
+        self.skip_trivia();
+        self.take("r#");
+        let start = self.cursor;
+        for character in self.source[start..].chars() {
+            if character == '_' || character.is_alphanumeric() {
+                self.cursor += character.len_utf8();
+            } else {
+                break;
+            }
+        }
+        (self.cursor > start).then_some(&self.source[start..self.cursor])
+    }
+
+    // Parse Rust use-tree paths recursively. Recording the original item before
+    // `as` means importing or renaming a forbidden constructor cannot hide it.
+    fn tree(&mut self, prefix: &str, references: &mut Vec<(usize, String)>) -> Result<(), ()> {
+        if self.take("{") {
+            while !self.take("}") {
+                self.tree(prefix, references)?;
+                if !self.take(",") {
+                    return self.take("}").then_some(()).ok_or(());
+                }
+            }
+            return Ok(());
+        }
+        self.skip_trivia();
+        let offset = self.cursor;
+        let item = if self.take("*") {
+            "*"
+        } else {
+            self.identifier().ok_or(())?
+        };
+        let path = match (prefix, item) {
+            ("", "self") => "<crate>".to_string(),
+            (_, "self") => prefix.to_string(),
+            ("", _) => item.to_string(),
+            _ => format!("{prefix}::{item}"),
+        };
+        if self.take("::") {
+            self.tree(&path, references)
+        } else {
+            if self.take("as") {
+                self.identifier().ok_or(())?;
+            }
+            references.push((offset, path));
+            Ok(())
+        }
+    }
+}
+
+fn shared_item_references(source: &str) -> Vec<(usize, String)> {
+    // Scan the raw source, including codegen strings, rather than only parsed
+    // Rust expressions. The parser expands grouped paths after each crate root.
+    let roots = regex::Regex::new(r"\bcarina_aws_types\b").unwrap();
+    let mut references = Vec::new();
+    for root in roots.find_iter(source) {
+        let mut parser = SharedPathParser {
+            source,
+            cursor: root.end(),
+        };
+        if parser.take("::") {
+            parser.skip_trivia();
+            // A namespace-only string used by a negative assertion names no
+            // item. Do not mistake it for an incomplete use tree.
+            if source[parser.cursor..].starts_with('"') {
+                continue;
+            }
+            let start = references.len();
+            if parser.tree("", &mut references).is_err() {
+                references.truncate(start);
+                references.push((root.start(), "<unparsed shared path>".to_string()));
+            }
+        }
+    }
+
+    // Preserve the stricter constructor check for unqualified enum rows, too.
+    // Allowing a row's identity as metadata must not allow its attribute_type.
+    let constructors =
+        regex::Regex::new(r"\bAwsType::([A-Za-z_][A-Za-z0-9_]*|\{[^}\n]+\})\.attribute_type\s*\(")
+            .unwrap();
+    for capture in constructors.captures_iter(source) {
+        references.push((
+            capture.get(0).unwrap().start(),
+            format!("AwsType::{}.attribute_type", &capture[1]),
+        ));
+    }
+    references
+}
+
+fn shared_item_is_allowlisted(name: &str) -> bool {
+    if let Some(row) = name.strip_suffix(".attribute_type") {
+        return SHARED_TYPES.iter().any(|entry| entry.name == row);
+    }
+    SHARED_TYPES.iter().any(|entry| entry.name == name)
+        || SHARED_UTILITIES.contains(&name)
+        || SHARED_MODULE_PREFIXES
+            .iter()
+            .any(|prefix| name == *prefix || name.starts_with(&format!("{prefix}::")))
 }
 
 fn assert_callback_has_no_partition_decision(name: &str, validate: &CustomValidator) {
@@ -310,18 +471,24 @@ fn source_scan_requires_explicit_shared_type_allowlist() {
     let prefix = concat!("carina_aws_types", "::");
     let enum_prefix = concat!("AwsType", "::");
     for name in ["arn", "iam_role_arn", "kms_key_id", "future_identifier"] {
-        let calls = shared_type_calls(&format!("{prefix}{name}()"));
+        let calls = shared_item_references(&format!("{prefix}{name}()"));
         assert_eq!(calls.len(), 1);
-        assert!(!shared_call_is_allowlisted(&calls[0].1), "{name}");
+        assert!(!shared_item_is_allowlisted(&calls[0].1), "{name}");
     }
     for source in [
         format!("{prefix}{enum_prefix}KmsKeyId.attribute_type()"),
         format!("{enum_prefix}KmsKeyId.attribute_type()"),
+        // An allowlisted identity path does not permit its shared constructor.
+        format!("{prefix}{enum_prefix}KmsKeyReference.attribute_type()"),
         format!("{prefix}{enum_prefix}{{aws_type:?}}.attribute_type()"),
     ] {
-        let calls = shared_type_calls(&source);
-        assert_eq!(calls.len(), 1);
-        assert!(!shared_call_is_allowlisted(&calls[0].1), "{source}");
+        let references = shared_item_references(&source);
+        assert!(
+            references
+                .iter()
+                .any(|(_, item)| !shared_item_is_allowlisted(item)),
+            "{source}"
+        );
     }
     for entry in SHARED_TYPES {
         let source = if entry.name.starts_with(enum_prefix) {
@@ -329,12 +496,131 @@ fn source_scan_requires_explicit_shared_type_allowlist() {
         } else {
             format!("{prefix}{}()", entry.name)
         };
-        let calls = shared_type_calls(&source);
-        assert_eq!(calls.len(), 1);
-        assert!(shared_call_is_allowlisted(&calls[0].1));
+        let references = shared_item_references(&source);
+        assert!(!references.is_empty(), "{source}");
+        assert!(
+            references
+                .iter()
+                .all(|(_, item)| shared_item_is_allowlisted(item)),
+            "{source}"
+        );
     }
-    assert!(shared_type_calls(&format!("{prefix}AwsType::IamRoleArn.identity()")).is_empty());
-    assert!(shared_type_calls("crate::schemas::catalog::kms_key_id()").is_empty());
+    // #593: Metadata paths are references even without a constructor call.
+    assert_eq!(
+        shared_item_references(&format!("{prefix}AwsType::IamRoleArn.identity()"))[0].1,
+        "AwsType::IamRoleArn"
+    );
+    assert!(shared_item_references("crate::schemas::catalog::kms_key_id()").is_empty());
+}
+
+#[test]
+fn source_scan_detects_calls_and_function_references() {
+    let prefix = concat!("carina_aws_types", "::");
+    for name in ["arn", "iam_role_arn"] {
+        for source in [
+            format!("{prefix}{name}()"),
+            format!("LazyLock::new({prefix}{name})"),
+            format!("let constructor = {prefix}{name};"),
+            format!("let emitted = r#\"LazyLock::new({prefix}{name})\"#;"),
+        ] {
+            let references = shared_item_references(&source);
+            assert_eq!(references.len(), 1, "{source}");
+            assert_eq!(references[0].1, name, "{source}");
+            assert!(!shared_item_is_allowlisted(&references[0].1), "{source}");
+        }
+    }
+}
+
+#[test]
+fn source_scan_detects_imported_renamed_and_grouped_items() {
+    let prefix = concat!("carina_aws_types", "::");
+    for name in ["arn", "iam_role_arn"] {
+        for source in [
+            format!("use {prefix}{name}; {name}();"),
+            format!("use {prefix}{{{name}, vpc_id}}; {name}();"),
+            format!("use {prefix}{name} as imported; imported();"),
+            format!("use {prefix}{{{name} as imported, vpc_id as safe}}; imported();"),
+            format!(
+                "use {prefix}{{sdk::{{self as clients, s3::S3Client}}, {{{name} as imported, vpc_id}}}}; imported();"
+            ),
+            format!("let emitted = \"use {prefix}{{{name} as imported, vpc_id}}; imported();\";"),
+        ] {
+            let references = shared_item_references(&source);
+            assert!(
+                references
+                    .iter()
+                    .any(|(_, item)| item == name && !shared_item_is_allowlisted(item)),
+                "missed {name}: {source}; found {references:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn source_scan_preserves_nested_paths_and_restricts_module_prefixes() {
+    let prefix = concat!("carina_aws_types", "::");
+    let source = format!(
+        "use ::{prefix}{{sdk::{{self as clients, s3::{{S3Client as Client, types::*}}}}, vpc_id as safe, {{arn as forbidden, iam_role_arn}}}};"
+    );
+    let references = shared_item_references(&source);
+    assert_eq!(
+        references
+            .iter()
+            .map(|(_, item)| item.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "sdk",
+            "sdk::s3::S3Client",
+            "sdk::s3::types::*",
+            "vpc_id",
+            "arn",
+            "iam_role_arn"
+        ]
+    );
+    assert!(shared_item_is_allowlisted("sdk::s3::S3Client"));
+    for name in ["sdk_lookalike::arn", "vpc_id::arn", "AwsType::Unknown", "*"] {
+        assert!(!shared_item_is_allowlisted(name), "{name}");
+    }
+}
+
+#[test]
+fn source_scan_handles_use_tree_trivia_and_rejects_incomplete_paths() {
+    let prefix = concat!("carina_aws_types", "::");
+    for source in [
+        format!(
+            "use {prefix}{{\n r#arn /* outer /* nested */ comment */ as forbidden, // another\n vpc_id, }};"
+        ),
+        format!(r#"let emitted = "use {prefix}{{\n r#arn as forbidden,\n vpc_id,\n }};";"#),
+    ] {
+        let references = shared_item_references(&source);
+        assert_eq!(
+            references
+                .iter()
+                .map(|(_, item)| item.as_str())
+                .collect::<Vec<_>>(),
+            ["arn", "vpc_id"],
+            "{source}"
+        );
+        assert!(!shared_item_is_allowlisted(&references[0].1));
+    }
+    assert!(
+        shared_item_references(&format!("assert!(!module.contains(\"{prefix}\"));")).is_empty()
+    );
+    for tree in [
+        "{sdk::{S3Client}, arn",
+        "{vpc_id, unknown::{",
+        "$constructor",
+        "self as shared",
+        "*",
+    ] {
+        let source = format!("use {prefix}{tree};");
+        assert!(
+            shared_item_references(&source)
+                .iter()
+                .any(|(_, item)| !shared_item_is_allowlisted(item)),
+            "{source}"
+        );
+    }
 }
 
 #[test]
@@ -383,8 +669,8 @@ fn schema_sources_use_only_allowlisted_shared_types() {
     let mut failures = Vec::new();
     for path in sources {
         let source = std::fs::read_to_string(&path).unwrap();
-        for (offset, name) in shared_type_calls(&source) {
-            if !shared_call_is_allowlisted(&name) {
+        for (offset, name) in shared_item_references(&source) {
+            if !shared_item_is_allowlisted(&name) {
                 failures.push(format!(
                     "{}:{}: {name}",
                     path.strip_prefix(&root).unwrap().display(),
