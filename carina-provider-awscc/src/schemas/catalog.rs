@@ -73,6 +73,61 @@ fn iam_arn(resource: &str, prefix: &'static str) -> AttributeType {
 
 const KMS_KEY_ARN_REST: &str = "kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})$";
 
+/// KMS key ID, alias, or ARN.
+pub fn kms_key_id() -> AttributeType {
+    let uuid = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+    let pattern = format!(
+        "^((arn:{}:kms:[^:]*:[^:]*:(key|alias)/.+)|(alias/.+)|({uuid}))$",
+        crate::partition::regex_fragment()
+    );
+    refined_string_with_validator(
+        overlay_identity(&["kms", "Key"], "Id"),
+        Some(ApprovedPattern::whole(&pattern)),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(value)) = value {
+                validate_kms_key_id(value.expose_plaintext())
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
+
+fn validate_kms_key_id(value: &str) -> Result<(), String> {
+    if value.starts_with("arn:") {
+        validate_service_arn(value, "kms", None)?;
+        let resource = value.splitn(6, ':').nth(5).expect("validated ARN resource");
+        if !resource.starts_with("key/") && !resource.starts_with("alias/") {
+            return Err(format!(
+                "KMS ARN resource '{}' must start with 'key/' or 'alias/'",
+                resource
+            ));
+        }
+        return Ok(());
+    }
+    if value.starts_with("alias/") {
+        return if value.len() <= "alias/".len() {
+            Err("missing alias name after 'alias/'".to_string())
+        } else {
+            Ok(())
+        };
+    }
+    let parts = value.split('-').collect::<Vec<_>>();
+    if parts.len() == 5
+        && parts.iter().zip([8, 4, 4, 4, 12]).all(|(part, length)| {
+            part.len() == length && part.chars().all(|c| c.is_ascii_hexdigit())
+        })
+    {
+        return Ok(());
+    }
+    Err(
+        "expected a key ARN, alias ARN, alias name (alias/...), or key ID (UUID format)"
+            .to_string(),
+    )
+}
+
 /// KMS key ARN with a UUID or multi-region key ID; aliases are excluded.
 pub fn kms_key_arn() -> AttributeType {
     static PATTERN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {

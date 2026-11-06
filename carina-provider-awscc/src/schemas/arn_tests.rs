@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, CompiledPattern, RawShape, TypeIdentity};
+use carina_core::schema::{
+    AttributeType, CompiledPattern, CustomValidator, RawShape, TypeIdentity, legacy_validator,
+};
 
 use super::catalog::{self, arn};
 use crate::partition::Partition;
@@ -98,66 +100,282 @@ fn collect_rust_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
     }
 }
 
-fn shared_arn_calls(source: &str) -> Vec<(usize, &str)> {
+struct SharedType {
+    name: &'static str,
+    constructor: fn() -> AttributeType,
+}
+
+// The identifiers are explicit: adding a shared type requires reviewing its
+// constructor, not inferring safety from its name or its current source uses.
+macro_rules! shared_type_allowlist {
+    (functions: [$($function:ident),* $(,)?], rows: [$($row:ident),* $(,)?] $(,)?) => {
+        &[
+            $(SharedType {
+                name: stringify!($function),
+                constructor: carina_aws_types::$function,
+            },)*
+            $(SharedType {
+                name: concat!("AwsType::", stringify!($row)),
+                constructor: || carina_aws_types::AwsType::$row.attribute_type(),
+            },)*
+        ]
+    };
+}
+
+const SHARED_TYPES: &[SharedType] = shared_type_allowlist! {
+    functions: [
+        allocation_id,
+        availability_zone,
+        availability_zone_id,
+        aws_account_id,
+        aws_region,
+        aws_resource_id,
+        carrier_gateway_id,
+        egress_only_internet_gateway_id,
+        elbv2_health_check_port,
+        elbv2_target_group_grpc_code,
+        elbv2_target_group_http_code,
+        flow_log_id,
+        gateway_id,
+        iam_path,
+        iam_policy_document,
+        iam_policy_name,
+        iam_role_id,
+        iam_role_name,
+        identity_store_id,
+        instance_id,
+        internet_gateway_id,
+        ipam_id,
+        ipam_pool_id,
+        // The sole partition-bearing exception is the cross-provider KMS
+        // comparison reference. It remains shared under #541.
+        kms_key_reference,
+        local_gateway_id,
+        logs_log_group_retention_in_days,
+        nat_gateway_id,
+        network_acl_id,
+        network_interface_id,
+        prefix_list_id,
+        route53_hosted_zone_id,
+        route_table_id,
+        security_group_id,
+        sso_principal_id,
+        subnet_id,
+        subnet_route_table_association_id,
+        tgw_route_table_id,
+        transit_gateway_attachment_id,
+        transit_gateway_id,
+        vpc_cidr_block_association_id,
+        vpc_endpoint_id,
+        vpc_id,
+        vpc_peering_connection_id,
+        vpn_gateway_id,
+    ],
+    rows: [],
+};
+
+// These APIs produce strings, SDK configuration or completion data, rather
+// than AttributeType values. New utility calls also require explicit review.
+const SHARED_UTILITIES: &[&str] = &[
+    "condition_operator_to_aws",
+    "condition_operator_to_snake",
+    "load_sdk_config",
+    "region_completions",
+];
+
+fn shared_type_calls(source: &str) -> Vec<(usize, String)> {
     let calls = regex::Regex::new(
-        r"carina_aws_types::(?:([A-Za-z_][A-Za-z0-9_]*)\s*\(|AwsType::([A-Za-z_][A-Za-z0-9_]*|\{[^}\n]+\})\.attribute_type\s*\()",
+        r"(?:(?:carina_aws_types::)?AwsType::([A-Za-z_][A-Za-z0-9_]*|\{[^}\n]+\})\.attribute_type\s*\(|carina_aws_types::([A-Za-z_][A-Za-z0-9_]*)\s*\()",
     ).unwrap();
     calls
         .captures_iter(source)
-        .filter_map(|capture| {
-            let name = capture.get(1).or_else(|| capture.get(2)).unwrap().as_str();
-            // The cross-provider comparison reference is intentionally shared (#541).
-            if name == "kms_key_reference" {
-                return None;
-            }
-            (name.ends_with("Arn")
-                || name.starts_with('{')
-                || name.split('_').any(|part| part == "arn"))
-            .then(|| (capture.get(0).unwrap().start(), name))
+        .map(|capture| {
+            let name = capture.get(1).map_or_else(
+                || capture.get(2).unwrap().as_str().to_string(),
+                |row| format!("AwsType::{}", row.as_str()),
+            );
+            (capture.get(0).unwrap().start(), name)
         })
         .collect()
 }
 
-#[test]
-fn source_scan_rejects_shared_arn_constructors_and_enum_bypasses() {
-    let prefix = concat!("carina_aws_types", "::");
-    for name in [
-        "arn",
-        "iam_role_arn",
-        "iam_policy_arn",
-        "iam_oidc_provider_arn",
-        "kms_key_arn",
-        "sso_instance_arn",
-        "sso_permission_set_arn",
-        "future_service_arn",
-        "validate_arn",
-        "kms_key_arn_reference",
-    ] {
+fn shared_call_is_allowlisted(name: &str) -> bool {
+    SHARED_TYPES.iter().any(|entry| entry.name == name) || SHARED_UTILITIES.contains(&name)
+}
+
+fn assert_callback_has_no_partition_decision(name: &str, validate: &CustomValidator) {
+    let sample = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789abc";
+    let baseline = validate(&Value::Concrete(ConcreteValue::String(sample.into()))).is_ok();
+    for partition in Partition::ALL
+        .map(Partition::id)
+        .into_iter()
+        .chain(["aws-xx"])
+    {
+        let value = sample.replacen("arn:aws:", &format!("arn:{partition}:"), 1);
+        let result = validate(&Value::Concrete(ConcreteValue::String(value.into())));
         assert_eq!(
-            shared_arn_calls(&format!("{prefix}{name}()")).len(),
-            1,
-            "{name}"
+            result.is_ok(),
+            baseline,
+            "{name} validator makes a partition decision for {partition}"
         );
+        if let Err(error) = result {
+            assert!(
+                !error.to_string().to_ascii_lowercase().contains("partition"),
+                "{name}: {error}"
+            );
+        }
     }
-    assert_eq!(
-        shared_arn_calls(&format!("{prefix}AwsType::IamRoleArn.attribute_type()")).len(),
-        1
-    );
-    assert_eq!(
-        shared_arn_calls(&format!("{prefix}AwsType::{{aws_type:?}}.attribute_type()")).len(),
-        1
-    );
-    for source in [
-        format!("{prefix}kms_key_reference()"),
-        format!("{prefix}AwsType::IamRoleArn.identity()"),
-        "crate::schemas::catalog::iam_role_arn()".to_string(),
-    ] {
-        assert!(shared_arn_calls(&source).is_empty(), "{source}");
+}
+
+fn assert_shared_type_has_no_partition_decision(name: &str, ty: &AttributeType) {
+    match ty.raw_shape() {
+        RawShape::String {
+            validate: Some(validate),
+            ..
+        }
+        | RawShape::Int {
+            validate: Some(validate),
+            ..
+        }
+        | RawShape::Float {
+            validate: Some(validate),
+            ..
+        }
+        | RawShape::Enum {
+            validate: Some(validate),
+            ..
+        } => {
+            assert_callback_has_no_partition_decision(name, validate);
+        }
+        _ => {}
+    }
+    match ty.raw_shape() {
+        RawShape::String { pattern, .. } | RawShape::Reference { pattern, .. } => {
+            if let Some(pattern) = pattern {
+                assert!(
+                    !pattern.contains("arn:"),
+                    "{name} carries an ARN pattern: {pattern}"
+                );
+            }
+        }
+        RawShape::Enum { base, .. } => assert_shared_type_has_no_partition_decision(name, base),
+        RawShape::List { element_type, .. } => {
+            assert_shared_type_has_no_partition_decision(name, element_type)
+        }
+        RawShape::Map { key, value } => {
+            assert_shared_type_has_no_partition_decision(name, key);
+            assert_shared_type_has_no_partition_decision(name, value);
+        }
+        RawShape::Struct { fields, .. } => {
+            for field in fields {
+                assert_shared_type_has_no_partition_decision(name, field.field_type());
+            }
+        }
+        RawShape::Union(members) => {
+            for member in members {
+                assert_shared_type_has_no_partition_decision(name, member);
+            }
+        }
+        RawShape::Ref(_) | RawShape::UnloadedSchemaType(_) => {
+            panic!("{name} needs resolved definitions before it can be allowlisted");
+        }
+        RawShape::Int { .. } | RawShape::Float { .. } | RawShape::Bool | RawShape::Duration => {}
     }
 }
 
 #[test]
-fn schema_sources_use_awscc_generic_arn_constructor() {
+fn shared_type_allowlist_has_no_partition_decisions() {
+    let mut names = std::collections::BTreeSet::new();
+    for entry in SHARED_TYPES {
+        assert!(
+            names.insert(entry.name),
+            "duplicate allowlist entry {}",
+            entry.name
+        );
+        let ty = (entry.constructor)();
+        if entry.name == "kms_key_reference" {
+            // #541: the one deliberately shared partition-bearing type.
+            assert!(
+                matches!(ty.raw_shape(), RawShape::Reference { pattern: Some(pattern), .. } if pattern.contains("arn:"))
+            );
+        } else {
+            assert_shared_type_has_no_partition_decision(entry.name, &ty);
+        }
+    }
+    assert!(names.contains("kms_key_reference"));
+}
+
+#[test]
+fn source_scan_requires_explicit_shared_type_allowlist() {
+    let prefix = concat!("carina_aws_types", "::");
+    let enum_prefix = concat!("AwsType", "::");
+    for name in ["arn", "iam_role_arn", "kms_key_id", "future_identifier"] {
+        let calls = shared_type_calls(&format!("{prefix}{name}()"));
+        assert_eq!(calls.len(), 1);
+        assert!(!shared_call_is_allowlisted(&calls[0].1), "{name}");
+    }
+    for source in [
+        format!("{prefix}{enum_prefix}KmsKeyId.attribute_type()"),
+        format!("{enum_prefix}KmsKeyId.attribute_type()"),
+        format!("{prefix}{enum_prefix}{{aws_type:?}}.attribute_type()"),
+    ] {
+        let calls = shared_type_calls(&source);
+        assert_eq!(calls.len(), 1);
+        assert!(!shared_call_is_allowlisted(&calls[0].1), "{source}");
+    }
+    for entry in SHARED_TYPES {
+        let source = if entry.name.starts_with(enum_prefix) {
+            format!("{prefix}{}.attribute_type()", entry.name)
+        } else {
+            format!("{prefix}{}()", entry.name)
+        };
+        let calls = shared_type_calls(&source);
+        assert_eq!(calls.len(), 1);
+        assert!(shared_call_is_allowlisted(&calls[0].1));
+    }
+    assert!(shared_type_calls(&format!("{prefix}AwsType::IamRoleArn.identity()")).is_empty());
+    assert!(shared_type_calls("crate::schemas::catalog::kms_key_id()").is_empty());
+}
+
+#[test]
+fn shared_type_audit_rejects_arn_patterns_and_hidden_partition_validators() {
+    assert!(
+        std::panic::catch_unwind(|| {
+            let ty = AttributeType::list(AttributeType::refined_string(
+                None,
+                Some("^arn:.*$".into()),
+                None,
+                None,
+            ));
+            assert_shared_type_has_no_partition_decision("innocent_name", &ty);
+        })
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(|| {
+            let ty = AttributeType::refined_string_with_validator(
+                TypeIdentity::bare("Hidden"),
+                None,
+                None,
+                legacy_validator(|value| {
+                    if let Value::Concrete(ConcreteValue::String(value)) = value
+                        && value.expose_plaintext().starts_with("arn:aws:")
+                    {
+                        Ok(())
+                    } else {
+                        Err("unsupported value".to_string())
+                    }
+                }),
+                None,
+            );
+            assert_shared_type_has_no_partition_decision("innocent_name", &ty);
+        })
+        .is_err()
+    );
+}
+
+#[test]
+fn schema_sources_use_only_allowlisted_shared_types() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut sources = Vec::new();
     collect_rust_sources(&root, &mut sources);
@@ -165,22 +383,141 @@ fn schema_sources_use_awscc_generic_arn_constructor() {
     let mut failures = Vec::new();
     for path in sources {
         let source = std::fs::read_to_string(&path).unwrap();
-        for (offset, name) in shared_arn_calls(&source) {
-            failures.push(format!(
-                "{}:{}: {name}",
-                path.strip_prefix(&root).unwrap().display(),
-                source[..offset]
-                    .bytes()
-                    .filter(|byte| *byte == b'\n')
-                    .count()
-                    + 1
-            ));
+        for (offset, name) in shared_type_calls(&source) {
+            if !shared_call_is_allowlisted(&name) {
+                failures.push(format!(
+                    "{}:{}: {name}",
+                    path.strip_prefix(&root).unwrap().display(),
+                    source[..offset]
+                        .bytes()
+                        .filter(|byte| *byte == b'\n')
+                        .count()
+                        + 1
+                ));
+            }
         }
     }
     assert!(
         failures.is_empty(),
-        "Schema/codegen sources must use AWSCC ARN constructors (only kms_key_reference is shared, #541):\n{}",
+        "Shared type uses need an explicit partition-free allowlist entry:\n{}",
         failures.join("\n")
+    );
+}
+
+#[test]
+fn kms_key_id_accepts_every_awscc_partition() {
+    let ty = catalog::kms_key_id();
+    let RawShape::String {
+        identity,
+        pattern: Some(pattern),
+        length,
+        validate: Some(validate),
+        ..
+    } = ty.raw_shape()
+    else {
+        panic!("KMS key ID must have a pattern and callback");
+    };
+    assert_eq!(
+        identity,
+        Some(&TypeIdentity {
+            provider: Some("aws".into()),
+            segments: vec!["kms".into(), "Key".into()],
+            kind: "Id".into()
+        })
+    );
+    assert_eq!(length, None);
+    let pattern = CompiledPattern::try_new(pattern).unwrap();
+    let mut failures = Vec::new();
+    for partition in Partition::ALL {
+        for resource in ["key/12345678-1234-1234-1234-123456789abc", "alias/example"] {
+            let value = format!(
+                "arn:{}:kms:us-east-1:123456789012:{resource}",
+                partition.id()
+            );
+            if !pattern.is_match(&value) {
+                failures.push(format!("pattern rejected {value}"));
+            }
+            if let Err(error) = validate(&Value::Concrete(ConcreteValue::String(value.into()))) {
+                failures.push(error.to_string());
+            }
+        }
+    }
+    let invalid = "arn:aws-xx:kms:us-east-1:123456789012:key/example";
+    assert!(!pattern.is_match(invalid));
+    assert!(validate(&Value::Concrete(ConcreteValue::String(invalid.into()))).is_err());
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn kms_key_id_keeps_alias_uuid_grammar_and_validation_diagnostics() {
+    let ty = catalog::kms_key_id();
+    let RawShape::String {
+        pattern: Some(pattern),
+        validate: Some(validate),
+        ..
+    } = ty.raw_shape()
+    else {
+        panic!("KMS key ID must have a pattern and callback");
+    };
+    let pattern = CompiledPattern::try_new(pattern).unwrap();
+    for value in [
+        "alias/example",
+        "alias/arbitrary name/with spaces",
+        "12345678-1234-1234-1234-123456789abc",
+        "12345678-1234-ABCD-abcd-123456789ABC",
+        "arn:aws:kms:::key/arbitrary",
+        "arn:aws:kms:::alias/arbitrary",
+    ] {
+        assert!(pattern.is_match(value), "{value}");
+        validate(&Value::Concrete(ConcreteValue::String(value.into()))).unwrap();
+    }
+    for (value, reason) in [
+        ("alias/", "missing alias name after 'alias/'"),
+        (
+            "arn:aws:kms",
+            "must have at least 6 colon-separated parts (arn:partition:service:region:account:resource)",
+        ),
+        ("arn:aws:s3:::key/example", "expected kms service, got 's3'"),
+        (
+            "arn:aws:kms:::other/example",
+            "KMS ARN resource 'other/example' must start with 'key/' or 'alias/'",
+        ),
+        (
+            "arn:aws::::key/example",
+            "service must not be empty (e.g., 's3', 'iam', 'ec2')",
+        ),
+        (
+            "mrk-0123456789abcdef0123456789abcdef",
+            "expected a key ARN, alias ARN, alias name (alias/...), or key ID (UUID format)",
+        ),
+        (
+            "invalid",
+            "expected a key ARN, alias ARN, alias name (alias/...), or key ID (UUID format)",
+        ),
+        (
+            "1234567g-1234-1234-1234-123456789abc",
+            "expected a key ARN, alias ARN, alias name (alias/...), or key ID (UUID format)",
+        ),
+    ] {
+        assert!(!pattern.is_match(value), "{value}");
+        assert_eq!(
+            validate(&Value::Concrete(ConcreteValue::String(value.into())))
+                .unwrap_err()
+                .to_string(),
+            format!("Validation failed: {reason}")
+        );
+    }
+    // The shared callback checks only the ARN resource prefix, while the
+    // pattern separately requires a non-empty name. Preserve that distinction.
+    for value in ["arn:aws:kms:::key/", "arn:aws:kms:::alias/"] {
+        assert!(!pattern.is_match(value));
+        validate(&Value::Concrete(ConcreteValue::String(value.into()))).unwrap();
+    }
+    assert_eq!(
+        validate(&Value::Concrete(ConcreteValue::Int(1)))
+            .unwrap_err()
+            .to_string(),
+        "Validation failed: Expected string"
     );
 }
 

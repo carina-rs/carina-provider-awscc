@@ -3432,7 +3432,7 @@ fn override_type_to_display_name(override_type: &str) -> &str {
             "IamPolicyArn"
         }
         "crate::schemas::catalog::kms_key_arn()" | "super::super::kms::key::arn()" => "KmsKeyArn",
-        "carina_aws_types::kms_key_id()" => "KmsKeyId",
+        "crate::schemas::catalog::kms_key_id()" => "KmsKeyId",
         "carina_aws_types::gateway_id()" => "GatewayId",
         "carina_aws_types::network_acl_id()" => "NetworkAclId",
         "carina_aws_types::aws_account_id()" => "AwsAccountId",
@@ -7679,8 +7679,8 @@ fn known_string_type_overrides() -> &'static HashMap<&'static str, &'static str>
         // Writable references are selected by full-path classification before
         // these heuristics. Preserve main's types for non-reference outputs.
         m.insert("KmsKeyId", "super::super::kms::key::arn()");
-        m.insert("KMSMasterKeyID", "carina_aws_types::kms_key_id()");
-        m.insert("ReplicaKmsKeyID", "carina_aws_types::kms_key_id()");
+        m.insert("KMSMasterKeyID", "crate::schemas::catalog::kms_key_id()");
+        m.insert("ReplicaKmsKeyID", "crate::schemas::catalog::kms_key_id()");
         m.insert("KmsKeyArn", "super::super::kms::key::arn()");
         m.insert("IpamId", "carina_aws_types::ipam_id()");
         m.insert("BucketAccountId", "carina_aws_types::aws_account_id()");
@@ -19378,7 +19378,8 @@ mod tests {
             ("carina_aws_types::security_group_id()", "SecurityGroupId"),
             // #593: Use AWSCC's generic ARN constructor with the same type semantics.
             ("crate::schemas::catalog::arn()", "Arn"),
-            ("carina_aws_types::kms_key_id()", "KmsKeyId"),
+            // #593: Preserve the alias while AWSCC owns the KMS key ID grammar.
+            ("crate::schemas::catalog::kms_key_id()", "KmsKeyId"),
             // #593: Keep the IAM role alias while using AWSCC's constructor.
             ("crate::schemas::catalog::iam_role_arn()", "IamRoleArn"),
         ] {
@@ -23593,7 +23594,11 @@ mod tests {
             assert_eq!(overrides.get(name), Some(&"super::super::kms::key::arn()"));
         }
         for name in ["KMSMasterKeyID", "ReplicaKmsKeyID"] {
-            assert_eq!(overrides.get(name), Some(&"carina_aws_types::kms_key_id()"));
+            // #593: These fallbacks must use AWSCC's partition definition.
+            assert_eq!(
+                overrides.get(name),
+                Some(&"crate::schemas::catalog::kms_key_id()")
+            );
         }
         assert_eq!(
             overrides.get("PermissionsBoundary"),
