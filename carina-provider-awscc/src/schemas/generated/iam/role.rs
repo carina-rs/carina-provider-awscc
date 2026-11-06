@@ -9,7 +9,7 @@ use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 pub fn arn() -> AttributeType {
-    carina_aws_types::AwsType::IamRoleArn.attribute_type()
+    crate::schemas::catalog::iam_role_arn()
 }
 
 /// Returns the schema config for iam_role (AWS::IAM::Role)

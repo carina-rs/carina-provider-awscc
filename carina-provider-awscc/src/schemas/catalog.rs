@@ -5,7 +5,7 @@
 //! refinements that add AWSCC-specific validation. Its rows use the exported
 //! `carina_aws_types::define_aws_type_catalog` grammar shared with `AwsType`.
 
-use super::pattern::{ApprovedPattern, refined_string_with_validator};
+use super::pattern::{ApprovedPattern, refined_string, refined_string_with_validator};
 use crate::partition::{Partition, arn_regex};
 use carina_aws_types::AwsType;
 use carina_core::resource::{ConcreteValue, Value};
@@ -37,6 +37,84 @@ pub fn arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
+        None,
+    )
+}
+
+/// IAM role ARN, including IAM's account, path and name checks.
+pub fn iam_role_arn() -> AttributeType {
+    iam_arn("Role", "role/")
+}
+
+/// IAM policy ARN, including AWS-managed policies in the `aws` account.
+pub fn iam_policy_arn() -> AttributeType {
+    iam_arn("Policy", "policy/")
+}
+
+fn iam_arn(resource: &str, prefix: &'static str) -> AttributeType {
+    refined_string_with_validator(
+        overlay_identity(&["iam", resource], "Arn"),
+        Some(ApprovedPattern::whole(&arn_regex(&format!(
+            "iam::[^:]*:{prefix}.+$"
+        )))),
+        None,
+        legacy_validator(move |value| {
+            if let Value::Concrete(ConcreteValue::String(value)) = value {
+                // Preserve the shared IAM type's bare diagnostic, including
+                // the IAM resource label supplied by validate_iam_arn.
+                validate_iam_arn(value.expose_plaintext(), prefix)
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
+
+const KMS_KEY_ARN_REST: &str = "kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})$";
+
+/// KMS key ARN with a UUID or multi-region key ID; aliases are excluded.
+pub fn kms_key_arn() -> AttributeType {
+    static PATTERN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(&arn_regex(KMS_KEY_ARN_REST)).expect("KMS key ARN pattern must compile")
+    });
+    refined_string_with_validator(
+        overlay_identity(&["kms", "Key"], "Arn"),
+        Some(ApprovedPattern::whole(&arn_regex(KMS_KEY_ARN_REST))),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(value)) = value {
+                if PATTERN.is_match(value.expose_plaintext()) {
+                    Ok(())
+                } else {
+                    Err("expected a KMS key ARN with a UUID or multi-region key ID".to_string())
+                }
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
+
+/// IAM Identity Center instance ARN; retain the pattern-only shared shape.
+pub fn sso_instance_arn() -> AttributeType {
+    refined_string(
+        Some(overlay_identity(&["sso", "Instance"], "Arn")),
+        Some(ApprovedPattern::whole(&arn_regex("sso:::instance/.+$"))),
+        None,
+        None,
+    )
+}
+
+/// IAM Identity Center permission-set ARN; retain the pattern-only shared shape.
+pub fn sso_permission_set_arn() -> AttributeType {
+    refined_string(
+        Some(overlay_identity(&["sso", "PermissionSet"], "Arn")),
+        Some(ApprovedPattern::whole(&arn_regex(
+            "sso:::permissionSet/.+$",
+        ))),
+        None,
         None,
     )
 }

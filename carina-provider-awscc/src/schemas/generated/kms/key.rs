@@ -9,7 +9,7 @@ use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    carina_aws_types::AwsType::KmsKeyArn.attribute_type()
+    crate::schemas::catalog::kms_key_arn()
 }
 
 const VALID_KEY_SPEC: &[&str] = &[

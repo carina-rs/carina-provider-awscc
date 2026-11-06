@@ -39,7 +39,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_inline_policy_attribute());
     #[inline(never)]
     fn build_instance_arn_attribute() -> AttributeSchema {
-        AttributeSchema::required("instance_arn", carina_aws_types::sso_instance_arn())
+        AttributeSchema::required("instance_arn", crate::schemas::catalog::sso_instance_arn())
                 .create_only()
                 .with_description("The sso instance arn that the permission set is owned.")
                 .with_provider_name("InstanceArn")
@@ -64,7 +64,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_name_attribute());
     #[inline(never)]
     fn build_permission_set_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("permission_set_arn", carina_aws_types::sso_permission_set_arn())
+        AttributeSchema::provider_populated("permission_set_arn", crate::schemas::catalog::sso_permission_set_arn())
                 .with_description("The permission set that the policy will be attached to (read-only)")
                 .with_provider_name("PermissionSetArn")
             .build()

@@ -217,6 +217,48 @@ mod tests {
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
+    #[test]
+    fn synthesized_iam_roles_validate_in_every_partition() {
+        use carina_core::schema::{CompiledPattern, RawShape};
+        let ty = crate::schemas::generated::iam::role::arn();
+        let RawShape::String {
+            pattern: Some(pattern),
+            validate: Some(validate),
+            ..
+        } = ty.raw_shape()
+        else {
+            panic!("IAM role ARN must have a pattern and callback");
+        };
+        let pattern = CompiledPattern::try_new(pattern).unwrap();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut failures = Vec::new();
+        for region in [
+            "us-east-1",
+            "cn-north-1",
+            "us-gov-west-1",
+            "us-iso-east-1",
+            "us-isob-east-1",
+            "eu-isoe-west-1",
+            "us-isof-south-1",
+            "eusc-de-east-1",
+        ] {
+            let partition = partition_for_region(Some(region));
+            seen.insert(partition);
+            let arn = iam_role_arn(partition, "123456789012", "/service-role/", "example");
+            if !pattern.is_match(&arn) {
+                failures.push(format!("{region}: pattern rejected {arn}"));
+            }
+            if let Err(error) = validate(&Value::Concrete(ConcreteValue::String(arn.into()))) {
+                failures.push(format!("{region}: {error}"));
+            }
+        }
+        assert_eq!(
+            seen,
+            Partition::ALL.map(Partition::id).into_iter().collect()
+        );
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
     /// `AWS::CloudFront::Distribution`'s CFN schema does not expose `Arn`,
     /// but downstream `.crn` files reference `distribution.arn` (e.g. for
     /// CloudFront/S3 OAC bucket policies). The schema must therefore
