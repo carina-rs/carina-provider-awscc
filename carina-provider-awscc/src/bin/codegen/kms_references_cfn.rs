@@ -240,16 +240,36 @@ impl<'a> EmissionContext<'a> {
         source: Option<&str>,
         cfn_path: CfnPropertyPath<'_>,
     ) -> String {
-        if let Some(site) = self.sites.borrow().get(path)
-            && let Some(pointer) = site.sources.iter().find(|pointer| {
-                self.source
-                    .pointer(pointer)
-                    .and_then(|node| node.get("pattern"))
-                    .and_then(Value::as_str)
-                    .is_some_and(|pattern| Some(pattern) == source)
-            })
-        {
-            return pointer.clone();
+        let sites = self.sites.borrow();
+        let fallback;
+        let sources = if let Some(site) = sites.get(path) {
+            &site.sources
+        } else {
+            fallback = self.same_site_sources([cfn_path.source_pointer()]);
+            &fallback
+        };
+        for pointer in sources {
+            let Some(node) = self.source.pointer(pointer) else {
+                continue;
+            };
+            if node
+                .get("pattern")
+                .and_then(Value::as_str)
+                .is_some_and(|pattern| Some(pattern) == source)
+            {
+                return pointer.clone();
+            }
+            if let Some(pattern) = source
+                && node
+                    .get("patternProperties")
+                    .and_then(|patterns| patterns.get(pattern))
+                    .is_some()
+            {
+                // A key pattern is the sole dictionary key, not the value
+                // schema at /patternProperties/<regex> (which may have its
+                // own, different pattern). Keep their review sites distinct.
+                return pointer_child(pointer, "patternProperties");
+            }
         }
         // Isolated leaf tests and synthetic overlays may have no source site.
         // The canonical CFN key still identifies the leaf in that case.

@@ -626,6 +626,64 @@ fn validated_scheduler_schedule_expression(identity: TypeIdentity) -> AttributeT
     )
 }
 
+fn validated_wafv2_byte_match_search_string(identity: TypeIdentity) -> AttributeType {
+    // Core refined_string length counts characters, but this API counts UTF-8 bytes.
+    // https://docs.aws.amazon.com/waf/latest/APIReference/API_ByteMatchStatement.html#waf-Type-ByteMatchStatement-SearchString
+    // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
+    // accepted 200 ASCII bytes and 66×'あ' (198 bytes);
+    // rejected 201 ASCII bytes, 67×'あ' (201 bytes) and empty string.
+    // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
+    // accepted 66×'あ' and read back all 66 characters through get-resource.
+    refined_string_with_validator(
+        identity,
+        None,
+        None,
+        legacy_validator(|value| {
+            let Value::Concrete(ConcreteValue::String(value)) = value else {
+                return Err("Expected string".to_string());
+            };
+            if (1..=200).contains(&value.expose_plaintext().len()) {
+                Ok(())
+            } else {
+                Err("ByteMatch search string must contain 1 to 200 UTF-8 bytes".to_string())
+            }
+        }),
+        None,
+    )
+}
+
+fn validated_wafv2_byte_match_search_string_base64(identity: TypeIdentity) -> AttributeType {
+    use base64::Engine;
+    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD};
+
+    // https://docs.aws.amazon.com/waf/latest/APIReference/API_ByteMatchStatement.html#waf-Type-ByteMatchStatement-SearchString
+    // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-wafv2-webacl-bytematchstatement.html#cfn-wafv2-webacl-bytematchstatement-searchstringbase64
+    // API documentation only (not separately probed): SearchStringBase64 must
+    // decode to 1..=200 bytes; the 200-byte limit applies before encoding.
+    // Padding is unspecified, so accept both padded and unpadded standard base64.
+    refined_string_with_validator(
+        identity,
+        None,
+        None,
+        legacy_validator(|value| {
+            let Value::Concrete(ConcreteValue::String(value)) = value else {
+                return Err("Expected string".to_string());
+            };
+            let value = value.expose_plaintext();
+            let decoded = STANDARD
+                .decode(value)
+                .or_else(|_| STANDARD_NO_PAD.decode(value))
+                .map_err(|_| "ByteMatch search string must be valid standard base64".to_string())?;
+            if (1..=200).contains(&decoded.len()) {
+                Ok(())
+            } else {
+                Err("ByteMatch base64 search string must decode to 1 to 200 bytes".to_string())
+            }
+        }),
+        None,
+    )
+}
+
 fn validated_scheduler_schedule_group_name(identity: TypeIdentity) -> AttributeType {
     // Measured with carina-test-008 in ap-northeast-1 on 2026-10-30: creating
     // AWS::Scheduler::Schedule in a non-default group succeeded, but Carina's
@@ -865,6 +923,20 @@ carina_aws_types::define_aws_type_catalog! {
             kind: "SessionDuration",
             valid_sample: "PT8H",
             constructor: validated_sso_permission_set_session_duration,
+        },
+        /// AWSCC ByteMatch search string bounded by UTF-8 bytes.
+        Wafv2ByteMatchSearchString => wafv2_byte_match_search_string {
+            segments: ["wafv2", "WebACL"],
+            kind: "ByteMatchSearchString",
+            valid_sample: "BadBot",
+            constructor: validated_wafv2_byte_match_search_string,
+        },
+        /// AWSCC standard base64 ByteMatch string bounded by decoded bytes.
+        Wafv2ByteMatchSearchStringBase64 => wafv2_byte_match_search_string_base64 {
+            segments: ["wafv2", "WebACL"],
+            kind: "ByteMatchSearchStringBase64",
+            valid_sample: "QmFkQm90",
+            constructor: validated_wafv2_byte_match_search_string_base64,
         },
         /// AWSCC lifecycle calendar date at midnight UTC, including CFN's .000Z form.
         /// This identity is local to AWSCC, distinct from the existing shared
@@ -1252,6 +1324,8 @@ Ec2FlowLogMaxAggregationInterval|aws|ec2/FlowLog|MaxAggregationInterval|Some(Ec2
 SchedulerScheduleGroupName|aws|scheduler/Schedule|GroupName|None|default|None|crate::schemas::catalog::scheduler_schedule_group_name()
 SchedulerScheduleExpression|aws|scheduler/Schedule|ScheduleExpression|None|rate(6 hours)|None|crate::schemas::catalog::scheduler_schedule_expression()
 SsoPermissionSetSessionDuration|aws|sso/PermissionSet|SessionDuration|None|PT8H|None|crate::schemas::catalog::sso_permission_set_session_duration()
+Wafv2ByteMatchSearchString|aws|wafv2/WebACL|ByteMatchSearchString|None|BadBot|None|crate::schemas::catalog::wafv2_byte_match_search_string()
+Wafv2ByteMatchSearchStringBase64|aws|wafv2/WebACL|ByteMatchSearchStringBase64|None|QmFkQm90|None|crate::schemas::catalog::wafv2_byte_match_search_string_base64()
 S3LifecycleDate|aws|s3/Bucket|LifecycleDate|None|2030-01-01T00:00:00Z|None|crate::schemas::catalog::s3_lifecycle_date()"#;
 
         let snapshot = AwsccType::ALL
