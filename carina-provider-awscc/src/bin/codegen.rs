@@ -11101,6 +11101,41 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             TypeOverride::Enum(ssl_protocols),
         );
 
+        // AllowedPattern: CFN's cached schema omits the documented 0..=1024 bounds.
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ssm-parameter.html#cfn-ssm-parameter-allowedpattern
+        // Cloud Control probe, carina-test-008, 2026-11-06: empty and 1024
+        // succeeded; 1025 failed with SSM ValidationException.
+        m.insert(
+            ("AWS::SSM::Parameter", "AllowedPattern"),
+            TypeOverride::AttributeType {
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(0), Some(1024))),
+                    PatternLiteral::Quoted,
+                ),
+                display: const { OverrideTypeDisplay::new("String(len: ..=1024)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Policies: CFN's cached schema omits PutParameter's 1..=4096 bounds.
+        // https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_PutParameter.html#systemsmanager-PutParameter-request-Policies
+        // Cloud Control probe, carina-test-008, 2026-11-06: 4096 succeeded;
+        // 4097 and empty failed. JSON structure is out of scope (#524).
+        m.insert(
+            ("AWS::SSM::Parameter", "Policies"),
+            TypeOverride::AttributeType {
+                expression: OverrideTypeExpression::string(
+                    None,
+                    Some((Some(1), Some(4096))),
+                    PatternLiteral::Quoted,
+                ),
+                display: const { OverrideTypeDisplay::new("String(len: 1..=4096)") },
+                block_name: None,
+                default: None,
+            },
+        );
+
         // CreateSchedule probes, carina-test-008, ap-northeast-1, 2026-11-05:
         // accepted rate/cron/at syntax differs from the documented grammar.
         // Keep CFN's 1..=256 bounds in the named callback-bearing type.
@@ -19352,6 +19387,58 @@ mod tests {
                 TypeOverride::StringType(OverrideTypeExpression::raw(constructor)).display(),
                 None,
                 "shared aliases keep the existing plain-text rendering path",
+            );
+        }
+    }
+
+    #[test]
+    fn test_ssm_parameter_length_overrides_use_exact_raw_cfn_paths() {
+        let schema = cfn_schema_for_codegen_tests("AWS::SSM::Parameter");
+        assert_eq!(
+            resource_type_overrides()
+                .for_resource(&schema.type_name)
+                .map(|(path, _)| path.source_pointer())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                "/properties/AllowedPattern".to_string(),
+                "/properties/Policies".to_string(),
+            ]),
+            "only the two planned SSM length bounds may be overridden"
+        );
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        for (raw, dsl, min, max) in [
+            ("AllowedPattern", "allowed_pattern", 0, 1024),
+            ("Policies", "policies", 1, 4096),
+        ] {
+            let source = &schema.properties[raw];
+            assert_eq!(source.min_length, None);
+            assert_eq!(source.max_length, None);
+            let Some(TypeOverride::AttributeType {
+                expression,
+                display,
+                block_name: None,
+                default: None,
+            }) = resource_type_override(&schema.type_name, CfnPropertyPath::new(None, raw))
+            else {
+                panic!("{raw} must have an anonymous per-attribute length override");
+            };
+            assert_eq!(
+                expression.as_str(),
+                format!(
+                    "AttributeType::refined_string(None, None, Some((Some({min}), Some({max}))), None)"
+                )
+            );
+            let expected_display = string_refinement_display(None, Some(min), Some(max), None);
+            assert_eq!(display.as_str(), expected_display);
+            assert!(generated.contains(&format!(
+                "AttributeSchema::optional(\"{dsl}\", {expression})"
+            )));
+            assert!(markdown.contains(&format!("- **Type:** `{expected_display}`")));
+            assert!(
+                resource_type_override(&schema.type_name, CfnPropertyPath::new(None, dsl))
+                    .is_none(),
+                "overrides must use raw CFN spelling: {dsl}"
             );
         }
     }
