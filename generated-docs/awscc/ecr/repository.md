@@ -91,7 +91,7 @@ The JSON repository policy text to apply to the repository. For more information
 
 ### `tags`
 
-- **Type:** `Map<String(len: 1..=127), String(len: 1..=255)>`
+- **Type:** `Map<String(len: 1..=127), String(len: 1..=255)>` (entries: ..=50)
 - **Required:** No
 
 An array of key-value pairs to apply to this resource.

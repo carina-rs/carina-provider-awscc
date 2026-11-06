@@ -9,7 +9,7 @@ use crate::test_support::{
 };
 
 #[test]
-fn every_registered_tag_map_preserves_its_cfn_string_constraints() {
+fn every_registered_tag_map_preserves_its_cfn_constraints() {
     for config in super::generated::configs()
         .iter()
         .filter(|config| config.tags.is_some())
@@ -21,6 +21,7 @@ fn every_registered_tag_map_preserves_its_cfn_string_constraints() {
         let source: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         let mut tag = &source["properties"]["Tags"];
+        let max_items = tag["maxItems"].as_u64();
         if let Some(items) = tag.get("items") {
             tag = items;
         }
@@ -33,11 +34,23 @@ fn every_registered_tag_map_preserves_its_cfn_string_constraints() {
         let RawShape::Map {
             key,
             value,
-            constraints: _,
+            constraints,
         } = tags.as_type().raw_shape()
         else {
             panic!("{} must retain a map", config.aws_type_name);
         };
+        let max_entries = if config.aws_type_name == "AWS::Scheduler::ScheduleGroup" {
+            // #587: the live service limit tightens CFN's maxItems:200.
+            Some(50)
+        } else {
+            max_items
+        };
+        assert_eq!(
+            constraints.length(),
+            max_entries.map(|max| (None, Some(max))),
+            "{}",
+            config.aws_type_name
+        );
         let (key_source, value_source) = if let Some(properties) = tag.get("properties") {
             (properties["Key"].clone(), properties["Value"].clone())
         } else {
@@ -103,6 +116,10 @@ fn every_registered_tag_map_preserves_its_cfn_string_constraints() {
 }
 
 fn fixture(resource: &str, key: &str, value: &str) -> String {
+    fixture_with_entries(resource, &format!("'{key}' = '{value}'"))
+}
+
+fn fixture_with_entries(resource: &str, entries: &str) -> String {
     let required = match resource {
         "sso.PermissionSet" => {
             "name = 'tag-test'\ninstance_arn = 'arn:aws:sso:::instance/ssoins-0123456789abcdef'"
@@ -115,8 +132,82 @@ fn fixture(resource: &str, key: &str, value: &str) -> String {
         _ => "",
     };
     format!(
-        "provider awscc {{ region = awscc.Region.ap_northeast_1 }}\nawscc.{resource} {{\n{required}\ntags = {{ '{key}' = '{value}' }}\n}}"
+        "provider awscc {{ region = awscc.Region.ap_northeast_1 }}\nawscc.{resource} {{\n{required}\ntags = {{ {entries} }}\n}}"
     )
+}
+
+fn count_fixture(resource: &str, count: usize) -> String {
+    let entries = (0..count)
+        .map(|i| format!("'key{i}' = 'value'"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fixture_with_entries(resource, &entries)
+}
+
+fn assert_tag_count_bound(resource: &str, limit: usize) {
+    validate_fixtures(&[("tags_at_limit.crn", &count_fixture(resource, limit))]);
+    let error =
+        try_validate_fixtures(&[("too_many_tags.crn", &count_fixture(resource, limit + 1))])
+            .expect_err("the Tags map must reject more entries than its bound");
+    assert!(error.contains("tags"), "{resource}: {error}");
+    assert!(
+        error.contains(&format!("length {}", limit + 1)),
+        "{resource}: {error}"
+    );
+
+    let config = super::generated::get_config_by_type(resource).unwrap();
+    let tags = field(&config.schema, "tags");
+    let entries = Value::Concrete(ConcreteValue::Map(
+        (0..=limit)
+            .map(|i| (format!("key{i}"), string("value")))
+            .collect(),
+    ));
+    assert!(matches!(
+        tags.validate(&entries),
+        Err(TypeError::LengthOutOfRange {
+            length,
+            min: None,
+            max: Some(max),
+            ..
+        }) if length == limit + 1 && max == limit as u64
+    ));
+}
+
+// Cloud Control CreateResource, carina-test-008, ap-northeast-1, 2026-11-06.
+#[test]
+fn ecr_tag_entry_count_stops_at_50() {
+    // 50 accepted and read back as 50. 51 rejected:
+    // "Model validation failed (#/Tags: expected maximum item count: 50, found: 51)".
+    assert_tag_count_bound("ecr.Repository", 50);
+}
+
+#[test]
+fn cloudwatch_alarm_tag_entry_count_stops_at_50() {
+    // Same Cloud Control probe: 51 rejected by model validation (max 50).
+    assert_tag_count_bound("cloudwatch.Alarm", 50);
+}
+
+#[test]
+fn sso_permission_set_tag_entry_count_stops_at_50() {
+    // Same probe: 51 failed model validation; 50 passed it and then failed
+    // only with AccessDenied using a fake instance ARN.
+    assert_tag_count_bound("sso.PermissionSet", 50);
+}
+
+#[test]
+fn sso_instance_tag_entry_count_stops_at_75() {
+    // Same probe: 76 failed model validation (max 75); 75 passed it and
+    // then failed on the organization restriction.
+    assert_tag_count_bound("sso.Instance", 75);
+}
+
+#[test]
+fn scheduler_schedule_group_tag_entry_count_uses_service_limit_50() {
+    // Same probe: 50 accepted and read back as 50. 51, 100 and 200 failed:
+    // "Invalid request provided: The request exceeds the maximum number of tags
+    // allowed per resource. (Service: Scheduler)". 201 failed model validation.
+    // CFN maxItems:200 is tightened by the raw Tags path's array override.
+    assert_tag_count_bound("scheduler.ScheduleGroup", 50);
 }
 
 fn assert_invalid(resource: &str, key: &str, value: &str) {
@@ -243,16 +334,7 @@ fn unconstrained_tags_keep_plain_strings_and_no_entry_count_limit_is_added() {
         "unconstrained_tags.crn",
         &fixture("ecs.Cluster", "", &"v".repeat(300)),
     )]);
-    let entries = (0..51)
-        .map(|i| format!("'key{i}' = 'value'"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    validate_fixtures(&[(
-        "many_tags.crn",
-        &format!(
-            "provider awscc {{ region = awscc.Region.ap_northeast_1 }}\nawscc.ecr.Repository {{ tags = {{ {entries} }} }}"
-        ),
-    )]);
+    validate_fixtures(&[("many_tags.crn", &count_fixture("ecs.Cluster", 300))]);
 }
 
 #[tokio::test]

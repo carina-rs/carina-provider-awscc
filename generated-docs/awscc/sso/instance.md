@@ -34,7 +34,7 @@ The name you want to assign to this Identity Center (SSO) Instance
 
 ### `tags`
 
-- **Type:** `Map<String(pattern, len: 1..=128), String(pattern, len: ..=256)>`
+- **Type:** `Map<String(pattern, len: 1..=128), String(pattern, len: ..=256)>` (entries: ..=75)
 - **Required:** No
 
 ## Enum Values

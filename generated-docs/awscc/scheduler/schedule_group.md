@@ -31,7 +31,7 @@ awscc.scheduler.ScheduleGroup {
 
 ### `tags`
 
-- **Type:** `Map<String(len: 1..=128), String(len: 1..=256)>`
+- **Type:** `Map<String(len: 1..=128), String(len: 1..=256)>` (entries: ..=50)
 - **Required:** No
 
 The list of tags to associate with the schedule group.
