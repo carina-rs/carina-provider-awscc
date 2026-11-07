@@ -463,7 +463,7 @@ impl ConstraintSpec {
                 else {
                     unreachable!("closed string enum")
                 };
-                plan.validate_enum_candidates(
+                plan.validate_scalar_enum_candidates(
                     &values.iter().map(String::as_str).collect::<Vec<_>>(),
                 )?;
                 Ok(self.code.clone())
@@ -627,8 +627,9 @@ fn validate_document_field(
             values: Some(values),
             ..
         } => {
-            emission_plan::lower(p)?
-                .validate_enum_candidates(&values.iter().map(String::as_str).collect::<Vec<_>>())?;
+            emission_plan::lower(p)?.validate_scalar_enum_candidates(
+                &values.iter().map(String::as_str).collect::<Vec<_>>(),
+            )?;
             Ok(())
         }
         RawShape::Int { range, .. } => {

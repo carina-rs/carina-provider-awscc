@@ -14430,6 +14430,10 @@ mod tests {
         include!("codegen/review_round2_tests.rs");
     }
 
+    mod review_round3_tests {
+        include!("codegen/review_round3_tests.rs");
+    }
+
     mod field_groups_tests {
         include!("codegen/field_groups_tests.rs");
     }

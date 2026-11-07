@@ -6,7 +6,8 @@
 //! be equivalent, including children, bounds, ordering, and uniqueness;
 //! overlapping equivalent oneOf arms are rejected. Object
 //! alternatives project portable sibling requirements for both renderers.
-//! Mixed-type alternatives select one constrained arm and record bare arms.
+//! Mixed-type alternatives select one constrained arm and record bare arms;
+//! oneOf requires disjoint arm types before that selection.
 //! The object|string type set projects to a JSON document, regardless of its site.
 #[cfg(test)]
 use super::EnumValue;
@@ -1289,6 +1290,22 @@ fn alternatives(
         .iter()
         .any(|(_id, p)| p.effective_json_type() != first_type)
     {
+        if kind == AlternativeKind::OneOf {
+            // The selection policy drops only bare types. A shared type can
+            // therefore overlap the selected domain or another dropped arm;
+            // selecting first would erase the evidence needed for exclusivity.
+            for (index, (_id, arm)) in arms.iter().enumerate() {
+                for (_id, other) in arms.iter().skip(index + 1) {
+                    if arm.types.iter().any(|kind| other.types.contains(kind)) {
+                        return Err(error(
+                            layer,
+                            node,
+                            "overlapping mixed-type oneOf alternatives require exclusive constraint emission",
+                        ));
+                    }
+                }
+            }
+        }
         let mut constrained = None;
         let mut dropped = Vec::new();
         for (arm, projection) in arms {

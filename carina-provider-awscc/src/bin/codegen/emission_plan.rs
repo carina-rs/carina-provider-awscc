@@ -330,6 +330,17 @@ impl<'a> EmissionPlan<'a> {
             .ok_or_else(|| self.emission_error("missing map plan"))
     }
 
+    /// Scalar replacements must retain the source kind as well as its domain.
+    pub(super) fn validate_scalar_enum_candidates(
+        &self,
+        values: &[&str],
+    ) -> Result<(), SchemaError> {
+        if self.value_type()? != EmissionType::String {
+            return Err(self.emission_error("enum narrowing requires the CFN scalar string kind"));
+        }
+        self.validate_enum_candidates(values)
+    }
+
     pub(super) fn validate_enum_candidates(&self, values: &[&str]) -> Result<(), SchemaError> {
         if let Some(array) = &self.array {
             return lower(array.items.try_query()?)?.validate_enum_candidates(values);
