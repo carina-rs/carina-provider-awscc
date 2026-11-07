@@ -1204,6 +1204,7 @@ dependencies = [
  "indexmap 2.14.0",
  "log",
  "regex",
+ "regex-automata",
  "regex-syntax",
  "serde",
  "serde_json",

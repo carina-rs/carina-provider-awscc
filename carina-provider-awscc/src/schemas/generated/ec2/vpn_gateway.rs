@@ -43,7 +43,7 @@ pub fn ec2_vpn_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_type_attribute());
     #[inline(never)]
     fn build_vpn_gateway_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("vpn_gateway_id", carina_aws_types::vpn_gateway_id())
+        AttributeSchema::provider_populated("vpn_gateway_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpnGatewayId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpnGatewayId.check().expect("shared string check"), None))
                 .with_description(" (read-only)")
                 .with_provider_name("VPNGatewayId")
             .build()

@@ -9,8 +9,35 @@ The AWSCC provider uses a generic Cloud Control API implementation, so adding a 
 The codegen pipeline:
 
 1. Downloads CloudFormation resource type schemas from the AWS API
-2. Generates Rust schema code (`schemas/generated/`) via the `codegen` binary
-3. Optionally generates Markdown documentation (`generated-docs/`)
+2. Converts JSON into the typed Layer, then validates shared projections
+3. Generates Rust schema code (`schemas/generated/`) via the `codegen` binary
+4. Optionally generates Markdown documentation (`generated-docs/`) from the same projections
+
+### Layer and projection boundary
+
+[`schema_layer.rs`](carina-provider-awscc/src/bin/codegen/schema_layer.rs) is the
+production JSON conversion boundary. Its closed keyword vocabulary retains
+schema nodes, annotations, resource and handler metadata, reference targets,
+every composition arm, both dependency forms, and `contains`. Conversion uses
+exhaustive matches; unsupported names and unreadable values produce typed
+SchemaError diagnostics with source pointers. Consumers query this immutable
+Layer rather than interpreting schema JSON again. Raw fixture editing is test-only.
+
+[`schema_projection.rs`](carina-provider-awscc/src/bin/codegen/schema_projection.rs)
+provides the shared constraints, shape and provenance used by Rust and Markdown.
+References and `allOf` intersect constraints; defaults and descriptions remain
+site annotations, so a reference-site default can differ from its target's default.
+Equivalent array alternatives retain their children and bounds. Unsupported
+alternatives and bounds that cannot be represented exactly return typed projection
+errors. Resource compositions can supply requirements and field groups; property
+contributions requiring merged root provenance currently return a typed error
+before either renderer can emit only the direct root property.
+
+[`tag_shape.rs`](carina-provider-awscc/src/bin/codegen/tag_shape.rs) caches one
+classify_tag_shape result per Layer node. Tag admission, candidate evidence,
+DSL naming, default_tags support, wire metadata, guards and both renderers consume
+this TagShape judgement. Its admitted map contains the resolved string leaves,
+collection bounds and source provenance. Rendering does not walk tag schemas again.
 
 ## SDK Access
 
@@ -178,18 +205,91 @@ cargo run --bin codegen -- --file schema.json --type-name AWS::EC2::VPC \
 | `boolean` | `AttributeType::Bool` |
 | `number` | `AttributeType::Float` |
 | `object` (properties) | `AttributeType::Struct` with `StructField` |
-| bare `object` (no properties or `patternProperties`) | Must be classified explicitly: `EMPTY_OBJECT_PROPERTIES` emits an empty `Struct`, `STRING_MAP_PROPERTIES` emits `Map<String, String>`, a dedicated `AttributeType` override emits its declared type, and `FREE_FORM_JSON_PROPERTIES` is omitted pending [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144); an unclassified property makes codegen panic with its CloudFormation type and property path |
+| bare `object` (no properties or `patternProperties`) | Must be classified explicitly: `EMPTY_OBJECT_PROPERTIES` emits an empty `Struct`, `STRING_MAP_PROPERTIES` emits `Map<String, String>`, a dedicated `AttributeType` override emits its declared type, and `FREE_FORM_JSON_PROPERTIES` is omitted pending [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144); an unclassified property returns a typed `SchemaError::Projection` with its source pointer and diagnostic reason in both renderers |
 | `object` with direct-string `patternProperties` | `AttributeType::Map<String, String>` |
 | `object` with one `patternProperties` value that `$ref`s an object struct | `AttributeType::Map<String, Struct>` using the referenced definition; every other object-map value shape is rejected |
-| `["object","string"]` | `carina_aws_types::iam_policy_document()` only for a typed path listed in `IAM_POLICY_DOCUMENT_PROPERTIES` or `NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES`; properties listed in `FREE_FORM_JSON_PROPERTIES` are omitted pending the JSON-document type tracked by [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144) and documented as not yet supported; every other union makes codegen panic and name the unclassified property |
-| `Tags` of a taggable resource (`$ref` or inline items) | `AttributeType::map_with_key(key, value)`, only when the Tag definition is an object with exactly direct-string `Key` and `Value` properties, or is a map with exactly one `patternProperties` entry whose value is a direct string. Each leaf copies that resource's CFN `minLength` / `maxLength`, and its `pattern` goes through `ApprovedPattern` (see [String patterns](#string-patterns)). A pattern-map key takes the `patternProperties` regex. The same projection carries the array's `maxItems` into `AttributeType::refined_map(key, value, Some((None, Some(max))))` as an entry-count bound (carina#4266, protocol 22). Without `maxItems`, the map stays unbounded. A Tag definition that declares nothing yields plain string leaves. The tag-map classification and the leaf projection use the same shape check, so they cannot disagree. An unsupported shape makes codegen panic with the resource type and CFN source path |
+| `["object","string"]` | `carina_aws_types::iam_policy_document()` only for a typed path listed in `IAM_POLICY_DOCUMENT_PROPERTIES` or `NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES`; properties listed in `FREE_FORM_JSON_PROPERTIES` are omitted pending the JSON-document type tracked by [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144) and documented as not yet supported; an unclassified union returns a typed `SchemaError::Projection` with its source pointer and diagnostic reason in both renderers |
+| Declared resource tag property | `AttributeType::map_with_key(key, value)` for an object with exactly case-sensitive string `Key` and `Value` fields, or a closed map with one string-valued `patternProperties` entry. Local references, aliases and `allOf` may supply the shape or leaf constraints; every non-null union arm must agree. Leaves retain `minLength`, `maxLength` and approved `pattern` constraints; explicit leaf `enum` or `const` constraints currently produce a typed error. Pattern-map keys use their regex. Array `minItems` and `maxItems` become map entry bounds through `AttributeType::refined_map`; without effective bounds the map stays unbounded. See [String patterns](#string-patterns) |
 | `array` | `AttributeType::unordered_list()` |
 
-CloudFormation `number` properties map to `Float` unless registered as `IntegerFromNumber` in `resource_type_overrides()`. That override maps them to `Int` using the property's CloudFormation `minimum` and `maximum`.
+CloudFormation `number` properties map to `Float`; `integer` properties map to `Int`. A narrowing preserves the CFN kind, including through numeric ranges and array-item refinements. Numeric endpoints must be exactly representable by the emitted type; otherwise both generators return a typed `SchemaError`.
 
 String types are inferred from property names (e.g., `SubnetId` maps to `subnet_id()` type). Resource-specific overrides are defined in `resource_type_overrides()` and `known_string_type_overrides()` within `codegen.rs`.
 
-Tag-map count overrides use `TypeOverride::Array { items: None, min_items: None, max_items: Some(limit) }` in `resource_type_overrides()`, keyed by the resource type and raw CFN property path (`Tags`). They retain the derived key/value types and may only tighten the CFN array bounds. For example, Scheduler ScheduleGroup's live service limit of 50 tightens CFN's `maxItems: 200`; the override comment records the Cloud Control evidence. Generated docs display map counts as `(entries: ..=50)`, using the same range formatter and Markdown rendering as bounded lists.
+An identity names a type while retaining the field's effective CFN constraints:
+
+```rust
+m.insert(
+    ("AWS::EC2::Subnet", "VpcId"),
+    TypeOverride::identity(Some(StringIdentity::Ec2VpcId)),
+);
+```
+
+A structural restriction requires a `NarrowingKind` and checked `AwsEvidence`. Documentation evidence includes an AWS URL, a verbatim quotation that supports the restriction, and a checked date. For example:
+
+```rust
+let evidence = AwsEvidence::new(
+    "https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html#API_CreateRole_RequestParameters",
+    "Length Constraints: Minimum length of 1. Maximum length of 64.",
+    CheckedOn { year: 2026, month: 11, day: 7 },
+)?;
+m.insert(
+    ("AWS::IAM::Role", "RoleName"),
+    TypeOverride::identity(None).with_narrowing(
+        NarrowingKind::Primitive {
+            expression: ConstraintSpec::string(
+                None, Some((Some(1), Some(64))), PatternLiteral::Quoted,
+            ),
+            display: OverrideTypeDisplay::new("String(len: 1..=64)"),
+            block_name: None,
+            default: None,
+        },
+        evidence,
+    ),
+);
+```
+
+For recorded service behavior, use `AwsEvidence::observed` with exact inputs, results, verified directions, region, date, method, and a source record. `insert_evidenced` looks up the reviewed row in `narrowing_evidence.json`; a candidate without a review cannot become a narrowing. Both renderers validate the intersection with CFN through `TypeOverride::validate_source_shape` and `emission_plan::lower`. Evidence does not permit changing the CFN kind or discarding constraints.
+
+Tag-map count overrides use `NarrowingKind::Array`, keyed by the resource type and raw CFN property path (`Tags`):
+
+```rust
+m.insert_evidenced(
+    ("AWS::Scheduler::ScheduleGroup", "Tags"),
+    NarrowingKind::Array {
+        items: None,
+        min_items: None,
+        max_items: Some(50),
+    },
+);
+```
+
+This example requires the existing ScheduleGroup observation in `narrowing_evidence.json`. It retains the derived key/value types and tightens CFN's `maxItems: 200` to the observed service limit of 50. Both bounds reach Rust and Markdown; an implicit lower bound of zero uses the unconstrained length normal form. Generated docs display map counts as `(entries: ..=50)` or `(entries: 2..=5)`, using the same formatter as bounded lists.
+
+Resource tagging classification uses `resource_type_overrides().classify_tagging((cfn_type, "/properties/PropertyName"), TaggingOverride::TagProperty)`. These keys are raw CFN JSON pointers. Use this declaration when CFN omits its `tagging` block; otherwise `tagging.tagProperty` identifies the property (defaulting to `/properties/Tags` for a taggable resource). A top-level property named `Tags` is also recognized without metadata. All three sources feed the same tag-map projection, constraints, `TagsProperty` wire metadata, portable `TagsKeyValueCheck` declaration, and documentation.
+
+Defaults are site annotations: a referenced definition's default does not become a default on an unannotated reference. Optional resource attributes support scalar, list, map, and struct defaults; struct literals translate CFN field names to DSL names while map keys stay unchanged. Nested field defaults remain in generated Rust descriptions and Markdown with an explicit server-default diagnostic because the pinned core has no `StructField` default API. Required/output defaults and JSON defaults whose shape differs from the emitted DSL type are also documented as server defaults. Null, unrepresentable numbers, defaults on collection elements without a field site, and defaults on CFN Key/Value tag shapes transformed into DSL maps produce typed errors.
+
+The identified tag property always has the DSL name `tags`. Generated attributes retain the CFN name through `with_provider_name("ResourceTags")` or `with_provider_name("HostedZoneTags")`, and tag wire metadata uses that same CFN name. Both generators fail if multiple distinct tag properties are identified or if renaming the tag property would collide with another generated DSL attribute named `tags`. Multiple sources may identify the same CFN property.
+
+Both generators reject an unclassified top-level property when cached TagShape evidence contains both `key` and `value` in any ASCII case after an `items` or `contains` edge, including extra fields or non-string values. The classifier reads typed Layer edges through local references, `allOf`, every `oneOf`/`anyOf` arm, `items`, `contains` and schema dependencies; property-list dependencies also contribute required-name evidence. It collects evidence across resource composition source sites and guards cycles. Names split between alternative arms still require classification, but do not establish an admissible tag shape. Candidate detection excludes intermediate child scopes under `properties`, `patternProperties` and `additionalProperties`. Conditional dependencies and `contains` cannot become unconditional map constraints. A deliberately non-tag list requires `TaggingOverride::NonTagList { reason: "..." }`; a declared `TagProperty` must pass the cached admission judgement or both generators fail with a typed error and source path.
+
+Only top-level properties can be a resource's tag attribute: carina-core merges `default_tags` and runs `TagsKeyValueCheck` on the top-level `tags` only. Nested Key/Value arrays such as S3 `TagFilters` are outside this guard.
+
+The 2026-11-06 survey covered all 55 cached schemas and found 41 top-level tag-shaped arrays. Six were previously unrecognized:
+
+| CFN resource | Raw CFN path | Classification and CFN documentation |
+| --- | --- | --- |
+| `AWS::Budgets::Budget` | `/properties/ResourceTags` | [Resource tags](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-budgets-budget.html#cfn-budgets-budget-resourcetags); explicit tag-property declaration supplies the missing CFN metadata. |
+| `AWS::Route53::HostedZone` | `/properties/HostedZoneTags` | [Resource tags](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-route53-hostedzone.html#cfn-route53-hostedzone-hostedzonetags); explicit declaration agrees with CFN metadata, which codegen previously ignored because the property was not named `Tags`. |
+| `AWS::EC2::IPAMPool` | `/properties/AllocationResourceTags` | [Allocation requirements](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-ipampool.html#cfn-ec2-ipampool-allocationresourcetags); deliberately non-tag list. The pool's own tags are `/properties/Tags`. |
+| `AWS::ElasticLoadBalancingV2::Listener` | `/properties/ListenerAttributes` | [Listener settings](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-elasticloadbalancingv2-listener-listenerattribute.html); deliberately non-tag list. |
+| `AWS::ElasticLoadBalancingV2::LoadBalancer` | `/properties/LoadBalancerAttributes` | [Load balancer settings](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-elasticloadbalancingv2-loadbalancer-loadbalancerattribute.html); deliberately non-tag list. |
+| `AWS::ElasticLoadBalancingV2::TargetGroup` | `/properties/TargetGroupAttributes` | [Target group settings](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-elasticloadbalancingv2-targetgroup-targetgroupattribute.html); deliberately non-tag list. |
+
+Budget and HostedZone use flat map syntax (`tags = { Project = 'carina-registry' }`), replacing lists of `key`/`value` structs or repeated tag blocks. Their examples, acceptance fixtures, and generated docs use this shape. The cached Budget schema has no `maxItems`; codegen does not invent a count bound from external documentation.
+
+The DSL name `tags` is carina-core's contract for merging `default_tags` and executing `TagsKeyValueCheck`. Enforcing this name in codegen makes Budget and HostedZone compatible with the pinned core revision (`4311557`) without a core or protocol extension. Provider create, read, and update paths use the existing CFN provider-name mapping.
 
 ### String patterns
 
@@ -201,6 +301,26 @@ CFN string refinements share `string_constraints()` between Rust and Markdown. O
 
 `SUBSTRING_PATTERN_EXCEPTIONS` contains only Scheduler `EventBridgeParameters.Source`, keyed by resource type, full source pointer and exact source regex, with its reviewed emitted form and compatibility reason. It preserves the existing search language because CFN and the API publish differently anchored versions. Before either CLI output mode, codegen rejects changed or missing rewrite and exception sources, including sources replaced by runtime constructors. The cached-schema compilation test also checks registry coverage. Review, re-key or delete stale rows instead of silently inheriting an old decision.
 
+### Required field groups
+
+[`field_groups.rs`](carina-provider-awscc/src/bin/codegen/field_groups.rs) projects
+`oneOf` requirements into exactly-one groups and `anyOf` requirements into
+at-least-one groups. Common requirements stay unconditional; unsupported
+multi-field alternatives return typed errors rather than flattening their members.
+Resource scopes use FieldGroup::exactly_one or FieldGroup::at_least_one; nested
+structs use AttributeType::struct_with_field_groups at every inline, named,
+list-item and map-value use. The containing optional object can remain absent;
+when present, its group is enforced, including for false-valued boolean members.
+
+Group admission checks emitted siblings after omission and deprecation filtering.
+Members must be optional inputs without defaults; provider-populated, required,
+defaulted or missing members produce typed projection errors. Reference reuse
+compares descendant constraints as well as immediate requirements, so a local
+child group cannot alter another use of the definition. Description-derived
+resource groups supplement only schema-disjoint members: overlapping schema
+declarations take precedence. Both renderers consume the shared schema groups
+and Markdown describes each rule beside its containing struct.
+
 ### Classifying bare objects
 
 Every reachable bare CloudFormation object must use the single `CfnPropertyPath` key builder. The key preserves raw CloudFormation spelling: a top-level property is `Prop`, and a nested property is `<RawParentDefinitionOrInlineProperty>.<Prop>` (for example, `SSESpecification.Marker`, not `SseSpecification.Marker`). Schema generation, definition pre-scan, nested type overrides, cache coverage, and Markdown rendering all use this same key. Unreferenced definitions are not emitted and are skipped by the cache walker. Do not derive a key from a generated Rust struct name or match only the leaf property name.
@@ -210,13 +330,13 @@ Inline parents are keyed by their raw property name in the one-level `CfnPropert
 Classify each shape in exactly one place. Codegen rejects multiple matching classifications at lookup time, and the table-disjointness test checks IAM, free-form JSON, empty-object, string-map, omitted-property, and dedicated `AttributeType` override keys together:
 
 - `FREE_FORM_JSON_PROPERTIES` contains heterogeneous or recursive JSON documents that Carina cannot represent until [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144) lands. These properties are omitted from generated schemas and regular property tables, then listed in the generated unsupported note.
-- `EMPTY_OBJECT_PROPERTIES` contains marker objects whose only meaningful value is `{}`. They generate a closed empty struct, so `{}` validates and any field is an error.
-- `STRING_MAP_PROPERTIES` is only for genuine homogeneous string-to-string maps.
+- `EMPTY_OBJECT_PROPERTIES` contains candidates for marker objects represented by `{}`. Each row registers an evidenced `NarrowingKind::Primitive` with a typed empty-object constraint; common source-shape validation must succeed before either renderer consumes it. Generated docs include its AWS evidence. This supported subset generates a closed empty struct, so `{}` validates and any field is an error.
+- `STRING_MAP_PROPERTIES` is only for genuine homogeneous string-to-string maps and uses the same evidenced narrowing boundary. Neither classification table authorizes emission by itself.
 - `IAM_POLICY_DOCUMENT_PROPERTIES` explicitly lists every cached path that previously matched the old `*PolicyDocument` suffix rule; `NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES` lists policy paths with other names. Both tables are typed-path and stale-row checked.
 - A dedicated `AttributeType` override handles a known non-generic shape, such as the Budgets maps.
 - `OMITTED_RESOURCE_PROPERTIES` contains otherwise representable properties deliberately excluded for a documented per-row provider limitation (for example, conflicting read-back or an unavailable AWS capability).
 
-Omission works at both top level and inside generated structs. Generated resource docs collect `FREE_FORM_JSON_PROPERTIES` and `OMITTED_RESOURCE_PROPERTIES` under **Not yet supported**, resolve a reachable nested definition back to its complete snake-case provider/DSL path (for example, `config.child_policy`), and include the table reason. If no provider path is available, the note labels the raw `<Definition>.<Property>` key as a **definition-qualified name**, not as a DSL path. The cache-coverage test fails for both an unclassified bare object and a stale classification row. An unclassified codegen panic points back to this section.
+Omission works at both top level and inside generated structs. Generated resource docs collect `FREE_FORM_JSON_PROPERTIES` and `OMITTED_RESOURCE_PROPERTIES` under **Not yet supported**, resolve a reachable nested definition back to its complete snake-case provider/DSL path (for example, `config.child_policy`), and include the table reason. If no provider path is available, the note labels the raw `<Definition>.<Property>` key as a **definition-qualified name**, not as a DSL path. The cache-coverage test fails for both an unclassified bare object and a stale classification row. Both renderers return a typed `SchemaError::Projection` for an unclassified property, including its source pointer and a diagnostic reason that points back to this section.
 
 ## Schema Cache
 

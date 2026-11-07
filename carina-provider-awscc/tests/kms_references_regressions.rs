@@ -36,7 +36,7 @@ fn vpc() -> Value {
 }
 
 #[test]
-fn skipped_maps_of_string_arrays_keep_mains_projection() {
+fn skipped_maps_keep_omissions_and_reject_unproved_document_narrowings() {
     let source = json!({"type": "object", "patternProperties": {
         ".*": {"type": "array", "items": {"type": "string"}}
     }});
@@ -52,10 +52,13 @@ fn skipped_maps_of_string_arrays_keep_mains_projection() {
     logs["properties"]["FieldIndexPolicies"]["items"] = source;
     for schema in [subscription, logs] {
         for format in ["rust", "markdown"] {
-            if schema["typeName"] == "AWS::Logs::LogGroup" && format == "markdown" {
+            if schema["typeName"] == "AWS::Logs::LogGroup" {
                 let output = generate(&schema, format);
                 assert!(!output.status.success());
-                assert!(String::from_utf8_lossy(&output.stderr).contains("unsupported object map"));
+                assert!(
+                    String::from_utf8_lossy(&output.stderr)
+                        .contains("document narrowing cannot discard CFN object constraints")
+                );
             } else {
                 let output = rendered(&schema, format);
                 assert!(!output.contains("kms_key_reference()"));
@@ -65,7 +68,7 @@ fn skipped_maps_of_string_arrays_keep_mains_projection() {
 }
 
 #[test]
-fn collapsed_anyof_leaves_unemitted_nodes_unaccounted() {
+fn constrained_anyof_object_arm_exposes_its_kms_fields_to_classification() {
     let mut schema = vpc();
     schema["properties"]["Settings"] = json!({"anyOf": [
         {"type": "string"},
@@ -74,9 +77,10 @@ fn collapsed_anyof_leaves_unemitted_nodes_unaccounted() {
     for format in ["rust", "markdown"] {
         let output = generate(&schema, format);
         assert!(!output.status.success(), "hidden KmsKeyId passed {format}");
+        let error = String::from_utf8_lossy(&output.stderr);
         assert!(
-            String::from_utf8_lossy(&output.stderr)
-                .contains("unaccounted KMS node ec2.Vpc#/properties/Settings")
+            error.contains("unclassified KMS string ec2.Vpc.settings.kms_key_id"),
+            "{format}: {error}"
         );
     }
 }
@@ -103,10 +107,21 @@ fn discarded_source_shapes_fail_raw_accounting() {
         for format in ["rust", "markdown"] {
             let output = generate(&schema, format);
             assert!(!output.status.success(), "{source} passed {format}");
-            assert!(
-                String::from_utf8_lossy(&output.stderr)
-                    .contains("unaccounted KMS node ec2.Vpc#/properties/Settings")
-            );
+            let error = String::from_utf8_lossy(&output.stderr);
+            if source.get("oneOf").is_some() {
+                assert!(
+                    error.contains("unsupported schema projection at #/properties/Settings:")
+                        && error.contains(
+                            "different JSON types require exactly one constrained alternative arm"
+                        ),
+                    "{format}: {error}"
+                );
+            } else {
+                assert!(
+                    error.contains("unclassified KMS string ec2.Vpc.settings.kms_key_id"),
+                    "{format}: {error}"
+                );
+            }
         }
     }
 }
@@ -187,9 +202,9 @@ fn shared_kms_definition_requires_a_decision_at_each_use_site() {
 }
 
 #[test]
-fn non_reference_string_maps_refine_keys_and_keep_existing_value_behavior() {
+fn non_reference_string_maps_refine_keys_and_preserve_scalar_values() {
     for value in [
-        json!({"type": "string", "pattern": "^(?!aws:).*$", "minLength": 1, "maxLength": 256}),
+        json!({"type": "string", "pattern": "^[a-z]+$", "minLength": 1, "maxLength": 256}),
         json!({"type": "string", "enum": ["enabled", "disabled"]}),
         json!({"type": "string", "description": "Allowed values: enabled | disabled"}),
     ] {
@@ -198,18 +213,38 @@ fn non_reference_string_maps_refine_keys_and_keep_existing_value_behavior() {
         schema["properties"]["Modes"] = map.clone();
         schema["properties"]["Settings"] = json!({"type": "object", "properties": {"Modes": map}});
         let rust = rendered(&schema, "rust");
-        assert_eq!(
-            rust.matches(r#"AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:.*)\\z".to_string()), None, None), AttributeType::string())"#)
-                .count(),
-            2,
-            "{rust}"
-        );
         let markdown = rendered(&schema, "markdown");
-        assert_eq!(
-            markdown.matches("Map<String(pattern), String>").count(),
-            2,
-            "{markdown}"
-        );
+        if value.get("pattern").is_some() {
+            assert_eq!(rust.matches(r#"AttributeType::refined_string(None, Some("^[a-z]+$".to_string()), Some((Some(1), Some(256))), None)"#).count(), 2, "{rust}");
+            assert_eq!(
+                markdown
+                    .matches("Map<String(pattern), String(pattern, len: 1..=256)>")
+                    .count(),
+                2,
+                "{markdown}"
+            );
+        } else if value.get("enum").is_some() {
+            assert_eq!(
+                rust.matches(r#"Some(vec!["enabled".to_string(), "disabled".to_string()])"#)
+                    .count(),
+                2,
+                "{rust}"
+            );
+            assert_eq!(
+                markdown
+                    .matches("Map\\<String(pattern), [Enum (Modes)]")
+                    .count(),
+                2,
+                "{markdown}"
+            );
+        } else {
+            assert_eq!(rust.matches(r#"AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:.*)\\z".to_string()), None, None), AttributeType::string())"#).count(), 2, "{rust}");
+            assert_eq!(
+                markdown.matches("Map<String(pattern), String>").count(),
+                2,
+                "{markdown}"
+            );
+        }
         assert_eq!(
             markdown
                 .matches("Map<String(len: ..=128), String(len: ..=256)>")
@@ -217,6 +252,34 @@ fn non_reference_string_maps_refine_keys_and_keep_existing_value_behavior() {
             1,
             "Tags retain their EC2 API length bounds: {markdown}"
         );
+    }
+}
+
+#[test]
+fn non_reference_string_maps_reject_unrepresentable_value_patterns() {
+    for nested in [false, true] {
+        let mut schema = vpc();
+        let map = json!({"type":"object","patternProperties":{".*":{
+            "type":"string","pattern":"^(?!aws:).*$","minLength":1,"maxLength":256
+        }},"additionalProperties":false});
+        let pointer = if nested {
+            schema["properties"]["Settings"] = json!({"type":"object","properties":{"Modes":map}});
+            "/properties/Settings/properties/Modes/patternProperties/.*"
+        } else {
+            schema["properties"]["Modes"] = map;
+            "/properties/Modes/patternProperties/.*"
+        };
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                !output.status.success()
+                    && error.contains(pointer)
+                    && error.contains("Invalid string pattern"),
+                "{format}: {error}"
+            );
+            assert!(output.stdout.is_empty());
+        }
     }
 }
 
@@ -237,44 +300,72 @@ fn inline_tag_pairs_render_in_rust_and_markdown() {
 }
 
 #[test]
-fn non_reference_fallbacks_do_not_gain_scalar_inference() {
+fn untyped_non_reference_properties_return_projection_errors() {
     for property in [
         json!({"pattern": "^(?!aws:).*$", "description": "Allowed values: enabled | disabled"}),
         json!({"$ref": "#/definitions/Missing", "pattern": "^(?!aws:).*$"}),
         json!({"type": "string", "$ref": "#/definitions/Plain", "const": "enabled"}),
     ] {
         let mut schema = vpc();
-        schema["properties"]["Ordinary"] = property;
+        schema["properties"]["Ordinary"] = property.clone();
         schema["definitions"]["Plain"] = json!({"type": "string"});
-        let rust = rendered(&schema, "rust");
-        assert!(
-            rust.contains("AttributeSchema::optional(\"ordinary\", AttributeType::string())"),
-            "{rust}"
-        );
-        let markdown = rendered(&schema, "markdown");
-        assert!(
-            markdown.contains("### `ordinary`\n\n- **Type:** String\n"),
-            "{markdown}"
-        );
+        if property["$ref"] == "#/definitions/Missing" {
+            for format in ["rust", "markdown"] {
+                let output = generate(&schema, format);
+                let error = String::from_utf8_lossy(&output.stderr);
+                assert!(
+                    !output.status.success()
+                        && error.contains("reference")
+                        && error.contains("/properties/Ordinary/$ref")
+                        && error.contains("no target"),
+                    "{format}: {error}"
+                );
+                assert!(output.stdout.is_empty());
+            }
+            continue;
+        }
+        if property.get("const").is_some() {
+            let rust = rendered(&schema, "rust");
+            assert!(
+                rust.contains("enum_identity(\"Plain\"")
+                    && rust.contains("\"enabled\".to_string()"),
+                "{rust}"
+            );
+            let markdown = rendered(&schema, "markdown");
+            assert!(markdown.contains("aws.ec2.Vpc.Plain.enabled"), "{markdown}");
+            continue;
+        }
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert_eq!(output.status.code(), Some(1), "{format}: {error}");
+            assert!(
+                error.contains("unsupported schema projection at #/properties/Ordinary:")
+                    && error.contains("no supported type or literal projection"),
+                "{format}: {error}"
+            );
+            assert!(output.stdout.is_empty());
+            assert!(!error.contains("panicked"), "{error}");
+        }
     }
 }
 
 #[test]
-fn implicit_array_items_keep_mains_plain_string_type() {
+fn implicit_array_items_return_projection_errors() {
     let mut schema = vpc();
     schema["properties"]["SubnetId"] = json!({"type": "array"});
-    let rust = rendered(&schema, "rust");
-    assert!(
-        rust.contains(
-            "AttributeSchema::optional(\"subnet_id\", AttributeType::list(AttributeType::string())"
-        ),
-        "{rust}"
-    );
-    let markdown = rendered(&schema, "markdown");
-    assert!(
-        markdown.contains("### `subnet_id`\n\n- **Type:** `List<String>`\n"),
-        "{markdown}"
-    );
+    for format in ["rust", "markdown"] {
+        let output = generate(&schema, format);
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{format}: {error}");
+        assert!(
+            error.contains("unsupported schema projection at #/properties/SubnetId:")
+                && error.contains("array has no items projection"),
+            "{format}: {error}"
+        );
+        assert!(output.stdout.is_empty());
+        assert!(!error.contains("panicked"), "{error}");
+    }
 }
 
 #[test]
@@ -325,8 +416,10 @@ fn policy_document_projections_require_raw_source_accounting() {
                 assert!(!output.status.success(), "{path} {source} passed {format}");
                 let error = String::from_utf8_lossy(&output.stderr);
                 assert!(
-                    error.contains("unaccounted KMS node")
-                        && error.contains(&format!("/properties/{name}")),
+                    (error.contains("unaccounted KMS node")
+                        && error.contains(&format!("/properties/{name}")))
+                        || (source.get("allOf").is_some()
+                            && error.contains(&format!("unclassified KMS string {path}.value"))),
                     "{error}"
                 );
             }
@@ -402,7 +495,18 @@ fn reference_length_evidence_in_aliases_and_branches_is_pinned() {
                 let output = generate(&schema, format);
                 assert!(!output.status.success(), "{location} passed {format}");
                 let error = String::from_utf8_lossy(&output.stderr);
-                assert!(error.contains("KMS length changed"), "{error}");
+                if location == "root" {
+                    assert!(
+                        error.contains("unsupported schema projection at #:")
+                            && error.contains(
+                                "resource composition contributes to property KmsMasterKeyId"
+                            ),
+                        "{error}"
+                    );
+                } else {
+                    assert!(error.contains("KMS length changed"), "{error}");
+                }
+                assert!(output.stdout.is_empty());
             }
         }
     }

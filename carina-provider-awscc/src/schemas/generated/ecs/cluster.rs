@@ -8,7 +8,15 @@ use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 pub fn arn() -> AttributeType {
-    crate::schemas::catalog::ecs_cluster_arn()
+    AttributeType::refined_string_with_validator(
+        crate::schemas::string_identity::StringIdentity::EcsClusterArn.identity(),
+        None,
+        None,
+        crate::schemas::string_identity::StringIdentity::EcsClusterArn
+            .check()
+            .expect("shared string check"),
+        None,
+    )
 }
 
 const VALID_CLUSTER_SETTINGS_NAME: &[&str] = &["containerInsights"];
@@ -24,7 +32,7 @@ pub fn ecs_cluster_config() -> AwsccSchemaConfig {
         .with_description("The ``AWS::ECS::Cluster`` resource creates an Amazon Elastic Container Service (Amazon ECS) cluster.");
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", self::arn())
+        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::EcsClusterArn.identity(), None, None, crate::schemas::string_identity::StringIdentity::EcsClusterArn.check().expect("shared string check"), None))
                 .with_description(" (read-only)")
                 .with_provider_name("Arn")
             .build()

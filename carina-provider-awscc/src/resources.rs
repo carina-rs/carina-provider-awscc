@@ -44,7 +44,8 @@ mod tests {
         assert!(get_config("ec2.Vpc").unwrap().tags.is_some());
         assert!(get_config("ec2.Subnet").unwrap().tags.is_some());
         assert!(get_config("ec2.Route").unwrap().tags.is_none());
-        assert!(get_config("route53.HostedZone").unwrap().tags.is_none());
+        assert!(get_config("route53.HostedZone").unwrap().tags.is_some());
+        assert!(get_config("budgets.Budget").unwrap().tags.is_some());
         assert!(
             get_config("ec2.VpcGatewayAttachment")
                 .unwrap()

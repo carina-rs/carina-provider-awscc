@@ -195,7 +195,7 @@ async fn authored_none_price_class_and_2025_tls_policies_serialize_exact_wire_st
 }
 
 #[test]
-fn all_seven_ttls_are_ints_and_round_trip_json_integers() {
+fn all_seven_ttls_retain_cfn_numbers_and_round_trip_fractions() {
     let schema = schema("cloudfront.Distribution");
     let mut paths = BEHAVIORS
         .iter()
@@ -209,7 +209,7 @@ fn all_seven_ttls_are_ints_and_round_trip_json_integers() {
         assert!(
             matches!(
                 ttl.as_type().raw_shape(),
-                RawShape::Int {
+                RawShape::Float {
                     identity: None,
                     range: None,
                     ..
@@ -217,8 +217,8 @@ fn all_seven_ttls_are_ints_and_round_trip_json_integers() {
             ),
             "{path}"
         );
-        // API Long has no independent bounds in the scoped documentation.
-        for value in [i64::MIN, -1, 0, 10, 300, 86400, i64::MAX] {
+        // CFN number stays Float; attaching metadata cannot replace its kind.
+        for value in [-10000, -1, 0, 10, 300, 86400, 100000] {
             ttl.validate(&int(value)).unwrap();
             let read = aws_value_to_dsl_with_defs(
                 &path,
@@ -241,7 +241,29 @@ fn all_seven_ttls_are_ints_and_round_trip_json_integers() {
             assert_eq!(wire.as_i64(), Some(value), "{path}");
         }
         for value in [0.0, 1.0, 1.5] {
-            assert!(ttl.validate(&float(value)).is_err(), "{path}: {value}");
+            assert!(ttl.validate(&float(value)).is_ok(), "{path}: {value}");
+            let read = aws_value_to_dsl_with_defs(
+                &path,
+                &json!(value),
+                ttl.as_type(),
+                "cloudfront.Distribution",
+                schema.as_schema().defs(),
+            )
+            .unwrap();
+            assert_eq!(read, float(value));
+            let canonical = ttl.canonicalize_state(read).into_present().unwrap();
+            assert_eq!(
+                dsl_value_to_aws_with_defs(
+                    &canonical,
+                    ttl.as_type(),
+                    "cloudfront.Distribution",
+                    &path,
+                    schema.as_schema().defs()
+                )
+                .unwrap()
+                .as_f64(),
+                Some(value)
+            );
         }
         assert!(ttl.validate(&string("300")).is_err(), "{path}");
     }
@@ -443,11 +465,6 @@ fn connection_attempts_timeouts_and_error_codes_enforce_integer_boundaries() {
     for (path, minimum, maximum) in [
         ("distribution_config.origins.connection_attempts", 1, 3),
         ("distribution_config.origins.connection_timeout", 1, 10),
-        (
-            "distribution_config.custom_error_responses.error_code",
-            400,
-            599,
-        ),
     ] {
         let attr_type = field(&schema, path);
         for value in [minimum, maximum] {
@@ -459,6 +476,22 @@ fn connection_attempts_timeouts_and_error_codes_enforce_integer_boundaries() {
         assert!(attr_type.validate(&float(minimum as f64)).is_err());
         assert!(attr_type.validate(&string(&minimum.to_string())).is_err());
     }
+    // AWS documents this supported set, rather than every 4xx/5xx code.
+    // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CustomErrorResponse.html
+    let error_code = field(
+        &schema,
+        "distribution_config.custom_error_responses.error_code",
+    );
+    let supported = [400, 403, 404, 405, 414, 416, 500, 501, 502, 503, 504];
+    for value in 399..=600 {
+        assert_eq!(
+            error_code.validate(&int(value)).is_ok(),
+            supported.contains(&value),
+            "{value}"
+        );
+    }
+    assert!(error_code.validate(&float(400.0)).is_err());
+    assert!(error_code.validate(&string("400")).is_err());
     for path in [
         "distribution_config.origins.custom_origin_config.origin_read_timeout",
         "distribution_config.origins.custom_origin_config.origin_keepalive_timeout",
@@ -468,7 +501,14 @@ fn connection_attempts_timeouts_and_error_codes_enforce_integer_boundaries() {
     ] {
         let timeout = field(&schema, path);
         assert!(
-            matches!(timeout.as_type().raw_shape(), RawShape::Int { identity: Some(identity), .. } if identity == &TypeIdentity::bare("PositiveInt")),
+            matches!(
+                timeout.as_type().raw_shape(),
+                RawShape::Int {
+                    identity: None,
+                    range: Some((Some(1), None)),
+                    ..
+                }
+            ),
             "{path}"
         );
         for value in [1, 120, 301, i64::MAX] {

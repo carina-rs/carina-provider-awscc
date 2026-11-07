@@ -98,13 +98,13 @@ awscc.wafv2.WebAclAssociation {
 
 ### `resource_arn`
 
-- **Type:** Arn
+- **Type:** aws.Arn — String(len: 20..=2048)
 - **Required:** Yes
 - **Create-only:** Yes
 
 ### `web_acl_arn`
 
-- **Type:** Arn
+- **Type:** aws.Arn — String(len: 20..=2048)
 - **Required:** Yes
 - **Create-only:** Yes
 

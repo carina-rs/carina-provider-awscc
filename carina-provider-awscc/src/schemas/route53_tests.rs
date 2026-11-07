@@ -1,4 +1,18 @@
-use crate::test_support::try_validate_fixtures;
+use crate::test_support::{try_validate_fixtures, validate_fixtures};
+
+#[test]
+fn issue_521_hosted_zone_tag_map_examples_validate() {
+    validate_fixtures(&[
+        (
+            "examples/route53_hosted_zone/main.crn",
+            include_str!("../../../examples/route53_hosted_zone/main.crn"),
+        ),
+        (
+            "acceptance-tests/route53_hosted_zone/basic.crn",
+            include_str!("../../../acceptance-tests/route53_hosted_zone/basic.crn"),
+        ),
+    ]);
+}
 
 #[test]
 fn hosted_zone_vpcs_are_optional_but_cannot_be_explicitly_empty() {

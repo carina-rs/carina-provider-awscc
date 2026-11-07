@@ -25,7 +25,7 @@ awscc.ec2.Eip {
 
 ### `address`
 
-- **Type:** Ipv4Address
+- **Type:** `Ipv4Address`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -41,14 +41,14 @@ The network (``vpc``). If you define an Elastic IP address and associate it with
 
 ### `instance_id`
 
-- **Type:** InstanceId
+- **Type:** `aws.ec2.Instance.Id`
 - **Required:** No
 
 The ID of the instance. Updates to the ``InstanceId`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.
 
 ### `ipam_pool_id`
 
-- **Type:** IpamPoolId
+- **Type:** `aws.ec2.IpamPool.Id`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -79,7 +79,7 @@ Any tags assigned to the Elastic IP address. Updates to the ``Tags`` property ma
 
 ### `transfer_address`
 
-- **Type:** Ipv4Address
+- **Type:** `Ipv4Address`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -101,13 +101,23 @@ Shorthand formats: `vpc` or `Domain.vpc`
 
 ### `allocation_id`
 
-- **Type:** AllocationId
+- **Type:** `aws.ec2.Eip.AllocationId`
 
 
 
 ### `public_ip`
 
-- **Type:** Ipv4Address
+- **Type:** `Ipv4Address`
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/Tag/properties/Key` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html) | ` Maximum key length – 128 Unicode characters in UTF-8 ` | 2026-11-07 |
+| `/definitions/Tag/properties/Value` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Tag.html) | ` The value of the tag. `<br>` Constraints: Tag values are case-sensitive and accept a maximum of 256 Unicode characters. ` | 2026-11-07 |
+| `/properties/Domain` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-eip.html#cfn-ec2-eip-domain) | ` The network (vpc). `<br>` If you define an Elastic IP address and associate it with a VPC that is defined in the same template, you must declare a dependency on the VPC-gateway attachment by using the DependsOn Attribute on this resource. `<br>` Allowed values: vpc \| standard ` | 2026-11-07 |
 

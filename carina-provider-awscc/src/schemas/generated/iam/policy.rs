@@ -5,5 +5,13 @@
 use carina_core::schema::AttributeType;
 
 pub fn arn() -> AttributeType {
-    crate::schemas::catalog::iam_policy_arn()
+    AttributeType::refined_string_with_validator(
+        crate::schemas::string_identity::StringIdentity::IamPolicyArn.identity(),
+        None,
+        None,
+        crate::schemas::string_identity::StringIdentity::IamPolicyArn
+            .check()
+            .expect("shared string check"),
+        None,
+    )
 }

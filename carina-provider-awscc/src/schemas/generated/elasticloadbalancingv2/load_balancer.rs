@@ -6,7 +6,7 @@
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField, types};
 
 const VALID_ENABLE_PREFIX_FOR_IPV6_SOURCE_NAT: &[&str] = &["on", "off"];
 
@@ -25,7 +25,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
         .with_description("Specifies an Application Load Balancer, a Network Load Balancer, or a Gateway Load Balancer.");
     #[inline(never)]
     fn build_canonical_hosted_zone_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("canonical_hosted_zone_id", carina_aws_types::route53_hosted_zone_id())
+        AttributeSchema::provider_populated("canonical_hosted_zone_id", AttributeType::refined_string(Some(crate::schemas::string_identity::StringIdentity::Route53HostedZoneId.identity()), None, None, None))
                 .with_description(" (read-only)")
                 .with_provider_name("CanonicalHostedZoneID")
             .build()
@@ -75,7 +75,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ip_address_type_attribute());
     #[inline(never)]
     fn build_ipv4_ipam_pool_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipv4_ipam_pool_id", carina_aws_types::ipam_pool_id())
+        AttributeSchema::optional("ipv4_ipam_pool_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.check().expect("shared string check"), None))
                 .with_description("The ID of the IPv4 IPAM pool.")
                 .with_provider_name("Ipv4IpamPoolId")
             .build()
@@ -83,7 +83,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipv4_ipam_pool_id_attribute());
     #[inline(never)]
     fn build_load_balancer_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("load_balancer_arn", crate::schemas::catalog::arn())
+        AttributeSchema::provider_populated("load_balancer_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
                 .with_description(" (read-only)")
                 .with_provider_name("LoadBalancerArn")
             .build()
@@ -151,11 +151,11 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_security_groups_attribute());
     #[inline(never)]
     fn build_subnet_mappings_attribute() -> AttributeSchema {
-        AttributeSchema::optional("subnet_mappings", AttributeType::refined_list(AttributeType::struct_("SubnetMapping".to_string(), vec![StructField::optional("allocation_id", carina_aws_types::allocation_id()).with_description("[Network Load Balancers] The allocation ID of the Elastic IP address for an internet-facing load balancer.").with_provider_name("AllocationId").build(),
-                    StructField::optional("i_pv6_address", carina_core::schema::types::ipv6_address()).with_description("[Network Load Balancers] The IPv6 address.").with_provider_name("IPv6Address").build(),
-                    StructField::optional("private_i_pv4_address", carina_core::schema::types::ipv4_address()).with_description("[Network Load Balancers] The private IPv4 address for an internal load balancer.").with_provider_name("PrivateIPv4Address").build(),
+        AttributeSchema::optional("subnet_mappings", AttributeType::refined_list(AttributeType::struct_("SubnetMapping".to_string(), vec![StructField::optional("allocation_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2EipAllocationId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2EipAllocationId.check().expect("shared string check"), None)).with_description("[Network Load Balancers] The allocation ID of the Elastic IP address for an internet-facing load balancer.").with_provider_name("AllocationId").build(),
+                    StructField::optional("i_pv6_address", types::ipv6_address()).with_description("[Network Load Balancers] The IPv6 address.").with_provider_name("IPv6Address").build(),
+                    StructField::optional("private_i_pv4_address", types::ipv4_address()).with_description("[Network Load Balancers] The private IPv4 address for an internal load balancer.").with_provider_name("PrivateIPv4Address").build(),
                     StructField::optional("source_nat_ipv6_prefix", AttributeType::string()).with_description("[Network Load Balancers with UDP listeners] The IPv6 prefix to use for source NAT. Specify an IPv6 prefix (/80 netmask) from the subnet CIDR block or ``auto_assigned`` to use an IPv6 prefix selected at random from the subnet CIDR block.").with_provider_name("SourceNatIpv6Prefix").build(),
-                    StructField::required("subnet_id", carina_aws_types::subnet_id()).with_description("The ID of the subnet.").with_provider_name("SubnetId").build()]), false, None, carina_core::schema::ListElements::Unique))
+                    StructField::required("subnet_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2SubnetId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2SubnetId.check().expect("shared string check"), None)).with_description("The ID of the subnet.").with_provider_name("SubnetId").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The IDs of the subnets. You can specify only one subnet per Availability Zone. You must specify either subnets or subnet mappings, but not both. [Application Load Balancers] You must specify subnets from at least two Availability Zones. You can't specify Elastic IP addresses for your subnets. [Application Load Balancers on Outposts] You must specify one Outpost subnet. [Application Load Balancers on Local Zones] You can specify subnets from one or more Local Zones. [Network Load Balancers] You can specify subnets from one or more Availability Zones. You can specify one Elastic IP address per subnet if you need static IP addresses for your internet-facing load balancer. For internal load balancers, you can specify one private IP address per subnet from the IPv4 range of the subnet. For internet-facing load balancer, you can specify one IPv6 address per subnet. [Gateway Load Balancers] You can specify subnets from one or more Availability Zones. You can't specify Elastic IP addresses for your subnets.")
                 .with_provider_name("SubnetMappings")
                 .with_block_name("subnet_mapping")

@@ -16,7 +16,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for Identity Center (SSO) Instance");
     #[inline(never)]
     fn build_identity_store_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("identity_store_id", carina_aws_types::identity_store_id())
+        AttributeSchema::provider_populated("identity_store_id", AttributeType::refined_string(Some(crate::schemas::string_identity::StringIdentity::IdentitystoreStoreId.identity()), Some("^(d-[0-9a-f]{10}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\z".to_string()), Some((Some(1), Some(64))), None))
                 .with_description("The ID of the identity store associated with the created Identity Center (SSO) Instance (read-only)")
                 .with_provider_name("IdentityStoreId")
             .build()
@@ -24,7 +24,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_identity_store_id_attribute());
     #[inline(never)]
     fn build_instance_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("instance_arn", crate::schemas::catalog::sso_instance_arn())
+        AttributeSchema::provider_populated("instance_arn", AttributeType::refined_string(Some(crate::schemas::string_identity::StringIdentity::SsoInstanceArn.identity()), Some("^arn:aws(-[a-z]{1,5}){0,3}:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}\\z".to_string()), Some((Some(10), Some(1224))), None))
                 .with_description("The SSO Instance ARN that is returned upon creation of the Identity Center (SSO) Instance (read-only)")
                 .with_provider_name("InstanceArn")
             .build()
@@ -40,7 +40,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_name_attribute());
     #[inline(never)]
     fn build_owner_account_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("owner_account_id", carina_aws_types::aws_account_id())
+        AttributeSchema::provider_populated("owner_account_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::AccountId.identity(), Some("^\\d{12}?$".to_string()), Some((Some(12), Some(12))), crate::schemas::string_identity::StringIdentity::AccountId.check().expect("shared string check"), None))
                 .with_description("The AWS accountId of the owner of the Identity Center (SSO) Instance (read-only)")
                 .with_provider_name("OwnerAccountId")
             .build()

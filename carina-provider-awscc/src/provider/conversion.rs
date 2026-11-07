@@ -465,8 +465,16 @@ pub(crate) fn dsl_value_to_aws_with_defs(
             }
         }
 
-        // Try each member type; use the first that produces a type-aware result
-        for member in members.iter().flatten().map(|member| member.as_attr()) {
+        // Conversion fallbacks also return Some, so success alone cannot pick
+        // a union member. In particular, a singleton IAM Statement map must
+        // reach its Struct rather than a List fallback that retains DSL keys.
+        let wire_shape = value_to_json(value)?;
+        for member in members
+            .iter()
+            .flatten()
+            .map(|member| member.as_attr())
+            .filter(|member| json_matches_shape(&schema, member, &wire_shape))
+        {
             if let Some(result) =
                 dsl_value_to_aws_with_defs(value, member, resource_type, attr_name, defs)
             {
@@ -552,6 +560,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
 pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
     match value {
         Value::Concrete(ConcreteValue::String(s)) => Some(json!(s.expose_plaintext())),
+        Value::Concrete(ConcreteValue::StringList(items)) => Some(string_list_to_json(items)),
         Value::Concrete(ConcreteValue::EnumIdentifier(_)) => {
             unreachable!("unresolved enum identifier must not reach AWS value conversion")
         }
@@ -610,7 +619,7 @@ mod tests {
     };
 
     #[test]
-    fn wafv2_size_constraint_integral_float_readback_is_an_int_without_drift() {
+    fn wafv2_size_constraint_readback_retains_the_cfn_number_kind() {
         use crate::test_support::field;
 
         let config = crate::schemas::generated::wafv2::web_acl::wafv2_web_acl_config();
@@ -629,10 +638,12 @@ mod tests {
             config.schema.as_schema().defs(),
         )
         .unwrap();
-        let authored = Value::Concrete(ConcreteValue::Int(21474836480));
+        let authored = Value::Concrete(ConcreteValue::Float(
+            carina_core::FiniteF64::new(21474836480.0).unwrap(),
+        ));
         assert_eq!(
             read, authored,
-            "integral float readback must not create a phantom diff"
+            "a CFN number readback retains its float representation"
         );
         assert!(size.validate(&read).is_ok());
         assert_eq!(
@@ -643,7 +654,7 @@ mod tests {
                 "size",
                 config.schema.as_schema().defs(),
             ),
-            Some(json!(21474836480_i64))
+            Some(json!(21474836480.0))
         );
     }
 

@@ -1,0 +1,1994 @@
+[
+  {
+    "resource": "AWS::Budgets::Budget",
+    "field": "BudgetData.BillingViewArn",
+    "source": "/definitions/BudgetData/properties/BillingViewArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "CacheBehavior.RealtimeLogConfigArn",
+    "source": "/definitions/CacheBehavior/properties/RealtimeLogConfigArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "DefaultCacheBehavior.RealtimeLogConfigArn",
+    "source": "/definitions/DefaultCacheBehavior/properties/RealtimeLogConfigArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "FunctionAssociation.FunctionARN",
+    "source": "/definitions/FunctionAssociation/properties/FunctionARN",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "LambdaFunctionAssociation.LambdaFunctionARN",
+    "source": "/definitions/LambdaFunctionAssociation/properties/LambdaFunctionARN",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "OriginMtlsConfig.ClientCertificateArn",
+    "source": "/definitions/OriginMtlsConfig/properties/ClientCertificateArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "ViewerCertificate.AcmCertificateArn",
+    "source": "/definitions/ViewerCertificate/properties/AcmCertificateArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "VpcOriginConfig.OwnerAccountId",
+    "source": "/definitions/VpcOriginConfig/properties/OwnerAccountId",
+    "oldPattern": "^\\d{12}$",
+    "oldLength": [
+      12,
+      12
+    ],
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudFront::Function",
+    "field": "FunctionARN",
+    "source": "/properties/FunctionARN",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudFront::Function",
+    "field": "FunctionMetadata.FunctionARN",
+    "source": "/definitions/FunctionMetadata/properties/FunctionARN",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudFront::Function",
+    "field": "KeyValueStoreAssociation.KeyValueStoreARN",
+    "source": "/definitions/KeyValueStoreAssociation/properties/KeyValueStoreARN",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudWatch::Alarm",
+    "field": "AlarmActions",
+    "source": "/properties/AlarmActions/items",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudWatch::Alarm",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudWatch::Alarm",
+    "field": "InsufficientDataActions",
+    "source": "/properties/InsufficientDataActions/items",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudWatch::Alarm",
+    "field": "MetricDataQuery.AccountId",
+    "source": "/definitions/MetricDataQuery/properties/AccountId",
+    "oldPattern": "^\\d{12}$",
+    "oldLength": [
+      12,
+      12
+    ],
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::CloudWatch::Alarm",
+    "field": "OKActions",
+    "source": "/properties/OKActions/items",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::DynamoDB::Table",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):dynamodb:[^:]*:[^:]*:table/.+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::DynamoDB::Table",
+    "field": "KinesisStreamSpecification.StreamArn",
+    "source": "/definitions/KinesisStreamSpecification/properties/StreamArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::DynamoDB::Table",
+    "field": "S3BucketSource.S3BucketOwner",
+    "source": "/definitions/S3BucketSource/properties/S3BucketOwner",
+    "oldPattern": "^\\d{12}$",
+    "oldLength": [
+      12,
+      12
+    ],
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::DynamoDB::Table",
+    "field": "StreamArn",
+    "source": "/properties/StreamArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::EIP",
+    "field": "AllocationId",
+    "source": "/properties/AllocationId",
+    "oldPattern": "^eipalloc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::EIP",
+    "field": "InstanceId",
+    "source": "/properties/InstanceId",
+    "oldPattern": "^i-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::EIP",
+    "field": "IpamPoolId",
+    "source": "/properties/IpamPoolId",
+    "oldPattern": "^ipam-pool-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::EgressOnlyInternetGateway",
+    "field": "Id",
+    "source": "/properties/Id",
+    "oldPattern": "^eigw-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::EgressOnlyInternetGateway",
+    "field": "VpcId",
+    "source": "/properties/VpcId",
+    "oldPattern": "^vpc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::FlowLog",
+    "field": "DeliverCrossAccountRole",
+    "source": "/properties/DeliverCrossAccountRole",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:role/.+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::FlowLog",
+    "field": "DeliverLogsPermissionArn",
+    "source": "/properties/DeliverLogsPermissionArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:role/.+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::FlowLog",
+    "field": "Id",
+    "source": "/properties/Id",
+    "oldPattern": "^fl-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::FlowLog",
+    "field": "LogDestination",
+    "source": "/properties/LogDestination",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::IPAM",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):ec2:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::IPAM",
+    "field": "IpamId",
+    "source": "/properties/IpamId",
+    "oldPattern": "^ipam-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::IPAMPool",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):ec2:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::IPAMPool",
+    "field": "IpamArn",
+    "source": "/properties/IpamArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::IPAMPool",
+    "field": "IpamPoolId",
+    "source": "/properties/IpamPoolId",
+    "oldPattern": "^ipam-pool-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::IPAMPool",
+    "field": "IpamScopeArn",
+    "source": "/properties/IpamScopeArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::IPAMPool",
+    "field": "SourceIpamPoolId",
+    "source": "/properties/SourceIpamPoolId",
+    "oldPattern": "^ipam-pool-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::InternetGateway",
+    "field": "InternetGatewayId",
+    "source": "/properties/InternetGatewayId",
+    "oldPattern": "^igw-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "AllocationId",
+    "source": "/properties/AllocationId",
+    "oldPattern": "^eipalloc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "AvailabilityZoneAddress.AllocationIds",
+    "source": "/definitions/AvailabilityZoneAddress/properties/AllocationIds/items",
+    "oldPattern": "^eipalloc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "AvailabilityZoneAddress.AvailabilityZoneId",
+    "source": "/definitions/AvailabilityZoneAddress/properties/AvailabilityZoneId",
+    "oldPattern": "^[a-z]+[0-9]+-az[0-9]+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "EniId",
+    "source": "/properties/EniId",
+    "oldPattern": "^eni-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "NatGatewayId",
+    "source": "/properties/NatGatewayId",
+    "oldPattern": "^nat-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "RouteTableId",
+    "source": "/properties/RouteTableId",
+    "oldPattern": "^rtb-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "SecondaryAllocationIds",
+    "source": "/properties/SecondaryAllocationIds/items",
+    "oldPattern": "^eipalloc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "SubnetId",
+    "source": "/properties/SubnetId",
+    "oldPattern": "^subnet-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "VpcId",
+    "source": "/properties/VpcId",
+    "oldPattern": "^vpc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "CarrierGatewayId",
+    "source": "/properties/CarrierGatewayId",
+    "oldPattern": "^cagw-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "CoreNetworkArn",
+    "source": "/properties/CoreNetworkArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "DestinationPrefixListId",
+    "source": "/properties/DestinationPrefixListId",
+    "oldPattern": "^pl-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "EgressOnlyInternetGatewayId",
+    "source": "/properties/EgressOnlyInternetGatewayId",
+    "oldPattern": "^eigw-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "GatewayId",
+    "source": "/properties/GatewayId",
+    "oldPattern": "^(?:^igw-[0-9a-f]{8,}$|^vgw-[0-9a-f]{8,}$)\\z",
+    "oldLength": null,
+    "example": "",
+    "has_callback": false,
+    "callbackRejected": false
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "InstanceId",
+    "source": "/properties/InstanceId",
+    "oldPattern": "^i-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "LocalGatewayId",
+    "source": "/properties/LocalGatewayId",
+    "oldPattern": "^lgw-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "NatGatewayId",
+    "source": "/properties/NatGatewayId",
+    "oldPattern": "^nat-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "NetworkInterfaceId",
+    "source": "/properties/NetworkInterfaceId",
+    "oldPattern": "^eni-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "RouteTableId",
+    "source": "/properties/RouteTableId",
+    "oldPattern": "^rtb-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "TransitGatewayId",
+    "source": "/properties/TransitGatewayId",
+    "oldPattern": "^tgw-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "VpcEndpointId",
+    "source": "/properties/VpcEndpointId",
+    "oldPattern": "^vpce-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "VpcPeeringConnectionId",
+    "source": "/properties/VpcPeeringConnectionId",
+    "oldPattern": "^pcx-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::RouteTable",
+    "field": "RouteTableId",
+    "source": "/properties/RouteTableId",
+    "oldPattern": "^rtb-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::RouteTable",
+    "field": "VpcId",
+    "source": "/properties/VpcId",
+    "oldPattern": "^vpc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "Egress.DestinationPrefixListId",
+    "source": "/definitions/Egress/properties/DestinationPrefixListId",
+    "oldPattern": "^pl-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "Egress.DestinationSecurityGroupId",
+    "source": "/definitions/Egress/properties/DestinationSecurityGroupId",
+    "oldPattern": "^sg-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "GroupId",
+    "source": "/properties/GroupId",
+    "oldPattern": "^sg-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "Id",
+    "source": "/properties/Id",
+    "oldPattern": "^sg-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "Ingress.SourcePrefixListId",
+    "source": "/definitions/Ingress/properties/SourcePrefixListId",
+    "oldPattern": "^pl-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "Ingress.SourceSecurityGroupId",
+    "source": "/definitions/Ingress/properties/SourceSecurityGroupId",
+    "oldPattern": "^sg-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "Ingress.SourceSecurityGroupOwnerId",
+    "source": "/definitions/Ingress/properties/SourceSecurityGroupOwnerId",
+    "oldPattern": "^\\d{12}$",
+    "oldLength": [
+      12,
+      12
+    ],
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "VpcId",
+    "source": "/properties/VpcId",
+    "oldPattern": "^vpc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupEgress",
+    "field": "DestinationPrefixListId",
+    "source": "/properties/DestinationPrefixListId",
+    "oldPattern": "^pl-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupEgress",
+    "field": "DestinationSecurityGroupId",
+    "source": "/properties/DestinationSecurityGroupId",
+    "oldPattern": "^sg-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupEgress",
+    "field": "GroupId",
+    "source": "/properties/GroupId",
+    "oldPattern": "^sg-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupIngress",
+    "field": "GroupId",
+    "source": "/properties/GroupId",
+    "oldPattern": "^sg-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupIngress",
+    "field": "SourcePrefixListId",
+    "source": "/properties/SourcePrefixListId",
+    "oldPattern": "^pl-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupIngress",
+    "field": "SourceSecurityGroupId",
+    "source": "/properties/SourceSecurityGroupId",
+    "oldPattern": "^sg-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupIngress",
+    "field": "SourceSecurityGroupOwnerId",
+    "source": "/properties/SourceSecurityGroupOwnerId",
+    "oldPattern": "^\\d{12}$",
+    "oldLength": [
+      12,
+      12
+    ],
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Subnet",
+    "field": "AvailabilityZoneId",
+    "source": "/properties/AvailabilityZoneId",
+    "oldPattern": "^[a-z]+[0-9]+-az[0-9]+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Subnet",
+    "field": "Ipv4IpamPoolId",
+    "source": "/properties/Ipv4IpamPoolId",
+    "oldPattern": "^ipam-pool-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Subnet",
+    "field": "Ipv6IpamPoolId",
+    "source": "/properties/Ipv6IpamPoolId",
+    "oldPattern": "^ipam-pool-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Subnet",
+    "field": "OutpostArn",
+    "source": "/properties/OutpostArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Subnet",
+    "field": "SubnetId",
+    "source": "/properties/SubnetId",
+    "oldPattern": "^subnet-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::Subnet",
+    "field": "VpcId",
+    "source": "/properties/VpcId",
+    "oldPattern": "^vpc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SubnetRouteTableAssociation",
+    "field": "Id",
+    "source": "/properties/Id",
+    "oldPattern": "^rtbassoc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SubnetRouteTableAssociation",
+    "field": "RouteTableId",
+    "source": "/properties/RouteTableId",
+    "oldPattern": "^rtb-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::SubnetRouteTableAssociation",
+    "field": "SubnetId",
+    "source": "/properties/SubnetId",
+    "oldPattern": "^subnet-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::TransitGateway",
+    "field": "AssociationDefaultRouteTableId",
+    "source": "/properties/AssociationDefaultRouteTableId",
+    "oldPattern": "^tgw-rtb-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::TransitGateway",
+    "field": "Id",
+    "source": "/properties/Id",
+    "oldPattern": "^tgw-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::TransitGateway",
+    "field": "PropagationDefaultRouteTableId",
+    "source": "/properties/PropagationDefaultRouteTableId",
+    "oldPattern": "^tgw-rtb-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::TransitGateway",
+    "field": "TransitGatewayArn",
+    "source": "/properties/TransitGatewayArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::TransitGatewayAttachment",
+    "field": "Id",
+    "source": "/properties/Id",
+    "oldPattern": "^tgw-attach-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::TransitGatewayAttachment",
+    "field": "SubnetIds",
+    "source": "/properties/SubnetIds/items",
+    "oldPattern": "^subnet-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::TransitGatewayAttachment",
+    "field": "TransitGatewayId",
+    "source": "/properties/TransitGatewayId",
+    "oldPattern": "^tgw-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::TransitGatewayAttachment",
+    "field": "VpcId",
+    "source": "/properties/VpcId",
+    "oldPattern": "^vpc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPC",
+    "field": "CidrBlockAssociations",
+    "source": "/properties/CidrBlockAssociations/items",
+    "oldPattern": "^vpc-cidr-assoc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPC",
+    "field": "DefaultNetworkAcl",
+    "source": "/properties/DefaultNetworkAcl",
+    "oldPattern": "^acl-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPC",
+    "field": "DefaultSecurityGroup",
+    "source": "/properties/DefaultSecurityGroup",
+    "oldPattern": "^sg-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPC",
+    "field": "Ipv4IpamPoolId",
+    "source": "/properties/Ipv4IpamPoolId",
+    "oldPattern": "^ipam-pool-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPC",
+    "field": "VpcId",
+    "source": "/properties/VpcId",
+    "oldPattern": "^vpc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "Id",
+    "source": "/properties/Id",
+    "oldPattern": "^vpce-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "NetworkInterfaceIds",
+    "source": "/properties/NetworkInterfaceIds/items",
+    "oldPattern": "^eni-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "ResourceConfigurationArn",
+    "source": "/properties/ResourceConfigurationArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "RouteTableIds",
+    "source": "/properties/RouteTableIds/items",
+    "oldPattern": "^rtb-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "SecurityGroupIds",
+    "source": "/properties/SecurityGroupIds/items",
+    "oldPattern": "^sg-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "ServiceNetworkArn",
+    "source": "/properties/ServiceNetworkArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "SubnetIds",
+    "source": "/properties/SubnetIds/items",
+    "oldPattern": "^subnet-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "VpcId",
+    "source": "/properties/VpcId",
+    "oldPattern": "^vpc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCGatewayAttachment",
+    "field": "InternetGatewayId",
+    "source": "/properties/InternetGatewayId",
+    "oldPattern": "^igw-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCGatewayAttachment",
+    "field": "VpcId",
+    "source": "/properties/VpcId",
+    "oldPattern": "^vpc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCGatewayAttachment",
+    "field": "VpnGatewayId",
+    "source": "/properties/VpnGatewayId",
+    "oldPattern": "^vgw-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCPeeringConnection",
+    "field": "Id",
+    "source": "/properties/Id",
+    "oldPattern": "^pcx-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCPeeringConnection",
+    "field": "PeerOwnerId",
+    "source": "/properties/PeerOwnerId",
+    "oldPattern": "^\\d{12}$",
+    "oldLength": [
+      12,
+      12
+    ],
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCPeeringConnection",
+    "field": "PeerRoleArn",
+    "source": "/properties/PeerRoleArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:role/.+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCPeeringConnection",
+    "field": "PeerVpcId",
+    "source": "/properties/PeerVpcId",
+    "oldPattern": "^vpc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPCPeeringConnection",
+    "field": "VpcId",
+    "source": "/properties/VpcId",
+    "oldPattern": "^vpc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::EC2::VPNGateway",
+    "field": "VPNGatewayId",
+    "source": "/properties/VPNGatewayId",
+    "oldPattern": "^vgw-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ECR::Repository",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ECS::Cluster",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):ecs:[^:]*:[^:]*:cluster/.+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ECS::Cluster",
+    "field": "ExecuteCommandConfiguration.KmsKeyId",
+    "source": "/definitions/ExecuteCommandConfiguration/properties/KmsKeyId",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ECS::Cluster",
+    "field": "ManagedStorageConfiguration.KmsKeyId",
+    "source": "/definitions/ManagedStorageConfiguration/properties/KmsKeyId",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "Action.TargetGroupArn",
+    "source": "/definitions/Action/properties/TargetGroupArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "AuthenticateCognitoConfig.UserPoolArn",
+    "source": "/definitions/AuthenticateCognitoConfig/properties/UserPoolArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "Certificate.CertificateArn",
+    "source": "/definitions/Certificate/properties/CertificateArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "ListenerArn",
+    "source": "/properties/ListenerArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "LoadBalancerArn",
+    "source": "/properties/LoadBalancerArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "MutualAuthentication.TrustStoreArn",
+    "source": "/definitions/MutualAuthentication/properties/TrustStoreArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "TargetGroupTuple.TargetGroupArn",
+    "source": "/definitions/TargetGroupTuple/properties/TargetGroupArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "field": "CanonicalHostedZoneID",
+    "source": "/properties/CanonicalHostedZoneID",
+    "oldPattern": "^Z[A-Z0-9]+$",
+    "oldLength": [
+      null,
+      32
+    ],
+    "example": "",
+    "has_callback": false,
+    "callbackRejected": false
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "field": "Ipv4IpamPoolId",
+    "source": "/properties/Ipv4IpamPoolId",
+    "oldPattern": "^ipam-pool-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "field": "LoadBalancerArn",
+    "source": "/properties/LoadBalancerArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "field": "SubnetMapping.AllocationId",
+    "source": "/definitions/SubnetMapping/properties/AllocationId",
+    "oldPattern": "^eipalloc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "field": "SubnetMapping.SubnetId",
+    "source": "/definitions/SubnetMapping/properties/SubnetId",
+    "oldPattern": "^subnet-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    "field": "LoadBalancerArns",
+    "source": "/properties/LoadBalancerArns/items",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    "field": "TargetGroupArn",
+    "source": "/properties/TargetGroupArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    "field": "VpcId",
+    "source": "/properties/VpcId",
+    "oldPattern": "^vpc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::IAM::OIDCProvider",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:oidc-provider/.+$",
+    "oldLength": null,
+    "example": "xxxxxxxxxxxxxxxxxxxx",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::IAM::Role",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:role/.+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::IAM::Role",
+    "field": "ManagedPolicyArns",
+    "source": "/properties/ManagedPolicyArns/items",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:policy/.+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::IAM::Role",
+    "field": "PermissionsBoundary",
+    "source": "/properties/PermissionsBoundary",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:policy/.+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::IAM::Role",
+    "field": "Policy.PolicyName",
+    "source": "/definitions/Policy/properties/PolicyName",
+    "oldPattern": "^[A-Za-z0-9_+=,.@-]+\\z",
+    "oldLength": [
+      1,
+      128
+    ],
+    "example": " ",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::IAM::Role",
+    "field": "RoleId",
+    "source": "/properties/RoleId",
+    "oldPattern": "^AROA[A-Z0-9]+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::IAM::Role",
+    "field": "RoleName",
+    "source": "/properties/RoleName",
+    "oldPattern": "^[A-Za-z0-9_+=,.@-]+\\z",
+    "oldLength": [
+      1,
+      64
+    ],
+    "example": " ",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::IAM::RolePolicy",
+    "field": "PolicyName",
+    "source": "/properties/PolicyName",
+    "oldPattern": "^[A-Za-z0-9_+=,.@-]+\\z",
+    "oldLength": [
+      1,
+      128
+    ],
+    "example": " ",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::IAM::RolePolicy",
+    "field": "RoleName",
+    "source": "/properties/RoleName",
+    "oldPattern": "^[A-Za-z0-9_+=,.@-]+\\z",
+    "oldLength": [
+      1,
+      64
+    ],
+    "example": " ",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::KMS::Key",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::Logs::LogGroup",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):logs:[^:]*:[^:]*:log-group:.+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::Organizations::Account",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):organizations:.*$",
+    "oldLength": null,
+    "example": "arn:aws-zz:organizations::123456789012:account/o-abcdefghij/123456789012",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::Organizations::Organization",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):organizations:.*$",
+    "oldLength": null,
+    "example": "arn:aws-zz:organizations::123456789012:organization/o-abcdefghij",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::Organizations::Organization",
+    "field": "ManagementAccountArn",
+    "source": "/properties/ManagementAccountArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "arn:aws-zz:organizations::123456789012:account/o-abcdefghij/123456789012",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::Route53::HostedZone",
+    "field": "Id",
+    "source": "/properties/Id",
+    "oldPattern": "^Z[A-Z0-9]+$",
+    "oldLength": [
+      null,
+      32
+    ],
+    "example": "",
+    "has_callback": false,
+    "callbackRejected": false
+  },
+  {
+    "resource": "AWS::Route53::HostedZone",
+    "field": "QueryLoggingConfig.CloudWatchLogsLogGroupArn",
+    "source": "/definitions/QueryLoggingConfig/properties/CloudWatchLogsLogGroupArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::Route53::HostedZone",
+    "field": "VPC.VPCId",
+    "source": "/definitions/VPC/properties/VPCId",
+    "oldPattern": "^vpc-[0-9a-f]{8,}$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):s3:::.+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "Destination.BucketAccountId",
+    "source": "/definitions/Destination/properties/BucketAccountId",
+    "oldPattern": "^\\d{12}$",
+    "oldLength": [
+      12,
+      12
+    ],
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "Destination.BucketArn",
+    "source": "/definitions/Destination/properties/BucketArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "EncryptionConfiguration.ReplicaKmsKeyID",
+    "source": "/definitions/EncryptionConfiguration/properties/ReplicaKmsKeyID",
+    "oldPattern": "^((arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):kms:[^:]*:[^:]*:(key|alias)/.+)|(alias/.+)|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}))$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "InventoryTableConfiguration.TableArn",
+    "source": "/definitions/InventoryTableConfiguration/properties/TableArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "JournalTableConfiguration.TableArn",
+    "source": "/definitions/JournalTableConfiguration/properties/TableArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "LambdaConfiguration.Function",
+    "source": "/definitions/LambdaConfiguration/properties/Function",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "MetadataDestination.TableBucketArn",
+    "source": "/definitions/MetadataDestination/properties/TableBucketArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "MetadataTableEncryptionConfiguration.KmsKeyArn",
+    "source": "/definitions/MetadataTableEncryptionConfiguration/properties/KmsKeyArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "MetricsConfiguration.AccessPointArn",
+    "source": "/definitions/MetricsConfiguration/properties/AccessPointArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "QueueConfiguration.Queue",
+    "source": "/definitions/QueueConfiguration/properties/Queue",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "ReplicationConfiguration.Role",
+    "source": "/definitions/ReplicationConfiguration/properties/Role",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:role/.+$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "ReplicationDestination.Account",
+    "source": "/definitions/ReplicationDestination/properties/Account",
+    "oldPattern": "^\\d{12}$",
+    "oldLength": [
+      12,
+      12
+    ],
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "Rule.ExpirationDate",
+    "source": "/definitions/Rule/properties/ExpirationDate",
+    "oldPattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T00:00:00(?:\\.000)?Z\\z",
+    "oldLength": null,
+    "example": "2030-01-01T12:00:00Z",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "S3TablesDestination.TableArn",
+    "source": "/definitions/S3TablesDestination/properties/TableArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "S3TablesDestination.TableBucketArn",
+    "source": "/definitions/S3TablesDestination/properties/TableBucketArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "ServerSideEncryptionByDefault.KMSMasterKeyID",
+    "source": "/definitions/ServerSideEncryptionByDefault/properties/KMSMasterKeyID",
+    "oldPattern": "^((arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):kms:[^:]*:[^:]*:(key|alias)/.+)|(alias/.+)|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}))$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "TopicConfiguration.Topic",
+    "source": "/definitions/TopicConfiguration/properties/Topic",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "Transition.TransitionDate",
+    "source": "/definitions/Transition/properties/TransitionDate",
+    "oldPattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T00:00:00(?:\\.000)?Z\\z",
+    "oldLength": null,
+    "example": "2030-01-01T12:00:00Z",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::SNS::Subscription",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::SNS::Subscription",
+    "field": "SubscriptionRoleArn",
+    "source": "/properties/SubscriptionRoleArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::SNS::Subscription",
+    "field": "TopicArn",
+    "source": "/properties/TopicArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::SNS::Topic",
+    "field": "LoggingConfig.FailureFeedbackRoleArn",
+    "source": "/definitions/LoggingConfig/properties/FailureFeedbackRoleArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::SNS::Topic",
+    "field": "LoggingConfig.SuccessFeedbackRoleArn",
+    "source": "/definitions/LoggingConfig/properties/SuccessFeedbackRoleArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::SNS::Topic",
+    "field": "TopicArn",
+    "source": "/properties/TopicArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::SSM::Parameter",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "arn:aws-zz:ssm:us-east-1:123456789012:parameter/example",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::SSO::Assignment",
+    "field": "InstanceArn",
+    "source": "/properties/InstanceArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::instance/.+$",
+    "oldLength": null,
+    "example": "arn:aws-a:sso:::instance/ins-----------------",
+    "has_callback": false,
+    "callbackRejected": false
+  },
+  {
+    "resource": "AWS::SSO::Assignment",
+    "field": "PermissionSetArn",
+    "source": "/properties/PermissionSetArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::permissionSet/.+$",
+    "oldLength": null,
+    "example": "arn:aws-a:sso:::permissionSet/ins-----------------/ps-----------------",
+    "has_callback": false,
+    "callbackRejected": false
+  },
+  {
+    "resource": "AWS::SSO::Instance",
+    "field": "InstanceArn",
+    "source": "/properties/InstanceArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::instance/.+$",
+    "oldLength": null,
+    "example": "arn:aws-a:sso:::instance/ins-----------------",
+    "has_callback": false,
+    "callbackRejected": false
+  },
+  {
+    "resource": "AWS::SSO::PermissionSet",
+    "field": "InstanceArn",
+    "source": "/properties/InstanceArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::instance/.+$",
+    "oldLength": null,
+    "example": "arn:aws-a:sso:::instance/ins-----------------",
+    "has_callback": false,
+    "callbackRejected": false
+  },
+  {
+    "resource": "AWS::SSO::PermissionSet",
+    "field": "PermissionSetArn",
+    "source": "/properties/PermissionSetArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::permissionSet/.+$",
+    "oldLength": null,
+    "example": "arn:aws-a:sso:::permissionSet/ins-----------------/ps-----------------",
+    "has_callback": false,
+    "callbackRejected": false
+  },
+  {
+    "resource": "AWS::SSO::PermissionSet",
+    "field": "PermissionsBoundary.ManagedPolicyArn",
+    "source": "/definitions/PermissionsBoundary/properties/ManagedPolicyArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "xxxxxxxxxxxxxxxxxxxx",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::Scheduler::Schedule",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "arn:aws-zz:scheduler:us-east-1:123456789012:schedule/default/test",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::Scheduler::Schedule",
+    "field": "DeadLetterConfig.Arn",
+    "source": "/definitions/DeadLetterConfig/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "arn:aws-zz:sqs:us-east-1:123456789012:queue",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::Scheduler::Schedule",
+    "field": "EcsParameters.TaskDefinitionArn",
+    "source": "/definitions/EcsParameters/properties/TaskDefinitionArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "x",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::Scheduler::Schedule",
+    "field": "Target.Arn",
+    "source": "/definitions/Target/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "x",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::Scheduler::Schedule",
+    "field": "Target.RoleArn",
+    "source": "/definitions/Target/properties/RoleArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "arn:aws-zz:iam::123456789012:role/example",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::Scheduler::ScheduleGroup",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "arn:aws-zz:scheduler:us-east-1:123456789012:schedule-group/default",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "Arn",
+    "source": "/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):wafv2:.*$",
+    "oldLength": null,
+    "example": "xxxxxxxxxxxxxxxxxxxx",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "IPSetReferenceStatement.Arn",
+    "source": "/definitions/IPSetReferenceStatement/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "xxxxxxxxxxxxxxxxxxxx",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "RegexPatternSetReferenceStatement.Arn",
+    "source": "/definitions/RegexPatternSetReferenceStatement/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "xxxxxxxxxxxxxxxxxxxx",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "RuleGroupReferenceStatement.Arn",
+    "source": "/definitions/RuleGroupReferenceStatement/properties/Arn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "xxxxxxxxxxxxxxxxxxxx",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::WAFv2::WebACLAssociation",
+    "field": "ResourceArn",
+    "source": "/properties/ResourceArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "xxxxxxxxxxxxxxxxxxxx",
+    "has_callback": true,
+    "callbackRejected": true
+  },
+  {
+    "resource": "AWS::WAFv2::WebACLAssociation",
+    "field": "WebACLArn",
+    "source": "/properties/WebACLArn",
+    "oldPattern": "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    "oldLength": null,
+    "example": "xxxxxxxxxxxxxxxxxxxx",
+    "has_callback": true,
+    "callbackRejected": true
+  }
+]

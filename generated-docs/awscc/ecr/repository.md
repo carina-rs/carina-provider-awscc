@@ -147,7 +147,7 @@ Shorthand formats: `wildcard` or `ImageTagMutabilityExclusionFilterType.wildcard
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `image_tag_mutability_exclusion_filter_type` | [Enum (ImageTagMutabilityExclusionFilterType)](#image_tag_mutability_exclusion_filtersimage_tag_mutability_exclusion_filter_type-imagetagmutabilityexclusionfiltertype) | Yes |  |
-| `image_tag_mutability_exclusion_filter_value` | `String (length: 1..=128, pattern: ^[0-9a-zA-Z._*-]{1,128}\z)` | Yes |  |
+| `image_tag_mutability_exclusion_filter_value` | `String(pattern, len: 1..=128)` | Yes |  |
 
 ### lifecycle_policy
 
@@ -160,7 +160,7 @@ Shorthand formats: `wildcard` or `ImageTagMutabilityExclusionFilterType.wildcard
 
 ### `arn`
 
-- **Type:** Arn
+- **Type:** `aws.Arn`
 
 
 
@@ -169,4 +169,15 @@ Shorthand formats: `wildcard` or `ImageTagMutabilityExclusionFilterType.wildcard
 - **Type:** String
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/ImageTagMutabilityExclusionFilter/properties/ImageTagMutabilityExclusionFilterValue` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AmazonECR/latest/APIReference/API_ImageTagMutabilityExclusionFilter.html#ECR-Type-ImageTagMutabilityExclusionFilter-filter) | ` The filter value used to match image tags for exclusion from mutability settings. `<br>` Length Constraints: Minimum length of 1. Maximum length of 128. `<br>` Pattern: ^[0-9a-zA-Z._*-]{1,128}$ ` | 2026-11-07 |
+| `/properties/RepositoryPolicyText` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_grammar.html) | ` <version_block> = "Version" : ("2008-10-17" \| "2012-10-17") `<br>` <effect_block> = "Effect" : ("Allow" \| "Deny") ` | 2026-11-07 |
+| `/properties/RepositoryPolicyText` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html) | ` The Statement element can contain a single statement or an array of individual statements. ` | 2026-11-07 |
+| `/properties/RepositoryPolicyText` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html) | ` You can create conditions that compare strings, dates, numbers, and more using typical Boolean comparisons such as equals, greater than, and less than. ` | 2026-11-07 |
 

@@ -14,7 +14,7 @@ pub fn ec2_route_table_config() -> AwsccSchemaConfig {
         .with_description("Specifies a route table for the specified VPC. After you create a route table, you can add routes and associate the table with a subnet.  For more information, see [Route tables](https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Route_Tables.html) in the *Amazon VPC User Guide*.");
     #[inline(never)]
     fn build_route_table_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("route_table_id", carina_aws_types::route_table_id())
+        AttributeSchema::provider_populated("route_table_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2RouteTableId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2RouteTableId.check().expect("shared string check"), None))
                 .with_description(" (read-only)")
                 .with_provider_name("RouteTableId")
             .build()
@@ -31,7 +31,7 @@ pub fn ec2_route_table_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_vpc_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("vpc_id", carina_aws_types::vpc_id())
+        AttributeSchema::required("vpc_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcId.check().expect("shared string check"), None))
                 .create_only()
                 .with_description("The ID of the VPC.")
                 .with_provider_name("VpcId")

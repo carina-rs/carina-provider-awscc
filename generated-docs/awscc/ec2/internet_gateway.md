@@ -30,7 +30,7 @@ Any tags to assign to the internet gateway.
 
 ### `internet_gateway_id`
 
-- **Type:** InternetGatewayId
+- **Type:** `aws.ec2.InternetGateway.Id`
 
 
 

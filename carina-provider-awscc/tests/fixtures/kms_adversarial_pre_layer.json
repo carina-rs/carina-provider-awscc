@@ -1,0 +1,1229 @@
+{
+  "alias": {
+    "candidates": {
+      "/definitions/Alias": {
+        "definition_names": [
+          "Alias"
+        ],
+        "descriptions": [
+          "AWS KMS alias"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/definitions/Key": {
+        "definition_names": [
+          "Key"
+        ],
+        "descriptions": [
+          "AWS KMS leaf"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [
+          [
+            null,
+            256
+          ]
+        ],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [
+          "AWS KMS use"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      }
+    },
+    "decision": "sns.Topic.kms_master_key_id: KMS length changed from None to [(None, Some(256))]; classify its constraint before generation",
+    "emission": {
+      "classified_sources": {
+        "/definitions/Alias": [
+          "kms_master_key_id"
+        ],
+        "/definitions/Key": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId": [
+          "kms_master_key_id"
+        ]
+      },
+      "decisions": {
+        "kms_master_key_id": "Reference(Key)"
+      },
+      "sites": {
+        "kms_master_key_id": {
+          "evidence": {
+            "definition_names": [
+              "Alias",
+              "Key"
+            ],
+            "descriptions": [
+              "AWS KMS use",
+              "AWS KMS alias",
+              "AWS KMS leaf"
+            ],
+            "has_enum_or_const": false,
+            "lengths": [
+              [
+                null,
+                256
+              ]
+            ],
+            "literals": [],
+            "patterns": []
+          },
+          "sources": [
+            "/properties/KmsMasterKeyId",
+            "/definitions/Alias",
+            "/definitions/Key"
+          ]
+        }
+      },
+      "visited": [
+        "kms_master_key_id"
+      ]
+    },
+    "finish": null
+  },
+  "allOf": {
+    "candidates": {
+      "/definitions/Alias": {
+        "definition_names": [
+          "Alias"
+        ],
+        "descriptions": [
+          "AWS KMS alias"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/definitions/Key": {
+        "definition_names": [
+          "Key"
+        ],
+        "descriptions": [
+          "AWS KMS leaf"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [
+          [
+            null,
+            256
+          ]
+        ],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId/allOf/1": {
+        "definition_names": [],
+        "descriptions": [
+          "AWS KMS later branch"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      }
+    },
+    "decision": "sns.Topic.kms_master_key_id: KMS length changed from None to [(None, Some(256))]; classify its constraint before generation",
+    "emission": {
+      "classified_sources": {
+        "/definitions/Alias": [
+          "kms_master_key_id"
+        ],
+        "/definitions/Key": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/allOf/0": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/allOf/1": [
+          "kms_master_key_id"
+        ]
+      },
+      "decisions": {
+        "kms_master_key_id": "Reference(Key)"
+      },
+      "sites": {
+        "kms_master_key_id": {
+          "evidence": {
+            "definition_names": [
+              "Alias",
+              "Key"
+            ],
+            "descriptions": [
+              "first branch",
+              "AWS KMS later branch",
+              "AWS KMS alias",
+              "AWS KMS leaf"
+            ],
+            "has_enum_or_const": false,
+            "lengths": [
+              [
+                null,
+                256
+              ]
+            ],
+            "literals": [],
+            "patterns": []
+          },
+          "sources": [
+            "/properties/KmsMasterKeyId",
+            "/properties/KmsMasterKeyId/allOf/0",
+            "/properties/KmsMasterKeyId/allOf/1",
+            "/definitions/Alias",
+            "/definitions/Key"
+          ]
+        }
+      },
+      "visited": [
+        "kms_master_key_id"
+      ]
+    },
+    "finish": null
+  },
+  "anyOf": {
+    "candidates": {
+      "/definitions/Alias": {
+        "definition_names": [
+          "Alias"
+        ],
+        "descriptions": [
+          "AWS KMS alias"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/definitions/Key": {
+        "definition_names": [
+          "Key"
+        ],
+        "descriptions": [
+          "AWS KMS leaf"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [
+          [
+            null,
+            256
+          ]
+        ],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId/anyOf/1": {
+        "definition_names": [],
+        "descriptions": [
+          "AWS KMS later branch"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      }
+    },
+    "decision": "sns.Topic.kms_master_key_id: KMS length changed from None to [(None, Some(256))]; classify its constraint before generation",
+    "emission": {
+      "classified_sources": {
+        "/definitions/Alias": [
+          "kms_master_key_id"
+        ],
+        "/definitions/Key": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/anyOf/0": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/anyOf/1": [
+          "kms_master_key_id"
+        ]
+      },
+      "decisions": {
+        "kms_master_key_id": "Reference(Key)"
+      },
+      "sites": {
+        "kms_master_key_id": {
+          "evidence": {
+            "definition_names": [
+              "Alias",
+              "Key"
+            ],
+            "descriptions": [
+              "first branch",
+              "AWS KMS later branch",
+              "AWS KMS alias",
+              "AWS KMS leaf"
+            ],
+            "has_enum_or_const": false,
+            "lengths": [
+              [
+                null,
+                256
+              ]
+            ],
+            "literals": [],
+            "patterns": []
+          },
+          "sources": [
+            "/properties/KmsMasterKeyId",
+            "/properties/KmsMasterKeyId/anyOf/0",
+            "/properties/KmsMasterKeyId/anyOf/1",
+            "/definitions/Alias",
+            "/definitions/Key"
+          ]
+        }
+      },
+      "visited": [
+        "kms_master_key_id"
+      ]
+    },
+    "finish": null
+  },
+  "dangling": {
+    "candidates": {
+      "/definitions/Alias": {
+        "definition_names": [
+          "Alias"
+        ],
+        "descriptions": [
+          "AWS KMS alias"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/definitions/Key": {
+        "definition_names": [
+          "Key"
+        ],
+        "descriptions": [
+          "AWS KMS leaf"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [
+          [
+            null,
+            256
+          ]
+        ],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      }
+    },
+    "decision": "Some(Key)",
+    "emission": {
+      "classified_sources": {
+        "/properties/KmsMasterKeyId": [
+          "kms_master_key_id"
+        ]
+      },
+      "decisions": {
+        "kms_master_key_id": "Reference(Key)"
+      },
+      "sites": {
+        "kms_master_key_id": {
+          "evidence": {
+            "definition_names": [],
+            "descriptions": [],
+            "has_enum_or_const": false,
+            "lengths": [],
+            "literals": [],
+            "patterns": []
+          },
+          "sources": [
+            "/properties/KmsMasterKeyId"
+          ]
+        }
+      },
+      "visited": [
+        "kms_master_key_id"
+      ]
+    },
+    "finish": "unaccounted KMS node sns.Topic#/definitions/Alias; classify its emitted source or add an explicit UNEMITTED_KMS_NODES entry with a reason"
+  },
+  "dependencies": {
+    "candidates": {
+      "/definitions/Alias": {
+        "definition_names": [
+          "Alias"
+        ],
+        "descriptions": [
+          "AWS KMS alias"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/definitions/Key": {
+        "definition_names": [
+          "Key"
+        ],
+        "descriptions": [
+          "AWS KMS leaf"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [
+          [
+            null,
+            256
+          ]
+        ],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId/dependencies/A": {
+        "definition_names": [],
+        "descriptions": [
+          "AWS KMS dependency A"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId/dependencies/Z": {
+        "definition_names": [],
+        "descriptions": [
+          "AWS KMS dependency Z"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": [
+          "kms"
+        ]
+      }
+    },
+    "decision": "sns.Topic.kms_master_key_id: KMS pattern changed from None to [\"kms\"]; classify its constraint before generation",
+    "emission": {
+      "classified_sources": {
+        "/definitions/Alias": [
+          "kms_master_key_id"
+        ],
+        "/definitions/Key": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/dependencies/A": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/dependencies/Z": [
+          "kms_master_key_id"
+        ]
+      },
+      "decisions": {
+        "kms_master_key_id": "Reference(Key)"
+      },
+      "sites": {
+        "kms_master_key_id": {
+          "evidence": {
+            "definition_names": [
+              "Alias",
+              "Key"
+            ],
+            "descriptions": [
+              "AWS KMS dependency Z",
+              "AWS KMS dependency A",
+              "AWS KMS alias",
+              "AWS KMS leaf"
+            ],
+            "has_enum_or_const": false,
+            "lengths": [
+              [
+                null,
+                256
+              ]
+            ],
+            "literals": [],
+            "patterns": [
+              "kms"
+            ]
+          },
+          "sources": [
+            "/properties/KmsMasterKeyId",
+            "/properties/KmsMasterKeyId/dependencies/Z",
+            "/properties/KmsMasterKeyId/dependencies/A",
+            "/definitions/Alias",
+            "/definitions/Key"
+          ]
+        }
+      },
+      "visited": [
+        "kms_master_key_id"
+      ]
+    },
+    "finish": null
+  },
+  "direct": {
+    "candidates": {
+      "/definitions/Alias": {
+        "definition_names": [
+          "Alias"
+        ],
+        "descriptions": [
+          "AWS KMS alias"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/definitions/Key": {
+        "definition_names": [
+          "Key"
+        ],
+        "descriptions": [
+          "AWS KMS leaf"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [
+          [
+            null,
+            256
+          ]
+        ],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [
+          "AWS KMS leaf"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [
+          [
+            null,
+            256
+          ]
+        ],
+        "literals": [],
+        "patterns": []
+      }
+    },
+    "decision": "sns.Topic.kms_master_key_id: KMS length changed from None to [(None, Some(256))]; classify its constraint before generation",
+    "emission": {
+      "classified_sources": {
+        "/properties/KmsMasterKeyId": [
+          "kms_master_key_id"
+        ]
+      },
+      "decisions": {
+        "kms_master_key_id": "Reference(Key)"
+      },
+      "sites": {
+        "kms_master_key_id": {
+          "evidence": {
+            "definition_names": [],
+            "descriptions": [
+              "AWS KMS leaf"
+            ],
+            "has_enum_or_const": false,
+            "lengths": [
+              [
+                null,
+                256
+              ]
+            ],
+            "literals": [],
+            "patterns": []
+          },
+          "sources": [
+            "/properties/KmsMasterKeyId"
+          ]
+        }
+      },
+      "visited": [
+        "kms_master_key_id"
+      ]
+    },
+    "finish": "unaccounted KMS node sns.Topic#/definitions/Alias; classify its emitted source or add an explicit UNEMITTED_KMS_NODES entry with a reason"
+  },
+  "list": {
+    "candidates": {
+      "/definitions/Alias": {
+        "definition_names": [
+          "Alias"
+        ],
+        "descriptions": [
+          "AWS KMS alias"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/definitions/Key": {
+        "definition_names": [
+          "Key"
+        ],
+        "descriptions": [
+          "AWS KMS leaf"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [
+          [
+            null,
+            256
+          ]
+        ],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [
+          "AWS KMS list"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId/items": {
+        "definition_names": [],
+        "descriptions": [
+          "AWS KMS item"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      }
+    },
+    "decision": "unclassified KMS string sns.Topic.kms_master_key_id[]",
+    "emission": {
+      "classified_sources": {},
+      "decisions": {},
+      "sites": {
+        "kms_master_key_id": {
+          "evidence": {
+            "definition_names": [],
+            "descriptions": [
+              "AWS KMS list"
+            ],
+            "has_enum_or_const": false,
+            "lengths": [],
+            "literals": [],
+            "patterns": []
+          },
+          "sources": [
+            "/properties/KmsMasterKeyId"
+          ]
+        },
+        "kms_master_key_id[]": {
+          "evidence": {
+            "definition_names": [
+              "Alias",
+              "Key"
+            ],
+            "descriptions": [
+              "AWS KMS list",
+              "AWS KMS item",
+              "AWS KMS alias",
+              "AWS KMS leaf"
+            ],
+            "has_enum_or_const": false,
+            "lengths": [
+              [
+                null,
+                256
+              ]
+            ],
+            "literals": [],
+            "patterns": []
+          },
+          "sources": [
+            "/properties/KmsMasterKeyId/items",
+            "/definitions/Alias",
+            "/definitions/Key"
+          ]
+        }
+      },
+      "visited": []
+    },
+    "finish": "unaccounted KMS node sns.Topic#/definitions/Alias; classify its emitted source or add an explicit UNEMITTED_KMS_NODES entry with a reason"
+  },
+  "map": {
+    "candidates": {
+      "/definitions/Alias": {
+        "definition_names": [
+          "Alias"
+        ],
+        "descriptions": [
+          "AWS KMS alias"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/definitions/Key": {
+        "definition_names": [
+          "Key"
+        ],
+        "descriptions": [
+          "AWS KMS leaf"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [
+          [
+            null,
+            256
+          ]
+        ],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [
+          "AWS KMS map"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId/patternProperties/a~1b~0c": {
+        "definition_names": [],
+        "descriptions": [
+          "AWS KMS value"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      }
+    },
+    "decision": "unclassified KMS string sns.Topic.kms_master_key_id{}",
+    "emission": {
+      "classified_sources": {},
+      "decisions": {},
+      "sites": {
+        "kms_master_key_id": {
+          "evidence": {
+            "definition_names": [],
+            "descriptions": [
+              "AWS KMS map"
+            ],
+            "has_enum_or_const": false,
+            "lengths": [],
+            "literals": [],
+            "patterns": []
+          },
+          "sources": [
+            "/properties/KmsMasterKeyId"
+          ]
+        },
+        "kms_master_key_id{}": {
+          "evidence": {
+            "definition_names": [
+              "Alias",
+              "Key"
+            ],
+            "descriptions": [
+              "AWS KMS map",
+              "AWS KMS value",
+              "AWS KMS alias",
+              "AWS KMS leaf"
+            ],
+            "has_enum_or_const": false,
+            "lengths": [
+              [
+                null,
+                256
+              ]
+            ],
+            "literals": [],
+            "patterns": []
+          },
+          "sources": [
+            "/properties/KmsMasterKeyId/patternProperties/a~1b~0c",
+            "/definitions/Alias",
+            "/definitions/Key"
+          ]
+        }
+      },
+      "visited": []
+    },
+    "finish": "unaccounted KMS node sns.Topic#/definitions/Alias; classify its emitted source or add an explicit UNEMITTED_KMS_NODES entry with a reason"
+  },
+  "mixed_order": {
+    "candidates": {
+      "/definitions/Alias": {
+        "definition_names": [
+          "Alias"
+        ],
+        "descriptions": [
+          "AWS KMS alias"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/definitions/Key": {
+        "definition_names": [
+          "Key"
+        ],
+        "descriptions": [
+          "AWS KMS leaf"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [
+          [
+            null,
+            256
+          ]
+        ],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [
+          "AWS KMS use"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      }
+    },
+    "decision": "sns.Topic.kms_master_key_id: KMS length changed from None to [(None, Some(256))]; classify its constraint before generation",
+    "emission": {
+      "classified_sources": {
+        "/definitions/Alias": [
+          "kms_master_key_id"
+        ],
+        "/definitions/Key": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/allOf/0": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/allOf/1": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/anyOf/0": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/anyOf/1": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/dependencies/A": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/dependencies/Z": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/oneOf/0": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/oneOf/1": [
+          "kms_master_key_id"
+        ]
+      },
+      "decisions": {
+        "kms_master_key_id": "Reference(Key)"
+      },
+      "sites": {
+        "kms_master_key_id": {
+          "evidence": {
+            "definition_names": [
+              "Alias",
+              "Key"
+            ],
+            "descriptions": [
+              "AWS KMS use",
+              "dependency Z",
+              "dependency A",
+              "all 0",
+              "all 1",
+              "any 0",
+              "any 1",
+              "one 0",
+              "one 1",
+              "AWS KMS alias",
+              "AWS KMS leaf"
+            ],
+            "has_enum_or_const": false,
+            "lengths": [
+              [
+                null,
+                256
+              ]
+            ],
+            "literals": [],
+            "patterns": []
+          },
+          "sources": [
+            "/properties/KmsMasterKeyId",
+            "/properties/KmsMasterKeyId/dependencies/Z",
+            "/properties/KmsMasterKeyId/dependencies/A",
+            "/properties/KmsMasterKeyId/allOf/0",
+            "/properties/KmsMasterKeyId/allOf/1",
+            "/properties/KmsMasterKeyId/anyOf/0",
+            "/properties/KmsMasterKeyId/anyOf/1",
+            "/properties/KmsMasterKeyId/oneOf/0",
+            "/properties/KmsMasterKeyId/oneOf/1",
+            "/definitions/Alias",
+            "/definitions/Key"
+          ]
+        }
+      },
+      "visited": [
+        "kms_master_key_id"
+      ]
+    },
+    "finish": null
+  },
+  "oneOf": {
+    "candidates": {
+      "/definitions/Alias": {
+        "definition_names": [
+          "Alias"
+        ],
+        "descriptions": [
+          "AWS KMS alias"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/definitions/Key": {
+        "definition_names": [
+          "Key"
+        ],
+        "descriptions": [
+          "AWS KMS leaf"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [
+          [
+            null,
+            256
+          ]
+        ],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId/oneOf/1": {
+        "definition_names": [],
+        "descriptions": [
+          "AWS KMS later branch"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      }
+    },
+    "decision": "sns.Topic.kms_master_key_id: KMS length changed from None to [(None, Some(256))]; classify its constraint before generation",
+    "emission": {
+      "classified_sources": {
+        "/definitions/Alias": [
+          "kms_master_key_id"
+        ],
+        "/definitions/Key": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/oneOf/0": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId/oneOf/1": [
+          "kms_master_key_id"
+        ]
+      },
+      "decisions": {
+        "kms_master_key_id": "Reference(Key)"
+      },
+      "sites": {
+        "kms_master_key_id": {
+          "evidence": {
+            "definition_names": [
+              "Alias",
+              "Key"
+            ],
+            "descriptions": [
+              "first branch",
+              "AWS KMS later branch",
+              "AWS KMS alias",
+              "AWS KMS leaf"
+            ],
+            "has_enum_or_const": false,
+            "lengths": [
+              [
+                null,
+                256
+              ]
+            ],
+            "literals": [],
+            "patterns": []
+          },
+          "sources": [
+            "/properties/KmsMasterKeyId",
+            "/properties/KmsMasterKeyId/oneOf/0",
+            "/properties/KmsMasterKeyId/oneOf/1",
+            "/definitions/Alias",
+            "/definitions/Key"
+          ]
+        }
+      },
+      "visited": [
+        "kms_master_key_id"
+      ]
+    },
+    "finish": null
+  },
+  "root_composition": {
+    "candidates": {
+      "/allOf/0/properties/KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/definitions/Alias": {
+        "definition_names": [
+          "Alias"
+        ],
+        "descriptions": [
+          "AWS KMS alias"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/definitions/Key": {
+        "definition_names": [
+          "Key"
+        ],
+        "descriptions": [
+          "AWS KMS leaf"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [
+          [
+            null,
+            256
+          ]
+        ],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      }
+    },
+    "decision": "sns.Topic.kms_master_key_id: KMS length changed from None to [(None, Some(256))]; classify its constraint before generation",
+    "emission": {
+      "classified_sources": {
+        "/allOf/0/properties/KmsMasterKeyId": [
+          "kms_master_key_id"
+        ],
+        "/definitions/Alias": [
+          "kms_master_key_id"
+        ],
+        "/definitions/Key": [
+          "kms_master_key_id"
+        ],
+        "/properties/KmsMasterKeyId": [
+          "kms_master_key_id"
+        ]
+      },
+      "decisions": {
+        "kms_master_key_id": "Reference(Key)"
+      },
+      "sites": {
+        "kms_master_key_id": {
+          "evidence": {
+            "definition_names": [
+              "Alias",
+              "Key"
+            ],
+            "descriptions": [
+              "AWS KMS alias",
+              "AWS KMS leaf"
+            ],
+            "has_enum_or_const": false,
+            "lengths": [
+              [
+                null,
+                256
+              ]
+            ],
+            "literals": [],
+            "patterns": []
+          },
+          "sources": [
+            "/allOf/0/properties/KmsMasterKeyId",
+            "/definitions/Alias",
+            "/definitions/Key",
+            "/properties/KmsMasterKeyId"
+          ]
+        }
+      },
+      "visited": [
+        "kms_master_key_id"
+      ]
+    },
+    "finish": null
+  },
+  "transform": {
+    "candidates": {
+      "/definitions/Alias": {
+        "definition_names": [
+          "Alias"
+        ],
+        "descriptions": [
+          "AWS KMS alias"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/definitions/Key": {
+        "definition_names": [
+          "Key"
+        ],
+        "descriptions": [
+          "AWS KMS leaf"
+        ],
+        "has_enum_or_const": false,
+        "lengths": [
+          [
+            null,
+            256
+          ]
+        ],
+        "literals": [],
+        "patterns": []
+      },
+      "/properties/KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      },
+      "/propertyTransform/~1properties~1KmsMasterKeyId": {
+        "definition_names": [],
+        "descriptions": [],
+        "has_enum_or_const": false,
+        "lengths": [],
+        "literals": [],
+        "patterns": []
+      }
+    },
+    "decision": "Some(Key)",
+    "emission": {
+      "classified_sources": {
+        "/properties/KmsMasterKeyId": [
+          "kms_master_key_id"
+        ]
+      },
+      "decisions": {
+        "kms_master_key_id": "Reference(Key)"
+      },
+      "sites": {
+        "kms_master_key_id": {
+          "evidence": {
+            "definition_names": [],
+            "descriptions": [],
+            "has_enum_or_const": false,
+            "lengths": [],
+            "literals": [],
+            "patterns": []
+          },
+          "sources": [
+            "/properties/KmsMasterKeyId"
+          ]
+        }
+      },
+      "visited": [
+        "kms_master_key_id"
+      ]
+    },
+    "finish": "unaccounted KMS node sns.Topic#/definitions/Alias; classify its emitted source or add an explicit UNEMITTED_KMS_NODES entry with a reason"
+  }
+}

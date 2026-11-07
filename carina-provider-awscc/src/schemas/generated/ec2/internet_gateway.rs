@@ -14,7 +14,7 @@ pub fn ec2_internet_gateway_config() -> AwsccSchemaConfig {
         .with_description("Allocates an internet gateway for use with a VPC. After creating the Internet gateway, you then attach it to a VPC.");
     #[inline(never)]
     fn build_internet_gateway_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("internet_gateway_id", carina_aws_types::internet_gateway_id())
+        AttributeSchema::provider_populated("internet_gateway_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2InternetGatewayId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2InternetGatewayId.check().expect("shared string check"), None))
                 .with_description(" (read-only)")
                 .with_provider_name("InternetGatewayId")
             .build()

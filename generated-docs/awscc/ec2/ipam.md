@@ -28,7 +28,7 @@ awscc.ec2.Ipam {
 
 ### `default_resource_discovery_organizational_unit_exclusions`
 
-- **Type:** List\<[Struct(IpamOrganizationalUnitExclusion)](#default_resource_discovery_organizational_unit_exclusions-1)\>
+- **Type:** List\<[Struct(IpamOrganizationalUnitExclusion)](#default_resource_discovery_organizational_unit_exclusions-1)\> (unique items)
 - **Required:** No
 
 A set of organizational unit (OU) exclusions for the default resource discovery, created with this IPAM.
@@ -54,7 +54,7 @@ A metered account is an account that is charged for active IP addresses managed 
 
 ### `operating_regions`
 
-- **Type:** List\<[Struct(IpamOperatingRegion)](#operating_regions-1)\>
+- **Type:** List\<[Struct(IpamOperatingRegion)](#operating_regions-1)\> (unique items)
 - **Required:** No
 
 The regions IPAM is enabled for. Allows pools to be created in these regions, as well as enabling monitoring
@@ -105,7 +105,7 @@ Shorthand formats: `free` or `Tier.free`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `region_name` | Region | Yes | The name of the region. |
+| `region_name` | `aws.Region` | Yes | The name of the region. |
 
 ## Attribute Reference
 
@@ -129,7 +129,7 @@ The Id of the default resource discovery, created with this IPAM.
 
 ### `ipam_id`
 
-- **Type:** IpamId
+- **Type:** `aws.ec2.Ipam.Id`
 
 Id of the IPAM.
 

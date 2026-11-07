@@ -147,7 +147,7 @@ fn role_description_accepts_only_the_create_role_character_set_and_length() {
         description.as_type().raw_shape(),
         RawShape::String {
             identity: None,
-            length: Some((Some(0), Some(1000))),
+            length: Some((None, Some(1000))),
             ..
         }
     ));
@@ -637,7 +637,7 @@ fn let_bound_deferred_string_constructions_validate_at_each_name_sink() {
 }
 
 #[test]
-fn every_example_and_acceptance_fixture_declaring_iam_resources_validates() {
+fn every_example_and_acceptance_fixture_declaring_iam_resources_keep_cfn_reference_limits() {
     fn collect(directory: &Path, root: &Path, fixtures: &mut Vec<(String, String)>) {
         let mut entries = std::fs::read_dir(directory)
             .unwrap()
@@ -674,5 +674,5 @@ fn every_example_and_acceptance_fixture_declaring_iam_resources_validates() {
         .iter()
         .map(|(path, source)| (path.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    validate_fixtures(&cases);
+    crate::test_support::validate_fixtures_with_cfn_reference_limits(&cases);
 }

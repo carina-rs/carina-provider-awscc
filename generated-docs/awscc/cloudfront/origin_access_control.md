@@ -70,7 +70,7 @@ Shorthand formats: `sigv4` or `SigningProtocol.sigv4`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `description` | String | No | A description of the origin access control. |
-| `name` | `String (length: ..=64)` | Yes | A name to identify the origin access control. You can specify up to 64 characters. |
+| `name` | `String(len: ..=64)` | Yes | A name to identify the origin access control. You can specify up to 64 characters. |
 | `origin_access_control_origin_type` | [Enum (OriginAccessControlOriginType)](#origin_access_control_configorigin_access_control_origin_type-originaccesscontrolorigintype) | Yes | The type of origin that this origin access control is for. |
 | `signing_behavior` | [Enum (SigningBehavior)](#origin_access_control_configsigning_behavior-signingbehavior) | Yes | Specifies which requests CloudFront signs (adds authentication information to). Specify ``always`` for the most common use case. For more information, see [origin access control advanced settings](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html#oac-advanced-settings) in the *Amazon CloudFront Developer Guide*. This field can have one of the following values: + ``always`` – CloudFront signs all origin requests, overwriting the ``Authorization`` header from the viewer request if one exists. + ``never`` – CloudFront doesn't sign any origin requests. This value turns off origin access control for all origins in all distributions that use this origin access control. + ``no-override`` – If the viewer request doesn't contain the ``Authorization`` header, then CloudFront signs the origin request. If the viewer request contains the ``Authorization`` header, then CloudFront doesn't sign the origin request and instead passes along the ``Authorization`` header from the viewer request. *WARNING: To pass along the Authorization header from the viewer request, you must add the Authorization header to a cache policy for all cache behaviors that use origins associated with this origin access control.* |
 | `signing_protocol` | [Enum (SigningProtocol)](#origin_access_control_configsigning_protocol-signingprotocol) | Yes | The signing protocol of the origin access control, which determines how CloudFront signs (authenticates) requests. The only valid value is ``sigv4``. |
@@ -82,4 +82,12 @@ Shorthand formats: `sigv4` or `SigningProtocol.sigv4`
 - **Type:** String
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/OriginAccessControlConfig/properties/Name` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_OriginAccessControlConfig.html#cloudfront-Type-OriginAccessControlConfig-Name) | ` A name to identify the origin access control. You can specify up to 64 characters. ` | 2026-11-07 |
 

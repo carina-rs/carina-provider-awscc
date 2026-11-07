@@ -68,7 +68,7 @@ The minimum allowed netmask length for allocations made from this pool.
 
 ### `allocation_resource_tags`
 
-- **Type:** `List<Map<String(len: 1..=128), String(len: ..=256)>>`
+- **Type:** `List<Map<String(len: 1..=128), String(len: ..=256)>>` (unique items)
 - **Required:** No
 
 When specified, an allocation will not be allowed unless a resource has a matching set of tags.
@@ -103,7 +103,7 @@ The Id of the scope this pool is a part of.
 
 ### `locale`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -111,7 +111,7 @@ The region of this pool. If not set, this will default to "None" which will disa
 
 ### `provisioned_cidrs`
 
-- **Type:** List\<[Struct(ProvisionedCidr)](#provisioned_cidrs-1)\>
+- **Type:** List\<[Struct(ProvisionedCidr)](#provisioned_cidrs-1)\> (unique items)
 - **Required:** No
 
 A list of cidrs representing the address space available for allocation in this pool.
@@ -134,7 +134,7 @@ Determines whether or not address space from this pool is publicly advertised. M
 
 ### `source_ipam_pool_id`
 
-- **Type:** IpamPoolId
+- **Type:** `aws.ec2.IpamPool.Id`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -159,8 +159,8 @@ An array of key-value pairs to apply to this resource.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `IPv4` | `aws.ec2.IpamPool.AddressFamily.ipv4` |
-| `IPv6` | `aws.ec2.IpamPool.AddressFamily.ipv6` |
+| `ipv4` | `aws.ec2.IpamPool.AddressFamily.ipv4` |
+| `ipv6` | `aws.ec2.IpamPool.AddressFamily.ipv6` |
 
 Shorthand formats: `ipv4` or `AddressFamily.ipv4`
 
@@ -218,7 +218,7 @@ Shorthand formats: `create_in_progress` or `State.create_in_progress`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cidr` | Cidr | Yes |  |
+| `cidr` | `Ipv4Cidr` | Yes |  |
 
 ### source_resource
 
@@ -226,7 +226,7 @@ Shorthand formats: `create_in_progress` or `State.create_in_progress`
 |-------|------|----------|-------------|
 | `resource_id` | String | Yes |  |
 | `resource_owner` | String | Yes |  |
-| `resource_region` | Region | Yes |  |
+| `resource_region` | `aws.Region` | Yes |  |
 | `resource_type` | [Enum (ResourceType)](#source_resourceresource_type-resourcetype) | Yes |  |
 
 ## Attribute Reference
@@ -239,19 +239,19 @@ The Amazon Resource Name (ARN) of the IPAM Pool.
 
 ### `ipam_arn`
 
-- **Type:** Arn
+- **Type:** `aws.Arn`
 
 The Amazon Resource Name (ARN) of the IPAM this pool is a part of.
 
 ### `ipam_pool_id`
 
-- **Type:** IpamPoolId
+- **Type:** `aws.ec2.IpamPool.Id`
 
 Id of the IPAM Pool.
 
 ### `ipam_scope_arn`
 
-- **Type:** Arn
+- **Type:** `aws.Arn`
 
 The Amazon Resource Name (ARN) of the scope this pool is a part of.
 
@@ -278,4 +278,16 @@ The state of this pool. This can be one of the following values: "create-in-prog
 - **Type:** String
 
 An explanation of how the pool arrived at it current state.
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/SourceResource/properties/ResourceType` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-ec2-ipampool-sourceresource.html#cfn-ec2-ipampool-sourceresource-resourcetype) | ` The source resource type. `<br>` Allowed values: vpc ` | 2026-11-07 |
+| `/properties/AddressFamily` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-ipampool.html#cfn-ec2-ipampool-addressfamily) | ` The address family of the pool. `<br>` Allowed values: ipv4 \| ipv6 ` | 2026-11-07 |
+| `/properties/AllocationDefaultNetmaskLength` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-ipampool.html#cfn-ec2-ipampool-allocationdefaultnetmasklength) | ` The default netmask length for allocations added to this pool. If, for example, the CIDR assigned to this pool is 10.0.0.0/8 and you enter 16 here, new allocations will default to 10.0.0.0/16. `<br>` Minimum: 0 `<br>` Maximum: 128 ` | 2026-11-07 |
+| `/properties/AllocationMaxNetmaskLength` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-ipampool.html#cfn-ec2-ipampool-allocationmaxnetmasklength) | ` The maximum netmask length possible for CIDR allocations in this IPAM pool to be compliant. The maximum netmask length must be greater than the minimum netmask length. Possible netmask lengths for IPv4 addresses are 0 - 32. Possible netmask lengths for IPv6 addresses are 0 - 128. `<br>` Minimum: 0 `<br>` Maximum: 128 ` | 2026-11-07 |
+| `/properties/AllocationMinNetmaskLength` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-ipampool.html#cfn-ec2-ipampool-allocationminnetmasklength) | ` The minimum netmask length required for CIDR allocations in this IPAM pool to be compliant. The minimum netmask length must be less than the maximum netmask length. Possible netmask lengths for IPv4 addresses are 0 - 32. Possible netmask lengths for IPv6 addresses are 0 - 128. `<br>` Minimum: 0 `<br>` Maximum: 128 ` | 2026-11-07 |
 

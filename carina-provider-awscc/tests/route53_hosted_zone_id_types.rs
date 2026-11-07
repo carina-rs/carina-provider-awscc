@@ -1,5 +1,6 @@
 //! Verifies that AWSCC hosted-zone ID producers carry the shared Route 53
-//! identity used by the AWS provider's Route53 alias-target sink.
+//! identity. HostedZone.Id also has the documented 32-character maximum;
+//! LoadBalancer.CanonicalHostedZoneID retains its unbounded CFN output domain.
 
 use std::sync::Arc;
 
@@ -13,7 +14,7 @@ use carina_provider_awscc::schemas::generated::elasticloadbalancingv2::load_bala
 use carina_provider_awscc::schemas::generated::route53::hosted_zone::route53_hosted_zone_config;
 
 #[test]
-fn hosted_zone_id_producers_are_assignable_to_alias_target_union_and_string() {
+fn hosted_zone_id_producers_keep_identity_and_only_documented_bounds() {
     let alias_target_hosted_zone_id = AttributeType::union(vec![
         carina_aws_types::cloudfront_hosted_zone_id(),
         carina_aws_types::route53_hosted_zone_id(),
@@ -50,12 +51,16 @@ fn hosted_zone_id_producers_are_assignable_to_alias_target_union_and_string() {
             .attr_type();
 
         assert!(
+            matches!(source.raw_shape(),carina_core::schema::RawShape::String {identity:Some(id),pattern:None,validate:None,..} if id.to_string()=="aws.route53.HostedZone.Id")
+        );
+        assert!(
             config
                 .schema
                 .as_schema()
                 .type_in_schema(source)
-                .is_assignable_to(owner.assignment_sink(alias_target_hosted_zone_id, &catalog)),
-            "{label} must be assignable to the AWS Route53 alias-target union"
+                .is_assignable_to(owner.assignment_sink(alias_target_hosted_zone_id, &catalog))
+                == (attribute_name == "id"),
+            "{label}: assignment requires containment of the producer's documented bounds"
         );
         assert!(
             config
@@ -69,7 +74,7 @@ fn hosted_zone_id_producers_are_assignable_to_alias_target_union_and_string() {
 }
 
 #[test]
-fn hosted_zone_id_producers_validate_route53_values() {
+fn hosted_zone_id_values_obey_only_their_evidenced_bounds() {
     for (label, config, attribute_name) in [
         (
             "LoadBalancer.canonical_hosted_zone_id",
@@ -98,12 +103,12 @@ fn hosted_zone_id_producers_validate_route53_values() {
             );
         }
 
-        for hosted_zone_id in ["", "/hostedzone/Z05136711ZXUHBDOA8D5O"] {
+        for hosted_zone_id in ["", "/hostedzone/Z1"] {
             let value: Value =
                 Value::Concrete(ConcreteValue::String(hosted_zone_id.to_string().into()));
             assert!(
-                producer_type.validate(&value).is_err(),
-                "{label} must reject {hosted_zone_id:?}"
+                producer_type.validate(&value).is_ok(),
+                "{label}: attaching a name cannot reject CFN string {hosted_zone_id:?}"
             );
         }
     }

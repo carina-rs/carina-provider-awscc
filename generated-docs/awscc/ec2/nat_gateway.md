@@ -55,7 +55,7 @@ awscc.ec2.NatGateway {
 
 ### `allocation_id`
 
-- **Type:** AllocationId
+- **Type:** `aws.ec2.Eip.AllocationId`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -71,7 +71,7 @@ Indicates whether this is a zonal (single-AZ) or regional (multi-AZ) NAT gateway
 
 ### `availability_zone_addresses`
 
-- **Type:** List\<[Struct(AvailabilityZoneAddress)](#availability_zone_addresses-1)\>
+- **Type:** List\<[Struct(AvailabilityZoneAddress)](#availability_zone_addresses-1)\> (unique items)
 - **Required:** No
 
 For regional NAT gateways only: Specifies which Availability Zones you want the NAT gateway to support and the Elastic IP addresses (EIPs) to use in each AZ. The regional NAT gateway uses these EIPs to handle outbound NAT traffic from their respective AZs. If not specified, the NAT gateway will automatically expand to new AZs and associate EIPs upon detection of an elastic network interface. If you specify this parameter, auto-expansion is disabled and you must manually manage AZ coverage. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region. For more information, see [Regional NAT gateways for automatic multi-AZ expansion](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateways-regional.html) in the *Amazon VPC User Guide*.
@@ -94,7 +94,7 @@ The maximum amount of time to wait (in seconds) before forcibly releasing the IP
 
 ### `private_ip_address`
 
-- **Type:** Ipv4Address
+- **Type:** `Ipv4Address`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -102,7 +102,7 @@ The private IPv4 address to assign to the NAT gateway. If you don't provide an a
 
 ### `secondary_allocation_ids`
 
-- **Type:** `List<AllocationId>`
+- **Type:** `List<aws.ec2.Eip.AllocationId>` (unique items)
 - **Required:** No
 
 Secondary EIP allocation IDs. For more information, see [Create a NAT gateway](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-working-with.html) in the *Amazon VPC User Guide*.
@@ -116,14 +116,14 @@ Secondary EIP allocation IDs. For more information, see [Create a NAT gateway](h
 
 ### `secondary_private_ip_addresses`
 
-- **Type:** `List<Ipv4Address>`
+- **Type:** `List<Ipv4Address>` (unique items)
 - **Required:** No
 
 Secondary private IPv4 addresses. For more information about secondary addresses, see [Create a NAT gateway](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html#nat-gateway-creating) in the *Amazon Virtual Private Cloud User Guide*. ``SecondaryPrivateIpAddressCount`` and ``SecondaryPrivateIpAddresses`` cannot be set at the same time.
 
 ### `subnet_id`
 
-- **Type:** SubnetId
+- **Type:** `aws.ec2.Subnet.Id`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -138,7 +138,7 @@ The tags for the NAT gateway.
 
 ### `vpc_id`
 
-- **Type:** VpcId
+- **Type:** `aws.ec2.Vpc.Id`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -170,9 +170,9 @@ Shorthand formats: `public` or `ConnectivityType.public`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `allocation_ids` | `List<AllocationId>` | Yes | The allocation IDs of the Elastic IP addresses (EIPs) to be used for handling outbound NAT traffic in this specific Availability Zone. |
-| `availability_zone` | AvailabilityZone | No | For regional NAT gateways only: The Availability Zone where this specific NAT gateway configuration will be active. Each AZ in a regional NAT gateway has its own configuration to handle outbound NAT traffic from that AZ. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region. |
-| `availability_zone_id` | AvailabilityZoneId | No | For regional NAT gateways only: The ID of the Availability Zone where this specific NAT gateway configuration will be active. Each AZ in a regional NAT gateway has its own configuration to handle outbound NAT traffic from that AZ. Use this instead of AvailabilityZone for consistent identification of AZs across AWS Regions. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region. |
+| `allocation_ids` | `List<aws.ec2.Eip.AllocationId>` (unique items) | Yes | The allocation IDs of the Elastic IP addresses (EIPs) to be used for handling outbound NAT traffic in this specific Availability Zone. |
+| `availability_zone` | `aws.AvailabilityZone.ZoneName` | No | For regional NAT gateways only: The Availability Zone where this specific NAT gateway configuration will be active. Each AZ in a regional NAT gateway has its own configuration to handle outbound NAT traffic from that AZ. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region. |
+| `availability_zone_id` | `aws.AvailabilityZone.ZoneId` | No | For regional NAT gateways only: The ID of the Availability Zone where this specific NAT gateway configuration will be active. Each AZ in a regional NAT gateway has its own configuration to handle outbound NAT traffic from that AZ. Use this instead of AvailabilityZone for consistent identification of AZs across AWS Regions. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region. |
 
 ## Attribute Reference
 
@@ -190,19 +190,31 @@ Shorthand formats: `public` or `ConnectivityType.public`
 
 ### `eni_id`
 
-- **Type:** NetworkInterfaceId
+- **Type:** `aws.ec2.NetworkInterface.Id`
 
 
 
 ### `nat_gateway_id`
 
-- **Type:** NatGatewayId
+- **Type:** `aws.ec2.NatGateway.Id`
 
 
 
 ### `route_table_id`
 
-- **Type:** RouteTableId
+- **Type:** `aws.ec2.RouteTable.Id`
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/Tag/properties/Key` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html) | ` Maximum key length – 128 Unicode characters in UTF-8 ` | 2026-11-07 |
+| `/definitions/Tag/properties/Value` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Tag.html) | ` The value of the tag. `<br>` Constraints: Tag values are case-sensitive and accept a maximum of 256 Unicode characters. ` | 2026-11-07 |
+| `/properties/AvailabilityMode` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-natgateway.html#cfn-ec2-natgateway-availabilitymode) | ` Indicates whether this is a zonal (single-AZ) or regional (multi-AZ) NAT gateway. `<br>` A zonal NAT gateway is a NAT Gateway that provides redundancy and scalability within a single availability zone. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region. `<br>` For more information, see Regional NAT gateways for automatic multi-AZ expansion in the Amazon VPC User Guide. `<br>` Allowed values: zonal \| regional ` | 2026-11-07 |
+| `/properties/ConnectivityType` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-natgateway.html#cfn-ec2-natgateway-connectivitytype) | ` Indicates whether the NAT gateway supports public or private connectivity. The default is public connectivity. `<br>` Allowed values: private \| public ` | 2026-11-07 |
+| `/properties/SecondaryPrivateIpAddressCount` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateNatGateway.html) | ` [Private NAT gateway only] The number of secondary private IPv4 addresses you want to assign to the NAT gateway. For more information about secondary addresses, see Create a NAT gateway in the Amazon VPC User Guide. `<br>` Valid Range: Minimum value of 1. Maximum value of 31. ` | 2026-11-07 |
 

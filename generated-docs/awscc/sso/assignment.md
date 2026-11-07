@@ -49,7 +49,7 @@ awscc.sso.Assignment {
 
 ### `instance_arn`
 
-- **Type:** String(pattern, len: 10..=1224)
+- **Type:** aws.sso.Instance.Arn — String(pattern, len: 10..=1224)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -57,7 +57,7 @@ The sso instance that the permission set is owned.
 
 ### `permission_set_arn`
 
-- **Type:** String(pattern, len: 10..=1224)
+- **Type:** aws.sso.PermissionSet.Arn — String(pattern, len: 10..=1224)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -65,7 +65,7 @@ The permission set that the assignment will be assigned
 
 ### `principal_id`
 
-- **Type:** String(pattern, len: 1..=47)
+- **Type:** aws.sso.Principal.Id — String(pattern, len: 1..=47)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -81,7 +81,7 @@ The assignee's type, user/group
 
 ### `target_id`
 
-- **Type:** AwsAccountId
+- **Type:** aws.AccountId — String(pattern)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -113,4 +113,13 @@ Shorthand formats: `user` or `PrincipalType.user`
 | `AWS_ACCOUNT` | `aws.sso.Assignment.TargetType.aws_account` |
 
 Shorthand formats: `aws_account` or `TargetType.aws_account`
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/properties/InstanceArn` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/singlesignon/latest/APIReference/API_CreateAccountAssignment.html#singlesignon-CreateAccountAssignment-request-InstanceArn) | ` The ARN of the IAM Identity Center instance under which the operation will be executed. For more information about ARNs, see Amazon Resource Names (ARNs) and AWS Service Namespaces in the AWS General Reference. `<br>` Length Constraints: Minimum length of 10. Maximum length of 1224. `<br>` Pattern: arn:aws(-[a-z]{1,5}){0,3}:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16} ` | 2026-11-07 |
+| `/properties/PermissionSetArn` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/singlesignon/latest/APIReference/API_CreateAccountAssignment.html#singlesignon-CreateAccountAssignment-request-PermissionSetArn) | ` The ARN of the permission set that the admin wants to grant the principal access to. `<br>` Length Constraints: Minimum length of 10. Maximum length of 1224. `<br>` Pattern: arn:aws(-[a-z]{1,5}){0,3}:sso:::permissionSet/(sso)?ins-[a-zA-Z0-9-.]{16}/ps-[a-zA-Z0-9-./]{16} ` | 2026-11-07 |
 

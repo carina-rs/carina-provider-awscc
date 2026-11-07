@@ -27,7 +27,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
         .with_description("Specifies a VPC flow log, which enables you to capture IP traffic for a specific network interface, subnet, or VPC.");
     #[inline(never)]
     fn build_deliver_cross_account_role_attribute() -> AttributeSchema {
-        AttributeSchema::optional("deliver_cross_account_role", super::super::iam::role::arn())
+        AttributeSchema::optional("deliver_cross_account_role", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamRoleArn.identity(), None, None, crate::schemas::string_identity::StringIdentity::IamRoleArn.check().expect("shared string check"), None))
                 .create_only()
                 .with_description("The ARN of the IAM role that allows Amazon EC2 to publish flow logs across accounts.")
                 .with_provider_name("DeliverCrossAccountRole")
@@ -36,7 +36,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_deliver_cross_account_role_attribute());
     #[inline(never)]
     fn build_deliver_logs_permission_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("deliver_logs_permission_arn", super::super::iam::role::arn())
+        AttributeSchema::optional("deliver_logs_permission_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamRoleArn.identity(), None, None, crate::schemas::string_identity::StringIdentity::IamRoleArn.check().expect("shared string check"), None))
                 .create_only()
                 .with_description("The ARN for the IAM role that permits Amazon EC2 to publish flow logs to a CloudWatch Logs log group in your account. If you specify LogDestinationType as s3 or kinesis-data-firehose, do not specify DeliverLogsPermissionArn or LogGroupName.")
                 .with_provider_name("DeliverLogsPermissionArn")
@@ -55,7 +55,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_destination_options_attribute());
     #[inline(never)]
     fn build_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("id", carina_aws_types::flow_log_id())
+        AttributeSchema::provider_populated("id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2FlowLogId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2FlowLogId.check().expect("shared string check"), None))
                 .with_description("The Flow Log ID (read-only)")
                 .with_provider_name("Id")
             .build()
@@ -63,7 +63,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_id_attribute());
     #[inline(never)]
     fn build_log_destination_attribute() -> AttributeSchema {
-        AttributeSchema::optional("log_destination", crate::schemas::catalog::arn())
+        AttributeSchema::optional("log_destination", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
                 .create_only()
                 .with_description("Specifies the destination to which the flow log data is to be published. Flow log data can be published to a CloudWatch Logs log group, an Amazon S3 bucket, or a Kinesis Firehose stream. The value specified for this parameter depends on the value specified for LogDestinationType.")
                 .with_provider_name("LogDestination")

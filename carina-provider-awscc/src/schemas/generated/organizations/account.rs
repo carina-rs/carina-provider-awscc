@@ -9,7 +9,15 @@ use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    crate::schemas::catalog::organizations_account_arn()
+    AttributeType::refined_string_with_validator(
+        crate::schemas::string_identity::StringIdentity::OrganizationsAccountArn.identity(),
+        None,
+        None,
+        crate::schemas::string_identity::StringIdentity::OrganizationsAccountArn
+            .check()
+            .expect("shared string check"),
+        None,
+    )
 }
 
 const VALID_JOINED_METHOD: &[&str] = &["INVITED", "CREATED"];
@@ -32,7 +40,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.default_prevent_destroy();
     #[inline(never)]
     fn build_account_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("account_id", carina_aws_types::aws_account_id())
+        AttributeSchema::provider_populated("account_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::AccountId.identity(), Some("^\\d{12}$".to_string()), Some((None, Some(12))), crate::schemas::string_identity::StringIdentity::AccountId.check().expect("shared string check"), None))
                 .with_description("If the account was created successfully, the unique identifier (ID) of the new account. (read-only)")
                 .with_provider_name("AccountId")
             .build()
@@ -40,7 +48,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_account_id_attribute());
     #[inline(never)]
     fn build_account_name_attribute() -> AttributeSchema {
-        AttributeSchema::required("account_name", AttributeType::refined_string(None, Some(r"^[ -~]+\z".to_string()), Some((Some(1), Some(50))), None))
+        AttributeSchema::required("account_name", AttributeType::refined_string(None, Some("^[ -~]+\\z".to_string()), Some((Some(1), Some(50))), None))
                 .with_description("The friendly name of the member account.")
                 .with_provider_name("AccountName")
             .build()
@@ -48,7 +56,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_account_name_attribute());
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", self::arn())
+        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::OrganizationsAccountArn.identity(), Some("^(?:^arn:aws.*:organizations::\\d{12}:account\\/o-[a-z0-9]{10,32}\\/\\d{12})\\z".to_string()), None, crate::schemas::string_identity::StringIdentity::OrganizationsAccountArn.check().expect("shared string check"), None))
                 .with_description("The Amazon Resource Name (ARN) of the account. (read-only)")
                 .with_provider_name("Arn")
             .build()
@@ -56,7 +64,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_arn_attribute());
     #[inline(never)]
     fn build_email_attribute() -> AttributeSchema {
-        AttributeSchema::required("email", crate::schemas::catalog::organizations_account_email())
+        AttributeSchema::required("email", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::OrganizationsAccountEmail.identity(), Some("^(?:[^\\s@]+@[^\\s@]+\\.[^\\s@]+)\\z".to_string()), Some((Some(6), Some(64))), crate::schemas::string_identity::StringIdentity::OrganizationsAccountEmail.check().expect("shared string check"), None))
                 .with_description("The email address of the owner to assign to the new member account.")
                 .with_provider_name("Email")
             .build()
@@ -80,7 +88,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_joined_timestamp_attribute());
     #[inline(never)]
     fn build_parent_ids_attribute() -> AttributeSchema {
-        AttributeSchema::optional("parent_ids", AttributeType::refined_list(crate::schemas::awscc_types::organizations_account_parent_id(), false, Some((None, Some(1))), carina_core::schema::ListElements::Unique))
+        AttributeSchema::optional("parent_ids", AttributeType::refined_list(AttributeType::refined_string(None, Some("^(?:r-[0-9a-z]{4,32}|ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})\\z".to_string()), Some((None, Some(100))), None), false, Some((None, Some(1))), carina_core::schema::ListElements::Unique))
                 .with_description("List of parent nodes for the member account. Currently only one parent at a time is supported. Default is root.")
                 .with_provider_name("ParentIds")
             .build()
@@ -96,7 +104,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_paths_attribute());
     #[inline(never)]
     fn build_role_name_attribute() -> AttributeSchema {
-        AttributeSchema::optional("role_name", crate::schemas::catalog::organizations_account_role_name())
+        AttributeSchema::optional("role_name", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::OrganizationsAccountRoleName.identity(), Some("^(?:[\\w+=,.@-]{1,64})\\z".to_string()), Some((Some(1), Some(64))), crate::schemas::string_identity::StringIdentity::OrganizationsAccountRoleName.check().expect("shared string check"), None))
                 .write_only()
                 .with_description("The name of an IAM role that AWS Organizations automatically preconfigures in the new member account. Default name is OrganizationAccountAccessRole if not specified.")
                 .with_provider_name("RoleName")

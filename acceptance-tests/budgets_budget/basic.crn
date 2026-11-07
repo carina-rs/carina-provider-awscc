@@ -32,4 +32,8 @@ awscc.budgets.Budget {
       subscription_type = email
     }]
   }]
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
 }

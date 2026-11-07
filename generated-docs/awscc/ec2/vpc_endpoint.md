@@ -81,7 +81,7 @@ Indicate whether to associate a private hosted zone with the specified VPC. The 
 
 ### `resource_configuration_arn`
 
-- **Type:** Arn
+- **Type:** `aws.Arn`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -89,14 +89,14 @@ The Amazon Resource Name (ARN) of the resource configuration.
 
 ### `route_table_ids`
 
-- **Type:** `List<RouteTableId>`
+- **Type:** `List<aws.ec2.RouteTable.Id>` (unique items)
 - **Required:** No
 
 The IDs of the route tables. Routing is supported only for gateway endpoints.
 
 ### `security_group_ids`
 
-- **Type:** `List<SecurityGroupId>`
+- **Type:** `List<aws.ec2.SecurityGroup.Id>` (unique items)
 - **Required:** No
 
 The IDs of the security groups to associate with the endpoint network interfaces. If this parameter is not specified, we use the default security group for the VPC. Security groups are supported only for interface endpoints.
@@ -111,7 +111,7 @@ The name of the endpoint service.
 
 ### `service_network_arn`
 
-- **Type:** Arn
+- **Type:** `aws.Arn`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -119,7 +119,7 @@ The Amazon Resource Name (ARN) of the service network.
 
 ### `service_region`
 
-- **Type:** Region
+- **Type:** `aws.Region`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -127,7 +127,7 @@ Describes a Region.
 
 ### `subnet_ids`
 
-- **Type:** `List<SubnetId>`
+- **Type:** `List<aws.ec2.Subnet.Id>` (unique items)
 - **Required:** No
 
 The IDs of the subnets in which to create endpoint network interfaces. You must specify this property for an interface endpoint or a Gateway Load Balancer endpoint. You can't specify this property for a gateway endpoint. For a Gateway Load Balancer endpoint, you can specify only one subnet.
@@ -149,7 +149,7 @@ The type of endpoint. Default: Gateway
 
 ### `vpc_id`
 
-- **Type:** VpcId
+- **Type:** `aws.ec2.Vpc.Id`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -240,13 +240,25 @@ Shorthand formats: `interface` or `VpcEndpointType.interface`
 
 ### `id`
 
-- **Type:** VpcEndpointId
+- **Type:** `aws.ec2.VpcEndpoint.Id`
 
 
 
 ### `network_interface_ids`
 
-- **Type:** `List<NetworkInterfaceId>`
+- **Type:** `List<aws.ec2.NetworkInterface.Id>`
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/Tag/properties/Key` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html) | ` Maximum key length – 128 Unicode characters in UTF-8 ` | 2026-11-07 |
+| `/definitions/Tag/properties/Value` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Tag.html) | ` The value of the tag. `<br>` Constraints: Tag values are case-sensitive and accept a maximum of 256 Unicode characters. ` | 2026-11-07 |
+| `/properties/PolicyDocument` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_grammar.html) | ` <version_block> = "Version" : ("2008-10-17" \| "2012-10-17") `<br>` <effect_block> = "Effect" : ("Allow" \| "Deny") ` | 2026-11-07 |
+| `/properties/PolicyDocument` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html) | ` The Statement element can contain a single statement or an array of individual statements. ` | 2026-11-07 |
+| `/properties/PolicyDocument` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html) | ` You can create conditions that compare strings, dates, numbers, and more using typical Boolean comparisons such as equals, greater than, and less than. ` | 2026-11-07 |
 
