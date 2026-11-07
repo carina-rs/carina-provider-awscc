@@ -116,6 +116,7 @@ pub(super) struct Projection {
     pub(super) source_pointer: String,
     pub(super) source_name: String,
     pub(super) conjunction: bool,
+    /// Asserted type constraints only; inferred shapes must not narrow conjuncts.
     pub(super) types: Vec<JsonType>,
     pub(super) projected_type: ProjectedType,
     pub(super) description: Option<String>,
@@ -539,6 +540,7 @@ fn project_type(
     layer: &Layer,
     node: NodeId,
     types: &[JsonType],
+    has_properties: bool,
 ) -> Result<ProjectedType, SchemaError> {
     let nonnull = types
         .iter()
@@ -547,6 +549,7 @@ fn project_type(
         .collect::<Vec<_>>();
     match nonnull.as_slice() {
         [] if !types.is_empty() => Ok(ProjectedType::Value(JsonType::Null)),
+        [] if has_properties => Ok(ProjectedType::Value(JsonType::Object)),
         [] => Ok(ProjectedType::Unspecified),
         [kind] => Ok(ProjectedType::Value(*kind)),
         [JsonType::Object, JsonType::String] => Ok(ProjectedType::JsonDocument),
@@ -617,12 +620,7 @@ pub(super) fn direct(layer: &Arc<Layer>, node: NodeId) -> Result<Projection, Sch
                     );
                 }
             }
-            let types = if k.types.is_none() && k.properties.as_ref().is_some_and(|p| !p.is_empty())
-            {
-                vec![JsonType::Object]
-            } else {
-                types(&k.types)
-            };
+            let types = types(&k.types);
             Ok(Projection {
                 source_pointer: layer.sources().pointer(node).to_string(),
                 source_name: super::decode_json_pointer_segment(
@@ -634,7 +632,12 @@ pub(super) fn direct(layer: &Arc<Layer>, node: NodeId) -> Result<Projection, Sch
                         .unwrap_or(""),
                 ),
                 conjunction: false,
-                projected_type: project_type(layer, node, &types)?,
+                projected_type: project_type(
+                    layer,
+                    node,
+                    &types,
+                    k.properties.as_ref().is_some_and(|p| !p.is_empty()),
+                )?,
                 types,
                 description: k.description.clone(),
                 enum_values: k.enum_values.clone(),
@@ -1037,7 +1040,6 @@ pub(super) fn merge(
             return Err(error(layer, node, "incompatible conjunctive types"));
         }
     }
-    p.projected_type = project_type(layer, node, &p.types)?;
     macro_rules! same { ($($field:ident),+) => {$({
         if p.$field.is_some() && q.$field.is_some() && p.$field!=q.$field {return Err(error(layer,node,concat!("incompatible ",stringify!($field))));}
         if p.$field.is_none() {p.$field=q.$field.clone();}
@@ -1181,6 +1183,12 @@ pub(super) fn merge(
     p.conjunction |= q.conjunction;
     p.constrained_array_evidence |= q.constrained_array_evidence;
     p.is_union |= q.is_union;
+    p.projected_type = project_type(
+        layer,
+        node,
+        &p.types,
+        p.properties.as_ref().is_some_and(|p| !p.is_empty()),
+    )?;
     Ok(())
 }
 
@@ -1449,8 +1457,21 @@ fn alternatives(
             FieldGroups::project(kind, requirements, layer.sources().pointer(node))?;
         // Only equivalent field domains can be hoisted out of open branches.
         // The containing struct owns the resulting presence group.
+        let has_untyped_arm = std::iter::once(&first)
+            .chain(&arms)
+            .any(|arm| arm.types.is_empty());
+        // Compare the object-local facts using their projected shape. Keep
+        // type assertions separate: an untyped arm leaves the alternative
+        // untyped, including when it is later used in a conjunction.
+        let object_facts = |p: &Projection| {
+            let mut facts = p.clone();
+            if facts.types.is_empty() {
+                facts.types.push(JsonType::Object);
+            }
+            facts
+        };
         let common_facts = |p: &Projection| {
-            let mut common = p.clone();
+            let mut common = object_facts(p);
             common.properties = None;
             common.required.clear();
             common.reference = None;
@@ -1459,8 +1480,8 @@ fn alternatives(
         let common = common_facts(&first);
         if !exclusive_single_fields {
             for other in &arms {
-                let mut first_domain = first.clone();
-                let mut other_domain = other.clone();
+                let mut first_domain = object_facts(&first);
+                let mut other_domain = object_facts(other);
                 first_domain.required.clear();
                 other_domain.required.clear();
                 first_domain.field_groups = FieldGroups::default();
@@ -1520,6 +1541,9 @@ fn alternatives(
                     }
                 }
             }
+        }
+        if has_untyped_arm {
+            result.types.clear();
         }
         result.required = required;
         result.field_groups.extend(field_groups);

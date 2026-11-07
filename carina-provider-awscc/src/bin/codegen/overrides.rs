@@ -496,7 +496,16 @@ impl TypeOverride {
         let plan = emission_plan::lower(property.try_query()?)?;
         if self.identity.is_some() {
             let mut leaf = property;
+            let mut seen = BTreeSet::new();
             while let Some(items) = leaf.try_query()?.items.as_deref() {
+                if let Some(origin) = &items.origin
+                    && !seen.insert(origin.node)
+                {
+                    return Err(leaf
+                        .try_query()?
+                        .emission_error("recursive items projection has no string identity leaf")
+                        .into());
+                }
                 leaf = items;
             }
             let leaf_plan = emission_plan::lower(leaf.try_query()?)?;
