@@ -4,8 +4,9 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
+use crate::schemas::awscc_types::DocumentedIamGrammar;
 use crate::schemas::config::AwsccSchemaConfig;
-use carina_core::schema::{AttributeSchema, ResourceSchema};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 /// Returns the schema config for iam_role_policy (AWS::IAM::RolePolicy)
 #[rustfmt::skip]
@@ -15,6 +16,7 @@ pub fn iam_role_policy_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_policy_document_attribute() -> AttributeSchema {
         AttributeSchema::optional("policy_document", carina_aws_types::iam_policy_document())
+                .with_documented_iam_grammar()
                 .with_description("The policy document. You must provide policies in JSON format in IAM. However, for CFN templates formatted in YAML, you can provide the policy in JSON or YAML format. CFN always converts a YAML policy to JSON format before submitting it to IAM. The [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex) used to validate this parameter is a string of characters consisting of the following: + Any printable ASCII character ranging from the space character (``\\u0020``) through the end of the ASCII character range + The printable characters in the Basic Latin and Latin-1 Supplement character set (through ``\\u00FF``) + The special characters tab (``\\u0009``), line feed (``\\u000A``), and carriage return (``\\u000D``)")
                 .with_provider_name("PolicyDocument")
             .build()
@@ -22,7 +24,7 @@ pub fn iam_role_policy_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_policy_document_attribute());
     #[inline(never)]
     fn build_policy_name_attribute() -> AttributeSchema {
-        AttributeSchema::required("policy_name", carina_aws_types::iam_policy_name())
+        AttributeSchema::required("policy_name", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamPolicyName.identity(), None, Some((Some(1), Some(128))), crate::schemas::string_identity::StringIdentity::IamPolicyName.check().expect("shared string check"), None))
                 .create_only()
                 .with_description("The name of the policy document. This parameter allows (through its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of upper and lowercase alphanumeric characters with no spaces. You can also include any of the following characters: _+=,.@-")
                 .with_provider_name("PolicyName")
@@ -31,7 +33,7 @@ pub fn iam_role_policy_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_policy_name_attribute());
     #[inline(never)]
     fn build_role_name_attribute() -> AttributeSchema {
-        AttributeSchema::required("role_name", carina_aws_types::iam_role_name())
+        AttributeSchema::required("role_name", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamRoleName.identity(), None, Some((Some(1), Some(64))), crate::schemas::string_identity::StringIdentity::IamRoleName.check().expect("shared string check"), None))
                 .create_only()
                 .with_description("The name of the role to associate the policy with. This parameter allows (through its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of upper and lowercase alphanumeric characters with no spaces. You can also include any of the following characters: _+=,.@-")
                 .with_provider_name("RoleName")

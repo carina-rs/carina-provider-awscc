@@ -6,6 +6,9 @@
 //! Source names, annotations, references, union selections and conjunction
 //! evidence serve projection validation and the outer provenance/naming traversal;
 //! they impose no independent value constraint at this boundary.
+//! Constructors, inferred literal domains and collection displays receive these
+//! per-kind plans. A replacement must prove it implies every decided constraint;
+//! unknown implications fail with SchemaError rather than dropping a refinement.
 //! Type-specific keywords do not apply outside their JSON instance types
 //! (JSON Schema draft 7, sections 3.2.1 and 6.2 through 6.5). Each arm names
 //! those facts explicitly. JsonDocument includes strings and objects, so both
@@ -72,6 +75,7 @@ impl EmittedKind {
 #[derive(Debug, Clone)]
 pub(super) struct StringPlan<'a> {
     pub(super) source_pointer: &'a str,
+    pub(super) description: Option<&'a str>,
     pub(super) format: Option<&'a str>,
     pub(super) pattern: Option<&'a str>,
     pub(super) min_length: Option<u64>,
@@ -84,6 +88,32 @@ impl StringPlan<'_> {
             pointer: self.source_pointer.into(),
             reason: reason.into(),
         }
+    }
+
+    /// Inferred domains are additional literal evidence, subject to exactly the
+    /// same intersection as a schema enum. No inference caller receives a Projection.
+    pub(super) fn literals(&self, values: Vec<String>) -> Result<LiteralPlan, SchemaError> {
+        let Self {
+            source_pointer,
+            description: _description,
+            format,
+            pattern,
+            min_length,
+            max_length,
+        } = self;
+        let projection = Projection {
+            source_pointer: (*source_pointer).into(),
+            types: vec![super::schema_layer::JsonType::String],
+            enum_values: Some(values.into_iter().map(Value::String).collect()),
+            format: format.map(str::to_string),
+            pattern: pattern.map(str::to_string),
+            min_length: *min_length,
+            max_length: *max_length,
+            ..Projection::default()
+        };
+        lower_as(&projection, EmittedKind::Literal)?
+            .literal
+            .ok_or_else(|| self.emission_error("missing inferred literal plan"))
     }
 }
 
@@ -99,7 +129,9 @@ pub(super) struct MultipleOf<'a> {
     pub(super) divisor: &'a Number,
 }
 
+#[derive(Clone)]
 pub(super) struct LiteralPlan {
+    pub(super) source_pointer: String,
     pub(super) value_type: EmissionType,
     pub(super) values: Vec<Value>,
 }
@@ -128,6 +160,7 @@ pub(super) struct ScopePlan {
 }
 
 pub(super) struct EmissionPlan<'a> {
+    pub(super) source_pointer: &'a str,
     pub(super) kind: EmittedKind,
     pub(super) string: Option<StringPlan<'a>>,
     pub(super) numeric: Option<NumericPlan<'a>>,
@@ -138,7 +171,7 @@ pub(super) struct EmissionPlan<'a> {
     pub(super) scope: ScopePlan,
 }
 
-impl EmissionPlan<'_> {
+impl<'a> EmissionPlan<'a> {
     pub(super) fn is_empty_struct(&self) -> bool {
         self.kind == EmittedKind::Struct && self.properties.is_none_or(BTreeMap::is_empty)
     }
@@ -181,8 +214,9 @@ impl EmissionPlan<'_> {
         Ok(())
     }
 
-    fn empty(kind: EmittedKind) -> Self {
+    fn empty(kind: EmittedKind, source_pointer: &'a str) -> Self {
         Self {
+            source_pointer,
             kind,
             string: None,
             numeric: None,
@@ -194,13 +228,183 @@ impl EmissionPlan<'_> {
         }
     }
 
-    pub(super) fn value_type(&self) -> EmissionType {
-        match self.kind {
+    pub(super) fn emission_error(&self, reason: impl Into<String>) -> SchemaError {
+        SchemaError::Projection {
+            pointer: self.source_pointer.into(),
+            reason: reason.into(),
+        }
+    }
+
+    pub(super) fn string(&self) -> Result<&StringPlan<'a>, SchemaError> {
+        self.string
+            .as_ref()
+            .ok_or_else(|| self.emission_error("missing string plan"))
+    }
+
+    pub(super) fn numeric(&self) -> Result<&NumericPlan<'a>, SchemaError> {
+        self.numeric
+            .as_ref()
+            .ok_or_else(|| self.emission_error("missing numeric plan"))
+    }
+
+    pub(super) fn numeric_override_range(
+        &self,
+        min: i64,
+        max: i64,
+    ) -> Result<(Option<i64>, Option<i64>), SchemaError> {
+        let (effective_min, effective_max) = self.numeric()?.range.unwrap_or((None, None));
+        let min = effective_min.map_or(min, |n| n.max(min));
+        let max = effective_max.map_or(max, |n| n.min(max));
+        if min > max {
+            return Err(self.emission_error("empty numeric override range intersection"));
+        }
+        Ok((Some(min), Some(max)))
+    }
+
+    pub(super) fn validate_integer_enum(&self, values: &[i64]) -> Result<(), SchemaError> {
+        if let Some(literal) = &self.literal {
+            if literal.value_type == EmissionType::Integer
+                && !values.is_empty()
+                && values
+                    .iter()
+                    .all(|v| literal.values.contains(&Value::from(*v)))
+            {
+                return Ok(());
+            }
+            return Err(self.emission_error(
+                "effective integer enum domain differs from constructor enum domain",
+            ));
+        }
+        let numeric = self.numeric()?;
+        let (min, max) = numeric.range.unwrap_or((None, None));
+        let projection = Projection {
+            source_pointer: self.source_pointer.into(),
+            types: vec![super::schema_layer::JsonType::Integer],
+            enum_values: Some(values.iter().map(|&v| Value::from(v)).collect()),
+            minimum: min.map(Number::from),
+            maximum: max.map(Number::from),
+            multiple_of: numeric.multiple_of.as_ref().map(|m| m.divisor.clone()),
+            ..Projection::default()
+        };
+        let filtered = lower_as(&projection, EmittedKind::Literal)?;
+        if filtered
+            .literal
+            .as_ref()
+            .is_some_and(|p| p.values.len() == values.len())
+        {
+            return Ok(());
+        }
+        Err(self
+            .emission_error("effective integer enum domain differs from constructor enum domain"))
+    }
+
+    pub(super) fn array(&self) -> Result<&ArrayPlan<'a>, SchemaError> {
+        self.array
+            .as_ref()
+            .ok_or_else(|| self.emission_error("missing array plan"))
+    }
+
+    pub(super) fn map(&self) -> Result<&MapPlan<'a>, SchemaError> {
+        self.map
+            .as_ref()
+            .ok_or_else(|| self.emission_error("missing map plan"))
+    }
+
+    pub(super) fn validate_enum_candidates(&self, values: &[&str]) -> Result<(), SchemaError> {
+        if let Some(array) = &self.array {
+            return lower(array.items.try_query()?)?.validate_enum_candidates(values);
+        }
+        if let Some(literal) = &self.literal {
+            if literal.value_type == EmissionType::String
+                && !values.is_empty()
+                && values
+                    .iter()
+                    .all(|v| literal.values.contains(&Value::String((*v).to_string())))
+            {
+                return Ok(());
+            }
+        } else if let Some(string) = &self.string {
+            let filtered = string.literals(values.iter().map(|s| s.to_string()).collect())?;
+            if filtered.values.len() == values.len() {
+                return Ok(());
+            }
+        }
+        Err(self.emission_error(
+            "effective enum domain differs from replacement constructor enum domain",
+        ))
+    }
+
+    pub(super) fn enum_literals(&self, values: &[String]) -> Result<LiteralPlan, SchemaError> {
+        if let Some(array) = &self.array {
+            return lower(array.items.try_query()?)?.enum_literals(values);
+        }
+        self.validate_enum_candidates(&values.iter().map(String::as_str).collect::<Vec<_>>())?;
+        if let Some(string) = &self.string {
+            return string.literals(values.to_vec());
+        }
+        Ok(LiteralPlan {
+            source_pointer: self.source_pointer.into(),
+            value_type: EmissionType::String,
+            values: values.iter().cloned().map(Value::String).collect(),
+        })
+    }
+
+    /// Canonical identities are reusable only for an equal effective domain.
+    /// Descendant use-site intersections must not inherit wider enum metadata.
+    pub(super) fn validate_canonical_domains(
+        &self,
+        canonical: &Self,
+        active: &mut std::collections::BTreeSet<(String, String)>,
+    ) -> Result<(), SchemaError> {
+        let key = (
+            self.source_pointer.to_string(),
+            canonical.source_pointer.to_string(),
+        );
+        if !active.insert(key.clone()) {
+            return Ok(());
+        }
+        if let (Some(effective), Some(original)) = (&self.literal, &canonical.literal)
+            && (effective.values.len() != original.values.len()
+                || effective
+                    .values
+                    .iter()
+                    .any(|value| !original.values.contains(value)))
+        {
+            return Err(
+                self.emission_error("effective enum domain differs from canonical enum identity")
+            );
+        }
+        if let (Some(effective), Some(original)) = (&self.array, &canonical.array) {
+            lower(effective.items.try_query()?)?
+                .validate_canonical_domains(&lower(original.items.try_query()?)?, active)?;
+        }
+        if let (Some(effective), Some(original)) = (&self.map, &canonical.map) {
+            lower(effective.value.try_query()?)?
+                .validate_canonical_domains(&lower(original.value.try_query()?)?, active)?;
+        }
+        if let (Some(effective), Some(original)) = (self.properties, canonical.properties) {
+            for (name, child) in effective {
+                if let Some(original) = original.get(name) {
+                    lower(child.try_query()?)?
+                        .validate_canonical_domains(&lower(original.try_query()?)?, active)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn value_type(&self) -> Result<EmissionType, SchemaError> {
+        Ok(match self.kind {
             EmittedKind::String | EmittedKind::TagString => EmissionType::String,
             EmittedKind::Integer => EmissionType::Integer,
             EmittedKind::Number => EmissionType::Number,
             EmittedKind::Boolean => EmissionType::Boolean,
-            EmittedKind::Literal => self.literal.as_ref().expect("literal plan").value_type,
+            EmittedKind::Literal => {
+                self.literal
+                    .as_ref()
+                    .ok_or_else(|| self.emission_error("missing literal plan"))?
+                    .value_type
+            }
             EmittedKind::List | EmittedKind::Set | EmittedKind::TagList => EmissionType::Array,
             EmittedKind::Struct
             | EmittedKind::Map
@@ -209,7 +413,7 @@ impl EmissionPlan<'_> {
             | EmittedKind::Root
             | EmittedKind::TagObject
             | EmittedKind::TagMap => EmissionType::Object,
-        }
+        })
     }
 }
 
@@ -580,36 +784,8 @@ pub(super) fn lower(p: &Projection) -> Result<EmissionPlan<'_>, SchemaError> {
     lower_as(p, kind)
 }
 
-/// Pattern-derived literals must pass the same effective intersection as
-/// explicit enums, including materialized allOf and reference constraints.
-pub(super) fn pattern_enum(p: &Projection) -> Result<Option<Vec<String>>, SchemaError> {
-    let Some(values) = p
-        .pattern
-        .as_deref()
-        .and_then(super::extract_enum_from_alternation_pattern)
-    else {
-        return Ok(None);
-    };
-    let mut literal = p.clone();
-    literal.enum_values = Some(values.into_iter().map(Value::String).collect());
-    let plan = lower_as(&literal, EmittedKind::Literal)?;
-    let values = plan
-        .literal
-        .expect("pattern enum plan")
-        .values
-        .into_iter()
-        .map(|value| {
-            value
-                .as_str()
-                .map(str::to_string)
-                .ok_or_else(|| p.emission_error("non-string pattern enum member"))
-        })
-        .collect::<Result<_, _>>()?;
-    Ok(Some(values))
-}
-
 pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan<'_>, SchemaError> {
-    let mut plan = EmissionPlan::empty(kind);
+    let mut plan = EmissionPlan::empty(kind, &p.source_pointer);
     match kind {
         EmittedKind::String => {
             let Projection {
@@ -618,7 +794,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
                 conjunction: _conjunction,
                 types: _types,
                 projected_type: _projected_type,
-                description: _description,
+                description,
                 enum_values,
                 const_value,
                 default_value: _default_value,
@@ -682,6 +858,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
             inapplicable_object_scope(source_pointer, kind, required, field_groups, dependencies)?;
             plan.string = Some(StringPlan {
                 source_pointer,
+                description: description.as_deref(),
                 format: format.as_deref(),
                 pattern: pattern.as_deref(),
                 min_length: *min_length,
@@ -980,7 +1157,9 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
             super::schema_projection::intersect_literals(&mut filtered)?;
             let values = match (const_value, enum_values) {
                 (Some(value), _enum_values) => vec![value.clone()],
-                (None, Some(_values)) => filtered.enum_values.expect("filtered literal domain"),
+                (None, Some(_values)) => filtered.enum_values.ok_or_else(|| {
+                    unsupported(source_pointer, kind, "missing filtered literal domain")
+                })?,
                 (None, None) => {
                     return Err(unsupported(
                         source_pointer,
@@ -1001,6 +1180,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
                 multiple_of,
             );
             plan.literal = Some(LiteralPlan {
+                source_pointer: source_pointer.clone(),
                 value_type: p.value_type()?,
                 values,
             });
@@ -1180,7 +1360,25 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
                         "multiple patternProperties value domains",
                     )
                 })?;
-            let (pattern, value) = patterns.iter().next().expect("one map value domain");
+            if *additional_properties == Some(true) {
+                return Err(unsupported(
+                    source_pointer,
+                    kind,
+                    "additionalProperties open value domain",
+                ));
+            }
+            // Single patternProperties entry + omitted additionalProperties =>
+            // map(any key, value = that entry's value type). This is stricter
+            // than Draft-07 only for values of non-matching keys; keys remain
+            // unrestricted. Explicit false restricts keys to the pattern, while
+            // explicit true/schema-valued open domains are typed errors above.
+            let (pattern, value) = patterns.iter().next().ok_or_else(|| {
+                unsupported(
+                    source_pointer,
+                    kind,
+                    "missing patternProperties value domain",
+                )
+            })?;
             let (min_entries, max_entries) = p.map_bounds()?;
             let _count_bounds = (min_properties, max_properties);
             plan.map = Some(MapPlan {
@@ -1705,6 +1903,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
             inapplicable_object_scope(source_pointer, kind, required, field_groups, dependencies)?;
             plan.string = Some(StringPlan {
                 source_pointer,
+                description: None,
                 format: format.as_deref(),
                 pattern: pattern.as_deref(),
                 min_length: *min_length,
@@ -1965,7 +2164,10 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
                         "multiple patternProperties value domains",
                     )
                 })?;
-            let (pattern, value) = patterns.iter().next().expect("one map value domain");
+            let (pattern, value) = patterns
+                .iter()
+                .next()
+                .ok_or_else(|| unsupported(source_pointer, kind, "missing map value domain"))?;
             let (min_entries, max_entries) = p.map_bounds()?;
             let _count_bounds = (min_properties, max_properties);
             plan.map = Some(MapPlan {

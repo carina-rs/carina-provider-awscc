@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::AwsccSchemaConfig;
-use carina_core::schema::{AttributeSchema, ResourceSchema};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 /// Returns the schema config for wafv2_web_acl_association (AWS::WAFv2::WebACLAssociation)
 #[rustfmt::skip]
@@ -14,7 +14,7 @@ pub fn wafv2_web_acl_association_config() -> AwsccSchemaConfig {
         .with_description("Associates WebACL to Application Load Balancer, CloudFront or API Gateway.");
     #[inline(never)]
     fn build_resource_arn_attribute() -> AttributeSchema {
-        AttributeSchema::required("resource_arn", crate::schemas::catalog::arn())
+        AttributeSchema::required("resource_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, Some((Some(20), Some(2048))), crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
                 .create_only()
                 .with_provider_name("ResourceArn")
             .build()
@@ -22,7 +22,7 @@ pub fn wafv2_web_acl_association_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_resource_arn_attribute());
     #[inline(never)]
     fn build_web_acl_arn_attribute() -> AttributeSchema {
-        AttributeSchema::required("web_acl_arn", crate::schemas::catalog::arn())
+        AttributeSchema::required("web_acl_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, Some((Some(20), Some(2048))), crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
                 .create_only()
                 .with_provider_name("WebACLArn")
             .build()

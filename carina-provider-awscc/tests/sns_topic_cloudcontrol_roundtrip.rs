@@ -176,6 +176,26 @@ fn topic_schema_types_archive_policy_and_omits_unsupported_documents() {
             .attributes()
             .contains_key("archive_policy")
     );
+    let archive = config
+        .schema
+        .effective_attribute("archive_policy")
+        .unwrap()
+        .value_type();
+    archive
+        .validate(&map([]))
+        .expect("AWS documents an empty archive policy for deactivation");
+    for days in [1, 365] {
+        archive
+            .validate(&map([("message_retention_period", int(days))]))
+            .unwrap();
+    }
+    for days in [0, 366] {
+        assert!(
+            archive
+                .validate(&map([("message_retention_period", int(days))]))
+                .is_err()
+        );
+    }
 }
 
 #[tokio::test(start_paused = true)]

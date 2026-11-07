@@ -55,7 +55,7 @@ The unique identifier (ID) of an organization.
 
 ### `management_account_arn`
 
-- **Type:** Arn
+- **Type:** `aws.Arn`
 
 The Amazon Resource Name (ARN) of the account that is designated as the management account for the organization.
 
@@ -67,7 +67,7 @@ The email address that is associated with the AWS account that is designated as 
 
 ### `management_account_id`
 
-- **Type:** AwsAccountId
+- **Type:** `aws.AccountId`
 
 The unique identifier (ID) of the management account of an organization.
 

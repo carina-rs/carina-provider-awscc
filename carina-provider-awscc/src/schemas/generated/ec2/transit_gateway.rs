@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::schema::{AttributeSchema, AttributeType, OperationConfig, ResourceSchema, types};
+use carina_core::schema::{AttributeSchema, AttributeType, OperationConfig, ResourceSchema};
 
 const VALID_AUTO_ACCEPT_SHARED_ATTACHMENTS: &[&str] = &["enable", "disable"];
 
@@ -17,7 +17,7 @@ const VALID_DNS_SUPPORT: &[&str] = &["enable", "disable"];
 
 const VALID_ENCRYPTION_SUPPORT: &[&str] = &["disable", "enable"];
 
-const VALID_ENCRYPTION_SUPPORT_STATE: &[&str] = &["disable", "enable"];
+const VALID_ENCRYPTION_SUPPORT_STATE: &[&str] = &["enabling", "enabled", "disabling", "disabled"];
 
 const VALID_MULTICAST_SUPPORT: &[&str] = &["enable", "disable"];
 
@@ -40,7 +40,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_amazon_side_asn_attribute());
     #[inline(never)]
     fn build_association_default_route_table_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("association_default_route_table_id", carina_aws_types::tgw_route_table_id())
+        AttributeSchema::optional("association_default_route_table_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayRouteTableId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayRouteTableId.check().expect("shared string check"), None))
                 .with_provider_name("AssociationDefaultRouteTableId")
             .build()
     }
@@ -90,14 +90,14 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_encryption_support_attribute());
     #[inline(never)]
     fn build_encryption_support_state_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("encryption_support_state", AttributeType::enum_(carina_core::schema::enum_identity("EncryptionSupportState", Some("aws.ec2.TransitGateway")), Some(vec!["disable".to_string(), "enable".to_string()]), vec![("disable".to_string(), "disable".to_string()), ("enable".to_string(), "enable".to_string())], None, None))
+        AttributeSchema::provider_populated("encryption_support_state", AttributeType::enum_(carina_core::schema::enum_identity("EncryptionSupportState", Some("aws.ec2.TransitGateway")), Some(vec!["enabling".to_string(), "enabled".to_string(), "disabling".to_string(), "disabled".to_string()]), vec![("enabling".to_string(), "enabling".to_string()), ("enabled".to_string(), "enabled".to_string()), ("disabling".to_string(), "disabling".to_string()), ("disabled".to_string(), "disabled".to_string())], None, None))
                 .with_provider_name("EncryptionSupportState")
             .build()
     }
     schema = schema.attribute(build_encryption_support_state_attribute());
     #[inline(never)]
     fn build_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("id", carina_aws_types::transit_gateway_id())
+        AttributeSchema::provider_populated("id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayId.check().expect("shared string check"), None))
                 .with_provider_name("Id")
             .build()
     }
@@ -112,7 +112,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_multicast_support_attribute());
     #[inline(never)]
     fn build_propagation_default_route_table_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("propagation_default_route_table_id", carina_aws_types::tgw_route_table_id())
+        AttributeSchema::optional("propagation_default_route_table_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayRouteTableId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayRouteTableId.check().expect("shared string check"), None))
                 .with_provider_name("PropagationDefaultRouteTableId")
             .build()
     }
@@ -134,14 +134,14 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_transit_gateway_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("transit_gateway_arn", crate::schemas::catalog::arn())
+        AttributeSchema::provider_populated("transit_gateway_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
                 .with_provider_name("TransitGatewayArn")
             .build()
     }
     schema = schema.attribute(build_transit_gateway_arn_attribute());
     #[inline(never)]
     fn build_transit_gateway_cidr_blocks_attribute() -> AttributeSchema {
-        AttributeSchema::optional("transit_gateway_cidr_blocks", AttributeType::list(types::cidr()))
+        AttributeSchema::optional("transit_gateway_cidr_blocks", AttributeType::list(AttributeType::string()))
                 .with_provider_name("TransitGatewayCidrBlocks")
             .build()
     }

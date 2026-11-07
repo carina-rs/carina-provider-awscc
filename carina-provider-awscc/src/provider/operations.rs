@@ -3231,6 +3231,8 @@ fn map_aws_props_to_attributes(
     );
 
     for (dsl_name, attr_schema) in schema_attributes {
+        // Compatibility blocks are an input spelling of tags, not a second
+        // independently managed copy of the same provider property in state.
         if dsl_name == "tags" {
             continue;
         }

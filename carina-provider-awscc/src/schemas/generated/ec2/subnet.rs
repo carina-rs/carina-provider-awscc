@@ -22,7 +22,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_assign_ipv6_address_on_creation_attribute());
     #[inline(never)]
     fn build_availability_zone_attribute() -> AttributeSchema {
-        AttributeSchema::optional("availability_zone", carina_aws_types::availability_zone())
+        AttributeSchema::optional("availability_zone", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneName.identity(), None, None, crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneName.check().expect("shared string check"), None))
                 .create_only()
                 .with_description("The Availability Zone of the subnet. If you update this property, you must also update the ``CidrBlock`` property.")
                 .with_provider_name("AvailabilityZone")
@@ -31,7 +31,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_availability_zone_attribute());
     #[inline(never)]
     fn build_availability_zone_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("availability_zone_id", carina_aws_types::availability_zone_id())
+        AttributeSchema::optional("availability_zone_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneId.identity(), None, None, crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneId.check().expect("shared string check"), None))
                 .create_only()
                 .with_description("The AZ ID of the subnet.")
                 .with_provider_name("AvailabilityZoneId")
@@ -74,7 +74,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_enable_lni_at_device_index_attribute());
     #[inline(never)]
     fn build_ipv4_ipam_pool_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipv4_ipam_pool_id", carina_aws_types::ipam_pool_id())
+        AttributeSchema::optional("ipv4_ipam_pool_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.check().expect("shared string check"), None))
                 .create_only()
                 .write_only()
                 .with_description("An IPv4 IPAM pool ID for the subnet.")
@@ -110,7 +110,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipv6_cidr_blocks_attribute());
     #[inline(never)]
     fn build_ipv6_ipam_pool_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipv6_ipam_pool_id", carina_aws_types::ipam_pool_id())
+        AttributeSchema::optional("ipv6_ipam_pool_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.check().expect("shared string check"), None))
                 .create_only()
                 .write_only()
                 .with_description("An IPv6 IPAM pool ID for the subnet.")
@@ -129,7 +129,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipv6_native_attribute());
     #[inline(never)]
     fn build_ipv6_netmask_length_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipv6_netmask_length", AttributeType::refined_int(None, Some((Some(0), Some(128)))))
+        AttributeSchema::optional("ipv6_netmask_length", AttributeType::union(vec![AttributeType::refined_int(None, Some((Some(44), Some(44)))), AttributeType::refined_int(None, Some((Some(48), Some(48)))), AttributeType::refined_int(None, Some((Some(52), Some(52)))), AttributeType::refined_int(None, Some((Some(56), Some(56)))), AttributeType::refined_int(None, Some((Some(60), Some(60)))), AttributeType::refined_int(None, Some((Some(64), Some(64))))]))
                 .create_only()
                 .write_only()
                 .with_description("An IPv6 netmask length for the subnet.")
@@ -155,7 +155,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_network_acl_association_id_attribute());
     #[inline(never)]
     fn build_outpost_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("outpost_arn", crate::schemas::catalog::arn())
+        AttributeSchema::optional("outpost_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
                 .create_only()
                 .with_description("The Amazon Resource Name (ARN) of the Outpost.")
                 .with_provider_name("OutpostArn")
@@ -174,7 +174,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_private_dns_name_options_on_launch_attribute());
     #[inline(never)]
     fn build_subnet_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("subnet_id", carina_aws_types::subnet_id())
+        AttributeSchema::provider_populated("subnet_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2SubnetId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2SubnetId.check().expect("shared string check"), None))
                 .with_description(" (read-only)")
                 .with_provider_name("SubnetId")
             .build()
@@ -191,7 +191,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_vpc_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("vpc_id", carina_aws_types::vpc_id())
+        AttributeSchema::required("vpc_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcId.check().expect("shared string check"), None))
                 .create_only()
                 .with_description("The ID of the VPC the subnet is in. If you update this property, you must also update the ``CidrBlock`` property.")
                 .with_provider_name("VpcId")

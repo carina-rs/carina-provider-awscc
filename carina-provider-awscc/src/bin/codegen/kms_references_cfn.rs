@@ -6,7 +6,7 @@ use super::schema_layer::{
 };
 use super::{
     CfnPropertyPath, CfnSchema, ParsedCfnSchema, SchemaProperty, dsl_resource_name_from_type,
-    emit_pattern_option, is_property_read_only, string_constraints,
+    emit_pattern_option, is_property_read_only, project_string_constraints,
 };
 use anyhow::{Result, bail};
 use heck::ToSnakeCase;
@@ -211,7 +211,7 @@ impl<'a> EmissionProperty<'a> {
     }
     pub(super) fn classify(&self) -> Result<Option<ReferenceKind>> {
         if self.schema.enum_discovery
-            || is_property_read_only(self.schema, self.property, self.path)
+            || is_property_read_only(self.schema, self.property, self.path)?
         {
             return Ok(None);
         }
@@ -253,7 +253,11 @@ impl<'a> EmissionContext<'a> {
             classified_sources: RefCell::new(BTreeMap::new()),
             paths: RefCell::new(BTreeMap::new()),
             sites: RefCell::new(BTreeMap::new()),
-            definition_identity_paths: super::collect_definition_identity_paths(schema),
+            // Invalid projections are rejected by both renderer boundaries. This
+            // naming cache must also permit source-only KMS inventory, including
+            // unresolved references and tag cycles that have their own judgement.
+            definition_identity_paths: super::collect_definition_identity_paths(schema)
+                .unwrap_or_default(),
             enum_discovery: false,
             #[cfg(test)]
             decisions: RefCell::new(BTreeMap::new()),
@@ -560,29 +564,30 @@ impl<'a> EmissionContext<'a> {
         path: &[String],
         kind: ReferenceKind,
         cfn_property_path: CfnPropertyPath<'_>,
-    ) -> String {
+        plan: &super::emission_plan::StringPlan<'_>,
+    ) -> Result<String> {
         let entry = kms_references::entry(&self.resource, &self.dsl_path(path))
-            .expect("classified reference");
-        let Some(pattern) = entry.cfn_pattern else {
+            .ok_or_else(|| plan.emission_error("missing classified reference constructor"))?;
+        if plan.pattern.is_none() {
             let pattern = super::ApprovedPattern::whole(kind.default_pattern());
-            return kind.constructor(entry.cfn_length, &pattern);
-        };
-        let property = super::Projection {
-            pattern: Some(pattern.to_string()),
-            ..Default::default()
-        };
-        let source_path = self.pattern_source_path(path, Some(pattern), cfn_property_path);
-        let constraints = string_constraints(
-            &property,
+            return Ok(kind.constructor(entry.cfn_length, &pattern));
+        }
+        let source_path = self.pattern_source_path(path, plan.pattern, cfn_property_path);
+        let constraints = project_string_constraints(
+            plan,
             &self.schema.type_name,
             cfn_property_path,
             &source_path,
-        );
+        )?;
         let pattern = emit_pattern_option(constraints.pattern.as_ref());
-        format!(
-            "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), {pattern}, {:?})",
+        let length = if constraints.min_length.is_some() || constraints.max_length.is_some() {
+            Some((constraints.min_length, constraints.max_length))
+        } else {
             entry.cfn_length
-        )
+        };
+        Ok(format!(
+            "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), {pattern}, {length:?})"
+        ))
     }
 
     /// The projected map value has no independent CFN node to record.

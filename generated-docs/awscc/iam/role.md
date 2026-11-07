@@ -50,14 +50,14 @@ The trust policy that is associated with this role. Trust policies define which 
 
 ### `description`
 
-- **Type:** `String (length: 0..=1000, pattern: ^[\x09\x0A\x0D -~¡-ÿ]*\z)`
+- **Type:** `String(pattern, len: ..=1000)`
 - **Required:** No
 
 A description of the role that you provide.
 
 ### `managed_policy_arns`
 
-- **Type:** `List<IamPolicyArn>`
+- **Type:** `List<aws.iam.Policy.Arn>` (unique items)
 - **Required:** No
 
 A list of Amazon Resource Names (ARNs) of the IAM managed policies that you want to attach to the role. For more information about ARNs, see [Amazon Resource Names (ARNs) and Service Namespaces](https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) in the *General Reference*.
@@ -71,7 +71,7 @@ The maximum session duration (in seconds) that you want to set for the specified
 
 ### `path`
 
-- **Type:** `String (length: 1..=512, pattern: ^(?:/|/[\x21-\x7E]+/)\z)`
+- **Type:** `String(pattern, len: 1..=512)`
 - **Required:** No
 - **Create-only:** Yes
 - **Default:** `"/"`
@@ -80,7 +80,7 @@ The path to the role. For more information about paths, see [IAM Identifiers](ht
 
 ### `permissions_boundary`
 
-- **Type:** IamPolicyArn
+- **Type:** `aws.iam.Policy.Arn`
 - **Required:** No
 
 The ARN of the policy used to set the permissions boundary for the role. For more information about permissions boundaries, see [Permissions boundaries for IAM identities](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_boundaries.html) in the *IAM User Guide*.
@@ -120,13 +120,31 @@ A list of tags that are attached to the role. For more information about tagging
 
 ### `arn`
 
-- **Type:** IamRoleArn
+- **Type:** `aws.iam.Role.Arn`
 
 
 
 ### `role_id`
 
-- **Type:** IamRoleId
+- **Type:** `aws.iam.Role.Id`
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/Policy/properties/PolicyDocument` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_grammar.html) | ` <version_block> = "Version" : ("2008-10-17" \| "2012-10-17") `<br>` <effect_block> = "Effect" : ("Allow" \| "Deny") ` | 2026-11-07 |
+| `/definitions/Policy/properties/PolicyDocument` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html) | ` The Statement element can contain a single statement or an array of individual statements. ` | 2026-11-07 |
+| `/definitions/Policy/properties/PolicyDocument` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html) | ` You can create conditions that compare strings, dates, numbers, and more using typical Boolean comparisons such as equals, greater than, and less than. ` | 2026-11-07 |
+| `/definitions/Policy/properties/PolicyName` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/APIReference/API_PutRolePolicy.html) | ` The name of the policy document. `<br>` This parameter allows (through its regex pattern) a string of characters consisting of upper and lowercase alphanumeric characters with no spaces. You can also include any of the following characters: _+=,.@- `<br>` Length Constraints: Minimum length of 1. Maximum length of 128. `<br>` Pattern: [\w+=,.@-]+ ` | 2026-11-07 |
+| `/properties/AssumeRolePolicyDocument` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_grammar.html) | ` <version_block> = "Version" : ("2008-10-17" \| "2012-10-17") `<br>` <effect_block> = "Effect" : ("Allow" \| "Deny") ` | 2026-11-07 |
+| `/properties/AssumeRolePolicyDocument` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html) | ` The Statement element can contain a single statement or an array of individual statements. ` | 2026-11-07 |
+| `/properties/AssumeRolePolicyDocument` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html) | ` You can create conditions that compare strings, dates, numbers, and more using typical Boolean comparisons such as equals, greater than, and less than. ` | 2026-11-07 |
+| `/properties/Description` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html) | ` A description of the role. `<br>` Length Constraints: Maximum length of 1000. `<br>` Pattern: [\u0009\u000A\u000D\u0020-\u007E\u00A1-\u00FF]* ` | 2026-11-07 |
+| `/properties/MaxSessionDuration` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-iam-role.html#cfn-iam-role-maxsessionduration) | ` The maximum session duration (in seconds) that you want to set for the specified role. If you do not specify a value for this setting, the default value of one hour is applied. This setting can have a value from 1 hour to 12 hours. `<br>` Anyone who assumes the role from the AWS CLI or API can use the DurationSeconds API parameter or the duration-secondsAWS CLI parameter to request a longer session. The MaxSessionDuration setting determines the maximum duration that can be requested using the DurationSeconds parameter. If users don't specify a value for the DurationSeconds parameter, their security credentials are valid for one hour by default. This applies when you use the AssumeRole* API operations or the assume-role*AWS CLI operations but does not apply when you use those operations to create a console URL. For more information, see Using IAM roles in the IAM User Guide. `<br>` Minimum: 3600 `<br>` Maximum: 43200 ` | 2026-11-07 |
+| `/properties/Path` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html) | ` The path to the role. For more information about paths, see IAM Identifiers in the IAM User Guide. `<br>` This parameter is optional. If it is not included, it defaults to a slash (/). `<br>` This parameter allows (through its regex pattern) a string of characters consisting of either a forward slash (/) by itself or a string that must begin and end with forward slashes. In addition, it can contain any ASCII character from the ! (\u0021) through the DEL character (\u007F), including most punctuation characters, digits, and upper and lowercased letters. `<br>` Length Constraints: Minimum length of 1. Maximum length of 512. `<br>` Pattern: (\u002F)\|(\u002F[\u0021-\u007E]+\u002F) ` | 2026-11-07 |
+| `/properties/RoleName` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html) | ` The name of the role to create. `<br>` IAM user, group, role, and policy names must be unique within the account. Names are not distinguished by case. For example, you cannot create resources named both "MyResource" and "myresource". `<br>` This parameter allows (through its regex pattern) a string of characters consisting of upper and lowercase alphanumeric characters with no spaces. You can also include any of the following characters: _+=,.@- `<br>` Length Constraints: Minimum length of 1. Maximum length of 64. `<br>` Pattern: [\w+=,.@-]+ ` | 2026-11-07 |
 

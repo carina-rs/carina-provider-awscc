@@ -312,8 +312,8 @@ fn scheduler_live_expressions_and_dates_validate_through_test_support() {
 }
 
 #[test]
-fn scheduler_examples_and_acceptance_fixtures_validate_through_test_support() {
-    validate_fixtures(&[
+fn scheduler_examples_and_acceptance_fixtures_keep_cfn_reference_limits() {
+    crate::test_support::validate_fixtures_with_cfn_reference_limits(&[
         (
             "examples/scheduler_schedule/main.crn",
             include_str!("../../../examples/scheduler_schedule/main.crn"),
@@ -331,4 +331,21 @@ fn scheduler_examples_and_acceptance_fixtures_validate_through_test_support() {
             include_str!("../../../acceptance-tests/scheduler/group.crn"),
         ),
     ]);
+}
+
+#[test]
+fn role_references_retain_the_scheduler_sinks_cfn_length() {
+    let role = super::generated::iam::role::iam_role_config().schema;
+    let schedule = schema("scheduler.Schedule");
+    assert!(matches!(
+        field(&role, "arn").as_type().raw_shape(),
+        RawShape::String { length: None, .. }
+    ));
+    assert!(matches!(
+        field(&schedule, "target.role_arn").as_type().raw_shape(),
+        RawShape::String {
+            length: Some((Some(1), Some(1600))),
+            ..
+        }
+    ));
 }

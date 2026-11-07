@@ -26,7 +26,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_address_attribute());
     #[inline(never)]
     fn build_allocation_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("allocation_id", carina_aws_types::allocation_id())
+        AttributeSchema::provider_populated("allocation_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2EipAllocationId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2EipAllocationId.check().expect("shared string check"), None))
                 .with_description(" (read-only)")
                 .with_provider_name("AllocationId")
             .build()
@@ -42,7 +42,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_domain_attribute());
     #[inline(never)]
     fn build_instance_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("instance_id", carina_aws_types::instance_id())
+        AttributeSchema::optional("instance_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2InstanceId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2InstanceId.check().expect("shared string check"), None))
                 .with_description("The ID of the instance. Updates to the ``InstanceId`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.")
                 .with_provider_name("InstanceId")
             .build()
@@ -50,7 +50,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_instance_id_attribute());
     #[inline(never)]
     fn build_ipam_pool_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipam_pool_id", carina_aws_types::ipam_pool_id())
+        AttributeSchema::optional("ipam_pool_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.check().expect("shared string check"), None))
                 .create_only()
                 .write_only()
                 .with_description("")

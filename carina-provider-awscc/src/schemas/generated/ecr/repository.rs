@@ -4,11 +4,20 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
+use crate::schemas::awscc_types::DocumentedIamGrammar;
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 pub fn arn() -> AttributeType {
-    crate::schemas::catalog::arn()
+    AttributeType::refined_string_with_validator(
+        crate::schemas::string_identity::StringIdentity::Arn.identity(),
+        None,
+        None,
+        crate::schemas::string_identity::StringIdentity::Arn
+            .check()
+            .expect("shared string check"),
+        None,
+    )
 }
 
 const VALID_ENCRYPTION_CONFIGURATION_ENCRYPTION_TYPE: &[&str] = &["AES256", "KMS", "KMS_DSSE"];
@@ -30,7 +39,7 @@ pub fn ecr_repository_config() -> AwsccSchemaConfig {
         .with_description("The ``AWS::ECR::Repository`` resource specifies an Amazon Elastic Container Registry (Amazon ECR) repository, where users can push and pull Docker images, Open Container Initiative (OCI) images, and OCI compatible artifacts. For more information, see [Amazon ECR private repositories](https://docs.aws.amazon.com/AmazonECR/latest/userguide/Repositories.html) in the *Amazon ECR User Guide*.");
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", self::arn())
+        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
                 .with_description(" (read-only)")
                 .with_provider_name("Arn")
             .build()
@@ -74,7 +83,7 @@ pub fn ecr_repository_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_image_tag_mutability_exclusion_filters_attribute() -> AttributeSchema {
         AttributeSchema::optional("image_tag_mutability_exclusion_filters", AttributeType::refined_list(AttributeType::struct_("ImageTagMutabilityExclusionFilter".to_string(), vec![StructField::required("image_tag_mutability_exclusion_filter_type", AttributeType::enum_(carina_core::schema::enum_identity("ImageTagMutabilityExclusionFilterType", Some("aws.ecr.Repository.ImageTagMutabilityExclusionFilter")), Some(vec!["WILDCARD".to_string()]), vec![("WILDCARD".to_string(), "wildcard".to_string())], None, None)).with_description("").with_provider_name("ImageTagMutabilityExclusionFilterType").build(),
-                    StructField::required("image_tag_mutability_exclusion_filter_value", AttributeType::refined_string(None, Some(r"^[0-9a-zA-Z._*-]{1,128}\z".to_string()), Some((Some(1), Some(128))), None)).with_description("").with_provider_name("ImageTagMutabilityExclusionFilterValue").build()]), true, Some((Some(1), Some(5))), carina_core::schema::ListElements::AllowDuplicates))
+                    StructField::required("image_tag_mutability_exclusion_filter_value", AttributeType::refined_string(None, Some("^[0-9a-zA-Z._*-]{1,128}\\z".to_string()), Some((Some(1), Some(128))), None)).with_description("").with_provider_name("ImageTagMutabilityExclusionFilterValue").build()]), true, Some((Some(1), Some(5))), carina_core::schema::ListElements::AllowDuplicates))
                 .with_description("A list of filters that specify which image tags are excluded from the repository's image tag mutability setting.")
                 .with_provider_name("ImageTagMutabilityExclusionFilters")
                 .with_block_name("image_tag_mutability_exclusion_filter")
@@ -102,6 +111,7 @@ pub fn ecr_repository_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_repository_policy_text_attribute() -> AttributeSchema {
         AttributeSchema::optional("repository_policy_text", carina_aws_types::iam_policy_document())
+                .with_documented_iam_grammar()
                 .with_description("The JSON repository policy text to apply to the repository. For more information, see [Amazon ECR repository policies](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-policy-examples.html) in the *Amazon Elastic Container Registry User Guide*.")
                 .with_provider_name("RepositoryPolicyText")
             .build()

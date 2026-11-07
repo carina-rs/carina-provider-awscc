@@ -78,7 +78,7 @@ Creates a configuration for DNS query logging. After you create a query logging 
 
 ### `vp_cs`
 
-- **Type:** List\<[Struct(VPC)](#vp_cs-1)\> (items: 1..)
+- **Type:** List\<[Struct(VPC)](#vp_cs-1)\> (items: 1..) (unique items)
 - **Required:** No
 
 *Private hosted zones:* A complex type that contains information about the VPCs that are associated with the specified hosted zone. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``.
@@ -155,20 +155,20 @@ Shorthand formats: `us_east_1` or `VPCRegion.us_east_1`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cloud_watch_logs_log_group_arn` | Arn | Yes | The Amazon Resource Name (ARN) of the CloudWatch Logs log group that Amazon Route 53 is publishing logs to. |
+| `cloud_watch_logs_log_group_arn` | `aws.Arn` | Yes | The Amazon Resource Name (ARN) of the CloudWatch Logs log group that Amazon Route 53 is publishing logs to. |
 
 ### vp_cs
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `vpc_id` | VpcId | Yes | *Private hosted zones only:* The ID of an Amazon VPC. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
+| `vpc_id` | `aws.ec2.Vpc.Id` | Yes | *Private hosted zones only:* The ID of an Amazon VPC. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
 | `vpc_region` | [Enum (VPCRegion)](#vp_csvpc_region-vpcregion) | Yes | *Private hosted zones only:* The region that an Amazon VPC was created in. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
 
 ## Attribute Reference
 
 ### `id`
 
-- **Type:** Route53HostedZoneId
+- **Type:** `aws.route53.HostedZone.Id`
 
 
 
@@ -177,4 +177,14 @@ Shorthand formats: `us_east_1` or `VPCRegion.us_east_1`
 - **Type:** `List<String>`
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/VPC/properties/VPCRegion` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/Route53/latest/APIReference/API_VPC.html#Route53-Type-VPC-VPCRegion) | ` (Private hosted zones only) The region that an Amazon VPC was created in. `<br>` Length Constraints: Minimum length of 1. Maximum length of 64. `<br>` Valid Values: us-east-1 \| us-east-2 \| us-west-1 \| us-west-2 \| eu-west-1 \| eu-west-2 \| eu-west-3 \| eu-central-1 \| eu-central-2 \| ap-east-1 \| me-south-1 \| us-gov-west-1 \| us-gov-east-1 \| us-iso-east-1 \| us-iso-west-1 \| us-isob-east-1 \| me-central-1 \| ap-southeast-1 \| ap-southeast-2 \| ap-southeast-3 \| ap-south-1 \| ap-south-2 \| ap-northeast-1 \| ap-northeast-2 \| ap-northeast-3 \| eu-north-1 \| sa-east-1 \| ca-central-1 \| cn-north-1 \| cn-northwest-1 \| af-south-1 \| eu-south-1 \| eu-south-2 \| ap-southeast-4 \| il-central-1 \| ca-west-1 \| ap-southeast-5 \| mx-central-1 \| us-isof-south-1 \| us-isof-east-1 \| ap-southeast-7 \| ap-east-2 \| eu-isoe-west-1 \| ap-southeast-6 \| us-isob-west-1 ` | 2026-11-07 |
+| `/properties/Id` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/Route53/latest/APIReference/API_HostedZone.html#Route53-Type-HostedZone-Id) | ` The ID that Amazon Route 53 assigned to the hosted zone when you created it. `<br>` Length Constraints: Maximum length of 32. ` | 2026-11-07 |
+| `/properties/VPCs` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-route53-hostedzone.html#cfn-route53-hostedzone-vpcs) | ` Private hosted zones: A complex type that contains information about the VPCs that are associated with the specified hosted zone. `<br>` For public hosted zones, omit VPCs, VPCId, and VPCRegion. `<br>` Minimum: 1 ` | 2026-11-07 |
 

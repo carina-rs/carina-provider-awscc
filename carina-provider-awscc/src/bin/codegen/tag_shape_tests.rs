@@ -104,7 +104,7 @@ fn round1_tag_literal_constraints_are_typed_errors() {
 fn round1_tag_minimum_entries_reach_rust_and_markdown() {
     static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
         let mut overrides = ResourceTypeOverrides::default();
-        overrides.insert(("AWS::Test::Tags", "Tags"), TypeOverride::Array {
+        overrides.insert(("AWS::Test::Tags", "Tags"), NarrowingKind::Array {
             items: None, min_items: Some(3), max_items: None,
         });
         overrides

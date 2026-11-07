@@ -182,3 +182,35 @@ pub(crate) async fn with_preparation_and_configs<T>(
     )
     .await
 }
+
+/// These existing examples pass unbounded ARN outputs to CFN-bounded sinks.
+/// Option D must retain those bounds, including across named-type edges.
+/// Keep the examples as explicit regression cases until core can refine such
+/// references (carina#4294); all other examples must continue validating.
+#[cfg(test)]
+pub(crate) fn validate_fixtures_with_cfn_reference_limits(cases: &[(&str, &str)]) {
+    for &(path, source) in cases {
+        let expected = match path {
+            "examples/scheduler_schedule/main.crn" => {
+                Some(("notifications.topic_arn", "length 1..=1600"))
+            }
+            "examples/wafv2_web_acl_association/main.crn" => {
+                Some(("load_balancer.load_balancer_arn", "length 20..=2048"))
+            }
+            "acceptance-tests/scheduler/basic.crn" => {
+                Some(("scheduler_role.arn", "expected aws.Arn"))
+            }
+            _ => None,
+        };
+        if let Some((reference, bound)) = expected {
+            let error = try_validate_fixtures(&[(path, source)])
+                .expect_err("CFN bounds must reject the unbounded reference");
+            assert!(
+                error.contains(reference) && error.contains(bound),
+                "{path}: {error}"
+            );
+        } else {
+            validate_fixtures(&[(path, source)]);
+        }
+    }
+}

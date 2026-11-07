@@ -230,10 +230,6 @@ impl Projection {
         }
     }
 
-    pub(super) fn emission_type(&self) -> Result<EmissionType, SchemaError> {
-        Ok(super::emission_plan::lower(self)?.value_type())
-    }
-
     pub(super) fn value_type(&self) -> Result<EmissionType, SchemaError> {
         if let Some(literal) = self
             .const_value
@@ -309,6 +305,7 @@ impl Projection {
         })
     }
 
+    #[cfg(test)]
     pub(super) fn constrained_array(&self) -> Result<bool, SchemaError> {
         fn property(
             property: &SchemaProperty,
@@ -456,14 +453,28 @@ impl SchemaProperty {
         if let Some(origin) = &self.origin {
             return origin.annotations.default.as_ref();
         }
-        self.query().default_value.as_ref()
+        #[cfg(test)]
+        if self.projection.get().is_none() {
+            self.query();
+        }
+        self.projection
+            .get()
+            .and_then(|p| p.as_ref().ok())
+            .and_then(|p| p.default_value.as_ref())
     }
 
     pub(super) fn annotation_description(&self) -> Option<&str> {
         if let Some(origin) = &self.origin {
             return origin.annotations.description.as_deref();
         }
-        self.query().description.as_deref()
+        #[cfg(test)]
+        if self.projection.get().is_none() {
+            self.query();
+        }
+        self.projection
+            .get()
+            .and_then(|p| p.as_ref().ok())
+            .and_then(|p| p.description.as_deref())
     }
 
     pub(super) fn try_query(&self) -> Result<&Projection, SchemaError> {
@@ -499,6 +510,7 @@ impl SchemaProperty {
         }).as_ref().map_err(Clone::clone)
     }
 
+    #[cfg(test)]
     pub(super) fn query(&self) -> &Projection {
         self.try_query().unwrap_or_else(|error| panic!("{error}"))
     }
@@ -2088,7 +2100,7 @@ pub(super) fn validate_emitted_field_groups(
             return reject("is omitted from emitted fields");
         }
         let path = super::extend_property_path(provider_path, member);
-        if provider_populated || super::is_property_read_only(schema, property, &path) {
+        if provider_populated || super::is_property_read_only(schema, property, &path)? {
             return reject("is provider_populated; an optional input sibling is required");
         }
         if projection
@@ -2113,16 +2125,30 @@ pub(super) fn validate_emitted_field_groups(
 /// query into a fallback String, an inferred type, or a panic at the CLI boundary.
 /// Tag properties use the separately cached TagShape admission.
 pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Result<()> {
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    enum ValidationSource {
+        Node(NodeId),
+        Materialized(usize),
+    }
+    type ValidationStates = BTreeSet<(ValidationSource, String, bool, Vec<Vec<String>>)>;
+
     fn visit(
         schema: &super::CfnSchema,
         property: &SchemaProperty,
         name: &str,
         provider_path: &[String],
         provider_populated: bool,
-        active: &mut BTreeSet<NodeId>,
+        active: &mut ValidationStates,
+        canonical: &mut BTreeSet<(String, String)>,
     ) -> Result<(), SchemaError> {
         let p = property.try_query()?;
         let emitted = super::emission_plan::lower(p)?;
+        if let Some(reference) = &p.reference {
+            emitted.validate_canonical_domains(
+                &super::emission_plan::lower(reference.canonical.try_query()?)?,
+                canonical,
+            )?;
+        }
         p.validate_array_emission()?;
         p.validate_schema_dependencies()?;
         let scope_name = p
@@ -2131,7 +2157,7 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
             .map_or(name, |reference| reference.name.as_str());
         emitted.validate_required_fields(&p.source_pointer, &schema.type_name, Some(scope_name))?;
         let provider_populated =
-            provider_populated || super::is_property_read_only(schema, property, provider_path);
+            provider_populated || super::is_property_read_only(schema, property, provider_path)?;
         validate_emitted_field_groups(
             schema,
             p,
@@ -2140,11 +2166,30 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
             provider_path,
             provider_populated,
         )?;
-        // Admission depends on the provider path. A previous use of the same
-        // definition must not suppress checks for this use; only cut back edges.
-        if let Some(origin) = &property.origin
-            && !active.insert(origin.node)
-        {
+        // Path-dependent admission is determined by the inherited mode and
+        // the read-only paths relative to this use. Memoizing only by NodeId
+        // would miss invalid input groups at another use. Keeping these facts
+        // in the state also terminates recursive shared definitions without
+        // enumerating exponentially many equivalent provider paths.
+        let source = property.origin.as_ref().map_or_else(
+            || ValidationSource::Materialized(property as *const SchemaProperty as usize),
+            |origin| ValidationSource::Node(origin.node),
+        );
+        let mut read_only = schema
+            .metadata()
+            .read_only_properties
+            .iter()
+            .flatten()
+            .filter_map(|path| super::cfn_property_path(path))
+            .filter_map(|path| path.strip_prefix(provider_path).map(<[String]>::to_vec))
+            .collect::<Vec<_>>();
+        read_only.sort();
+        if !active.insert((
+            source,
+            scope_name.to_string(),
+            provider_populated,
+            read_only,
+        )) {
             return Ok(());
         }
         if matches!(p.effective_type(), Some("integer" | "number"))
@@ -2160,7 +2205,15 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
             .chain(emitted.map.iter().map(|map| map.value))
         {
             let path = super::extend_property_path(provider_path, "*");
-            visit(schema, child, name, &path, provider_populated, active)?;
+            visit(
+                schema,
+                child,
+                name,
+                &path,
+                provider_populated,
+                active,
+                canonical,
+            )?;
         }
         if let Some(properties) = emitted.properties {
             for (name, child) in properties {
@@ -2176,9 +2229,9 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
                 }
                 let override_type = super::resource_type_override(&schema.type_name, path);
                 let child_projection = child.try_query()?;
-                if override_type.is_some_and(|o| {
-                    matches!(o, super::TypeOverride::StringType(_)) || o.enum_values().is_some()
-                }) {
+                if override_type
+                    .is_some_and(|o| o.string_binding().is_some() || o.enum_values().is_some())
+                {
                     child_projection.validate_array_emission()?;
                 }
                 if override_type.is_some_and(|o| {
@@ -2189,11 +2242,16 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
                     continue;
                 }
                 let path = super::extend_property_path(provider_path, name);
-                visit(schema, child, name, &path, provider_populated, active)?;
+                visit(
+                    schema,
+                    child,
+                    name,
+                    &path,
+                    provider_populated,
+                    active,
+                    canonical,
+                )?;
             }
-        }
-        if let Some(origin) = &property.origin {
-            active.remove(&origin.node);
         }
         Ok(())
     }
@@ -2204,6 +2262,7 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
     root.validate_schema_dependencies()?;
     validate_emitted_field_groups(schema, root, &root.field_groups, None, &[], false)?;
     let mut active = BTreeSet::new();
+    let mut canonical = BTreeSet::new();
     for (name, property) in super::documented_top_level_properties(schema) {
         if super::is_dsl_tags_property(schema, std::slice::from_ref(name))? {
             continue;
@@ -2211,9 +2270,8 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
         let path = super::CfnPropertyPath::new(None, name);
         let override_type = super::resource_type_override(&schema.type_name, path);
         let projection = property.try_query()?;
-        if override_type.is_some_and(|o| {
-            matches!(o, super::TypeOverride::StringType(_)) || o.enum_values().is_some()
-        }) {
+        if override_type.is_some_and(|o| o.string_binding().is_some() || o.enum_values().is_some())
+        {
             projection.validate_array_emission()?;
         }
         if override_type.is_some_and(|o| {
@@ -2230,6 +2288,7 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
             std::slice::from_ref(name),
             false,
             &mut active,
+            &mut canonical,
         )?;
     }
     Ok(())
@@ -2246,11 +2305,15 @@ pub(super) struct DefinitionEnumFields {
 /// a second set of enum identities. Both renderers share these resolved fields.
 pub(super) fn definition_enum_fields(
     schema: &super::CfnSchema,
+    emitted: &BTreeSet<String>,
 ) -> anyhow::Result<Vec<DefinitionEnumFields>> {
     let layer = schema.layer.as_ref().expect("parsed schema has a Layer");
     let mut fields = Vec::new();
     let mut seen = BTreeSet::new();
     for (name, id) in layer.resource().definitions.iter().flatten() {
+        if !emitted.contains(name) {
+            continue;
+        }
         let declared = match layer.node(*id) {
             SchemaNode::Boolean(_value) => false,
             SchemaNode::Keywords(k) => k.properties.is_some() || k.compositions.all_of.is_some(),

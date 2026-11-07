@@ -1,11 +1,5 @@
 ### `field_index_policies`
 
-- **Type:** List\<[Struct(FieldIndexPolicies)](#field_index_policies-1)\> (items: 1..=1)
+- **Type:** `List<Struct(FieldIndexPolicy)> (items: 1..=1) (unique items)`
 - **Required:** No
 - **Default:** `[]`
-
-### field_index_policies
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `fields` | `List<String>` | No |  |

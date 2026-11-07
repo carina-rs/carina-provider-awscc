@@ -318,13 +318,13 @@ fn explicitly_classified_non_reference_scalars_and_key_outputs_keep_their_types(
             assert!(
                 output.contains("AttributeSchema::optional(\"enabled\", AttributeType::bool())")
             );
-            assert!(output.contains("AttributeSchema::provider_populated(\"arn\", self::arn())"));
+            assert!(output.contains("AttributeSchema::provider_populated(\"arn\", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::KmsKeyArn.identity(), "));
             assert!(output.contains(
                 "AttributeSchema::provider_populated(\"key_id\", AttributeType::string())"
             ));
         } else {
             assert!(output.contains("### `enabled`\n\n- **Type:** Bool"));
-            assert!(output.contains("### `arn`\n\n- **Type:** Arn"));
+            assert!(output.contains("### `arn`\n\n- **Type:** `aws.kms.Key.Arn`"));
         }
     }
 }

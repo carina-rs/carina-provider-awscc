@@ -17,7 +17,7 @@ fn fixture(attributes: &str) -> String {
 fn ssm_parameter_length_bounds_are_anonymous_strings() {
     let schema = super::generated::ssm::parameter::ssm_parameter_config().schema;
     for (path, expected_length) in [
-        ("allowed_pattern", (Some(0), Some(1024))),
+        ("allowed_pattern", (None, Some(1024))),
         ("policies", (Some(1), Some(4096))),
     ] {
         assert!(

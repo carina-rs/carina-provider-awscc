@@ -36,7 +36,7 @@ fn vpc() -> Value {
 }
 
 #[test]
-fn skipped_maps_of_string_arrays_keep_mains_projection() {
+fn skipped_maps_keep_omissions_and_reject_unproved_document_narrowings() {
     let source = json!({"type": "object", "patternProperties": {
         ".*": {"type": "array", "items": {"type": "string"}}
     }});
@@ -52,10 +52,13 @@ fn skipped_maps_of_string_arrays_keep_mains_projection() {
     logs["properties"]["FieldIndexPolicies"]["items"] = source;
     for schema in [subscription, logs] {
         for format in ["rust", "markdown"] {
-            if schema["typeName"] == "AWS::Logs::LogGroup" && format == "markdown" {
+            if schema["typeName"] == "AWS::Logs::LogGroup" {
                 let output = generate(&schema, format);
                 assert!(!output.status.success());
-                assert!(String::from_utf8_lossy(&output.stderr).contains("unsupported object map"));
+                assert!(
+                    String::from_utf8_lossy(&output.stderr)
+                        .contains("document narrowing cannot discard CFN object constraints")
+                );
             } else {
                 let output = rendered(&schema, format);
                 assert!(!output.contains("kms_key_reference()"));

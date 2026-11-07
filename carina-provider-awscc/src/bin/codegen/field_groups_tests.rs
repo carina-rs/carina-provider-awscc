@@ -144,8 +144,8 @@ fn round1_group_admission_checks_each_reference_use() {
 fn round1_group_admission_checks_override_defaults_and_provider_ancestors() {
     static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
         let mut overrides = ResourceTypeOverrides::default();
-        overrides.insert(("AWS::Test::Groups", "A"), TypeOverride::AttributeType {
-            expression: OverrideTypeExpression::raw("AttributeType::bool()"),
+        overrides.insert(("AWS::Test::Groups", "A"), NarrowingKind::Primitive {
+            expression: ConstraintSpec::boolean(),
             display: const { OverrideTypeDisplay::new("Bool") },
             block_name: None,
             default: Some(AttributeTypeOverrideDefault {

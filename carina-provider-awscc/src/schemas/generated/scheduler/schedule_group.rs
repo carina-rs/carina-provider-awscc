@@ -8,7 +8,15 @@ use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    crate::schemas::catalog::arn()
+    AttributeType::refined_string_with_validator(
+        crate::schemas::string_identity::StringIdentity::Arn.identity(),
+        None,
+        None,
+        crate::schemas::string_identity::StringIdentity::Arn
+            .check()
+            .expect("shared string check"),
+        None,
+    )
 }
 
 const VALID_STATE: &[&str] = &["ACTIVE", "DELETING"];
@@ -20,7 +28,7 @@ pub fn scheduler_schedule_group_config() -> AwsccSchemaConfig {
         .with_description("Definition of AWS::Scheduler::ScheduleGroup Resource Type");
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", self::arn())
+        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), Some("^arn:aws[a-z-]*:scheduler:[a-z0-9\\-]+:\\d{12}:schedule-group\\/[0-9a-zA-Z-_.]+$".to_string()), Some((Some(1), Some(1224))), crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
                 .with_description("The Amazon Resource Name (ARN) of the schedule group. (read-only)")
                 .with_provider_name("Arn")
             .build()

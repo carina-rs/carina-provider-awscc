@@ -452,17 +452,18 @@ impl Classifier<'_> {
             )?;
             let super::emission_plan::StringPlan {
                 source_pointer,
+                description: _description,
                 format,
                 pattern,
                 min_length,
                 max_length,
-            } = plan.string.expect("tag string plan");
+            } = plan.string()?;
             Ok(Some(TagString {
-                source: source_pointer.into(),
+                source: (*source_pointer).into(),
                 format: format.map(str::to_string),
                 pattern: pattern.map(str::to_string),
-                min_length,
-                max_length,
+                min_length: *min_length,
+                max_length: *max_length,
             }))
         } else {
             Ok(None)
@@ -512,7 +513,7 @@ impl Classifier<'_> {
         {
             let plan =
                 super::emission_plan::lower_as(p, super::emission_plan::EmittedKind::TagMap)?;
-            let map = plan.map.expect("tag map plan");
+            let map = plan.map()?;
             return Ok(Some(TagMap {
                 key: TagKey::Pattern {
                     pattern: pattern.clone(),
@@ -595,7 +596,10 @@ fn classify(layer: &Arc<Layer>, property: NodeId) -> TagShape {
                         Ok(plan) => plan,
                         Err(error) => return unreadable(error),
                     };
-                    let array = plan.array.expect("tag list plan");
+                    let array = match plan.array() {
+                        Ok(array) => array,
+                        Err(error) => return unreadable(error),
+                    };
                     map.min_entries = array.min_items;
                     map.max_entries = array.max_items;
                     match &map.key {

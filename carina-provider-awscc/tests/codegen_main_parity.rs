@@ -1,5 +1,6 @@
 //! Expected snippets originated from origin/main (d02e242) codegen.
-//! The Logs fixture includes the documented single-policy limit from #525.
+//! The Logs fixture keeps the documented single-policy limit and the plain
+//! typed policy item, including the documented FieldsV2 alternative.
 //! The VPC map fixtures include CFN-derived patternProperties keys from #525.
 //! Map value constraints and enums now follow the shared scalar projection.
 #![cfg(not(target_arch = "wasm32"))]
@@ -52,10 +53,6 @@ fn cases() -> Vec<(&'static str, Value, &'static [&'static str])> {
     // Fractional allOf endpoints are now retained and explicitly rejected by
     // the staged integer-endpoint emitter; keep this unrelated-output pin plain.
     vpc["properties"]["Ratio"] = json!({"type": "number"});
-    vpc["properties"]["CidrBlockAssociations"]["items"] =
-        json!({"$ref": "#/definitions/Association"});
-    vpc["definitions"]["Association"] =
-        json!({"type": "object", "properties": {"AssociationId": {"type": "string"}}});
     vpc["properties"]["Modes"] = json!({"type": "object", "patternProperties": {".*": {"type": "string", "pattern": "^[a-z]+$", "minLength": 1, "maxLength": 256}}, "additionalProperties": false});
     vpc["properties"]["EnumModes"] = json!({"type": "object", "patternProperties": {".*": {"type": "string", "enum": ["enabled", "disabled"]}}, "additionalProperties": false});
     vpc["properties"]["Tags"]["items"] = json!({"type": "object", "properties": {"Key": {"type": "string"}, "Value": {"type": "string"}}, "required": ["Key", "Value"]});
@@ -68,7 +65,7 @@ fn cases() -> Vec<(&'static str, Value, &'static [&'static str])> {
         "../../cfn-schema-cache/AWS__Logs__LogGroup.json"
     ))
     .unwrap();
-    logs["properties"]["FieldIndexPolicies"] = json!({"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "insertionOrder": false, "items": {"type": "object", "properties": {"Fields": {"type": "array", "items": {"type": "string"}}}}});
+    logs["properties"]["FieldIndexPolicies"] = json!({"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "insertionOrder": false, "items": {"type": "object"}});
     vec![
         (
             "vpc",
@@ -119,7 +116,7 @@ fn snippet(output: &str, format: &str, names: &[&str]) -> String {
 }
 
 #[test]
-fn non_reference_rust_and_markdown_match_main() {
+fn non_reference_rust_and_markdown_match_reviewed_fixtures() {
     for (case, schema, names) in cases() {
         let file = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(file.path(), schema.to_string()).unwrap();
@@ -155,29 +152,31 @@ fn non_reference_rust_and_markdown_match_main() {
 }
 
 #[test]
-fn string_override_keeps_the_linked_source_struct_heading() {
+fn string_identity_cannot_replace_a_linked_source_struct() {
     let (_, mut schema, _) = cases().remove(0);
-    schema["properties"]
-        .as_object_mut()
-        .unwrap()
-        .remove("Ratio");
+    schema["properties"]["CidrBlockAssociations"]["items"] =
+        json!({"$ref":"#/definitions/Association"});
+    schema["definitions"]["Association"] =
+        json!({"type":"object","properties":{"AssociationId":{"type":"string"}}});
     let file = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(file.path(), schema.to_string()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_codegen"))
-        .args(["--type-name", "AWS::EC2::VPC", "--file"])
-        .arg(file.path())
-        .args(["--format", "markdown", "--examples-dir"])
-        .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples"))
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let markdown = String::from_utf8(output.stdout).unwrap();
-    assert!(markdown.contains("### cidr_block_associations\n"));
-    assert!(markdown.contains("| `association_id` |"));
+    for format in ["rust", "markdown"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_codegen"))
+            .args(["--type-name", "AWS::EC2::VPC", "--file"])
+            .arg(file.path())
+            .args(["--format", format, "--examples-dir"])
+            .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples"))
+            .output()
+            .unwrap();
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success()
+                && error.contains("CidrBlockAssociations")
+                && error.contains("string identity requires the CFN string kind"),
+            "{format}: {error}"
+        );
+        assert!(output.stdout.is_empty());
+    }
 }
 
 #[test]

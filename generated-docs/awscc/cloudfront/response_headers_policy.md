@@ -189,15 +189,15 @@ Shorthand formats: `no_referrer` or `ReferrerPolicy.no_referrer`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `header` | `String (length: ..=256)` | Yes | The HTTP response header name. |
+| `header` | `String(len: ..=256)` | Yes | The HTTP response header name. |
 | `override` | Bool | Yes | A Boolean that determines whether CloudFront overrides a response header with the same name received from the origin with the header specified here. |
-| `value` | `String (length: ..=1783)` | Yes | The value for the HTTP response header. |
+| `value` | `String(len: ..=1783)` | Yes | The value for the HTTP response header. |
 
 ### response_headers_policy_config.remove_headers_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `items` | List\<[Struct(RemoveHeader)](#response_headers_policy_configremove_headers_configitems)\> | Yes | The list of HTTP header names. |
+| `items` | List\<[Struct(RemoveHeader)](#response_headers_policy_configremove_headers_configitems)\> (unique items) | Yes | The list of HTTP header names. |
 
 ### response_headers_policy_config.remove_headers_config.items
 
@@ -281,4 +281,14 @@ Shorthand formats: `no_referrer` or `ReferrerPolicy.no_referrer`
 - **Type:** String
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/AccessControlAllowMethods/properties/Items` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_ResponseHeadersPolicyAccessControlAllowMethods.html#cloudfront-Type-ResponseHeadersPolicyAccessControlAllowMethods-Items) | ` The list of HTTP methods. Valid values are: `<br>` GET `<br>` DELETE `<br>` HEAD `<br>` OPTIONS `<br>` PATCH `<br>` POST `<br>` PUT `<br>` ALL `<br>` ALL is a special value that includes all of the listed HTTP methods. `<br>` Valid Values: GET \| POST \| OPTIONS \| PUT \| DELETE \| PATCH \| HEAD \| ALL ` | 2026-11-07 |
+| `/definitions/CustomHeader/properties/Header` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cloudfront-limits.html) | ` Custom headers: maximum length of a header name 256 characters ` | 2026-11-07 |
+| `/definitions/CustomHeader/properties/Value` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cloudfront-limits.html) | ` Custom headers: maximum length of a header value 1,783 characters ` | 2026-11-07 |
 

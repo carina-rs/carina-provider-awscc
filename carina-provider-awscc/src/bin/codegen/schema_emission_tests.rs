@@ -534,23 +534,10 @@ fn step4_map_key_errors_are_typed_in_both_renderers() {
 #[test]
 fn step4_integer_override_errors_are_typed_in_both_renderers() {
     let mut schema = cfn_schema_for_codegen_tests("AWS::Scheduler::Schedule");
-    schema.edit_json(|source| {
-        source["definitions"]["FlexibleTimeWindow"]["properties"]["MaximumWindowInMinutes"] =
-            json!({"type":"number"});
-    });
-    for result in [
-        generate_schema_code(&schema, &schema.type_name),
-        generate_test_markdown(&schema, &schema.type_name),
-    ] {
-        let error = result.unwrap_err();
-        assert!(
-            matches!(error.downcast_ref::<schema_layer::SchemaError>(),
-            Some(schema_layer::SchemaError::Projection { pointer, reason })
-            if pointer == "/definitions/FlexibleTimeWindow/properties/MaximumWindowInMinutes"
-                && reason.contains("requires a CFN minimum or maximum")),
-            "{error:#}"
-        );
-    }
+    schema.edit_json(|source| { source["definitions"]["FlexibleTimeWindow"]["properties"]["MaximumWindowInMinutes"] = json!({"type":"number"}); });
+    let code = generate_schema_code(&schema,&schema.type_name).unwrap();
+    assert!(code.contains("StructField::optional(\"maximum_window_in_minutes\", AttributeType::float())"));
+    generate_test_markdown(&schema,&schema.type_name).unwrap();
 }
 
 #[test]

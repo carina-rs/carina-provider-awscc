@@ -140,7 +140,7 @@ impl ProviderNormalizer for AwsccNormalizer {
         &'a self,
         _resources: &'a mut [ProviderResource],
     ) -> BoxFuture<'a, ProviderResult<()>> {
-        ready_noop()
+        Box::pin(async { Ok(()) })
     }
 
     fn normalize_state<'a>(

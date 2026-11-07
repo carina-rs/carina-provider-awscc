@@ -28,14 +28,14 @@ awscc.ec2.VpcGatewayAttachment {
 
 ### `internet_gateway_id`
 
-- **Type:** InternetGatewayId
+- **Type:** `aws.ec2.InternetGateway.Id`
 - **Required:** No
 
 The ID of the internet gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.
 
 ### `vpc_id`
 
-- **Type:** VpcId
+- **Type:** `aws.ec2.Vpc.Id`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -43,7 +43,7 @@ The ID of the VPC.
 
 ### `vpn_gateway_id`
 
-- **Type:** VpnGatewayId
+- **Type:** `aws.ec2.VpnGateway.Id`
 - **Required:** No
 
 The ID of the virtual private gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.

@@ -8,7 +8,15 @@ use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    crate::schemas::catalog::iam_oidc_provider_arn()
+    AttributeType::refined_string_with_validator(
+        crate::schemas::string_identity::StringIdentity::IamOidcProviderArn.identity(),
+        None,
+        None,
+        crate::schemas::string_identity::StringIdentity::IamOidcProviderArn
+            .check()
+            .expect("shared string check"),
+        None,
+    )
 }
 
 /// Returns the schema config for iam_oidc_provider (AWS::IAM::OIDCProvider)
@@ -18,7 +26,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for AWS::IAM::OIDCProvider");
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", self::arn())
+        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamOidcProviderArn.identity(), None, Some((Some(20), Some(2048))), crate::schemas::string_identity::StringIdentity::IamOidcProviderArn.check().expect("shared string check"), None))
                 .with_description("Amazon Resource Name (ARN) of the OIDC provider (read-only)")
                 .with_provider_name("Arn")
             .build()

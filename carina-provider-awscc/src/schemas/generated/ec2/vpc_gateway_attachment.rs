@@ -24,7 +24,7 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_attachment_type_attribute());
     #[inline(never)]
     fn build_internet_gateway_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("internet_gateway_id", carina_aws_types::internet_gateway_id())
+        AttributeSchema::optional("internet_gateway_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2InternetGatewayId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2InternetGatewayId.check().expect("shared string check"), None))
                 .with_description("The ID of the internet gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.")
                 .with_provider_name("InternetGatewayId")
             .build()
@@ -32,7 +32,7 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_internet_gateway_id_attribute());
     #[inline(never)]
     fn build_vpc_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("vpc_id", carina_aws_types::vpc_id())
+        AttributeSchema::required("vpc_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcId.check().expect("shared string check"), None))
                 .create_only()
                 .with_description("The ID of the VPC.")
                 .with_provider_name("VpcId")
@@ -41,7 +41,7 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_vpc_id_attribute());
     #[inline(never)]
     fn build_vpn_gateway_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("vpn_gateway_id", carina_aws_types::vpn_gateway_id())
+        AttributeSchema::optional("vpn_gateway_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpnGatewayId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpnGatewayId.check().expect("shared string check"), None))
                 .with_description("The ID of the virtual private gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.")
                 .with_provider_name("VpnGatewayId")
             .build()

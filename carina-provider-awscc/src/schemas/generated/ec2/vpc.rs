@@ -25,7 +25,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_cidr_block_attribute());
     #[inline(never)]
     fn build_cidr_block_associations_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("cidr_block_associations", AttributeType::unordered_list(carina_aws_types::vpc_cidr_block_association_id()))
+        AttributeSchema::provider_populated("cidr_block_associations", AttributeType::unordered_list(AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcCidrBlockAssociationId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcCidrBlockAssociationId.check().expect("shared string check"), None)))
                 .with_description(" (read-only)")
                 .with_provider_name("CidrBlockAssociations")
             .build()
@@ -33,7 +33,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_cidr_block_associations_attribute());
     #[inline(never)]
     fn build_default_network_acl_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("default_network_acl", carina_aws_types::network_acl_id())
+        AttributeSchema::provider_populated("default_network_acl", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2NetworkAclId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2NetworkAclId.check().expect("shared string check"), None))
                 .with_description(" (read-only)")
                 .with_provider_name("DefaultNetworkAcl")
             .build()
@@ -41,7 +41,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_default_network_acl_attribute());
     #[inline(never)]
     fn build_default_security_group_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("default_security_group", carina_aws_types::security_group_id())
+        AttributeSchema::provider_populated("default_security_group", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2SecurityGroupId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2SecurityGroupId.check().expect("shared string check"), None))
                 .with_description(" (read-only)")
                 .with_provider_name("DefaultSecurityGroup")
             .build()
@@ -73,7 +73,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_instance_tenancy_attribute());
     #[inline(never)]
     fn build_ipv4_ipam_pool_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipv4_ipam_pool_id", carina_aws_types::ipam_pool_id())
+        AttributeSchema::optional("ipv4_ipam_pool_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.check().expect("shared string check"), None))
                 .create_only()
                 .write_only()
                 .with_description("The ID of an IPv4 IPAM pool you want to use for allocating this VPC's CIDR. For more information, see [What is IPAM?](https://docs.aws.amazon.com//vpc/latest/ipam/what-is-it-ipam.html) in the *Amazon VPC IPAM User Guide*. You must specify either``CidrBlock`` or ``Ipv4IpamPoolId``.")
@@ -83,7 +83,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipv4_ipam_pool_id_attribute());
     #[inline(never)]
     fn build_ipv4_netmask_length_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipv4_netmask_length", AttributeType::refined_int(None, Some((Some(0), Some(32)))))
+        AttributeSchema::optional("ipv4_netmask_length", AttributeType::refined_int(None, Some((Some(16), Some(28)))))
                 .create_only()
                 .write_only()
                 .with_description("The netmask length of the IPv4 CIDR you want to allocate to this VPC from an Amazon VPC IP Address Manager (IPAM) pool. For more information about IPAM, see [What is IPAM?](https://docs.aws.amazon.com//vpc/latest/ipam/what-is-it-ipam.html) in the *Amazon VPC IPAM User Guide*.")
@@ -110,7 +110,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_vpc_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("vpc_id", carina_aws_types::vpc_id())
+        AttributeSchema::provider_populated("vpc_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcId.check().expect("shared string check"), None))
                 .with_description(" (read-only)")
                 .with_provider_name("VpcId")
             .build()

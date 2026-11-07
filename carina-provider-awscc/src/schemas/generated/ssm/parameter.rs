@@ -8,7 +8,15 @@ use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    crate::schemas::catalog::arn()
+    AttributeType::refined_string_with_validator(
+        crate::schemas::string_identity::StringIdentity::Arn.identity(),
+        None,
+        None,
+        crate::schemas::string_identity::StringIdentity::Arn
+            .check()
+            .expect("shared string check"),
+        None,
+    )
 }
 
 const VALID_DATA_TYPE: &[&str] = &["text", "aws:ec2:image"];
@@ -24,7 +32,7 @@ pub fn ssm_parameter_config() -> AwsccSchemaConfig {
         .with_description("The ``AWS::SSM::Parameter`` resource creates an SSM parameter in SYSlong Parameter Store.   To create an SSM parameter, you must have the IAMlong (IAM) permissions ``ssm:PutParameter`` and ``ssm:AddTagsToResource``. On stack creation, CFNlong adds the following three tags to the parameter: ``aws:cloudformation:stack-name``, ``aws:cloudformation:logical-id``, and ``aws:cloudformation:stack-id``, in addition to any custom tags you specify.  To add, update, or remove tags during stack update, you must have IAM permissions for both ``ssm:AddTagsToResource`` and ``ssm:RemoveTagsFromResource``. For more information, see [Managing access using policies](https://docs.aws.amazon.com/systems-manager/latest/userguide/security-iam.html#security_iam_access-manage) in the *User Guide*.   For information about valid values for parameters, see [About requirements and constraints for parameter names](https://docs.aws.amazon.com/systems-manager/latest/userguide/sysman-paramstore-su-create.html#sysman-parameter-name-constraints) in the *User Guide* and [PutParameter](https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_PutParameter.html) in the *API Reference*.");
     #[inline(never)]
     fn build_allowed_pattern_attribute() -> AttributeSchema {
-        AttributeSchema::optional("allowed_pattern", AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None))
+        AttributeSchema::optional("allowed_pattern", AttributeType::refined_string(None, None, Some((None, Some(1024))), None))
                 .write_only()
                 .with_description("A regular expression used to validate the parameter value. For example, for ``String`` types with values restricted to numbers, you can specify the following: ``AllowedPattern=^\\d+$``")
                 .with_provider_name("AllowedPattern")
@@ -33,7 +41,7 @@ pub fn ssm_parameter_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_allowed_pattern_attribute());
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", self::arn())
+        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), Some("^(?:arn:aws(-[a-z0-9-]+)*:ssm:[a-z0-9-]+:[0-9]{12}:parameter/.+)\\z".to_string()), None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
                 .with_description(" (read-only)")
                 .with_provider_name("Arn")
             .build()

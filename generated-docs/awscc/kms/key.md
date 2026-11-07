@@ -208,7 +208,7 @@ Shorthand formats: `aws_kms` or `Origin.aws_kms`
 
 ### `arn`
 
-- **Type:** Arn
+- **Type:** `aws.kms.Key.Arn`
 
 
 
@@ -217,4 +217,14 @@ Shorthand formats: `aws_kms` or `Origin.aws_kms`
 - **Type:** String
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/properties/KeyPolicy` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_grammar.html) | ` <version_block> = "Version" : ("2008-10-17" \| "2012-10-17") `<br>` <effect_block> = "Effect" : ("Allow" \| "Deny") ` | 2026-11-07 |
+| `/properties/KeyPolicy` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html) | ` The Statement element can contain a single statement or an array of individual statements. ` | 2026-11-07 |
+| `/properties/KeyPolicy` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html) | ` You can create conditions that compare strings, dates, numbers, and more using typical Boolean comparisons such as equals, greater than, and less than. ` | 2026-11-07 |
 

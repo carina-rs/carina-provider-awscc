@@ -368,6 +368,179 @@ fn review602_rejected(schema: &ParsedCfnSchema, markdown: bool, facts: &[&str]) 
     );
 }
 
+macro_rules! boundary_renderers {
+    ($rust:ident, $markdown:ident, $case:ident) => {
+        #[test]
+        fn $rust() { $case(false); }
+        #[test]
+        fn $markdown() { $case(true); }
+    };
+}
+
+fn boundary_canonical_enum(markdown: bool) {
+    let schema = ParsedCfnSchema::from_json(json!({
+        "typeName":"AWS::Test::Emission",
+        "definitions":{"Choice":{"type":"object","properties":{
+            "Mode":{"type":"string","enum":["red","blue"]}
+        }}},
+        "properties":{"Probe":{"$ref":"#/definitions/Choice",
+            "properties":{"Mode":{"enum":["red"]}}}}
+    })).unwrap();
+    // Rejecting a conflicting canonical identity is permitted; widening it is not.
+    review602_rejected(&schema, markdown, &["enum", "domain"]);
+}
+boundary_renderers!(boundary_canonical_enum_rust, boundary_canonical_enum_markdown, boundary_canonical_enum);
+
+fn boundary_inferred_string(markdown: bool) {
+    let schema = ParsedCfnSchema::from_json(json!({
+        "typeName":"AWS::Test::Emission",
+        "properties":{"SubnetId":{"allOf":[{"type":"string"},{"maxLength":16}]}}
+    })).unwrap();
+    let output = review602_render(&schema, markdown).unwrap();
+    if markdown { assert!(output.contains("aws.ec2.Subnet.Id")); }
+    else { assert!(output.contains("Some((None, Some(16)))"), "{output}"); }
+}
+boundary_renderers!(boundary_inferred_string_rust, boundary_inferred_string_markdown, boundary_inferred_string);
+
+fn boundary_inferred_enum(markdown: bool) {
+    for (name, property, removed, retained) in [
+        ("Probe", json!({"type":"string","description":"Allowed values: ab | cd", "pattern":"^ab$"}), "cd", "ab"),
+        ("ConnectivityType", json!({"type":"string","pattern":"^public$"}), "private", "public"),
+    ] {
+        let schema = ParsedCfnSchema::from_json(json!({
+            "typeName":"AWS::Test::Emission","properties":{name:property}
+        })).unwrap();
+        let output = review602_render(&schema, markdown).unwrap();
+        let literal = if markdown { format!("`{removed}`") } else { format!("\"{removed}\".to_string()") };
+        assert!(!output.contains(&literal), "filtered literal survived: {output}");
+        assert!(output.contains(retained), "{output}");
+    }
+}
+boundary_renderers!(boundary_inferred_enum_rust, boundary_inferred_enum_markdown, boundary_inferred_enum);
+
+fn boundary_open_map(markdown: bool) {
+    let property = json!({"type":"object","patternProperties":{"^Known[0-9]+$":{"type":"string","minLength":2}}});
+    for restrict_keys in [false, true] {
+        let mut property = property.clone();
+        if restrict_keys {
+            property["additionalProperties"] = json!(false);
+        }
+        let schema = fixture(property);
+        let plan = emission_plan::lower(schema.properties["Probe"].try_query().unwrap()).unwrap();
+        assert_eq!(plan.map().unwrap().restrict_keys, restrict_keys);
+        let output = review602_render(&schema, markdown).unwrap();
+        let expected = match (markdown, restrict_keys) {
+            (true, false) => "Map<String, String(len: 2..)>",
+            (true, true) => "Map<String(pattern), String(len: 2..)>",
+            (false, false) => "AttributeType::map(AttributeType::refined_string(None, None, Some((Some(2), None)), None))",
+            (false, true) => "AttributeType::map_with_key(",
+        };
+        assert!(output.contains(expected), "{output}");
+        if !markdown {
+            assert_eq!(output.contains("^Known[0-9]+$"), restrict_keys, "{output}");
+            assert!(output.contains("Some((Some(2), None))"), "{output}");
+        }
+    }
+    for additional in [json!(true), json!({"type":"string"})] {
+        let mut property = property.clone();
+        property["additionalProperties"] = additional;
+        review602_rejected(&fixture(property), markdown, &["additionalProperties", "map"]);
+    }
+}
+boundary_renderers!(boundary_open_map_rust, boundary_open_map_markdown, boundary_open_map);
+
+fn boundary_constructor_definition(markdown: bool) {
+    let mut overrides = ResourceTypeOverrides::default();
+    overrides.insert(("AWS::Test::Emission", "Probe"), TypeOverride::identity(Some(StringIdentity::SsoInstanceArn)));
+    with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
+        for max in [19, 20] {
+            let output = review602_render(&fixture(json!({"type":"string","maxLength":max})), markdown).unwrap();
+            assert!(!output.is_empty());
+            if !markdown { assert!(output.contains(&format!("Some({max})")), "{output}"); }
+        }
+    });
+}
+boundary_renderers!(boundary_constructor_definition_rust, boundary_constructor_definition_markdown, boundary_constructor_definition);
+
+fn boundary_numeric_override(markdown: bool) {
+    static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+        let mut overrides = ResourceTypeOverrides::default();
+        overrides.insert(("AWS::ElasticLoadBalancingV2::Listener", "Port"), NarrowingKind::IntRange(1, 65535));
+        overrides
+    });
+    with_resource_type_overrides(&OVERRIDES, || {
+    for kind in ["integer", "number"] {
+        let schema = ParsedCfnSchema::from_json(json!({
+            "typeName":"AWS::ElasticLoadBalancingV2::Listener",
+            "properties":{"Port":{"type":kind,"multipleOf":2}}
+        })).unwrap();
+        let output = review602_render(&schema, markdown).unwrap();
+        if markdown { assert!(output.contains("multiple of 2"), "{output}"); }
+        else { assert!(output.contains("65535"), "{output}"); }
+    }
+    });
+}
+boundary_renderers!(boundary_numeric_override_rust, boundary_numeric_override_markdown, boundary_numeric_override);
+
+fn boundary_unique_collection(markdown: bool) {
+    for items in [json!({"type":"string"}), json!({"type":"string","enum":["a","b"]}),
+        json!({"type":"object","properties":{"Value":{"type":"string"}}})] {
+        let schema = fixture(json!({"type":"array","items":items,"uniqueItems":true}));
+        let output = review602_render(&schema, markdown).unwrap();
+        assert!(output.contains(if markdown { "unique items" } else { "ListElements::Unique" }), "{output}");
+    }
+}
+boundary_renderers!(boundary_unique_collection_rust, boundary_unique_collection_markdown, boundary_unique_collection);
+
+fn boundary_read_only_query(markdown: bool) {
+    let schema = ParsedCfnSchema::from_json(json!({
+        "typeName":"AWS::Test::Emission",
+        "properties":{"Probe":{"type":"object","properties":{"Nested":{
+            "anyOf":[{"type":"string"},{"type":"integer"}]}}}},
+        "readOnlyProperties":["/properties/Probe/Nested/Output"]
+    })).unwrap();
+    let mode = std::panic::catch_unwind(|| super::super::is_property_read_only(&schema, &schema.properties["Probe"], &["Probe".to_string()]));
+    assert!(mode.expect("mode inference must propagate the descendant query error").is_err());
+    review602_rejected(&schema, markdown, &[]);
+}
+boundary_renderers!(boundary_read_only_query_rust, boundary_read_only_query_markdown, boundary_read_only_query);
+
+fn boundary_replacement_refinements(markdown: bool) {
+    for (override_type, property) in [
+        (NarrowingKind::Primitive { expression: ConstraintSpec::int_range(Some(1), Some(5)), display: OverrideTypeDisplay::new("Int"), block_name: None, default: None }, json!({"type":"string"})),
+        (NarrowingKind::Primitive { expression: ConstraintSpec::document(DocumentKind::SnsSubscriptionRedrivePolicy), display: OverrideTypeDisplay::new("Struct"), block_name: None, default: None }, json!({"type":"array","items":{"type":"string"},"uniqueItems":true})),
+        (NarrowingKind::Enum(vec!["ab","cd"]), json!({"type":"string","pattern":"^ab$"})),
+        (NarrowingKind::IntEnum(vec![2,3]), json!({"type":"integer","multipleOf":2})),
+    ] {
+        let mut overrides = ResourceTypeOverrides::default();
+        overrides.insert(("AWS::Test::Emission","Probe"), override_type);
+        with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
+            review602_rejected(&fixture(property), markdown, &[]);
+        });
+    }
+}
+boundary_renderers!(boundary_replacement_refinements_rust, boundary_replacement_refinements_markdown, boundary_replacement_refinements);
+
+fn boundary_override_collections_and_ranges(markdown: bool) {
+    let mut overrides = ResourceTypeOverrides::default();
+    overrides.insert(("AWS::Test::Emission","Probe"), NarrowingKind::ArrayItemType {
+        expression: ConstraintSpec::string(None, None, PatternLiteral::Quoted), display: OverrideTypeDisplay::new("List<String>"), block_name: None, default: None, min_items: None, max_items: None,
+    }.with_array_bounds(Some(1), None));
+    with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
+        let output = review602_render(&fixture(json!({"type":"array","items":{"type":"string"},"uniqueItems":true})), markdown).unwrap();
+        assert!(output.contains(if markdown {"unique items"} else {"ListElements::Unique"}), "{output}");
+    });
+    for kind in ["integer", "number"] {
+        let mut overrides = ResourceTypeOverrides::default();
+        overrides.insert(("AWS::Test::Emission","Probe"), NarrowingKind::IntRange(1,10));
+        with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
+            let output = review602_render(&fixture(json!({"type":kind,"minimum":8,"maximum":12})), markdown).unwrap();
+            assert!(output.contains(if markdown {"8..=10"} else if kind == "integer" {"Some(8), Some(10)"} else {"FiniteF64::new(8.0)"}), "{output}");
+        });
+    }
+}
+boundary_renderers!(boundary_override_collections_rust, boundary_override_collections_markdown, boundary_override_collections_and_ranges);
+
 fn review602_nonobject_one_of(markdown: bool) {
     for (property, kind) in [
         (json!({"type":"string"}), "string"),
@@ -482,7 +655,7 @@ fn review602_missing_required_members(markdown: bool) {
                     "definitions":{"Choice":object}
                 })).unwrap(),
                 "list" => fixture(json!({"type":"array","items":object})),
-                "map" => fixture(json!({"type":"object","patternProperties":{".*":object}})),
+                "map" => fixture(json!({"type":"object","patternProperties":{".*":object},"additionalProperties":false})),
                 "inline" => fixture(object.clone()),
                 _ => unreachable!(),
             };
@@ -597,6 +770,8 @@ fn review602_nonobject_scope_checks_cover_tag_lowering() {
 }
 
 fn review602_pattern_enum_intersection(markdown: bool) {
+    let identity = Regex::new(r"ProbeRefined[0-9a-f]{16}").unwrap();
+    let anchor = Regex::new(r"proberefined[0-9a-f]{16}").unwrap();
     for (bounds, retained) in [
         (json!({"minLength":2}), vec!["bbb"]),
         (json!({"maxLength":2}), vec!["a"]),
@@ -615,9 +790,12 @@ fn review602_pattern_enum_intersection(markdown: bool) {
                 "typeName":"AWS::Test::Emission", "properties":{"Probe":property},
                 "definitions":{"Mode":pattern}
             })).unwrap();
+            let narrowed = retained.len() < 2;
             let expected = review602_render(&fixture(json!({"type":"string","enum":retained})), markdown).unwrap();
             let actual = review602_render(&schema, markdown).unwrap();
-            assert_eq!(actual, expected, "markdown={markdown}: inferred values must satisfy effective bounds");
+            assert_eq!(identity.is_match(&actual), narrowed, "refined enum identity: {actual}");
+            let normalized = identity.replace_all(&actual, "Probe");
+            assert_eq!(anchor.replace_all(&normalized, "probe"), expected, "markdown={markdown}: inferred values must satisfy effective bounds");
         }
     }
     review602_rejected(&fixture(json!({
