@@ -416,7 +416,7 @@ fn round1_definition_reuse_ignores_reference_site_annotations() {
             let reference = schema.properties[name].query().reference.as_ref().unwrap();
             assert_eq!(ResolvedRef {
                 name: &reference.name, property: &reference.property, canonical: &reference.canonical
-            }.emission_key().unwrap(), "Container", "{name}");
+            }.emission_key(&schema).unwrap(), "Container", "{name}");
         }
         assert_eq!(schema.properties[annotated].annotation_default(), Some(&json!({"Mode":"alpha"})));
         assert_eq!(schema.properties["Other"].annotation_default(), Some(&json!({"Mode":"beta"})));
@@ -449,7 +449,7 @@ fn round1_definition_identity_retains_descendant_constraints_and_defaults() {
             let reference = schema.properties[name].query().reference.as_ref().unwrap();
             ResolvedRef {
                 name: &reference.name, property: &reference.property, canonical: &reference.canonical
-            }.emission_key().unwrap().into_owned()
+            }.emission_key(&schema).unwrap().into_owned()
         };
         assert_ne!(key("Local"), key("Shared"), "{contribution}");
         assert_eq!(key("Shared"), "Container");

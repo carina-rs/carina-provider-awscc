@@ -1856,7 +1856,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
                 description: _description,
                 enum_values,
                 const_value,
-                default_value: _default_value,
+                default_value,
                 format,
                 pattern,
                 minimum,
@@ -1923,6 +1923,12 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
             }
             absent(source_pointer, kind, "enum", enum_values)?;
             absent(source_pointer, kind, "const", const_value)?;
+            absent(
+                source_pointer,
+                kind,
+                "default on a transformed tag field",
+                default_value,
+            )?;
             inapplicable_object_scope(source_pointer, kind, required, field_groups, dependencies)?;
             plan.string = Some(StringPlan {
                 source_pointer,

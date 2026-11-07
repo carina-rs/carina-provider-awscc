@@ -655,6 +655,10 @@ struct CfnSchema {
     layer: Option<std::sync::Arc<schema_layer::Layer>>,
     #[cfg_attr(test, serde(skip))]
     query_nodes: BTreeMap<schema_layer::NodeId, SchemaProperty>,
+    /// Intern effective definition bodies, rather than their source sites.
+    /// Both renderers reuse a key only after comparing the entire projection.
+    #[cfg_attr(test, serde(skip))]
+    definition_keys: std::sync::Mutex<BTreeMap<String, Vec<(String, Projection)>>>,
     type_name: String,
     properties: BTreeMap<String, SchemaProperty>,
     definitions: Option<BTreeMap<String, SchemaProperty>>,
@@ -797,11 +801,16 @@ impl CfnSchema {
             Some(origin) => Ok(tag_shape::classify_tag_shape(&origin.layer, origin.node)),
             None => {
                 let layer = self.layer.as_ref().expect("parsed schema has a Layer");
+                let projection = property.try_query()?;
                 let node = layer
                     .sources()
-                    .node_at(&property.try_query()?.source_pointer)
-                    .context("projected tag property has no Layer source")?;
-                Ok(tag_shape::classify_tag_shape(layer, node))
+                    .node_at(&projection.source_pointer)
+                    .ok_or_else(|| {
+                        projection.emission_error("projected tag property has no Layer source")
+                    })?;
+                Ok(property.materialized_tag_shape.get_or_init(|| {
+                    tag_shape::classify_materialized_tag_shape(layer, node, projection)
+                }))
             }
         }
     }
@@ -938,8 +947,17 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> QueryResult<bool> {
             .definition_name
             .as_deref()
             .is_some_and(|name| name.starts_with("Tag")),
-        TagShape::KeyValueList(_) | TagShape::NotTag { .. } => false,
-        TagShape::Unreadable { source, .. } => return Err(source.clone()),
+        TagShape::KeyValueList(_map) => false,
+        TagShape::NotTag {
+            reason: _reason,
+            candidate: _candidate,
+            pointer: _pointer,
+        } => false,
+        TagShape::Unreadable {
+            source,
+            candidate: _candidate,
+            pointer: _pointer,
+        } => return Err(source.clone()),
     })
 }
 
@@ -1011,7 +1029,7 @@ fn project_tag_map(
     if property.annotation_default().is_some()
         && matches!(
             shape,
-            TagShape::KeyValueList(_) | TagShape::KeyValueObject(_)
+            TagShape::KeyValueList(_map) | TagShape::KeyValueObject(_map)
         )
     {
         return Err(property
@@ -1091,7 +1109,7 @@ fn project_tag_map(
     };
     let mut min_entries = *cached_min;
     let mut max_entries = *cached_max;
-    if matches!(schema.tag_shape(property)?, TagShape::KeyValueList(_map))
+    if matches!(shape, TagShape::KeyValueList(_map))
         && let Some(NarrowingKind::Array {
             items: None,
             min_items,
@@ -1914,6 +1932,8 @@ struct SchemaProperty {
     origin: Option<schema_projection::Origin>,
     #[cfg_attr(test, serde(skip))]
     projection: std::sync::OnceLock<std::result::Result<Projection, schema_layer::SchemaError>>,
+    #[cfg_attr(test, serde(skip))]
+    materialized_tag_shape: std::sync::OnceLock<TagShape>,
     #[cfg_attr(test, serde(rename = "type"))]
     #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     #[cfg(test)]
@@ -3951,7 +3971,8 @@ fn markdown_struct_def(
             else {
                 return Ok(None);
             };
-            struct_def.key = MarkdownStructKey::Definition(resolved.emission_key()?.into_owned());
+            struct_def.key =
+                MarkdownStructKey::Definition(resolved.emission_key(schema)?.into_owned());
             struct_def.name = resolved.name.to_string();
             Some(struct_def)
         }
@@ -6786,19 +6807,40 @@ struct ResolvedRef<'a> {
 
 impl<'a> ResolvedRef<'a> {
     /// A reference can add requirements without changing the canonical type.
-    /// Give that use its own definition key so reuse and recursive edges retain
-    /// the correct containing scope. Both renderers use this same identity.
-    fn emission_key(self) -> Result<Cow<'a, str>> {
+    /// Intern each distinct effective body. Materialized allOf refinements can
+    /// share a source pointer, while equal refinements can have different ones.
+    /// Equality is the admission check whenever either renderer reuses a key.
+    fn emission_key(self, schema: &CfnSchema) -> Result<Cow<'a, str>> {
         let effective = self.property.try_query()?;
         let canonical = self.canonical.try_query()?;
         if schema_projection::equivalent_definition_projection(effective, canonical)? {
-            Ok(Cow::Borrowed(self.name))
-        } else {
-            Ok(Cow::Owned(format!(
-                "{}@{}",
-                self.name, effective.source_pointer
-            )))
+            return Ok(Cow::Borrowed(self.name));
         }
+        let mut keys = schema.definition_keys.lock().map_err(|_poisoned| {
+            effective.emission_error("definition identity registry lock was poisoned")
+        })?;
+        let refinements = keys.entry(self.name.into()).or_default();
+        for (key, previous) in refinements.iter() {
+            if schema_projection::equivalent_definition_projection(effective, previous)? {
+                return Ok(Cow::Owned(key.clone()));
+            }
+        }
+        let mut index = refinements.len() + 1;
+        let key = loop {
+            let key = format!("{}@refinement{index}", self.name);
+            // A source definition may itself contain the generated suffix.
+            if schema
+                .definitions
+                .as_ref()
+                .is_none_or(|definitions| !definitions.contains_key(&key))
+                && refinements.iter().all(|(previous, _body)| previous != &key)
+            {
+                break key;
+            }
+            index += 1;
+        };
+        refinements.push((key.clone(), effective.clone()));
+        Ok(Cow::Owned(key))
     }
 }
 
@@ -7036,7 +7078,7 @@ fn key_enum_info<'a>(key: &'a StringLeaf<'_>) -> Option<&'a EnumInfo> {
     match key {
         StringLeaf::Named { .. } => None,
         StringLeaf::Enum(EnumLeaf::String { info, plan: _ }) => Some(info),
-        StringLeaf::Enum(EnumLeaf::Integer(_values)) => None,
+        StringLeaf::Enum(EnumLeaf::Integer(_values) | EnumLeaf::Number(_values)) => None,
         StringLeaf::Inferred {
             rust_type: _,
             display_type: _,
@@ -7901,6 +7943,7 @@ enum EnumLeaf {
         plan: emission_plan::LiteralPlan,
     },
     Integer(Vec<i64>),
+    Number(Vec<i64>),
 }
 
 impl EnumLeaf {
@@ -7918,6 +7961,14 @@ impl EnumLeaf {
         match self {
             Self::String { info, plan: _ } => ("AttributeType::string()".to_string(), Some(info)),
             Self::Integer(values) => (int_enum_type(cfn_type, prop_name, &values), None),
+            Self::Number(values) => {
+                let members = values
+                    .iter()
+                    .map(|value| refined_float_type("None", Some((Some(*value), Some(*value)))))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                (format!("AttributeType::union(vec![{members}])"), None)
+            }
         }
     }
 
@@ -7926,6 +7977,14 @@ impl EnumLeaf {
             Self::String { info: _, plan: _ } => "String".to_string(),
             Self::Integer(values) => format!(
                 "IntEnum([{}])",
+                values
+                    .iter()
+                    .map(i64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Self::Number(values) => format!(
+                "FloatEnum([{}])",
                 values
                     .iter()
                     .map(i64::to_string)
@@ -8003,16 +8062,30 @@ fn enum_leaf_from_literals(
     literal: emission_plan::LiteralPlan,
 ) -> Result<EnumLeaf> {
     let values = &literal.values;
-    if values.iter().all(|v| v.as_i64().is_some()) {
-        return Ok(EnumLeaf::Integer(
-            values
-                .iter()
-                .map(|v| {
-                    v.as_i64()
-                        .ok_or_else(|| plan.emission_error("non-integral enum member"))
-                })
-                .collect::<std::result::Result<Vec<_>, _>>()?,
-        ));
+    if matches!(
+        literal.value_type,
+        EmissionType::Integer | EmissionType::Number
+    ) {
+        let values = values
+            .iter()
+            .map(|v| {
+                v.as_i64()
+                    .ok_or_else(|| plan.emission_error("non-integral enum member"))
+            })
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        if literal.value_type == EmissionType::Number {
+            for value in &values {
+                if (*value as f64) as i128 != i128::from(*value) {
+                    return Err(plan
+                        .emission_error(format!(
+                            "float literal endpoint is not exactly representable: {value}"
+                        ))
+                        .into());
+                }
+            }
+            return Ok(EnumLeaf::Number(values));
+        }
+        return Ok(EnumLeaf::Integer(values));
     }
     let values = values
         .iter()
@@ -8108,7 +8181,7 @@ impl StringLeaf<'_> {
                 rust_type,
                 display_type,
             } => TypeDisplay::from_constructor(rust_type, display_type.clone()),
-            Self::Enum(EnumLeaf::String { info: _, plan: _ })
+            Self::Enum(EnumLeaf::String { info: _, plan: _ } | EnumLeaf::Number(_))
             | Self::Refined {
                 constraints: _,
                 format: _,
@@ -13830,7 +13903,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                     .into());
             };
             let def_name = resolved.name;
-            let emission_key = resolved.emission_key()?;
+            let emission_key = resolved.emission_key(schema)?;
 
             if IN_PROGRESS_DEFS
                 .with(|definitions| definitions.borrow().contains(emission_key.as_ref()))
@@ -14176,9 +14249,18 @@ fn property_block_name(
         && is_dsl_tags_property(schema, &path)?
     {
         return Ok(match schema.tag_shape(property)? {
-            TagShape::KeyValueList(_) => compute_block_name(name),
-            TagShape::KeyValueObject(_) | TagShape::StringMap(_) | TagShape::NotTag { .. } => None,
-            TagShape::Unreadable { source, .. } => return Err(source.clone().into()),
+            TagShape::KeyValueList(_map) => compute_block_name(name),
+            TagShape::KeyValueObject(_map) | TagShape::StringMap(_map) => None,
+            TagShape::NotTag {
+                reason: _reason,
+                candidate: _candidate,
+                pointer: _pointer,
+            } => None,
+            TagShape::Unreadable {
+                source,
+                candidate: _candidate,
+                pointer: _pointer,
+            } => return Err(source.clone().into()),
         });
     }
     if let Some(name) = override_type.and_then(TypeOverride::block_name) {
@@ -14342,6 +14424,10 @@ mod tests {
 
     mod review_round1_tests {
         include!("codegen/review_round1_tests.rs");
+    }
+
+    mod review_round2_tests {
+        include!("codegen/review_round2_tests.rs");
     }
 
     mod field_groups_tests {

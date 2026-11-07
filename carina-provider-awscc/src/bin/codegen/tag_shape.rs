@@ -533,10 +533,21 @@ impl Classifier<'_> {
 pub(super) fn classify_tag_shape(layer: &Arc<Layer>, property: NodeId) -> &TagShape {
     layer
         .tag_shape_cache(property)
-        .get_or_init(|| classify(layer, property))
+        .get_or_init(|| classify(layer, property, None))
 }
 
-fn classify(layer: &Arc<Layer>, property: NodeId) -> TagShape {
+/// Source analysis still supplies strict composition/candidate evidence, but
+/// a materialized intersection owns its effective constraints. Reclassifying
+/// just the source node would discard refinements added by its containing use.
+pub(super) fn classify_materialized_tag_shape(
+    layer: &Arc<Layer>,
+    property: NodeId,
+    projection: &Projection,
+) -> TagShape {
+    classify(layer, property, Some(projection))
+}
+
+fn classify(layer: &Arc<Layer>, property: NodeId, effective: Option<&Projection>) -> TagShape {
     let mut classifier = Classifier {
         layer,
         active: BTreeSet::new(),
@@ -556,7 +567,7 @@ fn classify(layer: &Arc<Layer>, property: NodeId) -> TagShape {
         pointer: pointer.clone(),
     };
     let p = match analysis.projection {
-        Ok(p) => p,
+        Ok(p) => effective.cloned().unwrap_or(p),
         Err(error) => return unreadable(error),
     };
     let (fields, required) = if p.effective_type() == Some("array") || candidate.complete() {

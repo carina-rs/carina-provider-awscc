@@ -59,7 +59,7 @@ fn round1_definition_identity_includes_descendant_groups_in_both_orders() {
         let shared_ref = schema.properties[shared].query().reference.as_ref().unwrap();
         let key = |reference: &schema_projection::Reference| ResolvedRef {
             name: &reference.name, property: &reference.property, canonical: &reference.canonical
-        }.emission_key().unwrap().into_owned();
+        }.emission_key(&schema).unwrap().into_owned();
         assert_ne!(key(local_ref), key(shared_ref));
         let rust = generate_synthetic_schema_code(&schema).unwrap();
         assert_eq!(rust.matches("FieldGroup::at_least_one([\"a\", \"b\"])").count(), 2, "{rust}");

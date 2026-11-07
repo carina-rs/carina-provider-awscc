@@ -51,6 +51,7 @@ impl ParsedCfnSchema {
             type_name: typed.resource().type_name.clone().unwrap_or_default(),
             properties,
             definitions,
+            definition_keys: Default::default(),
             #[cfg(test)]
             tagging: typed
                 .resource()

@@ -719,6 +719,7 @@ pub(super) fn bridge(layer: &Arc<Layer>, node: NodeId) -> SchemaProperty {
     SchemaProperty {
         origin: Some(Origin::new(layer, node)),
         projection: OnceLock::new(),
+        materialized_tag_shape: OnceLock::new(),
     }
 }
 
@@ -811,6 +812,7 @@ pub(super) fn materialize(p: Projection) -> SchemaProperty {
         any_of: Vec::new(),
         origin: None,
         projection: OnceLock::from(Ok(p)),
+        materialized_tag_shape: OnceLock::new(),
     }
 }
 
