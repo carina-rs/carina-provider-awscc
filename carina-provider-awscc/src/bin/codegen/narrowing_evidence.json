@@ -7882,5 +7882,122 @@
     "reason": "Restore only the documented maximum of 32 characters. No general Z-prefix/alphanumeric rule was found.",
     "checked_on": "2026-11-07",
     "path": "Id"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "/definitions/FieldToMatch/properties/AllQueryArguments",
+    "status": "verified",
+    "url": "https://docs.aws.amazon.com/waf/latest/APIReference/API_AllQueryArguments.html",
+    "quote": "JSON specification: \"AllQueryArguments\": {}",
+    "checked_on": "2026-11-07",
+    "path": "FieldToMatch.AllQueryArguments"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "/definitions/FieldToMatch/properties/UriPath",
+    "status": "verified",
+    "url": "https://docs.aws.amazon.com/waf/latest/APIReference/API_UriPath.html",
+    "quote": "JSON specification: \"UriPath\": {}",
+    "checked_on": "2026-11-07",
+    "path": "FieldToMatch.UriPath"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "/definitions/FieldToMatch/properties/QueryString",
+    "status": "verified",
+    "url": "https://docs.aws.amazon.com/waf/latest/APIReference/API_QueryString.html",
+    "quote": "JSON specification: \"QueryString\": {}",
+    "checked_on": "2026-11-07",
+    "path": "FieldToMatch.QueryString"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "/definitions/FieldToMatch/properties/Method",
+    "status": "verified",
+    "url": "https://docs.aws.amazon.com/waf/latest/APIReference/API_Method.html",
+    "quote": "JSON specification: \"Method\": {}",
+    "checked_on": "2026-11-07",
+    "path": "FieldToMatch.Method"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "/definitions/OverrideAction/properties/Count",
+    "status": "verified",
+    "url": "https://docs.aws.amazon.com/waf/latest/APIReference/API_CountAction.html",
+    "quote": "Specifies that AWS WAF should count the request. Optionally defines additional custom handling for the request.",
+    "checked_on": "2026-11-07",
+    "path": "OverrideAction.Count"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "/definitions/OverrideAction/properties/None",
+    "status": "verified",
+    "url": "https://docs.aws.amazon.com/waf/latest/APIReference/API_NoneAction.html",
+    "quote": "JSON specification: \"None\": {}",
+    "checked_on": "2026-11-07",
+    "path": "OverrideAction.None"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "/definitions/JsonMatchPattern/properties/All",
+    "status": "verified",
+    "url": "https://docs.aws.amazon.com/waf/latest/APIReference/API_All.html",
+    "quote": "JSON specification: \"All\": {}",
+    "checked_on": "2026-11-07",
+    "path": "JsonMatchPattern.All"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "/definitions/HeaderMatchPattern/properties/All",
+    "status": "verified",
+    "url": "https://docs.aws.amazon.com/waf/latest/APIReference/API_All.html",
+    "quote": "JSON specification: \"All\": {}",
+    "checked_on": "2026-11-07",
+    "path": "HeaderMatchPattern.All"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "/definitions/CookieMatchPattern/properties/All",
+    "status": "verified",
+    "url": "https://docs.aws.amazon.com/waf/latest/APIReference/API_All.html",
+    "quote": "JSON specification: \"All\": {}",
+    "checked_on": "2026-11-07",
+    "path": "CookieMatchPattern.All"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "/definitions/RateBasedStatementCustomKey/properties/ForwardedIP",
+    "status": "verified",
+    "url": "https://docs.aws.amazon.com/waf/latest/APIReference/API_CreateWebACL.html",
+    "quote": "\"ForwardedIP\": {\n                         }",
+    "checked_on": "2026-11-07",
+    "path": "RateBasedStatementCustomKey.ForwardedIP"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "/definitions/RateBasedStatementCustomKey/properties/HTTPMethod",
+    "status": "verified",
+    "url": "https://docs.aws.amazon.com/waf/latest/APIReference/API_CreateWebACL.html",
+    "quote": "\"HTTPMethod\": {\n                         }",
+    "checked_on": "2026-11-07",
+    "path": "RateBasedStatementCustomKey.HTTPMethod"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "/definitions/RateBasedStatementCustomKey/properties/IP",
+    "status": "verified",
+    "url": "https://docs.aws.amazon.com/waf/latest/APIReference/API_CreateWebACL.html",
+    "quote": "\"IP\": {\n                         }",
+    "checked_on": "2026-11-07",
+    "path": "RateBasedStatementCustomKey.IP"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "/definitions/RateBasedStatementCustomKey/properties/ASN",
+    "status": "verified",
+    "url": "https://docs.aws.amazon.com/waf/latest/APIReference/API_CreateWebACL.html",
+    "quote": "\"ASN\": {\n                         }",
+    "checked_on": "2026-11-07",
+    "path": "RateBasedStatementCustomKey.ASN"
   }
 ]

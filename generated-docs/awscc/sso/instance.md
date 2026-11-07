@@ -53,19 +53,19 @@ Shorthand formats: `create_in_progress` or `Status.create_in_progress`
 
 ### `identity_store_id`
 
-- **Type:** `aws.identitystore.Store.Id`
+- **Type:** aws.identitystore.Store.Id — String(pattern, len: 1..=64)
 
 The ID of the identity store associated with the created Identity Center (SSO) Instance
 
 ### `instance_arn`
 
-- **Type:** `aws.sso.Instance.Arn`
+- **Type:** aws.sso.Instance.Arn — String(pattern, len: 10..=1224)
 
 The SSO Instance ARN that is returned upon creation of the Identity Center (SSO) Instance
 
 ### `owner_account_id`
 
-- **Type:** `aws.AccountId`
+- **Type:** aws.AccountId — String(pattern, len: 12..=12)
 
 The AWS accountId of the owner of the Identity Center (SSO) Instance
 

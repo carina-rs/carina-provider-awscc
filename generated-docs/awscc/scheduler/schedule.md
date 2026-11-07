@@ -82,7 +82,7 @@ The description of the schedule.
 
 ### `end_date`
 
-- **Type:** `String`
+- **Type:** `String(pattern)`
 - **Required:** No
 
 The date, in UTC, before which the schedule can invoke its target. Depending on the schedule's recurrence expression, invocations might stop on, or before, the EndDate you specify.
@@ -94,7 +94,7 @@ The date, in UTC, before which the schedule can invoke its target. Depending on 
 
 ### `group_name`
 
-- **Type:** `aws.scheduler.Schedule.GroupName`
+- **Type:** aws.scheduler.Schedule.GroupName — String(pattern, len: 1..=64)
 - **Required:** No
 
 The name of the schedule group to associate with this schedule. If you omit this, the default schedule group is used. Carina requires group_name to be omitted or set to the literal 'default'. Cloud Control identifies schedules by Name only and reads them in the default group, so a schedule in another group can be created but never read or tracked.
@@ -114,7 +114,7 @@ The ARN for a KMS Key that will be used to encrypt customer data.
 
 ### `schedule_expression`
 
-- **Type:** `aws.scheduler.Schedule.ScheduleExpression`
+- **Type:** aws.scheduler.Schedule.ScheduleExpression — String(len: 1..=256)
 - **Required:** Yes
 
 The scheduling expression.
@@ -128,7 +128,7 @@ The timezone in which the scheduling expression is evaluated.
 
 ### `start_date`
 
-- **Type:** `String`
+- **Type:** `String(pattern)`
 - **Required:** No
 
 The date, in UTC, after which the schedule can begin invoking its target. Depending on the schedule's recurrence expression, invocations might occur on, or after, the StartDate you specify.
@@ -232,14 +232,14 @@ Shorthand formats: `task_definition` or `PropagateTags.task_definition`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | `aws.Arn` | Yes | The Amazon Resource Name (ARN) of the target. |
+| `arn` | aws.Arn — String(len: 1..=1600) | Yes | The Amazon Resource Name (ARN) of the target. |
 | `dead_letter_config` | [Struct(DeadLetterConfig)](#targetdead_letter_config) | No |  |
 | `ecs_parameters` | [Struct(EcsParameters)](#targetecs_parameters) | No |  |
 | `event_bridge_parameters` | [Struct(EventBridgeParameters)](#targetevent_bridge_parameters) | No |  |
 | `input` | String(len: 1..) | No | The text, or well-formed JSON, passed to the target. If you are configuring a templated Lambda, AWS Step Functions, or Amazon EventBridge target, the input must be a well-formed JSON. For all other target types, a JSON is not required. If you do not specify anything for this field, EventBridge Scheduler delivers a default notification to the target. |
 | `kinesis_parameters` | [Struct(KinesisParameters)](#targetkinesis_parameters) | No |  |
 | `retry_policy` | [Struct(RetryPolicy)](#targetretry_policy) | No |  |
-| `role_arn` | `aws.Arn` | Yes | The Amazon Resource Name (ARN) of the IAM role to be used for this target when the schedule is triggered. |
+| `role_arn` | aws.Arn — String(pattern, len: 1..=1600) | Yes | The Amazon Resource Name (ARN) of the IAM role to be used for this target when the schedule is triggered. |
 | `sage_maker_pipeline_parameters` | [Struct(SageMakerPipelineParameters)](#targetsage_maker_pipeline_parameters) | No |  |
 | `sqs_parameters` | [Struct(SqsParameters)](#targetsqs_parameters) | No |  |
 
@@ -247,7 +247,7 @@ Shorthand formats: `task_definition` or `PropagateTags.task_definition`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | `aws.Arn` | No | The ARN of the SQS queue specified as the target for the dead-letter queue. |
+| `arn` | aws.Arn — String(pattern, len: 1..=1600) | No | The ARN of the SQS queue specified as the target for the dead-letter queue. |
 
 ### target.ecs_parameters
 
@@ -264,17 +264,17 @@ Shorthand formats: `task_definition` or `PropagateTags.task_definition`
 | `platform_version` | String(len: 1..=64) | No | Specifies the platform version for the task. Specify only the numeric portion of the platform version, such as 1.1.0. |
 | `propagate_tags` | [Enum (PropagateTags)](#targetecs_parameterspropagate_tags-propagatetags) | No |  |
 | `reference_id` | String(len: ..=1024) | No | The reference ID to use for the task. |
-| `tags` | `List<Map<String, String(len: 1..=256)>>` (items: 0..=50) | No | The metadata that you apply to the task to help you categorize and organize them. Each tag consists of a key and an optional value, both of which you define. To learn more, see RunTask in the Amazon ECS API Reference. |
+| `tags` | `List<Map<String(pattern), String(len: 1..=256)>>` (items: 0..=50) | No | The metadata that you apply to the task to help you categorize and organize them. Each tag consists of a key and an optional value, both of which you define. To learn more, see RunTask in the Amazon ECS API Reference. |
 | `task_count` | Float(1..=10) | No | The number of tasks to create based on TaskDefinition. The default is 1. |
-| `task_definition_arn` | `aws.Arn` | Yes | The ARN of the task definition to use if the event target is an Amazon ECS task. |
+| `task_definition_arn` | aws.Arn — String(len: 1..=1600) | Yes | The ARN of the task definition to use if the event target is an Amazon ECS task. |
 
 ### target.ecs_parameters.capacity_provider_strategy
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `base` | Float(0..=100000) | No | The base value designates how many tasks, at a minimum, to run on the specified capacity provider. Only one capacity provider in a capacity provider strategy can have a base defined. If no value is specified, the default value of 0 is used. |
+| `base` | Float(0..=100000) | No | The base value designates how many tasks, at a minimum, to run on the specified capacity provider. Only one capacity provider in a capacity provider strategy can have a base defined. If no value is specified, the default value of 0 is used. Default: 0. AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
 | `capacity_provider` | String(len: 1..=255) | Yes | The short name of the capacity provider. |
-| `weight` | Float(0..=1000) | No | The weight value designates the relative percentage of the total number of tasks launched that should use the specified capacity provider. The weight value is taken into consideration after the base value, if defined, is satisfied. |
+| `weight` | Float(0..=1000) | No | The weight value designates the relative percentage of the total number of tasks launched that should use the specified capacity provider. The weight value is taken into consideration after the base value, if defined, is satisfied. Default: 0. AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
 
 ### target.ecs_parameters.network_configuration
 
@@ -347,7 +347,7 @@ Shorthand formats: `task_definition` or `PropagateTags.task_definition`
 
 ### `arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — String(pattern, len: 1..=1224)
 
 The Amazon Resource Name (ARN) of the schedule.
 

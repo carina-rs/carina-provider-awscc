@@ -51,7 +51,7 @@ Shorthand formats: `active` or `ScheduleGroupState.active`
 
 ### `arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — String(pattern, len: 1..=1224)
 
 The Amazon Resource Name (ARN) of the schedule group.
 

@@ -68,7 +68,7 @@ Information about the policies assigned to a parameter. [Assigning parameter pol
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(pattern), String>`
 - **Required:** No
 
 Optional metadata that you assign to a resource in the form of an arbitrary set of tags (key-value pairs). Tags enable you to categorize a resource in different ways, such as by purpose, owner, or environment. For example, you might want to tag a SYS parameter to identify the type of resource to which it applies, the environment, or the type of configuration data referenced by the parameter.
@@ -129,7 +129,7 @@ Shorthand formats: `string` or `Type.string`
 
 ### `arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — String(pattern)
 
 
 

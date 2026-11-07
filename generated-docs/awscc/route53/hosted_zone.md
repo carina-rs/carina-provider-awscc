@@ -168,7 +168,7 @@ Shorthand formats: `us_east_1` or `VPCRegion.us_east_1`
 
 ### `id`
 
-- **Type:** `aws.route53.HostedZone.Id`
+- **Type:** aws.route53.HostedZone.Id — String(len: ..=32)
 
 
 

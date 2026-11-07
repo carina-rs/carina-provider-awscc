@@ -56,7 +56,7 @@ fn option_d_every_reviewed_narrowing_has_complete_documentation() {
             }
         }
     }
-    assert_eq!(unique.len(), 349 + 7);
+    assert_eq!(unique.len(), 349 + 7 + EMPTY_OBJECT_PROPERTIES.len());
     for ((resource, path), entry) in resource_type_overrides().iter() {
         if let Some(narrowing) = &entry.narrowing {
             assert_eq!(narrowing.evidence, narrowing_evidence::for_field(resource, path).unwrap());

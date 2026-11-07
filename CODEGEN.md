@@ -212,13 +212,63 @@ cargo run --bin codegen -- --file schema.json --type-name AWS::EC2::VPC \
 | Declared resource tag property | `AttributeType::map_with_key(key, value)` for an object with exactly case-sensitive string `Key` and `Value` fields, or a closed map with one string-valued `patternProperties` entry. Local references, aliases and `allOf` may supply the shape or leaf constraints; every non-null union arm must agree. Leaves retain `minLength`, `maxLength` and approved `pattern` constraints; explicit leaf `enum` or `const` constraints currently produce a typed error. Pattern-map keys use their regex. Array `minItems` and `maxItems` become map entry bounds through `AttributeType::refined_map`; without effective bounds the map stays unbounded. See [String patterns](#string-patterns) |
 | `array` | `AttributeType::unordered_list()` |
 
-CloudFormation `number` properties map to `Float` unless registered as `IntegerFromNumber` in `resource_type_overrides()`. That override maps them to `Int` using the property's CloudFormation `minimum` and `maximum`.
+CloudFormation `number` properties map to `Float`; `integer` properties map to `Int`. A narrowing preserves the CFN kind, including through numeric ranges and array-item refinements. Numeric endpoints must be exactly representable by the emitted type; otherwise both generators return a typed `SchemaError`.
 
 String types are inferred from property names (e.g., `SubnetId` maps to `subnet_id()` type). Resource-specific overrides are defined in `resource_type_overrides()` and `known_string_type_overrides()` within `codegen.rs`.
 
-Tag-map count overrides use `TypeOverride::Array { items: None, min_items, max_items }` in `resource_type_overrides()`, keyed by the resource type and raw CFN property path (`Tags`). They retain the derived key/value types and may only tighten the CFN array bounds. Both lower and upper bounds reach Rust and Markdown; the implicit lower bound zero uses the existing unconstrained length normal form. For example, Scheduler ScheduleGroup's live service limit of 50 tightens CFN's `maxItems: 200`; the override comment records the Cloud Control evidence. Generated docs display map counts as `(entries: ..=50)` or `(entries: 2..=5)`, using the same range formatter and Markdown rendering as bounded lists.
+An identity names a type while retaining the field's effective CFN constraints:
+
+```rust
+m.insert(
+    ("AWS::EC2::Subnet", "VpcId"),
+    TypeOverride::identity(Some(StringIdentity::Ec2VpcId)),
+);
+```
+
+A structural restriction requires a `NarrowingKind` and checked `AwsEvidence`. Documentation evidence includes an AWS URL, a verbatim quotation that supports the restriction, and a checked date. For example:
+
+```rust
+let evidence = AwsEvidence::new(
+    "https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html#API_CreateRole_RequestParameters",
+    "Length Constraints: Minimum length of 1. Maximum length of 64.",
+    CheckedOn { year: 2026, month: 11, day: 7 },
+)?;
+m.insert(
+    ("AWS::IAM::Role", "RoleName"),
+    TypeOverride::identity(None).with_narrowing(
+        NarrowingKind::Primitive {
+            expression: ConstraintSpec::string(
+                None, Some((Some(1), Some(64))), PatternLiteral::Quoted,
+            ),
+            display: OverrideTypeDisplay::new("String(len: 1..=64)"),
+            block_name: None,
+            default: None,
+        },
+        evidence,
+    ),
+);
+```
+
+For recorded service behavior, use `AwsEvidence::observed` with exact inputs, results, verified directions, region, date, method, and a source record. `insert_evidenced` looks up the reviewed row in `narrowing_evidence.json`; a candidate without a review cannot become a narrowing. Both renderers validate the intersection with CFN through `TypeOverride::validate_source_shape` and `emission_plan::lower`. Evidence does not permit changing the CFN kind or discarding constraints.
+
+Tag-map count overrides use `NarrowingKind::Array`, keyed by the resource type and raw CFN property path (`Tags`):
+
+```rust
+m.insert_evidenced(
+    ("AWS::Scheduler::ScheduleGroup", "Tags"),
+    NarrowingKind::Array {
+        items: None,
+        min_items: None,
+        max_items: Some(50),
+    },
+);
+```
+
+This example requires the existing ScheduleGroup observation in `narrowing_evidence.json`. It retains the derived key/value types and tightens CFN's `maxItems: 200` to the observed service limit of 50. Both bounds reach Rust and Markdown; an implicit lower bound of zero uses the unconstrained length normal form. Generated docs display map counts as `(entries: ..=50)` or `(entries: 2..=5)`, using the same formatter as bounded lists.
 
 Resource tagging classification uses `resource_type_overrides().classify_tagging((cfn_type, "/properties/PropertyName"), TaggingOverride::TagProperty)`. These keys are raw CFN JSON pointers. Use this declaration when CFN omits its `tagging` block; otherwise `tagging.tagProperty` identifies the property (defaulting to `/properties/Tags` for a taggable resource). A top-level property named `Tags` is also recognized without metadata. All three sources feed the same tag-map projection, constraints, `TagsProperty` wire metadata, portable `TagsKeyValueCheck` declaration, and documentation.
+
+Defaults are site annotations: a referenced definition's default does not become a default on an unannotated reference. Optional resource attributes support scalar, list, map, and struct defaults; struct literals translate CFN field names to DSL names while map keys stay unchanged. Nested field defaults remain in generated Rust descriptions and Markdown with an explicit server-default diagnostic because the pinned core has no `StructField` default API. Required/output defaults and JSON defaults whose shape differs from the emitted DSL type are also documented as server defaults. Null, unrepresentable numbers, defaults on collection elements without a field site, and defaults on CFN Key/Value tag shapes transformed into DSL maps produce typed errors.
 
 The identified tag property always has the DSL name `tags`. Generated attributes retain the CFN name through `with_provider_name("ResourceTags")` or `with_provider_name("HostedZoneTags")`, and tag wire metadata uses that same CFN name. Both generators fail if multiple distinct tag properties are identified or if renaming the tag property would collide with another generated DSL attribute named `tags`. Multiple sources may identify the same CFN property.
 
@@ -280,8 +330,8 @@ Inline parents are keyed by their raw property name in the one-level `CfnPropert
 Classify each shape in exactly one place. Codegen rejects multiple matching classifications at lookup time, and the table-disjointness test checks IAM, free-form JSON, empty-object, string-map, omitted-property, and dedicated `AttributeType` override keys together:
 
 - `FREE_FORM_JSON_PROPERTIES` contains heterogeneous or recursive JSON documents that Carina cannot represent until [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144) lands. These properties are omitted from generated schemas and regular property tables, then listed in the generated unsupported note.
-- `EMPTY_OBJECT_PROPERTIES` contains marker objects whose only meaningful value is `{}`. They generate a closed empty struct, so `{}` validates and any field is an error.
-- `STRING_MAP_PROPERTIES` is only for genuine homogeneous string-to-string maps.
+- `EMPTY_OBJECT_PROPERTIES` contains candidates for marker objects represented by `{}`. Each row registers an evidenced `NarrowingKind::Primitive` with a typed empty-object constraint; common source-shape validation must succeed before either renderer consumes it. Generated docs include its AWS evidence. This supported subset generates a closed empty struct, so `{}` validates and any field is an error.
+- `STRING_MAP_PROPERTIES` is only for genuine homogeneous string-to-string maps and uses the same evidenced narrowing boundary. Neither classification table authorizes emission by itself.
 - `IAM_POLICY_DOCUMENT_PROPERTIES` explicitly lists every cached path that previously matched the old `*PolicyDocument` suffix rule; `NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES` lists policy paths with other names. Both tables are typed-path and stale-row checked.
 - A dedicated `AttributeType` override handles a known non-generic shape, such as the Budgets maps.
 - `OMITTED_RESOURCE_PROPERTIES` contains otherwise representable properties deliberately excluded for a documented per-row provider limitation (for example, conflicting read-back or an unavailable AWS capability).

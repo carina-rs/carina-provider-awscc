@@ -55,7 +55,7 @@ The approximate amount of time, in seconds, between health checks of an individu
 
 ### `health_check_port`
 
-- **Type:** `String`
+- **Type:** `String(pattern)`
 - **Required:** No
 
 The port the load balancer uses when performing health checks on targets. 
@@ -260,7 +260,7 @@ Shorthand formats: `instance` or `TargetType.instance`
 | `availability_zone` | `aws.AvailabilityZone.ZoneName \| String (pattern: ^all\z)` | No | An Availability Zone or all. This determines whether the target receives traffic from the load balancer nodes in the specified Availability Zone or from all enabled Availability Zones for the load balancer. |
 | `id` | String | Yes | The ID of the target. If the target type of the target group is instance, specify an instance ID. If the target type is ip, specify an IP address. If the target type is lambda, specify the ARN of the Lambda function. If the target type is alb, specify the ARN of the Application Load Balancer target.  |
 | `port` | Int(1..=65535) | No | The port on which the target is listening. If the target group protocol is GENEVE, the supported port is 6081. If the target type is alb, the targeted Application Load Balancer must have at least one listener whose port matches the target group port. Not used if the target is a Lambda function. |
-| `quic_server_id` | `String` | No | The Server ID used by targets when using QUIC or TCP_QUIC protocols. |
+| `quic_server_id` | `String(pattern)` | No | The Server ID used by targets when using QUIC or TCP_QUIC protocols. |
 
 ## Attribute Reference
 

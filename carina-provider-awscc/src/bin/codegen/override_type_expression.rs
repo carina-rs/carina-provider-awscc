@@ -84,6 +84,8 @@ enum Constraint {
     AvailabilityZoneOrAll,
     Document(DocumentKind),
     Map(MapKind),
+    EmptyObject,
+    StringMap,
     Enum(EnumDomain),
 }
 
@@ -222,6 +224,23 @@ impl ConstraintSpec {
             code: code.into(),
             patterns: vec![],
             constraint: Constraint::Map(kind),
+        }
+    }
+    pub(super) fn empty_object(name: &str) -> Self {
+        Self {
+            code: format!(
+                "AttributeType::struct_({}.to_string(), vec![])",
+                rust_lit(&name.to_pascal_case())
+            ),
+            patterns: vec![],
+            constraint: Constraint::EmptyObject,
+        }
+    }
+    pub(super) fn string_map() -> Self {
+        Self {
+            code: "AttributeType::map(AttributeType::string())".into(),
+            patterns: vec![],
+            constraint: Constraint::StringMap,
         }
     }
     pub(super) fn enum_domain(domain: EnumDomain) -> Self {
@@ -383,6 +402,7 @@ impl ConstraintSpec {
                 if min.zip(max).is_some_and(|(a, b)| a > b) {
                     return Err(fail("empty numeric narrowing intersection").into());
                 }
+                plan.validate_numeric_range(min, max)?;
                 Ok(
                     if min.is_none() && max.is_none() && plan.numeric()?.format.is_none() {
                         if expected == EmissionType::Integer {
@@ -426,10 +446,10 @@ impl ConstraintSpec {
                 ))
             }
             Constraint::Document(kind) => {
-                validate_document(p, &kind.declaration())?;
+                validate_document(p, &kind.declaration(), schema)?;
                 Ok(self.code.clone())
             }
-            Constraint::Map(_) => {
+            Constraint::Map(_) | Constraint::EmptyObject | Constraint::StringMap => {
                 require_unconstrained_object_form(p)?;
                 Ok(self.code.clone())
             }
@@ -492,7 +512,11 @@ fn require_unconstrained_object_form(p: &Projection) -> Result<()> {
 
 /// This is specific to reviewed JSON object grammars, never an arbitrary
 /// constructor implication check. Scalar fields are checked recursively.
-fn validate_document(p: &Projection, declaration: &AttributeType) -> Result<()> {
+fn validate_document(
+    p: &Projection,
+    declaration: &AttributeType,
+    schema: &CfnSchema,
+) -> Result<()> {
     object_form(p)?;
     let RawShape::Struct { fields, .. } = declaration.raw_shape() else {
         return Err(p.emission_error("document grammar must be a struct").into());
@@ -541,7 +565,12 @@ fn validate_document(p: &Projection, declaration: &AttributeType) -> Result<()> 
     for field in fields {
         let name = field.provider_name.unwrap_or(field.name);
         if let Some(source) = p.properties.as_ref().and_then(|ps| ps.get(name)) {
-            validate_document_field(source.try_query()?, field.field_type)?;
+            validate_document_field(
+                source.try_query()?,
+                field.field_type,
+                schema,
+                CfnPropertyPath::new(Some(&p.source_name), name),
+            )?;
         } else if p.additional_properties == Some(false) {
             return Err(p
                 .emission_error(format!(
@@ -553,23 +582,42 @@ fn validate_document(p: &Projection, declaration: &AttributeType) -> Result<()> 
     Ok(())
 }
 
-fn validate_document_field(p: &Projection, declaration: &AttributeType) -> Result<()> {
+fn validate_document_field(
+    p: &Projection,
+    declaration: &AttributeType,
+    schema: &CfnSchema,
+    path: CfnPropertyPath<'_>,
+) -> Result<()> {
     let fail = |why: &str| p.emission_error(format!("document field narrowing: {why}"));
     match declaration.raw_shape() {
-        RawShape::Struct { .. } => validate_document(p, declaration),
+        RawShape::Struct { .. } => validate_document(p, declaration, schema),
         RawShape::String {
             pattern, length, ..
         } => {
             let plan = emission_plan::lower(p)?;
             let string = plan.string()?;
+            if string.format.is_some_and(|format| format != "date-time") {
+                return Err(fail("CFN format has no normalized containment proof").into());
+            }
+            // Use the same normalized constraints as ordinary string emission,
+            // including format-derived patterns. Raw CFN pattern alone loses
+            // date-time and any future format with a normalized constraint.
+            let constraints =
+                project_string_constraints(string, &schema.type_name, path, &p.source_pointer)?;
             let (min, max) = length.unwrap_or((None, None));
-            if string.min_length.is_some_and(|n| min.is_none_or(|m| m < n))
-                || string.max_length.is_some_and(|n| max.is_none_or(|m| m > n))
+            if constraints
+                .min_length
+                .is_some_and(|n| min.is_none_or(|m| m < n))
+                || constraints
+                    .max_length
+                    .is_some_and(|n| max.is_none_or(|m| m > n))
             {
                 return Err(fail("CFN length is not retained").into());
             }
-            if let Some(source) = string.pattern
-                && !pattern.is_some_and(|pattern| pattern_subset(pattern, source).unwrap_or(false))
+            if let Some(source) = &constraints.pattern
+                && !pattern.is_some_and(|pattern| {
+                    pattern_subset(pattern, source.as_str()).unwrap_or(false)
+                })
             {
                 return Err(fail("CFN pattern is not retained").into());
             }

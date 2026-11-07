@@ -231,10 +231,10 @@ impl Projection {
     }
 
     pub(super) fn value_type(&self) -> Result<EmissionType, SchemaError> {
-        if let Some(literal) = self
+        for literal in self
             .const_value
-            .as_ref()
-            .or_else(|| self.enum_values.as_ref()?.first())
+            .iter()
+            .chain(self.enum_values.iter().flatten())
         {
             let agrees = match self.effective_json_type() {
                 Some(JsonType::String) => literal.is_string(),
@@ -545,6 +545,7 @@ fn project_type(
         .filter(|kind| *kind != JsonType::Null)
         .collect::<Vec<_>>();
     match nonnull.as_slice() {
+        [] if !types.is_empty() => Ok(ProjectedType::Value(JsonType::Null)),
         [] => Ok(ProjectedType::Unspecified),
         [kind] => Ok(ProjectedType::Value(*kind)),
         [JsonType::Object, JsonType::String] => Ok(ProjectedType::JsonDocument),
@@ -1830,6 +1831,8 @@ fn strict_integer_bound(number: &Number, lower: bool) -> Option<i64> {
 /// Finite literal domains can absorb scalar constraints exactly before enum
 /// emission. Evaluate the source regex with JSON Schema's substring semantics;
 /// a finite enum no longer needs a separate pattern/range validator.
+/// Literal kind compatibility is checked by `Projection::value_type` at the
+/// emission boundary, preserving unsupported-literal diagnostics.
 pub(super) fn intersect_literals(p: &mut Projection) -> Result<(), SchemaError> {
     if p.const_value.is_none() && p.enum_values.is_none() {
         return Ok(());

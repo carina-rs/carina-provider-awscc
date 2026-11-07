@@ -60,7 +60,7 @@ The policy document. You must provide policies in JSON format in IAM. However, f
 
 ### `policy_name`
 
-- **Type:** `aws.iam.Policy.Name`
+- **Type:** aws.iam.Policy.Name — String(len: 1..=128)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -68,7 +68,7 @@ The name of the policy document. This parameter allows (through its [regex patte
 
 ### `role_name`
 
-- **Type:** `aws.iam.Role.Name`
+- **Type:** aws.iam.Role.Name — String(len: 1..=64)
 - **Required:** Yes
 - **Create-only:** Yes
 

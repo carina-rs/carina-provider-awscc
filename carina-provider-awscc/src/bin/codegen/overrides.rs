@@ -768,6 +768,69 @@ pub(super) fn global_narrowings() -> BTreeMap<String, AwsEvidence> {
     GLOBAL_NARROWINGS.with(|rows| rows.borrow().clone())
 }
 
+/// Classification tables supply candidates, just like resource overrides.
+/// Every emitted restriction has reviewed evidence and crosses the same typed
+/// source-shape/containment boundary before either renderer can consume it.
+pub(super) fn bare_object_narrowing(
+    schema: &CfnSchema,
+    path: CfnPropertyPath<'_>,
+    property: &SchemaProperty,
+) -> Result<String> {
+    static ENTRIES: LazyLock<HashMap<(&'static str, CfnPropertyPath<'static>), TypeOverride>> =
+        LazyLock::new(|| {
+            let empty = EMPTY_OBJECT_PROPERTIES
+                .iter()
+                .chain(TEST_EMPTY_OBJECT_PROPERTIES)
+                .map(|entry| {
+                    (
+                        entry,
+                        ConstraintSpec::empty_object(entry.property_path.property),
+                    )
+                });
+            let maps = STRING_MAP_PROPERTIES
+                .iter()
+                .map(|entry| (entry, ConstraintSpec::string_map()));
+            empty
+                .chain(maps)
+                .map(|(entry, expression)| {
+                    let kind = NarrowingKind::Primitive {
+                        expression,
+                        display: OverrideTypeDisplay::new("Object"),
+                        block_name: None,
+                        default: None,
+                    };
+                    let narrowing = narrowing_evidence::reviewed(
+                        entry.cfn_type,
+                        &entry.property_path.to_string(),
+                        kind,
+                    )
+                    .expect("bare object restrictions require reviewed AWS evidence");
+                    (
+                        (entry.cfn_type, entry.property_path),
+                        TypeOverride::identity(None)
+                            .with_narrowing(narrowing.kind, narrowing.evidence),
+                    )
+                })
+                .collect()
+        });
+    let projection = property.try_query()?;
+    let entry = ENTRIES
+        .get(&(schema.type_name.as_str(), path))
+        .ok_or_else(|| {
+            projection.emission_error("bare object restriction has no evidenced Narrowing")
+        })?;
+    entry.validate_source_shape(schema, path, property)?;
+    record_global_narrowing(
+        &path.source_pointer(),
+        &entry
+            .narrowing
+            .as_ref()
+            .expect("evidenced restriction")
+            .evidence,
+    );
+    entry.emit_expression(property, schema, path)
+}
+
 impl TypeOverride {
     fn raw_enum_values(&self) -> Option<&[&'static str]> {
         match self.item_override()? {

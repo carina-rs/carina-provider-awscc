@@ -50,6 +50,8 @@ mod schema_layer;
 #[path = "codegen/schema_projection.rs"]
 mod schema_projection;
 use schema_projection::{AlternativeKind, EmissionType, Projection};
+#[path = "codegen/default_plan.rs"]
+mod default_plan;
 #[path = "codegen/emission_plan.rs"]
 mod emission_plan;
 #[path = "codegen/field_groups.rs"]
@@ -1005,7 +1007,21 @@ fn project_tag_map(
 ) -> Result<TagMapType> {
     let schema = classified.schema();
     let property = classified.property();
-    let map = schema.tag_shape(property)?.map(&schema.type_name)?;
+    let shape = schema.tag_shape(property)?;
+    if property.annotation_default().is_some()
+        && matches!(
+            shape,
+            TagShape::KeyValueList(_) | TagShape::KeyValueObject(_)
+        )
+    {
+        return Err(property
+            .try_query()?
+            .emission_error(
+                "default on a transformed tag map requires CFN-to-DSL default conversion",
+            )
+            .into());
+    }
+    let map = shape.map(&schema.type_name)?;
     let tag_shape::TagMap {
         key: cached_key,
         value: cached_value,
@@ -1270,9 +1286,9 @@ const TEST_FREE_FORM_JSON_PROPERTIES: &[ClassifiedProperty] = &[ClassifiedProper
 #[cfg(not(test))]
 const TEST_FREE_FORM_JSON_PROPERTIES: &[ClassifiedProperty] = &[];
 
-/// Bare objects whose only meaningful provider value is `{}`. These must be
-/// represented as empty structs so the DSL accepts `field = {}` while still
-/// rejecting arbitrary keys.
+/// Bare objects with a reviewed provider input subset represented by `{}`.
+/// Their evidenced narrowings generate empty structs so the DSL accepts
+/// `field = {}` while rejecting arbitrary keys.
 const EMPTY_OBJECT_PROPERTIES: &[ClassifiedProperty] = &[
     ClassifiedProperty {
         cfn_type: "AWS::WAFv2::WebACL",
@@ -1789,7 +1805,7 @@ fn bare_object_attribute_type(
     prop: &SchemaProperty,
     schema: &CfnSchema,
     property_path: CfnPropertyPath<'_>,
-    prop_name: &str,
+    _prop_name: &str,
 ) -> Result<String> {
     let cfn_type = &schema.type_name;
     Ok(match emission_bare_object(prop, cfn_type, property_path)? {
@@ -1797,12 +1813,8 @@ fn bare_object_attribute_type(
         BareObjectClassification::IamPolicyDocument(_) => {
             emit_cfn_json_document(prop, schema, property_path)?
         }
-        BareObjectClassification::EmptyObject(_) => format!(
-            r#"AttributeType::struct_({}.to_string(), vec![])"#,
-            rust_lit(&prop_name.to_pascal_case())
-        ),
-        BareObjectClassification::StringMap(_) => {
-            "AttributeType::map(AttributeType::string())".to_string()
+        BareObjectClassification::EmptyObject(_) | BareObjectClassification::StringMap(_) => {
+            overrides::bare_object_narrowing(schema, property_path, prop)?
         }
         BareObjectClassification::TypedOverride { entry } => {
             entry.emit_expression(prop, schema, property_path)?
@@ -3367,22 +3379,6 @@ fn resource_arn_catalog_display(type_name: &str) -> Result<Option<String>> {
     ))
 }
 
-fn top_level_arn_catalog_display(classified: &EmissionProperty<'_>) -> Result<Option<String>> {
-    if classified.name() != "Arn" || classified.path().len() != 1 {
-        return Ok(None);
-    }
-    let plan = emission_plan::lower(classified.property().try_query()?)?;
-    if plan.value_type()? != EmissionType::String || plan.literal.is_some() {
-        return Ok(None);
-    }
-    let resource = dsl_resource_name_from_type(&classified.schema().type_name)?;
-    if let Some((service, resource)) = resource_identity_parts(&resource) {
-        let constructor = arn_constructor(service, resource)?;
-        let _ = (plan, constructor);
-    }
-    resource_arn_catalog_display(&classified.schema().type_name)
-}
-
 /// Catalog rows display their identities. The generic ARN and shared AWS/core
 /// types retain their established public short aliases, such as Arn and Region.
 #[cfg(test)]
@@ -3620,9 +3616,6 @@ fn type_display_at_resolved(
     if !is_dsl_tags_property(classified.schema(), classified.path())? {
         classified.property().try_query()?;
     }
-    if let Some(identity) = top_level_arn_catalog_display(&classified)? {
-        return Ok(TypeDisplay::Code(identity.to_string()));
-    }
     if let Some(reference) = emission_reference(&classified, cfn_property_path)? {
         return Ok(TypeDisplay::Plain(reference.display()));
     }
@@ -3664,8 +3657,12 @@ fn type_display_at_resolved(
                     emit_cfn_json_document(prop, schema, cfn_property_path)?;
                     TypeDisplay::Plain("PolicyDocument".to_string())
                 }
-                BareObjectClassification::EmptyObject(_) => TypeDisplay::EmptyStruct,
+                BareObjectClassification::EmptyObject(_) => {
+                    overrides::bare_object_narrowing(schema, cfn_property_path, prop)?;
+                    TypeDisplay::EmptyStruct
+                }
                 BareObjectClassification::StringMap(_) => {
+                    overrides::bare_object_narrowing(schema, cfn_property_path, prop)?;
                     TypeDisplay::Code("Map<String, String>".to_string())
                 }
                 BareObjectClassification::TypedOverride { entry } => {
@@ -4197,11 +4194,6 @@ fn markdown_type(
 ) -> Result<MarkdownType> {
     if !is_dsl_tags_property(classified.schema(), classified.path())? {
         classified.property().try_query()?;
-    }
-    if let Some(identity) = top_level_arn_catalog_display(&classified)? {
-        return Ok(MarkdownType::Plain(
-            TypeDisplay::Code(identity.to_string()).markdown(),
-        ));
     }
     if let Some(reference) = emission_reference(
         &classified,
@@ -4858,15 +4850,16 @@ fn render_markdown(
         if write_only.contains(prop_name) {
             page.push_str("- **Write-only:** Yes\n");
         }
-        let override_default =
-            resource_type_override(type_name, CfnPropertyPath::new(None, prop_name))
-                .and_then(TypeOverride::default);
-        if let Some(default) = override_default {
-            page.push_str(&format!("- **Default:** `{}`\n", default.markdown));
-        } else if let Some(default_val) = prop.annotation_default()
-            && let Some(display) = json_default_to_markdown(default_val)
-        {
-            page.push_str(&format!("- **Default:** `{display}`\n"));
+        if let Some(default) = default_plan::lower(
+            prop,
+            resource_type_override(type_name, CfnPropertyPath::new(None, prop_name)),
+            if is_required {
+                default_plan::Site::RequiredOrOutput
+            } else {
+                default_plan::Site::OptionalAttribute
+            },
+        )? {
+            default.write_markdown(&mut page);
         }
         page.push_str("\n");
 
@@ -5060,6 +5053,20 @@ fn render_markdown(
                         "Create-only. Anonymous identifiers hash only declared identity values.",
                     );
                 }
+                if let Some(default) = default_plan::lower(
+                    field_prop,
+                    nested_override,
+                    default_plan::Site::StructField,
+                )? {
+                    if !desc.is_empty() {
+                        desc.push(' ');
+                    }
+                    desc.push_str(&format!(
+                        "Default: {}. {}",
+                        default.display,
+                        default.diagnostic.unwrap_or("")
+                    ));
+                }
                 rows.push([
                     TableCell::code(snake_name),
                     field_type_display.table_cell(),
@@ -5120,6 +5127,14 @@ fn render_markdown(
             page.push_str("- **Type:** ");
             type_display.write_to(&mut page);
             page.push_str("\n");
+
+            if let Some(default) = default_plan::lower(
+                prop,
+                resource_type_override(type_name, CfnPropertyPath::new(None, prop_name)),
+                default_plan::Site::RequiredOrOutput,
+            )? {
+                default.write_markdown(&mut page);
+            }
 
             if let Some(d) = prop.annotation_description() {
                 let desc = collapse_whitespace(&d.replace('\n', " "));
@@ -6032,13 +6047,28 @@ pub fn {}() -> AwsccSchemaConfig {{
             attr_code.push_str("\n                .identity()");
         }
 
-        if let Some(desc) = generated_property_description(schema, prop_name, prop) {
-            let escaped = collapse_whitespace(
-                &desc
-                    .replace('\\', "\\\\")
-                    .replace('"', "\\\"")
-                    .replace('\n', " "),
-            );
+        let default = default_plan::lower(
+            prop,
+            resource_type_override(&schema.type_name, CfnPropertyPath::new(None, prop_name)),
+            if is_required || is_read_only {
+                default_plan::Site::RequiredOrOutput
+            } else {
+                default_plan::Site::OptionalAttribute
+            },
+        )?;
+        let mut description = generated_property_description(schema, prop_name, prop)
+            .map(|desc| collapse_whitespace(&desc.replace('\n', " ")));
+        if let Some(default) = &default
+            && default.diagnostic.is_some()
+        {
+            let description = description.get_or_insert_default();
+            if !description.is_empty() {
+                description.push(' ');
+            }
+            description.push_str(&default.annotation());
+        }
+        if let Some(desc) = description {
+            let escaped = desc.replace('\\', "\\\\").replace('"', "\\\"");
             let suffix = if is_read_only { " (read-only)" } else { "" };
             attr_code.push_str(&format!(
                 "\n                .with_description(\"{}{}\")", // rust-lit-guard: allow (already escaped and newline-collapsed)
@@ -6052,23 +6082,7 @@ pub fn {}() -> AwsccSchemaConfig {{
             rust_lit(prop_name)
         ));
 
-        // Add default value if defined in CloudFormation schema. A CFN JSON scalar
-        // default whose shape does not match the resolved Carina type (for example
-        // a JSON-string default on a structured policy document) would cause a
-        // perpetual phantom diff. Policy document fields follow the IAM Role
-        // convention: omit the Carina default and let AWS apply its server default.
-        let override_default =
-            resource_type_override(&schema.type_name, CfnPropertyPath::new(None, prop_name))
-                .and_then(TypeOverride::default);
-        if let Some(default) = override_default {
-            attr_code.push_str(&format!(
-                "\n                .with_default({})",
-                default.value_expression
-            ));
-        } else if let Some(default_val) = prop.annotation_default()
-            && let Some(default_code) = json_default_to_value_code(default_val)
-            && attr_type_accepts_scalar_default(&attr_type)
-        {
+        if let Some(default_code) = default.and_then(|default| default.rust) {
             attr_code.push_str(&format!("\n                .with_default({default_code})"));
         }
 
@@ -7308,14 +7322,23 @@ fn generate_struct_type(
             if identity_properties().contains_key(&(schema.type_name.as_str(), cfn_property_path)) {
                 field_code.push_str(".create_only().identity()");
             }
-            if let Some(desc) = field_prop.annotation_description() {
-                let escaped = collapse_whitespace(
-                    &desc
-                        .replace('\\', "\\\\")
-                        .replace('"', "\\\"")
-                        .replace('\n', " "),
-                );
-                field_code.push_str(&format!(".with_description(\"{}\")", escaped)); // rust-lit-guard: allow (already escaped and newline-collapsed)
+            let mut description = field_prop
+                .annotation_description()
+                .map(|desc| collapse_whitespace(&desc.replace('\n', " ")));
+            if let Some(default) =
+                default_plan::lower(field_prop, nested_override, default_plan::Site::StructField)?
+            {
+                let description = description.get_or_insert_default();
+                if !description.is_empty() {
+                    description.push(' ');
+                }
+                description.push_str(&default.annotation());
+            }
+            if let Some(description) = description {
+                field_code.push_str(&format!(
+                    ".with_description(\"{}\")", // rust-lit-guard: allow (already escaped description)
+                    description.replace('\\', "\\\\").replace('"', "\\\"")
+                ));
             }
             field_code.push_str(&format!(".with_provider_name({})", rust_lit(field_name)));
 
@@ -8071,6 +8094,10 @@ impl StringLeaf<'_> {
                 ))
             }
             Self::Named {
+                identity: Some(_),
+                constraints,
+            } if constraints.has_local_constraints() => TypeDisplay::Plain(self.display()),
+            Self::Named {
                 identity: _,
                 constraints: _,
             } => TypeDisplay::Code(self.display()),
@@ -8094,8 +8121,23 @@ impl StringLeaf<'_> {
         match self {
             Self::Named {
                 identity: Some(identity),
-                constraints: _,
-            } => identity.identity().to_string(),
+                constraints,
+            } => {
+                if constraints.has_local_constraints() {
+                    format!(
+                        "{} — {}",
+                        identity.identity(),
+                        string_refinement_display(
+                            constraints.pattern.as_ref().map(ApprovedPattern::as_str),
+                            constraints.min_length,
+                            constraints.max_length,
+                            None,
+                        )
+                    )
+                } else {
+                    identity.identity().to_string()
+                }
+            }
             Self::Named {
                 identity: None,
                 constraints,
@@ -8320,6 +8362,9 @@ fn string_refinement_display(
             || format!("String({format})"),
             |length| format!("String({format}, len: {length})"),
         );
+    }
+    if pattern.is_some() {
+        return "String(pattern)".to_string();
     }
     length.map_or_else(
         || "String".to_string(),
@@ -14065,16 +14110,13 @@ fn cfn_type_to_carina_type_with_enum_resolved(
 }
 
 /// Convert a JSON default value to a Rust `Value::...` expression string.
-/// Returns `None` for unsupported types (arrays, objects, null).
+/// Collection members recurse; null and integers outside i64 are unsupported.
 fn json_default_to_value_code(val: &serde_json::Value) -> Option<String> {
     match val {
-        serde_json::Value::String(s) => {
-            let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
-            Some(format!(
-                "Value::Concrete(ConcreteValue::String(\"{}\".to_string().into()))", // rust-lit-guard: allow (already escaped JSON default)
-                escaped
-            ))
-        }
+        serde_json::Value::String(s) => Some(format!(
+            "Value::Concrete(ConcreteValue::String({}.to_string().into()))",
+            rust_lit(s)
+        )),
         serde_json::Value::Bool(b) => Some(format!("Value::Concrete(ConcreteValue::Bool({}))", b)),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
@@ -14090,35 +14132,33 @@ fn json_default_to_value_code(val: &serde_json::Value) -> Option<String> {
             }
         }
         serde_json::Value::Null => None,
-        serde_json::Value::Array(_values) => None,
-        serde_json::Value::Object(_values) => None,
+        serde_json::Value::Array(values) => Some(format!(
+            "Value::Concrete(ConcreteValue::List(vec![{}]))",
+            values
+                .iter()
+                .map(json_default_to_value_code)
+                .collect::<Option<Vec<_>>>()?
+                .join(", ")
+        )),
+        serde_json::Value::Object(values) => Some(format!(
+            "Value::Concrete(ConcreteValue::Map(vec![{}].into_iter().collect()))",
+            values
+                .iter()
+                .map(|(key, value)| Some(format!(
+                    "({}.to_string(), {})",
+                    rust_lit(key),
+                    json_default_to_value_code(value)?
+                )))
+                .collect::<Option<Vec<_>>>()?
+                .join(", ")
+        )),
     }
-}
-
-fn attr_type_accepts_scalar_default(attr_type: &str) -> bool {
-    ![
-        "iam_policy_document",
-        "struct_",
-        "::map(",
-        "::map (",
-        "list(",
-        "ref_(",
-    ]
-    .iter()
-    .any(|non_scalar| attr_type.contains(non_scalar))
 }
 
 /// Convert a JSON default value to a display string for markdown documentation.
-/// Returns `None` for unsupported types (arrays, objects, null).
+/// Preserve the complete JSON value, including collection and string escaping.
 fn json_default_to_markdown(val: &serde_json::Value) -> Option<String> {
-    match val {
-        serde_json::Value::String(s) => Some(format!("\"{}\"", s)), // rust-lit-guard: allow (markdown display, not Rust emission)
-        serde_json::Value::Bool(b) => Some(format!("{}", b)),
-        serde_json::Value::Number(n) => Some(format!("{}", n)),
-        serde_json::Value::Null => None,
-        serde_json::Value::Array(_values) => None,
-        serde_json::Value::Object(_values) => None,
-    }
+    (!val.is_null()).then(|| val.to_string())
 }
 
 /// Choose block syntax from override metadata or the emitted struct item shape.
@@ -14298,6 +14338,10 @@ mod tests {
 
     pub(super) mod option_d_tests {
         include!("codegen/option_d_tests.rs");
+    }
+
+    mod review_round1_tests {
+        include!("codegen/review_round1_tests.rs");
     }
 
     mod field_groups_tests {
@@ -19696,7 +19740,7 @@ mod tests {
             }
             let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
             assert!(markdown.contains("String(pattern, len: 1..=256)"));
-            assert!(markdown.contains(r"| `success_feedback_sample_rate` | `String` |"));
+            assert!(markdown.contains(r"| `success_feedback_sample_rate` | `String(pattern)` |"));
             assert!(
                 generated_sns_field(&generated, "DisplayName")
                     .starts_with("AttributeType::string()")
@@ -20997,8 +21041,9 @@ mod tests {
             }
             let markdown = generate_test_markdown(schema, &schema.type_name).unwrap();
             let actual = documented_attribute_type(&markdown, "arn");
-            let expected = format!("`{identity}`");
-            if actual != expected {
+            let actual_identity = actual.trim_matches('`').split(" — ").next().unwrap();
+            let expected = identity.to_string();
+            if actual_identity != expected {
                 failures.push(format!(
                     "{}.arn: {actual}, expected {expected}",
                     schema.type_name
@@ -21069,7 +21114,11 @@ mod tests {
         for (cfn_type, attribute, expected) in [
             ("AWS::IAM::Role", "arn", "`aws.iam.Role.Arn`"),
             ("AWS::KMS::Key", "arn", "`aws.kms.Key.Arn`"),
-            ("AWS::Scheduler::Schedule", "arn", "`aws.Arn`"),
+            (
+                "AWS::Scheduler::Schedule",
+                "arn",
+                "aws.Arn — String(pattern, len: 1..=1224)",
+            ),
         ] {
             let schema = cfn_schema_for_codegen_tests(cfn_type);
             let markdown = generate_test_markdown(&schema, cfn_type).unwrap();
@@ -21361,7 +21410,9 @@ mod tests {
         assert!(generated.contains("StringIdentity::SsoPermissionSetSessionDuration"));
         assert!(generated.contains("Some((Some(1), Some(100)))"));
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(markdown.contains("- **Type:** `aws.sso.PermissionSet.SessionDuration`"));
+        assert!(markdown.contains(
+            "- **Type:** aws.sso.PermissionSet.SessionDuration — String(pattern, len: 1..=100)"
+        ));
         for path in [
             CfnPropertyPath::new(None, "session_duration"),
             CfnPropertyPath::new(Some("Other"), "SessionDuration"),
@@ -21391,7 +21442,9 @@ mod tests {
             Some(StringIdentity::SchedulerScheduleScheduleExpression)
         );
         assert!(generated.contains("StringIdentity::SchedulerScheduleScheduleExpression"));
-        assert!(markdown.contains("- **Type:** `aws.scheduler.Schedule.ScheduleExpression`"));
+        assert!(markdown.contains(
+            "- **Type:** aws.scheduler.Schedule.ScheduleExpression — String(len: 1..=256)"
+        ));
 
         for (raw, dsl) in [("StartDate", "start_date"), ("EndDate", "end_date")] {
             assert_eq!(schema.properties[raw].format.as_deref(), Some("date-time"));
@@ -21410,7 +21463,7 @@ mod tests {
             assert!(generated.contains(&format!(
                 "AttributeSchema::optional(\"{dsl}\", {expression})"
             )));
-            assert!(markdown.contains("- **Type:** `String`"));
+            assert!(markdown.contains(&format!("### `{dsl}`\n\n- **Type:** `String(pattern)`")));
         }
         for path in [
             "schedule_expression",
@@ -21531,7 +21584,9 @@ mod tests {
         let markdown = generate_test_markdown(&schema, "AWS::Scheduler::Schedule")
             .expect("Scheduler Schedule markdown generation should succeed");
         assert!(
-            markdown.contains("- **Type:** `aws.scheduler.Schedule.GroupName`"),
+            markdown.contains(
+                "- **Type:** aws.scheduler.Schedule.GroupName — String(pattern, len: 1..=64)"
+            ),
             "Schedule.GroupName docs must expose the restricted type: {markdown}"
         );
         assert!(
@@ -24383,7 +24438,7 @@ mod tests {
         }
         let markdown = generate_test_markdown(&schema, cfn_type).unwrap();
         for expected in [
-            "- **Type:** `String`",
+            "### `health_check_port`\n\n- **Type:** `String(pattern)`",
             "| `http_code` | `aws.elasticloadbalancingv2.TargetGroup.HttpCode` |",
             "| `grpc_code` | `aws.elasticloadbalancingv2.TargetGroup.GrpcCode` |",
             "- **Type:** [Struct(Matcher)](#matcher-1)",
@@ -29734,45 +29789,6 @@ mod tests {
     }
 
     #[test]
-    fn test_attr_type_accepts_scalar_default() {
-        assert!(attr_type_accepts_scalar_default("AttributeType::bool()"));
-        assert!(attr_type_accepts_scalar_default("AttributeType::int()"));
-        assert!(attr_type_accepts_scalar_default("AttributeType::float()"));
-        assert!(attr_type_accepts_scalar_default(
-            "AttributeType::enum_(VALID_KEY_USAGE)"
-        ));
-        assert!(
-            attr_type_accepts_scalar_default("carina_aws_types::prefix_list_id()"),
-            "scalar string types whose name merely contains 'list' must still accept defaults"
-        );
-        assert!(attr_type_accepts_scalar_default(
-            "AttributeType::refined_int_with_validator(identity, None, legacy_validator(f))"
-        ));
-        // #593: Use AWSCC's generic ARN constructor with the same type semantics.
-        assert!(attr_type_accepts_scalar_default(
-            "crate::schemas::catalog::arn()"
-        ));
-        assert!(!attr_type_accepts_scalar_default(
-            "carina_aws_types::iam_policy_document()"
-        ));
-        assert!(!attr_type_accepts_scalar_default(
-            "AttributeType::struct_(\"Config\")"
-        ));
-        assert!(!attr_type_accepts_scalar_default(
-            "AttributeType::unordered_list(AttributeType::string())"
-        ));
-        assert!(!attr_type_accepts_scalar_default(
-            "AttributeType::map(AttributeType::string())"
-        ));
-        assert!(!attr_type_accepts_scalar_default(
-            "AttributeType::list(AttributeType::string())"
-        ));
-        assert!(!attr_type_accepts_scalar_default(
-            "AttributeType::ref_(\"Other\")"
-        ));
-    }
-
-    #[test]
     fn test_generate_schema_code_suppresses_default_for_iam_policy_document() {
         let mut properties = BTreeMap::new();
         properties.insert(
@@ -30069,7 +30085,10 @@ mod tests {
             );
         }
         assert_eq!(json_default_to_value_code(&serde_json::Value::Null), None,);
-        assert_eq!(json_default_to_value_code(&serde_json::json!([])), None,);
+        assert_eq!(
+            json_default_to_value_code(&serde_json::json!([])),
+            Some("Value::Concrete(ConcreteValue::List(vec![]))".to_string())
+        );
     }
 
     #[test]
@@ -30180,7 +30199,7 @@ mod tests {
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         assert!(
             markdown
-                .contains("### `log_group_name`\n\n- **Type:** `aws.logs.LogGroup.LogGroupName`\n"),
+                .contains("### `log_group_name`\n\n- **Type:** aws.logs.LogGroup.LogGroupName — String(pattern, len: 1..=512)\n"),
             "LogGroupName docs must name the local refinement: {markdown}"
         );
     }
@@ -30224,7 +30243,7 @@ mod tests {
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         assert!(
             markdown.contains(
-                "### `display_name`\n\n- **Type:** `aws.identitystore.Group.DisplayName`\n"
+                "### `display_name`\n\n- **Type:** aws.identitystore.Group.DisplayName — String(pattern, len: 1..=1024)\n"
             ),
             "DisplayName docs must name the local refinement: {markdown}"
         );
@@ -31996,7 +32015,7 @@ mod tests {
         );
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         assert!(
-            markdown.contains("### `email`\n\n- **Type:** `aws.organizations.Account.Email`\n"),
+            markdown.contains("### `email`\n\n- **Type:** aws.organizations.Account.Email — String(pattern, len: 6..=64)\n"),
             "Account.Email docs must name the local refinement: {markdown}"
         );
     }

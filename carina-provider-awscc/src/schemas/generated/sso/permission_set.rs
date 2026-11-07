@@ -6,6 +6,7 @@
 
 use crate::schemas::awscc_types::DocumentedIamGrammar;
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 /// Returns the schema config for sso_permission_set (AWS::SSO::PermissionSet)
@@ -18,6 +19,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         AttributeSchema::optional("customer_managed_policy_references", AttributeType::refined_list(AttributeType::struct_("CustomerManagedPolicyReference".to_string(), vec![StructField::required("name", AttributeType::refined_string(None, Some("^(?:[\\w+=,.@-]+)\\z".to_string()), Some((Some(1), Some(128))), None)).with_provider_name("Name").build(),
                     StructField::optional("path", AttributeType::refined_string(None, Some("^(?:((/[A-Za-z0-9\\.,\\+@=_-]+)*)/)\\z".to_string()), Some((Some(1), Some(512))), None)).with_provider_name("Path").build()]), false, Some((None, Some(20))), carina_core::schema::ListElements::AllowDuplicates))
                 .with_provider_name("CustomerManagedPolicyReferences")
+                .with_default(Value::Concrete(ConcreteValue::List(vec![])))
                 .with_block_name("customer_managed_policy_reference")
             .build()
     }
@@ -52,6 +54,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
     fn build_managed_policies_attribute() -> AttributeSchema {
         AttributeSchema::optional("managed_policies", AttributeType::refined_list(AttributeType::refined_string(None, None, Some((Some(20), Some(2048))), None), false, Some((None, Some(20))), carina_core::schema::ListElements::AllowDuplicates))
                 .with_provider_name("ManagedPolicies")
+                .with_default(Value::Concrete(ConcreteValue::List(vec![])))
             .build()
     }
     schema = schema.attribute(build_managed_policies_attribute());

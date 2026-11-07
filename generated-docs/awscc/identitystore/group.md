@@ -29,14 +29,14 @@ A string containing the description of the group.
 
 ### `display_name`
 
-- **Type:** `aws.identitystore.Group.DisplayName`
+- **Type:** aws.identitystore.Group.DisplayName — String(pattern, len: 1..=1024)
 - **Required:** Yes
 
 A string containing the name of the group. This value is commonly displayed when the group is referenced.
 
 ### `identity_store_id`
 
-- **Type:** `aws.identitystore.Store.Id`
+- **Type:** aws.identitystore.Store.Id — String(pattern, len: 1..=36)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -46,7 +46,7 @@ The globally unique identifier for the identity store.
 
 ### `group_id`
 
-- **Type:** `aws.sso.Principal.Id`
+- **Type:** aws.sso.Principal.Id — String(pattern, len: 1..=47)
 
 The unique identifier for a group in the identity store.
 

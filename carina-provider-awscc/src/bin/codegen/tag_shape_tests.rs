@@ -65,7 +65,7 @@ fn round2_tag_map_property_bounds_reach_cache_rust_and_markdown() {
         let rust = generate_synthetic_schema_code(&schema).unwrap();
         assert!(rust.contains("Some((Some(2), Some(5)))"), "{rust}");
         let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
-        assert!(markdown.contains("Map<String, String>` (entries: 2..=5)"), "{markdown}");
+        assert!(markdown.contains("Map<String(pattern), String>` (entries: 2..=5)"), "{markdown}");
     }
 }
 

@@ -234,7 +234,7 @@ Shorthand formats: `http` or `Protocol.http`
 | `on_unauthenticated_request` | [Enum (OnUnauthenticatedRequest)](#default_actionsauthenticate_cognito_configon_unauthenticated_request-onunauthenticatedrequest) | No | The behavior if the user is not authenticated. The following are possible values: + deny```` - Return an HTTP 401 Unauthorized error. + allow```` - Allow the request to be forwarded to the target. + authenticate```` - Redirect the request to the IdP authorization endpoint. This is the default value. |
 | `scope` | String | No | The set of user claims to be requested from the IdP. The default is ``openid``. To verify which scope values your IdP supports and how to separate multiple values, see the documentation for your IdP. |
 | `session_cookie_name` | String | No | The name of the cookie used to maintain session information. The default is AWSELBAuthSessionCookie. |
-| `session_timeout` | `String` | No | The maximum duration of the authentication session, in seconds. The default is 604800 seconds (7 days). |
+| `session_timeout` | `String(pattern)` | No | The maximum duration of the authentication session, in seconds. The default is 604800 seconds (7 days). |
 | `user_pool_arn` | `aws.Arn` | Yes | The Amazon Resource Name (ARN) of the Amazon Cognito user pool. |
 | `user_pool_client_id` | String | Yes | The ID of the Amazon Cognito user pool client. |
 | `user_pool_domain` | String | Yes | The domain prefix or fully-qualified domain name of the Amazon Cognito user pool. |
@@ -251,7 +251,7 @@ Shorthand formats: `http` or `Protocol.http`
 | `on_unauthenticated_request` | [Enum (OnUnauthenticatedRequest)](#default_actionsauthenticate_oidc_configon_unauthenticated_request-onunauthenticatedrequest) | No | The behavior if the user is not authenticated. The following are possible values: + deny```` - Return an HTTP 401 Unauthorized error. + allow```` - Allow the request to be forwarded to the target. + authenticate```` - Redirect the request to the IdP authorization endpoint. This is the default value. |
 | `scope` | String | No | The set of user claims to be requested from the IdP. The default is ``openid``. To verify which scope values your IdP supports and how to separate multiple values, see the documentation for your IdP. |
 | `session_cookie_name` | String | No | The name of the cookie used to maintain session information. The default is AWSELBAuthSessionCookie. |
-| `session_timeout` | `String` | No | The maximum duration of the authentication session, in seconds. The default is 604800 seconds (7 days). |
+| `session_timeout` | `String(pattern)` | No | The maximum duration of the authentication session, in seconds. The default is 604800 seconds (7 days). |
 | `token_endpoint` | `HttpsUrl` | Yes | The token endpoint of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |
 | `use_existing_client_secret` | Bool | No | Indicates whether to use the existing client secret when modifying a rule. If you are creating a rule, you can omit this parameter or set it to false. |
 | `user_info_endpoint` | `HttpsUrl` | Yes | The user info endpoint of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |

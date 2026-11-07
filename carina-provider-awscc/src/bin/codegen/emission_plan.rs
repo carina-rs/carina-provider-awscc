@@ -258,7 +258,27 @@ impl<'a> EmissionPlan<'a> {
         if min > max {
             return Err(self.emission_error("empty numeric override range intersection"));
         }
+        self.validate_numeric_range(Some(min), Some(max))?;
         Ok((Some(min), Some(max)))
+    }
+
+    pub(super) fn validate_numeric_range(
+        &self,
+        min: Option<i64>,
+        max: Option<i64>,
+    ) -> Result<(), SchemaError> {
+        if self.kind == EmittedKind::Number {
+            for endpoint in [min, max].into_iter().flatten() {
+                // Cast through i128: casting back to i64 saturates at MAX and
+                // would incorrectly certify the rounded endpoint 2^63.
+                if (endpoint as f64) as i128 != i128::from(endpoint) {
+                    return Err(self.emission_error(format!(
+                        "float range endpoint is not exactly representable: {endpoint}"
+                    )));
+                }
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn validate_integer_enum(&self, values: &[i64]) -> Result<(), SchemaError> {
@@ -1151,6 +1171,9 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
                 additional_properties,
             );
             inapplicable_object_scope(source_pointer, kind, required, field_groups, dependencies)?;
+            // Reject unsupported literal kinds at the emission boundary before
+            // intersecting scalar constraints, retaining their typed diagnostic.
+            let value_type = p.value_type()?;
             // These constraints have filtered the finite literal domain. Recheck
             // here so materialized/cached projections have the same proof.
             let mut filtered = p.clone();
@@ -1181,7 +1204,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
             );
             plan.literal = Some(LiteralPlan {
                 source_pointer: source_pointer.clone(),
-                value_type: p.value_type()?,
+                value_type,
                 values,
             });
         }
@@ -2177,6 +2200,24 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
                 min_entries,
                 max_entries,
             });
+        }
+    }
+    if let Some(numeric) = &plan.numeric
+        && let Some((min, max)) = numeric.range
+    {
+        plan.validate_numeric_range(min, max)?;
+    }
+    for child in plan
+        .array
+        .as_ref()
+        .map(|array| array.items)
+        .into_iter()
+        .chain(plan.map.as_ref().map(|map| map.value))
+    {
+        if child.annotation_default().is_some() {
+            return Err(child
+                .try_query()?
+                .emission_error("default on a collection element has no emitted field site"));
         }
     }
     Ok(plan)

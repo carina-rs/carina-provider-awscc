@@ -696,7 +696,7 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `abort_incomplete_multipart_upload` | [Struct(AbortIncompleteMultipartUpload)](#lifecycle_configurationrulesabort_incomplete_multipart_upload) | No | Specifies a lifecycle rule that stops incomplete multipart uploads to an Amazon S3 bucket. |
-| `expiration_date` | `aws.s3.Bucket.LifecycleDate` | No | Indicates when objects are deleted from Amazon S3 and Amazon S3 Glacier. The date value must be in ISO 8601 format. The time is always midnight UTC. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time. |
+| `expiration_date` | aws.s3.Bucket.LifecycleDate — String(pattern) | No | Indicates when objects are deleted from Amazon S3 and Amazon S3 Glacier. The date value must be in ISO 8601 format. The time is always midnight UTC. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time. |
 | `expiration_in_days` | `Int(1..)` | No | Indicates the number of days after creation when objects are deleted from Amazon S3 and Amazon S3 Glacier. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time. |
 | `expired_object_delete_marker` | Bool | No | Indicates whether Amazon S3 will remove a delete marker without any noncurrent versions. If set to true, the delete marker will be removed if there are no noncurrent versions. This cannot be specified with ``ExpirationInDays``, ``ExpirationDate``, or ``TagFilters``. |
 | `id` | String(len: ..=255) | No | Unique identifier for the rule. The value can't be longer than 255 characters. |
@@ -735,7 +735,7 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `storage_class` | [Enum (StorageClass)](#lifecycle_configurationrulestransitionsstorage_class-storageclass) | Yes | The storage class to which you want the object to transition. |
-| `transition_date` | `aws.s3.Bucket.LifecycleDate` | No | Indicates when objects are transitioned to the specified storage class. The date value must be in ISO 8601 format. The time is always midnight UTC. |
+| `transition_date` | aws.s3.Bucket.LifecycleDate — String(pattern) | No | Indicates when objects are transitioned to the specified storage class. The date value must be in ISO 8601 format. The time is always midnight UTC. |
 | `transition_in_days` | `Int(0..)` | No | Indicates the number of days after creation when objects are transitioned to the specified storage class. If the specified storage class is ``INTELLIGENT_TIERING``, ``GLACIER_IR``, ``GLACIER``, or ``DEEP_ARCHIVE``, valid values are ``0`` or positive integers. If the specified storage class is ``STANDARD_IA`` or ``ONEZONE_IA``, valid values are positive integers greater than ``30``. Be aware that some storage classes have a minimum storage duration and that you're charged for transitioning objects before their minimum storage duration. For more information, see [Constraints and considerations for transitions](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-transition-general-considerations.html#lifecycle-configuration-constraints) in the *Amazon S3 User Guide*. |
 
 ### logging_configuration
@@ -848,7 +848,7 @@ Used by: `metadata_configuration.inventory_table_configuration.encryption_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `event_bridge_enabled` | Bool | Yes | Enables delivery of events to Amazon EventBridge. |
+| `event_bridge_enabled` | Bool | Yes | Enables delivery of events to Amazon EventBridge. Default: "true". AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
 
 ### notification_configuration.lambda_configurations
 
@@ -1047,14 +1047,14 @@ Used by: `replication_configuration.rules.destination.metrics.event_threshold`, 
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `status` | [Enum (Status)](#versioning_configurationstatus-status) | Yes | The versioning state of the bucket. |
+| `status` | [Enum (Status)](#versioning_configurationstatus-status) | Yes | The versioning state of the bucket. Default: "Suspended". AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
 
 ### website_configuration
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `error_document` | `String(len: 1..)` | No | The name of the error document for the website. |
-| `index_document` | `String` | No | The name of the index document for the website. |
+| `index_document` | `String(pattern)` | No | The name of the index document for the website. |
 | `redirect_all_requests_to` | [Struct(RedirectAllRequestsTo)](#website_configurationredirect_all_requests_to) | No | The redirect behavior for every request to this bucket's website endpoint. If you specify this property, you can't specify any other property. |
 | `routing_rules` | List\<[Struct(RoutingRule)](#website_configurationrouting_rules)\> (items: ..=50) | No | Rules that define when a redirect is applied and the redirect behavior. |
 
