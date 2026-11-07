@@ -304,7 +304,7 @@ fn round2_schema_dependencies_are_typed_errors_in_both_renderers() {
             assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
                 Some(schema_layer::SchemaError::Projection { pointer, reason })
                 if pointer == if root { "/dependencies/Enabled" } else { "/properties/Probe/dependencies/Enabled" }
-                    && reason.contains("schema dependency")), "{error:#}");
+                    && reason == &format!("schema dependencies on {} cannot be emitted", if root { "root" } else { "struct" })), "{error:#}");
         }
     }
 }

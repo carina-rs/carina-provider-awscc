@@ -29,6 +29,7 @@ impl TagCandidate {
 #[derive(Debug, Clone)]
 pub(super) struct TagString {
     pub(super) source: String,
+    pub(super) format: Option<String>,
     pub(super) pattern: Option<String>,
     pub(super) min_length: Option<u64>,
     pub(super) max_length: Option<u64>,
@@ -47,7 +48,7 @@ pub(super) struct TagMap {
     pub(super) min_entries: Option<i64>,
     pub(super) max_entries: Option<i64>,
     pub(super) definition_name: Option<String>,
-    candidate: TagCandidate,
+    pub(super) candidate: TagCandidate,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -196,10 +197,12 @@ impl Evidence {
             key: self
                 .item_fields
                 .iter()
+                .chain(&self.item_required)
                 .any(|name| name.eq_ignore_ascii_case("key")),
             value: self
                 .item_fields
                 .iter()
+                .chain(&self.item_required)
                 .any(|name| name.eq_ignore_ascii_case("value")),
         }
     }
@@ -375,7 +378,8 @@ impl Classifier<'_> {
                         };
                     }
                 }
-                for dependency in k.dependencies.iter().flat_map(|d| d.values()) {
+                for (trigger, dependency) in k.dependencies.iter().flatten() {
+                    result.evidence.required.insert(trigger.clone());
                     match dependency {
                         Dependency::Schema(child) => {
                             let conditional = self.analyze(*child, crossed_items);
@@ -442,16 +446,23 @@ impl Classifier<'_> {
             None => property.try_query()?.clone(),
         };
         if projection.effective_type() == Some("string") {
-            if projection.enum_values.is_some() || projection.const_value.is_some() {
-                return Err(projection.emission_error(
-                    "tag string enum/const constraints require a literal-preserving map projection",
-                ));
-            }
+            let plan = super::emission_plan::lower_as(
+                &projection,
+                super::emission_plan::EmittedKind::TagString,
+            )?;
+            let super::emission_plan::StringPlan {
+                source_pointer,
+                format,
+                pattern,
+                min_length,
+                max_length,
+            } = plan.string.expect("tag string plan");
             Ok(Some(TagString {
-                source: projection.source_pointer,
-                pattern: projection.pattern,
-                min_length: projection.min_length,
-                max_length: projection.max_length,
+                source: source_pointer.into(),
+                format: format.map(str::to_string),
+                pattern: pattern.map(str::to_string),
+                min_length,
+                max_length,
             }))
         } else {
             Ok(None)
@@ -481,11 +492,7 @@ impl Classifier<'_> {
             && let (Some(key), Some(value)) = (properties.get("Key"), properties.get("Value"))
             && let (Some(key), Some(value)) = (self.string(key)?, self.string(value)?)
         {
-            if p.min_properties.is_some() || p.max_properties.is_some() {
-                return Err(p.emission_error(
-                    "Key/Value item property-count constraints cannot be preserved by a tag map",
-                ));
-            }
+            super::emission_plan::lower_as(p, super::emission_plan::EmittedKind::TagObject)?;
             return Ok(Some(TagMap {
                 key: TagKey::Property(key),
                 value,
@@ -503,26 +510,17 @@ impl Classifier<'_> {
             && let Some((pattern, value)) = patterns.iter().next()
             && let Some(value) = self.string(value)?
         {
-            let bound = |number: &Option<serde_json::Number>, keyword| {
-                number
-                    .as_ref()
-                    .map(|number| {
-                        number.as_i64().ok_or_else(|| {
-                            p.emission_error(format!(
-                                "Tags {keyword} cannot fit the map projection exactly: {number}"
-                            ))
-                        })
-                    })
-                    .transpose()
-            };
+            let plan =
+                super::emission_plan::lower_as(p, super::emission_plan::EmittedKind::TagMap)?;
+            let map = plan.map.expect("tag map plan");
             return Ok(Some(TagMap {
                 key: TagKey::Pattern {
                     pattern: pattern.clone(),
                     source: format!("{}/patternProperties", p.source_pointer),
                 },
                 value,
-                min_entries: bound(&p.min_properties, "minProperties")?,
-                max_entries: bound(&p.max_properties, "maxProperties")?,
+                min_entries: map.min_entries,
+                max_entries: map.max_entries,
                 definition_name,
                 candidate: TagCandidate::default(),
             }));
@@ -590,7 +588,16 @@ fn classify(layer: &Arc<Layer>, property: NodeId) -> TagShape {
             };
             match classifier.object(item, p.max_items) {
                 Ok(Some(mut map)) => {
-                    map.min_entries = p.min_items;
+                    let plan = match super::emission_plan::lower_as(
+                        &p,
+                        super::emission_plan::EmittedKind::TagList,
+                    ) {
+                        Ok(plan) => plan,
+                        Err(error) => return unreadable(error),
+                    };
+                    let array = plan.array.expect("tag list plan");
+                    map.min_entries = array.min_items;
+                    map.max_entries = array.max_items;
                     match &map.key {
                         TagKey::Property(_key) => return TagShape::KeyValueList(map),
                         TagKey::Pattern {

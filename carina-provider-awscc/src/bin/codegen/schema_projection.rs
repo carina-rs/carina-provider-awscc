@@ -154,28 +154,6 @@ pub(super) struct Projection {
 }
 
 impl Projection {
-    pub(super) fn conditional_requirements(
-        &self,
-    ) -> Result<Vec<ConditionalRequirement>, SchemaError> {
-        let mut requirements = Vec::new();
-        for (name, dependency) in &self.dependencies {
-            match dependency {
-                ConditionalDependency::PropertyList(names) => {
-                    requirements.extend(names.iter().map(|required| ConditionalRequirement {
-                        if_present: name.clone(),
-                        then_present: required.clone(),
-                    }));
-                }
-                ConditionalDependency::Schema(child) => {
-                    return Err(child.try_query()?.emission_error(
-                        "schema dependency requires conditional constraint emission",
-                    ));
-                }
-            }
-        }
-        Ok(requirements)
-    }
-
     pub(super) fn map_bounds(&self) -> Result<(Option<i64>, Option<i64>), SchemaError> {
         let bound = |number: &Option<Number>, keyword: &str| {
             number
@@ -205,7 +183,7 @@ impl Projection {
     /// lists has no emitted named struct at which either renderer can stop.
     /// Struct recursion remains supported through named definitions.
     fn validate_array_emission(&self) -> Result<(), SchemaError> {
-        if self.contains.is_some() {
+        if self.effective_type() == Some("array") && self.contains.is_some() {
             return Err(
                 self.emission_error("contains requires existential array constraint emission")
             );
@@ -229,6 +207,9 @@ impl Projection {
     }
 
     fn validate_schema_dependencies(&self) -> Result<(), SchemaError> {
+        if self.effective_type() != Some("object") {
+            return Ok(());
+        }
         for dependency in self.dependencies.values() {
             match dependency {
                 ConditionalDependency::Schema(child) => {
@@ -250,6 +231,10 @@ impl Projection {
     }
 
     pub(super) fn emission_type(&self) -> Result<EmissionType, SchemaError> {
+        Ok(super::emission_plan::lower(self)?.value_type())
+    }
+
+    pub(super) fn value_type(&self) -> Result<EmissionType, SchemaError> {
         if let Some(literal) = self
             .const_value
             .as_ref()
@@ -1265,6 +1250,23 @@ fn alternatives(
     kind: AlternativeKind,
     arms: Vec<(NodeId, Projection)>,
 ) -> Result<AlternativeProjection, SchemaError> {
+    if kind == AlternativeKind::OneOf {
+        for (index, (_id, arm)) in arms.iter().enumerate() {
+            for (_id, other) in arms.iter().skip(index + 1) {
+                if matches!(
+                    (arm.effective_json_type(), other.effective_json_type()),
+                    (Some(JsonType::Number), Some(JsonType::Integer))
+                        | (Some(JsonType::Integer), Some(JsonType::Number))
+                ) {
+                    return Err(error(
+                        layer,
+                        node,
+                        "overlapping integer/number oneOf alternatives cannot be emitted",
+                    ));
+                }
+            }
+        }
+    }
     // Object arms are field-group alternatives, even when one is bare. Only
     // different projected JSON types use the constrained-arm policy.
     let first_type = arms[0].1.effective_json_type();
@@ -1816,7 +1818,7 @@ fn strict_integer_bound(number: &Number, lower: bool) -> Option<i64> {
 /// Finite literal domains can absorb scalar constraints exactly before enum
 /// emission. Evaluate the source regex with JSON Schema's substring semantics;
 /// a finite enum no longer needs a separate pattern/range validator.
-fn intersect_literals(p: &mut Projection) -> Result<(), SchemaError> {
+pub(super) fn intersect_literals(p: &mut Projection) -> Result<(), SchemaError> {
     if p.const_value.is_none() && p.enum_values.is_none() {
         return Ok(());
     }
@@ -1933,17 +1935,6 @@ fn intersect_literals(p: &mut Projection) -> Result<(), SchemaError> {
 }
 
 pub(super) fn validate(layer: &Layer, node: NodeId, p: &Projection) -> Result<(), SchemaError> {
-    if p.properties
-        .as_ref()
-        .is_some_and(|fields| !fields.is_empty())
-        && p.projected_type != ProjectedType::Value(JsonType::Object)
-    {
-        return Err(error(
-            layer,
-            node,
-            "properties cannot override an explicit non-object type",
-        ));
-    }
     for dropped in &p.dropped_bare_alternatives {
         if bare_type(layer, dropped.arm) != Some(dropped.json_type) {
             return Err(error(
@@ -2131,6 +2122,7 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
         active: &mut BTreeSet<NodeId>,
     ) -> Result<(), SchemaError> {
         let p = property.try_query()?;
+        let emitted = super::emission_plan::lower(p)?;
         p.validate_array_emission()?;
         p.validate_schema_dependencies()?;
         let scope_name = p
@@ -2142,7 +2134,7 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
         validate_emitted_field_groups(
             schema,
             p,
-            &p.field_groups,
+            &emitted.scope.field_groups,
             Some(scope_name),
             provider_path,
             provider_populated,
@@ -2160,16 +2152,16 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
         {
             p.integer_bounds()?;
         }
-        for child in p
-            .items
+        for child in emitted
+            .array
             .iter()
-            .chain(p.contains.iter())
-            .chain(p.additional_schema.iter())
+            .map(|array| array.items)
+            .chain(emitted.map.iter().map(|map| map.value))
         {
             let path = super::extend_property_path(provider_path, "*");
             visit(schema, child, name, &path, provider_populated, active)?;
         }
-        if let Some(properties) = &p.properties {
+        if let Some(properties) = emitted.properties {
             for (name, child) in properties {
                 if super::is_deprecated_property(child) {
                     continue;
@@ -2199,12 +2191,6 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
                 visit(schema, child, name, &path, provider_populated, active)?;
             }
         }
-        if let Some(patterns) = &p.pattern_properties {
-            for child in patterns.values() {
-                let path = super::extend_property_path(provider_path, "*");
-                visit(schema, child, name, &path, provider_populated, active)?;
-            }
-        }
         if let Some(origin) = &property.origin {
             active.remove(&origin.node);
         }
@@ -2212,6 +2198,7 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
     }
     schema.validate_root_emission()?;
     let root = schema.root_projection()?;
+    super::emission_plan::lower_as(root, super::emission_plan::EmittedKind::Root)?;
     root.validate_schema_dependencies()?;
     validate_emitted_field_groups(schema, root, &root.field_groups, None, &[], false)?;
     let mut active = BTreeSet::new();

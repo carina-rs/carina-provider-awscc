@@ -15,7 +15,7 @@ pub(super) struct RequiredGroup {
 pub(super) struct FieldGroups {
     pub(super) groups: Vec<RequiredGroup>,
     // Keep declaration evidence even when simplification removes a group.
-    declared_members: BTreeSet<String>,
+    pub(super) declared_members: BTreeSet<String>,
 }
 
 impl FieldGroups {
