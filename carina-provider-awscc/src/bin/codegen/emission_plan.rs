@@ -13,12 +13,15 @@
 //! insertionOrder only describes arrays. Non-string/non-numeric format is
 //! annotation-only; numeric formats remain informational in NumericPlan.
 //! Explicit non-object schemas declaring properties are rejected as mixed shapes.
+//! Keyword applicability is checked before discarding a fact: oneOf over
+//! vacuously true object requirements is unsatisfiable on non-object values.
 
 use super::SchemaProperty;
 use super::field_groups::{FieldGroups, RequiredGroup};
 use super::schema_layer::{ArrayType, SchemaError};
 use super::schema_projection::{
-    ConditionalDependency, ConditionalRequirement, EmissionType, ProjectedType, Projection,
+    AlternativeKind, ConditionalDependency, ConditionalRequirement, EmissionType, ProjectedType,
+    Projection,
 };
 use serde_json::{Number, Value};
 use std::collections::BTreeMap;
@@ -140,6 +143,44 @@ impl EmissionPlan<'_> {
         self.kind == EmittedKind::Struct && self.properties.is_none_or(BTreeMap::is_empty)
     }
 
+    /// Complete required-member admission with the resource/scope filters used
+    /// by both renderers. Provider-populated fields are still emitted fields.
+    pub(super) fn validate_required_fields(
+        &self,
+        pointer: &str,
+        cfn_type: &str,
+        parent: Option<&str>,
+    ) -> Result<(), SchemaError> {
+        for member in &self.scope.required {
+            let property = self
+                .properties
+                .and_then(|fields| fields.get(member))
+                .ok_or_else(|| {
+                    unsupported(
+                        pointer,
+                        self.kind,
+                        &format!("required member {member} missing from emitted fields"),
+                    )
+                })?;
+            let reason = if super::is_deprecated_property(property) {
+                "deprecated"
+            } else if super::should_omit_property(
+                cfn_type,
+                super::CfnPropertyPath::new(parent, member),
+            ) {
+                "omitted"
+            } else {
+                continue;
+            };
+            return Err(unsupported(
+                pointer,
+                self.kind,
+                &format!("required member {member} {reason} from emitted fields"),
+            ));
+        }
+        Ok(())
+    }
+
     fn empty(kind: EmittedKind) -> Self {
         Self {
             kind,
@@ -241,17 +282,55 @@ enum ScopeKind {
 }
 
 fn inapplicable_object_scope(
+    pointer: &str,
+    kind: EmittedKind,
     required: &[String],
     field_groups: &FieldGroups,
     dependencies: &BTreeMap<String, ConditionalDependency>,
-) {
+) -> Result<(), SchemaError> {
     let FieldGroups {
         groups,
         declared_members,
     } = field_groups;
-    // These rules only assert object member presence. Non-object values
-    // satisfy them without visiting their child schemas or dependencies.
+    // Every required-only arm is true for a non-object. An inclusive group
+    // is therefore true, but multiple exclusive arms make the domain empty.
+    for RequiredGroup {
+        kind: alternative_kind,
+        members,
+    } in groups
+    {
+        if *alternative_kind == AlternativeKind::OneOf && members.len() > 1 {
+            return Err(unsupported(
+                pointer,
+                kind,
+                "unsatisfiable oneOf required alternatives",
+            ));
+        }
+    }
+    // Unconditional requirements and dependencies assert object presence only.
     let _inapplicable = (required, groups, declared_members, dependencies);
+    Ok(())
+}
+
+fn required_fields(
+    pointer: &str,
+    kind: EmittedKind,
+    required: &[String],
+    properties: &Option<BTreeMap<String, SchemaProperty>>,
+) -> Result<(), SchemaError> {
+    for member in required {
+        if properties
+            .as_ref()
+            .is_none_or(|fields| !fields.contains_key(member))
+        {
+            return Err(unsupported(
+                pointer,
+                kind,
+                &format!("required member {member} missing from emitted fields"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn scope(
@@ -501,6 +580,34 @@ pub(super) fn lower(p: &Projection) -> Result<EmissionPlan<'_>, SchemaError> {
     lower_as(p, kind)
 }
 
+/// Pattern-derived literals must pass the same effective intersection as
+/// explicit enums, including materialized allOf and reference constraints.
+pub(super) fn pattern_enum(p: &Projection) -> Result<Option<Vec<String>>, SchemaError> {
+    let Some(values) = p
+        .pattern
+        .as_deref()
+        .and_then(super::extract_enum_from_alternation_pattern)
+    else {
+        return Ok(None);
+    };
+    let mut literal = p.clone();
+    literal.enum_values = Some(values.into_iter().map(Value::String).collect());
+    let plan = lower_as(&literal, EmittedKind::Literal)?;
+    let values = plan
+        .literal
+        .expect("pattern enum plan")
+        .values
+        .into_iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| p.emission_error("non-string pattern enum member"))
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(Some(values))
+}
+
 pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan<'_>, SchemaError> {
     let mut plan = EmissionPlan::empty(kind);
     match kind {
@@ -572,7 +679,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
             );
             absent(source_pointer, kind, "enum", enum_values)?;
             absent(source_pointer, kind, "const", const_value)?;
-            inapplicable_object_scope(required, field_groups, dependencies);
+            inapplicable_object_scope(source_pointer, kind, required, field_groups, dependencies)?;
             plan.string = Some(StringPlan {
                 source_pointer,
                 format: format.as_deref(),
@@ -643,7 +750,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
             );
             absent(source_pointer, kind, "enum", enum_values)?;
             absent(source_pointer, kind, "const", const_value)?;
-            inapplicable_object_scope(required, field_groups, dependencies);
+            inapplicable_object_scope(source_pointer, kind, required, field_groups, dependencies)?;
             let has_bounds = minimum.is_some()
                 || maximum.is_some()
                 || exclusive_minimum.is_some()
@@ -720,7 +827,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
             );
             absent(source_pointer, kind, "enum", enum_values)?;
             absent(source_pointer, kind, "const", const_value)?;
-            inapplicable_object_scope(required, field_groups, dependencies);
+            inapplicable_object_scope(source_pointer, kind, required, field_groups, dependencies)?;
             let has_bounds = minimum.is_some()
                 || maximum.is_some()
                 || exclusive_minimum.is_some()
@@ -805,7 +912,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
             let _format_annotation = format;
             absent(source_pointer, kind, "enum", enum_values)?;
             absent(source_pointer, kind, "const", const_value)?;
-            inapplicable_object_scope(required, field_groups, dependencies);
+            inapplicable_object_scope(source_pointer, kind, required, field_groups, dependencies)?;
         }
         EmittedKind::Literal => {
             let Projection {
@@ -866,7 +973,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
                 additional_schema,
                 additional_properties,
             );
-            inapplicable_object_scope(required, field_groups, dependencies);
+            inapplicable_object_scope(source_pointer, kind, required, field_groups, dependencies)?;
             // These constraints have filtered the finite literal domain. Recheck
             // here so materialized/cached projections have the same proof.
             let mut filtered = p.clone();
@@ -974,6 +1081,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
                 "patternProperties",
                 pattern_properties,
             )?;
+            required_fields(source_pointer, kind, required, properties)?;
             plan.scope = scope(
                 source_pointer,
                 kind,
@@ -1145,7 +1253,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
             absent(source_pointer, kind, "enum", enum_values)?;
             absent(source_pointer, kind, "const", const_value)?;
             absent(source_pointer, kind, "contains", contains)?;
-            inapplicable_object_scope(required, field_groups, dependencies);
+            inapplicable_object_scope(source_pointer, kind, required, field_groups, dependencies)?;
             array_layout(array_type);
             let items = items
                 .as_deref()
@@ -1225,7 +1333,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
             absent(source_pointer, kind, "enum", enum_values)?;
             absent(source_pointer, kind, "const", const_value)?;
             absent(source_pointer, kind, "contains", contains)?;
-            inapplicable_object_scope(required, field_groups, dependencies);
+            inapplicable_object_scope(source_pointer, kind, required, field_groups, dependencies)?;
             array_layout(array_type);
             let items = items
                 .as_deref()
@@ -1505,6 +1613,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
                 "patternProperties",
                 pattern_properties,
             )?;
+            required_fields(source_pointer, kind, required, properties)?;
             plan.scope = scope(
                 source_pointer,
                 kind,
@@ -1552,7 +1661,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
                 reference: _reference,
                 concrete: _concrete,
                 field_groups,
-                dropped_bare_alternatives: _dropped_bare_alternatives,
+                dropped_bare_alternatives,
                 dependencies,
                 contains,
                 is_union: _is_union,
@@ -1582,9 +1691,18 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
                 additional_schema,
                 additional_properties,
             );
+            if !dropped_bare_alternatives.is_empty() {
+                // Materialized conjuncts have no Layer origin to revisit for
+                // strict tag arm agreement. Discarded domains cannot qualify.
+                return Err(unsupported(
+                    source_pointer,
+                    kind,
+                    "dropped oneOf/anyOf alternatives",
+                ));
+            }
             absent(source_pointer, kind, "enum", enum_values)?;
             absent(source_pointer, kind, "const", const_value)?;
-            inapplicable_object_scope(required, field_groups, dependencies);
+            inapplicable_object_scope(source_pointer, kind, required, field_groups, dependencies)?;
             plan.string = Some(StringPlan {
                 source_pointer,
                 format: format.as_deref(),
@@ -1742,7 +1860,7 @@ pub(super) fn lower_as(p: &Projection, kind: EmittedKind) -> Result<EmissionPlan
             absent(source_pointer, kind, "enum", enum_values)?;
             absent(source_pointer, kind, "const", const_value)?;
             absent(source_pointer, kind, "contains", contains)?;
-            inapplicable_object_scope(required, field_groups, dependencies);
+            inapplicable_object_scope(source_pointer, kind, required, field_groups, dependencies)?;
             array_layout(array_type);
             let items = items
                 .as_deref()

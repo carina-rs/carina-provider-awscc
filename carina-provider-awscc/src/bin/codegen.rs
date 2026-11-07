@@ -8538,12 +8538,7 @@ fn string_leaf<'a>(
         {
             return Ok(StringLeaf::Enum(EnumLeaf::string(prop_name, values)));
         }
-        if let Some(values) = prop
-            .query()
-            .pattern
-            .as_deref()
-            .and_then(extract_enum_from_alternation_pattern)
-        {
+        if let Some(values) = emission_plan::pattern_enum(prop.try_query()?)? {
             return Ok(StringLeaf::Enum(EnumLeaf::string(prop_name, values)));
         }
         None

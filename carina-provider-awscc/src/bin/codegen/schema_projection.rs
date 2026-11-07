@@ -2129,6 +2129,7 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
             .reference
             .as_ref()
             .map_or(name, |reference| reference.name.as_str());
+        emitted.validate_required_fields(&p.source_pointer, &schema.type_name, Some(scope_name))?;
         let provider_populated =
             provider_populated || super::is_property_read_only(schema, property, provider_path);
         validate_emitted_field_groups(
@@ -2198,7 +2199,8 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
     }
     schema.validate_root_emission()?;
     let root = schema.root_projection()?;
-    super::emission_plan::lower_as(root, super::emission_plan::EmittedKind::Root)?;
+    let emitted = super::emission_plan::lower_as(root, super::emission_plan::EmittedKind::Root)?;
+    emitted.validate_required_fields(&root.source_pointer, &schema.type_name, None)?;
     root.validate_schema_dependencies()?;
     validate_emitted_field_groups(schema, root, &root.field_groups, None, &[], false)?;
     let mut active = BTreeSet::new();

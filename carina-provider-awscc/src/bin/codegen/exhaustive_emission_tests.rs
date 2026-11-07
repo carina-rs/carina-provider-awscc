@@ -343,3 +343,294 @@ fn exhaustive_map_dependencies_reach_markdown() {
     let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
     assert!(markdown.contains("`A` requires `B`."), "{markdown}");
 }
+
+fn review602_render(schema: &ParsedCfnSchema, markdown: bool) -> Result<String> {
+    if markdown {
+        generate_test_markdown(schema, "AWS::EC2::Route")
+    } else {
+        generate_synthetic_schema_code(schema)
+    }
+}
+
+fn review602_rejected(schema: &ParsedCfnSchema, markdown: bool, facts: &[&str]) {
+    let error = review602_render(schema, markdown).expect_err("unpreserved constraint was admitted");
+    let projection = error
+        .chain()
+        .find_map(|source| {
+            source.downcast_ref::<schema_layer::SchemaError>().or_else(|| {
+                source.downcast_ref::<Box<schema_layer::SchemaError>>().map(Box::as_ref)
+            })
+        });
+    assert!(
+        matches!(projection, Some(schema_layer::SchemaError::Projection { pointer, reason })
+            if !pointer.is_empty() && facts.iter().all(|fact| reason.contains(fact))),
+        "markdown={markdown}: {error:#}"
+    );
+}
+
+fn review602_nonobject_one_of(markdown: bool) {
+    for (property, kind) in [
+        (json!({"type":"string"}), "string"),
+        (json!({"type":"integer"}), "integer"),
+        (json!({"type":"number"}), "number"),
+        (json!({"type":"boolean"}), "boolean"),
+        (json!({"type":"string","enum":["x"]}), "enum/literal"),
+        (json!({"type":"array","items":{"type":"string"}}), "list"),
+        (json!({"type":"array","uniqueItems":true,"items":{"type":"string"}}), "set"),
+    ] {
+        let choice = json!({"oneOf":[{"required":["A"]},{"required":["B"]}]});
+        let mut direct = property.clone();
+        direct["oneOf"] = choice["oneOf"].clone();
+        for property in [direct, json!({"allOf":[property,choice]})] {
+            review602_rejected(&fixture(property), markdown, &["oneOf", kind]);
+        }
+    }
+}
+
+#[test]
+fn review602_nonobject_one_of_rust() {
+    review602_nonobject_one_of(false);
+}
+
+#[test]
+fn review602_nonobject_one_of_markdown() {
+    review602_nonobject_one_of(true);
+}
+
+#[test]
+fn review602_vacuous_inclusive_and_single_required_arms_are_inapplicable() {
+    for property in [
+        json!({"type":"string"}), json!({"type":"integer"}),
+        json!({"type":"number"}), json!({"type":"boolean"}),
+        json!({"type":"string","enum":["x"]}),
+        json!({"type":"array","items":{"type":"string"}}),
+        json!({"type":"array","uniqueItems":true,"items":{"type":"string"}}),
+    ] {
+        same_rendering(property.clone(), "anyOf", json!([
+            {"required":["Always","A"]},{"required":["Always","B"]}
+        ]));
+        same_rendering(property, "oneOf", json!([{"required":["A"]}]));
+    }
+}
+
+fn review602_materialized_tag_alternatives(markdown: bool) {
+    for keyword in ["anyOf", "oneOf"] {
+        for leaf in ["Key", "Value", "MapValue"] {
+            for reversed in [false, true] {
+                let alternative = json!({keyword:[
+                    {"type":"string","minLength":1},{"type":"integer"}
+                ]});
+                let mut properties = json!({"Key":{"type":"string"},"Value":{"type":"string"}});
+                properties[leaf] = alternative.clone();
+                let (object, constraint) = if leaf == "MapValue" {
+                    (
+                        json!({"type":"object","patternProperties":{".*":alternative},"additionalProperties":false}),
+                        json!({"patternProperties":{".*":{"maxLength":10}}}),
+                    )
+                } else {
+                    (
+                        json!({"type":"object","properties":properties}),
+                        json!({"properties":{leaf:{"maxLength":10}}}),
+                    )
+                };
+                let item = if reversed {
+                    json!({"allOf":[constraint,object]})
+                } else {
+                    json!({"allOf":[object,constraint]})
+                };
+                let schema = ParsedCfnSchema::from_json(json!({
+                    "typeName":"AWS::Test::Tags",
+                    "tagging":{"taggable":true,"tagProperty":"/properties/Tags"},
+                    "properties":{"Tags":if leaf == "MapValue" { item } else { json!({"type":"array","items":item}) }}
+                })).unwrap();
+                review602_rejected(&schema, markdown, &["alternative", "tag string"]);
+            }
+        }
+    }
+}
+
+#[test]
+fn review602_materialized_tag_alternatives_rust() {
+    review602_materialized_tag_alternatives(false);
+}
+
+#[test]
+fn review602_materialized_tag_alternatives_markdown() {
+    review602_materialized_tag_alternatives(true);
+}
+
+fn review602_missing_required_members(markdown: bool) {
+    for requirement in [
+        json!({"oneOf":[{"required":["Always","A"]},{"required":["Always","B"]}]}),
+        json!({"anyOf":[{"required":["Always","A"]},{"required":["Always","B"]}]}),
+        json!({"required":["Always"]}),
+    ] {
+        let mut object = json!({"type":"object","properties":{
+            "A":{"type":"boolean"},"B":{"type":"boolean"}
+        }});
+        object.as_object_mut().unwrap().extend(requirement.as_object().unwrap().clone());
+        for scope in ["inline", "root", "reference", "list", "map"] {
+            let schema = match scope {
+                "root" => {
+                    let mut source = object.clone();
+                    source["typeName"] = json!("AWS::Test::Emission");
+                    ParsedCfnSchema::from_json(source).unwrap()
+                }
+                "reference" => ParsedCfnSchema::from_json(json!({
+                    "typeName":"AWS::Test::Emission",
+                    "properties":{"Probe":{"$ref":"#/definitions/Choice"}},
+                    "definitions":{"Choice":object}
+                })).unwrap(),
+                "list" => fixture(json!({"type":"array","items":object})),
+                "map" => fixture(json!({"type":"object","patternProperties":{".*":object}})),
+                "inline" => fixture(object.clone()),
+                _ => unreachable!(),
+            };
+            // Root's JSON pointer is the empty string, which is valid.
+            let error = review602_render(&schema, markdown).expect_err("missing required member was dropped");
+            assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+                Some(schema_layer::SchemaError::Projection { pointer: _, reason })
+                    if reason.contains("required") && reason.contains("Always")),
+                "{scope}, markdown={markdown}: {error:#}");
+        }
+    }
+}
+
+#[test]
+fn review602_missing_required_members_rust() {
+    review602_missing_required_members(false);
+}
+
+#[test]
+fn review602_missing_required_members_markdown() {
+    review602_missing_required_members(true);
+}
+
+fn review602_filtered_required_members(markdown: bool) {
+    for root in [false, true] {
+        let object = json!({"type":"object","properties":{
+            "Always":{"type":"string","description":"(Deprecated.) Removed."},
+            "A":{"type":"boolean"},"B":{"type":"boolean"}
+        },"oneOf":[{"required":["Always","A"]},{"required":["Always","B"]}]});
+        let schema = if root {
+            let mut source = object;
+            source["typeName"] = json!("AWS::Test::Emission");
+            ParsedCfnSchema::from_json(source).unwrap()
+        } else {
+            fixture(object)
+        };
+        let error = review602_render(&schema, markdown).expect_err("deprecated required member was dropped");
+        assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+            Some(schema_layer::SchemaError::Projection { pointer: _, reason })
+                if reason.contains("required") && reason.contains("Always") && reason.contains("deprecated")),
+            "{error:#}");
+    }
+    let schema = ParsedCfnSchema::from_json(json!({
+        "typeName":"AWS::Test::NestedOmission",
+        "properties":{"Config":{"$ref":"#/definitions/ParentConfig"}},
+        "definitions":{"ParentConfig":{"type":"object","properties":{
+            "ChildPolicy":{"type":"object"},"Enabled":{"type":"boolean"}
+        },"required":["ChildPolicy"]}}
+    })).unwrap();
+    review602_rejected(&schema, markdown, &["required", "ChildPolicy", "omitted"]);
+}
+
+#[test]
+fn review602_filtered_required_members_rust() {
+    review602_filtered_required_members(false);
+}
+
+#[test]
+fn review602_filtered_required_members_markdown() {
+    review602_filtered_required_members(true);
+}
+
+#[test]
+fn review602_vacuous_keyword_one_of_and_not_are_never_discarded() {
+    for property in [
+        json!({"type":"string","oneOf":[{"minItems":1},{"minItems":2}]}),
+        json!({"type":"string","oneOf":[{"minimum":1},{"minimum":2}]}),
+        json!({"type":"boolean","oneOf":[{"minLength":1},{"minLength":2}]}),
+        json!({"type":"string","oneOf":[{"minProperties":1},{"minProperties":2}]}),
+        json!({"type":"string","oneOf":[{"items":false},{"contains":false}]}),
+    ] {
+        for markdown in [false, true] {
+            review602_rejected(&fixture(property.clone()), markdown, &["alternative"]);
+        }
+    }
+    for property in [
+        json!({"type":"string","not":{"required":["A"]}}),
+        json!({"type":"string","not":{"minItems":1}}),
+        json!({"type":"array","contains":{"not":{"required":["A"]}}}),
+    ] {
+        let error = schema_layer::Layer::from_json(&json!({
+            "typeName":"AWS::Test::Emission","properties":{"Probe":property}
+        })).expect_err("not must retain a typed diagnostic");
+        assert!(error.to_string().contains("not"), "{error}");
+    }
+}
+
+#[test]
+fn review602_nonobject_scope_checks_cover_tag_lowering() {
+    use emission_plan::EmittedKind;
+    for (property, kinds) in [
+        (json!({"type":"string"}), vec![EmittedKind::String, EmittedKind::TagString]),
+        (json!({"type":"array","items":{"type":"string"}}), vec![EmittedKind::List, EmittedKind::TagList]),
+        (json!({"type":"array","uniqueItems":true,"items":{"type":"string"}}), vec![EmittedKind::Set]),
+    ] {
+        for keyword in ["oneOf", "anyOf"] {
+            let mut property = property.clone();
+            property[keyword] = json!([{"required":["A"]},{"required":["B"]}]);
+            let schema = fixture(property);
+            let projection = schema.properties["Probe"].try_query().unwrap();
+            for kind in &kinds {
+                let result = emission_plan::lower_as(projection, *kind);
+                if keyword == "oneOf" {
+                    assert!(matches!(result, Err(schema_layer::SchemaError::Projection { pointer: _, reason })
+                        if reason.contains("oneOf") && reason.contains("unsatisfiable")));
+                } else {
+                    result.unwrap_or_else(|error| panic!("{kind:?}: {error}"));
+                }
+            }
+        }
+    }
+}
+
+fn review602_pattern_enum_intersection(markdown: bool) {
+    for (bounds, retained) in [
+        (json!({"minLength":2}), vec!["bbb"]),
+        (json!({"maxLength":2}), vec!["a"]),
+        (json!({"minLength":1,"maxLength":3}), vec!["a", "bbb"]),
+    ] {
+        let pattern = json!({"type":"string","pattern":"^(a|bbb)$"});
+        let mut direct = pattern.clone();
+        direct.as_object_mut().unwrap().extend(bounds.as_object().unwrap().clone());
+        for property in [
+            direct,
+            json!({"allOf":[pattern,bounds]}),
+            json!({"allOf":[bounds,pattern]}),
+            json!({"$ref":"#/definitions/Mode","allOf":[bounds]}),
+        ] {
+            let schema = ParsedCfnSchema::from_json(json!({
+                "typeName":"AWS::Test::Emission", "properties":{"Probe":property},
+                "definitions":{"Mode":pattern}
+            })).unwrap();
+            let expected = review602_render(&fixture(json!({"type":"string","enum":retained})), markdown).unwrap();
+            let actual = review602_render(&schema, markdown).unwrap();
+            assert_eq!(actual, expected, "markdown={markdown}: inferred values must satisfy effective bounds");
+        }
+    }
+    review602_rejected(&fixture(json!({
+        "type":"string","pattern":"^(a|bbb)$","minLength":2,"maxLength":2
+    })), markdown, &["empty literal intersection"]);
+}
+
+#[test]
+fn review602_pattern_enum_intersection_rust() {
+    review602_pattern_enum_intersection(false);
+}
+
+#[test]
+fn review602_pattern_enum_intersection_markdown() {
+    review602_pattern_enum_intersection(true);
+}
