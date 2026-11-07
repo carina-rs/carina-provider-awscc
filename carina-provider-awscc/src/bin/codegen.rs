@@ -7874,11 +7874,6 @@ fn project_string_constraints(
             let max = prop.max_length.map_or(max, |n| n.min(max));
             constraints.min_length = Some(min);
             constraints.max_length = Some(max);
-            if min > max {
-                return Err(prop.emission_error(format!(
-                "Invalid string length bounds for {cfn_type}.{property_path}#{source_path}: {min} > {max}"
-            )).into());
-            }
         }
     }
     if let Some(rule) = CFN_PATTERN_NORMALIZATIONS
@@ -7890,6 +7885,13 @@ fn project_string_constraints(
             constraints.min_length = Some(constraints.min_length.map_or(min, |n| n.max(min)));
             constraints.max_length = Some(constraints.max_length.map_or(max, |n| n.min(max)));
         }
+    }
+    if let (Some(min), Some(max)) = (constraints.min_length, constraints.max_length)
+        && min > max
+    {
+        return Err(prop.emission_error(format!(
+            "Invalid string length bounds for {cfn_type}.{property_path}#{source_path}: {min} > {max}"
+        )).into());
     }
     if let Some(source) = normalized {
         let approved = source_pattern
@@ -14122,7 +14124,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 emit_array_override(
                     schema,
                     cfn_property_path,
-                    cfn_override_property(schema, cfn_property_path)?.unwrap_or(prop),
+                    prop,
                     override_type,
                     &element_type,
                     force_unordered,
@@ -14432,6 +14434,10 @@ mod tests {
 
     mod review_round3_tests {
         include!("codegen/review_round3_tests.rs");
+    }
+
+    mod review_round4_tests {
+        include!("codegen/review_round4_tests.rs");
     }
 
     mod field_groups_tests {
