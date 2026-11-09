@@ -5904,6 +5904,36 @@ mod tests {
         panic!("typed I/O source was discarded");
     }
 
+    #[test]
+    fn update_confirmation_retains_rendered_reason_and_cause() {
+        let completion = CreateCompletion::Partial {
+            identifier: test_identifier("partial-bucket"),
+            attributes: HashMap::new(),
+            reason: ProviderError::api_error_caused_by(
+                "read denied",
+                std::io::Error::other("reason witness"),
+            ),
+            missing_attributes: vec!["arn".to_string()].try_into().unwrap(),
+        };
+        let CreateCompletion::Partial { reason, .. } = add_update_confirmation(
+            completion,
+            &UpdatePatchPlan::default(),
+            Some("handler witness"),
+            true,
+        ) else {
+            panic!("partial read-back must retain its reason")
+        };
+
+        assert_eq!(
+            reason.to_string(),
+            "post-update read-back incomplete: handler failed: handler witness: read denied: reason witness"
+        );
+        assert!(
+            reason.detail().cause().unwrap().source().is_some(),
+            "the cause chain must still reach the original read failure"
+        );
+    }
+
     #[tokio::test(start_paused = true)]
     async fn create_iam_role_synthesizes_arn_from_cloudcontrol_role_name() {
         let cloudcontrol = IamRoleCreateCloudControlService::new(true);
