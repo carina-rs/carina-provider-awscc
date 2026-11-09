@@ -510,8 +510,7 @@ impl<'a> EmissionContext<'a> {
         let entry = kms_references::entry(&self.resource, &self.dsl_path(path))
             .expect("classified reference");
         let Some(pattern) = entry.cfn_pattern else {
-            let pattern = super::ApprovedPattern::whole(kind.default_pattern());
-            return kind.constructor(entry.cfn_length, &pattern);
+            return kind.constructor(entry.cfn_length, kind.default_pattern());
         };
         let property = CfnProperty {
             pattern: Some(pattern.to_string()),

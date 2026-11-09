@@ -35,7 +35,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_assume_role_policy_document_attribute());
     #[inline(never)]
     fn build_description_attribute() -> AttributeSchema {
-        AttributeSchema::optional("description", AttributeType::refined_string(None, Some(r"^[\x09\x0A\x0D -~¡-ÿ]*\z".to_string()), Some((Some(0), Some(1000))), None))
+        AttributeSchema::optional("description", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(r"^[\x09\x0A\x0D -~¡-ÿ]*\z", carina_core::schema::PatternMatch::Full)), Some((Some(0), Some(1000))), None))
                 .with_description("A description of the role that you provide.")
                 .with_provider_name("Description")
             .build()

@@ -18,7 +18,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for AWS::EC2::SecurityGroup");
     #[inline(never)]
     fn build_group_description_attribute() -> AttributeSchema {
-        AttributeSchema::required("group_description", AttributeType::refined_string(None, Some(r"^[a-zA-Z0-9. _:/()#,@\[\]+=&;{}!$*-]*$".to_string()), Some((None, Some(255))), None))
+        AttributeSchema::required("group_description", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(r"^[a-zA-Z0-9. _:/()#,@\[\]+=&;{}!$*-]*$", carina_core::schema::PatternMatch::Full)), Some((None, Some(255))), None))
                 .create_only()
                 .with_description("A description for the security group.")
                 .with_provider_name("GroupDescription")
@@ -54,7 +54,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
     fn build_security_group_egress_attribute() -> AttributeSchema {
         AttributeSchema::optional("security_group_egress", AttributeType::unordered_list(AttributeType::struct_("Egress".to_string(), vec![StructField::optional("cidr_ip", types::ipv4_cidr()).with_provider_name("CidrIp").build(),
                     StructField::optional("cidr_ipv6", types::ipv6_cidr()).with_provider_name("CidrIpv6").build(),
-                    StructField::optional("description", AttributeType::refined_string(None, Some(r"^[a-zA-Z0-9. _:/()#,@\[\]+=&;{}!$*-]*$".to_string()), Some((None, Some(255))), None)).with_provider_name("Description").build(),
+                    StructField::optional("description", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(r"^[a-zA-Z0-9. _:/()#,@\[\]+=&;{}!$*-]*$", carina_core::schema::PatternMatch::Full)), Some((None, Some(255))), None)).with_provider_name("Description").build(),
                     StructField::optional("destination_prefix_list_id", carina_aws_types::prefix_list_id()).with_provider_name("DestinationPrefixListId").build(),
                     StructField::optional("destination_security_group_id", carina_aws_types::security_group_id()).with_provider_name("DestinationSecurityGroupId").build(),
                     StructField::optional("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("FromPort").build(),
@@ -70,7 +70,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
     fn build_security_group_ingress_attribute() -> AttributeSchema {
         AttributeSchema::optional("security_group_ingress", AttributeType::unordered_list(AttributeType::struct_("Ingress".to_string(), vec![StructField::optional("cidr_ip", types::ipv4_cidr()).with_provider_name("CidrIp").build(),
                     StructField::optional("cidr_ipv6", types::ipv6_cidr()).with_provider_name("CidrIpv6").build(),
-                    StructField::optional("description", AttributeType::refined_string(None, Some(r"^[a-zA-Z0-9. _:/()#,@\[\]+=&;{}!$*-]*$".to_string()), Some((None, Some(255))), None)).with_provider_name("Description").build(),
+                    StructField::optional("description", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(r"^[a-zA-Z0-9. _:/()#,@\[\]+=&;{}!$*-]*$", carina_core::schema::PatternMatch::Full)), Some((None, Some(255))), None)).with_provider_name("Description").build(),
                     StructField::optional("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("FromPort").build(),
                     StructField::required("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroup.Ingress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string())], None, None)).with_provider_name("IpProtocol").build(),
                     StructField::optional("source_prefix_list_id", carina_aws_types::prefix_list_id()).with_provider_name("SourcePrefixListId").build(),

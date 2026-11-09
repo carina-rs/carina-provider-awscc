@@ -55,7 +55,13 @@ fn log_group_name_preserves_pattern_and_bounds_in_direct_callback_dispatch() {
         panic!("LogGroup.LogGroupName must retain its identity and validator callback");
     };
     assert_eq!(identity.to_string(), "aws.logs.LogGroup.LogGroupName");
-    assert_eq!(pattern, Some(r"^[.\-_/#A-Za-z0-9]{1,512}\z"));
+    assert_eq!(
+        pattern,
+        Some(&carina_core::schema::PatternSpec::new(
+            r"^[.\-_/#A-Za-z0-9]{1,512}\z",
+            carina_core::schema::PatternMatch::Full
+        ))
+    );
     assert_eq!(length, Some((Some(1), Some(512))));
     for (value, valid) in [
         ("a".to_string(), true),

@@ -74,7 +74,7 @@ pub fn ecr_repository_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_image_tag_mutability_exclusion_filters_attribute() -> AttributeSchema {
         AttributeSchema::optional("image_tag_mutability_exclusion_filters", AttributeType::refined_list(AttributeType::struct_("ImageTagMutabilityExclusionFilter".to_string(), vec![StructField::required("image_tag_mutability_exclusion_filter_type", AttributeType::enum_(carina_core::schema::enum_identity("ImageTagMutabilityExclusionFilterType", Some("aws.ecr.Repository.ImageTagMutabilityExclusionFilter")), Some(vec!["WILDCARD".to_string()]), vec![("WILDCARD".to_string(), "wildcard".to_string())], None, None)).with_description("").with_provider_name("ImageTagMutabilityExclusionFilterType").build(),
-                    StructField::required("image_tag_mutability_exclusion_filter_value", AttributeType::refined_string(None, Some(r"^[0-9a-zA-Z._*-]{1,128}\z".to_string()), Some((Some(1), Some(128))), None)).with_description("").with_provider_name("ImageTagMutabilityExclusionFilterValue").build()]), true, Some((Some(1), Some(5))), carina_core::schema::ListElements::AllowDuplicates))
+                    StructField::required("image_tag_mutability_exclusion_filter_value", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(r"^[0-9a-zA-Z._*-]{1,128}\z", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(128))), None)).with_description("").with_provider_name("ImageTagMutabilityExclusionFilterValue").build()]), true, Some((Some(1), Some(5))), carina_core::schema::ListElements::AllowDuplicates))
                 .with_description("A list of filters that specify which image tags are excluded from the repository's image tag mutability setting.")
                 .with_provider_name("ImageTagMutabilityExclusionFilters")
                 .with_block_name("image_tag_mutability_exclusion_filter")
@@ -84,7 +84,7 @@ pub fn ecr_repository_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_lifecycle_policy_attribute() -> AttributeSchema {
         AttributeSchema::optional("lifecycle_policy", AttributeType::struct_("LifecyclePolicy".to_string(), vec![StructField::optional("lifecycle_policy_text", AttributeType::refined_string(None, None, Some((Some(100), Some(30720))), None)).with_description("The JSON repository policy text to apply to the repository.").with_provider_name("LifecyclePolicyText").build(),
-                    StructField::optional("registry_id", AttributeType::refined_string(None, Some("^[0-9]{12}$".to_string()), Some((Some(12), Some(12))), None)).with_description("The AWS account ID associated with the registry that contains the repository. If you do? not specify a registry, the default registry is assumed.").with_provider_name("RegistryId").build()]))
+                    StructField::optional("registry_id", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[0-9]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(12), Some(12))), None)).with_description("The AWS account ID associated with the registry that contains the repository. If you do? not specify a registry, the default registry is assumed.").with_provider_name("RegistryId").build()]))
                 .with_description("Creates or updates a lifecycle policy. For information about lifecycle policy syntax, see [Lifecycle policy template](https://docs.aws.amazon.com/AmazonECR/latest/userguide/LifecyclePolicies.html).")
                 .with_provider_name("LifecyclePolicy")
             .build()
@@ -92,7 +92,7 @@ pub fn ecr_repository_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_lifecycle_policy_attribute());
     #[inline(never)]
     fn build_repository_name_attribute() -> AttributeSchema {
-        AttributeSchema::optional("repository_name", AttributeType::refined_string(None, Some("^([a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*(\\/[a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*)*)$".to_string()), Some((Some(2), Some(256))), None))
+        AttributeSchema::optional("repository_name", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^([a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*(\\/[a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*)*)$", carina_core::schema::PatternMatch::Full)), Some((Some(2), Some(256))), None))
                 .create_only()
                 .with_description("The name to use for the repository. The repository name may be specified on its own (such as ``nginx-web-app``) or it can be prepended with a namespace to group the repository into a category (such as ``project-a/nginx-web-app``). If you don't specify a name, CFNlong generates a unique physical ID and uses that ID for the repository name. For more information, see [Name type](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-name.html). The repository name must start with a letter and can only contain lowercase letters, numbers, hyphens, underscores, and forward slashes. If you specify a name, you cannot perform updates that require replacement of this resource. You can perform updates that require no or some interruption. If you must replace the resource, specify a new name.")
                 .with_provider_name("RepositoryName")
@@ -136,7 +136,7 @@ pub fn ecr_repository_config() -> AwsccSchemaConfig {
     schema = schema.with_def("ImageScanningConfiguration", build_schema_def_1());
     #[inline(never)]
     fn build_schema_def_2() -> AttributeType { AttributeType::struct_("LifecyclePolicy".to_string(), vec![StructField::optional("lifecycle_policy_text", AttributeType::refined_string(None, None, Some((Some(100), Some(30720))), None)).with_description("The JSON repository policy text to apply to the repository.").with_provider_name("LifecyclePolicyText").build(),
-                    StructField::optional("registry_id", AttributeType::refined_string(None, Some("^[0-9]{12}$".to_string()), Some((Some(12), Some(12))), None)).with_description("The AWS account ID associated with the registry that contains the repository. If you do? not specify a registry, the default registry is assumed.").with_provider_name("RegistryId").build()]) }
+                    StructField::optional("registry_id", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[0-9]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(12), Some(12))), None)).with_description("The AWS account ID associated with the registry that contains the repository. If you do? not specify a registry, the default registry is assumed.").with_provider_name("RegistryId").build()]) }
     schema = schema.with_def("LifecyclePolicy", build_schema_def_2());
     AwsccSchemaConfig {
         aws_type_name: "AWS::ECR::Repository",

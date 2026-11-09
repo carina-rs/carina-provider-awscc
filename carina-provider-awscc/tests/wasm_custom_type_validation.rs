@@ -74,7 +74,26 @@ async fn flow_log_integer_validator_dispatches_through_the_wasm_guest() {
                 )),
             ),
         ]);
-        flow_log.validate_with_resolver(&attributes, &|_| false, &custom_types)
+        let classified = attributes
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.clone(),
+                    value
+                        .knowledge(
+                            &carina_core::resource::knowledge::KnowledgeContext::validation(),
+                        )
+                        .unwrap()
+                        .into_classification(),
+                )
+            })
+            .collect();
+        carina_core::test_utils::admit_resource_attributes(
+            flow_log,
+            &classified,
+            &|_| false,
+            &custom_types,
+        )
     };
 
     validate(60).expect("guest bridge must parse and accept integer witness 60");

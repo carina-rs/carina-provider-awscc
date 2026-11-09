@@ -1,24 +1,20 @@
 //! Pattern approval shared by the generator and AWSCC runtime constructors.
 
-use carina_core::schema::{AttributeType, CustomValidator, DslTransform, TypeIdentity};
+use carina_core::schema::{
+    AttributeType, CustomValidator, DslTransform, PatternMatch, PatternReason, PatternSpec,
+    TypeIdentity,
+};
 use regex_syntax::ast::{AssertionKind, Ast, Flag};
 
-/// An emitted whole-value pattern, or one exact reviewed substring exception.
+/// A typed full-value pattern, or one exact reviewed substring exception.
 /// The private field prevents producers from approving arbitrary regex text.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ApprovedPattern(String);
+pub struct ApprovedPattern(PatternSpec);
 
 impl ApprovedPattern {
-    /// Preserve sources satisfying [`is_whole_anchored`]; otherwise surround
-    /// the complete source with `^(?:` and `)\z`. No source is discarded or
-    /// repaired here, including invalid or unsupported syntax. Codegen must
-    /// compile the result in Carina's schema dialect and report its provenance.
+    /// Preserve the authored regex; Full applies absolute boundaries in core.
     pub fn whole(source: &str) -> Self {
-        Self(if is_whole_anchored(source) {
-            source.to_string()
-        } else {
-            format!(r"^(?:{source})\z")
-        })
+        Self(PatternSpec::new(source, PatternMatch::Full))
     }
 
     /// Approve only an exact resource, JSON source pointer and source regex
@@ -35,11 +31,23 @@ impl ApprovedPattern {
                     && entry.source_path == source_path
                     && entry.source == source
             })
-            .map(|entry| Self(entry.emitted.to_string()))
+            .map(|entry| {
+                Self(PatternSpec::new(
+                    entry.emitted,
+                    PatternMatch::Substring {
+                        reason: PatternReason::new(entry.reason)
+                            .expect("visible reviewed pattern reason"),
+                    },
+                ))
+            })
+    }
+
+    pub fn as_spec(&self) -> &PatternSpec {
+        &self.0
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
@@ -49,8 +57,8 @@ impl ApprovedPattern {
 /// nested alternatives and inline multiline flags are interpreted by the
 /// regex parser, rather than guessed from the first and last characters.
 /// Rust's `$` is end of text without multiline mode. Line-only assertions
-/// do not qualify. Unparseable sources return false and are still wrapped
-/// verbatim by `whole`, so the schema-dialect compiler can diagnose them.
+/// do not qualify. Unparseable sources return false. `whole` preserves their
+/// source verbatim so the schema-dialect compiler can diagnose them.
 pub fn is_whole_anchored(source: &str) -> bool {
     if !source.starts_with('^') || !(source.ends_with('$') || source.ends_with(r"\z")) {
         return false;

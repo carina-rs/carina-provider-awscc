@@ -33,14 +33,14 @@ impl ProviderFactory for SchedulerSchemaFactory {
     fn validate_config(
         &self,
         _attributes: &carina_core::provider::CanonicalProviderConfigAttributes,
+        _inputs: &carina_core::provider::ProviderValidationInputs,
     ) -> carina_core::provider::ProviderResult<()> {
         Ok(())
     }
 
     fn create_provider(
         &self,
-        _binding: Option<&str>,
-        _config: &carina_core::provider::ProviderReadyConfig,
+        _session: &carina_core::provider::ProviderSession,
         _initialize_outcome: carina_core::provider::InitializeOutcomeMint,
     ) -> carina_core::provider::BoxFuture<
         '_,
@@ -111,12 +111,23 @@ fn validate_scheduler(source: &str) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     let known_providers = HashSet::from(["awscc".to_string()]);
 
-    validate_resources(&parsed, &schemas, &known_providers, &context)?;
+    validate_resources(
+        &parsed,
+        &schemas,
+        &known_providers,
+        &context,
+        &mut Vec::new(),
+    )?;
 
     let bindings = BindingIndex::from_parsed(&parsed, &schemas, &context);
     let configuration = load_buffer_configuration(&parsed, &schemas, &context);
-    validate_resource_ref_types(configuration.judged(), &HashSet::new(), &bindings)
-        .map_err(|error| error.to_string())
+    validate_resource_ref_types(
+        configuration.judged(),
+        &HashSet::new(),
+        &bindings,
+        &mut Vec::new(),
+    )
+    .map_err(|error| error.to_string())
 }
 
 #[test]

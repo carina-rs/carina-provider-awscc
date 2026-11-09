@@ -31,14 +31,14 @@ impl ProviderFactory for Wafv2SchemaFactory {
     fn validate_config(
         &self,
         _attributes: &carina_core::provider::CanonicalProviderConfigAttributes,
+        _inputs: &carina_core::provider::ProviderValidationInputs,
     ) -> carina_core::provider::ProviderResult<()> {
         Ok(())
     }
 
     fn create_provider(
         &self,
-        _binding: Option<&str>,
-        _config: &carina_core::provider::ProviderReadyConfig,
+        _session: &carina_core::provider::ProviderSession,
         _initialize_outcome: carina_core::provider::InitializeOutcomeMint,
     ) -> carina_core::provider::BoxFuture<
         '_,
@@ -191,6 +191,7 @@ fn validate_web_acl(resource: Resource) -> Result<(), String> {
         &schemas,
         &HashSet::from(["awscc".to_string()]),
         &context,
+        &mut Vec::new(),
     )
 }
 

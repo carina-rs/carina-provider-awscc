@@ -19,7 +19,7 @@ mod arn_synthesis;
 pub mod assume_role;
 mod cloudcontrol;
 pub(crate) mod conversion;
-mod error_helpers;
+pub(crate) mod error_helpers;
 mod normalizer;
 mod operations;
 pub mod read_back;
@@ -90,7 +90,8 @@ pub struct AwsccProvider {
     s3_client: S3Client,
     sts_client: StsClient,
     /// KMS is reachable only after the shared account guard has succeeded.
-    initialized: Result<InitializedState, String>,
+    initialized: Result<InitializedState, ProviderError>,
+    diagnostics: carina_plugin_sdk::ProviderDiagnostics,
     /// Caller's AWS account id, fetched lazily via `sts:GetCallerIdentity`
     /// the first time a synthesized attribute (e.g.
     /// `cloudfront.Distribution.arn`) needs it, then cached for the
@@ -105,8 +106,8 @@ impl AwsccProvider {
     /// Create a new AwsccProvider for the specified region with no
     /// account guard. Convenience wrapper for tests and other callers
     /// that do not need `allowed_account_ids` / `forbidden_account_ids`.
-    pub async fn new(region: &str) -> Self {
-        Self::new_with_config(region, &AwsccProviderConfig::default()).await
+    pub async fn new(region: &str, diagnostics: carina_plugin_sdk::ProviderDiagnostics) -> Self {
+        Self::new_with_config(region, &AwsccProviderConfig::default(), diagnostics).await
     }
 
     /// Create a new AwsccProvider for the specified region, applying
@@ -119,13 +120,18 @@ impl AwsccProvider {
     /// stays infallible), but every `Provider` trait method on the
     /// returned instance will surface that error before any
     /// CloudControl call.
-    pub async fn new_with_config(region: &str, cfg: &AwsccProviderConfig) -> Self {
-        let config = BoundedSdkConfig::load(region, cfg.assume_role.as_ref()).await;
+    pub async fn new_with_config(
+        region: &str,
+        cfg: &AwsccProviderConfig,
+        diagnostics: carina_plugin_sdk::ProviderDiagnostics,
+    ) -> Self {
+        let config = BoundedSdkConfig::load(region, cfg.assume_role.as_ref(), diagnostics).await;
         Self::from_sdk_config(config, cfg).await
     }
 
     /// Create a new AwsccProvider from a bounded AWS SDK configuration.
     pub async fn from_sdk_config(config: BoundedSdkConfig, cfg: &AwsccProviderConfig) -> Self {
+        let diagnostics = config.diagnostics().clone();
         let (
             SdkClients {
                 cloudcontrol,
@@ -140,6 +146,7 @@ impl AwsccProvider {
             s3_client: s3,
             sts_client: sts,
             initialized,
+            diagnostics,
             account_id: OnceCell::new(),
             #[cfg(any(test, feature = "test-utils"))]
             operation_config_overrides: Default::default(),
@@ -193,15 +200,15 @@ impl AwsccProvider {
 
     /// Returns the deferred initialization error, if the account guard
     /// rejected the caller during `new_with_config`.
-    pub fn init_error(&self) -> Option<&str> {
-        self.initialized.as_ref().err().map(String::as_str)
+    pub fn init_error(&self) -> Option<&ProviderError> {
+        self.initialized.as_ref().err()
     }
 
-    pub(crate) fn kms_client(&self) -> Result<&crate::references::KmsClient, &str> {
+    pub(crate) fn kms_client(&self) -> Result<&crate::references::KmsClient, ProviderError> {
         self.initialized
             .as_ref()
             .map(InitializedState::kms_client)
-            .map_err(String::as_str)
+            .map_err(Clone::clone)
     }
 }
 

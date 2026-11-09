@@ -40,7 +40,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_account_id_attribute());
     #[inline(never)]
     fn build_account_name_attribute() -> AttributeSchema {
-        AttributeSchema::required("account_name", AttributeType::refined_string(None, Some(r"^[ -~]+\z".to_string()), Some((Some(1), Some(50))), None))
+        AttributeSchema::required("account_name", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(r"^[ -~]+\z", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(50))), None))
                 .with_description("The friendly name of the member account.")
                 .with_provider_name("AccountName")
             .build()
@@ -88,7 +88,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_parent_ids_attribute());
     #[inline(never)]
     fn build_paths_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("paths", AttributeType::list(AttributeType::refined_string(None, Some("^(?:^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/)\\z".to_string()), None, None)))
+        AttributeSchema::provider_populated("paths", AttributeType::list(AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/", carina_core::schema::PatternMatch::Full)), None, None)))
                 .with_description("The paths in the organization where the account exists. (read-only)")
                 .with_provider_name("Paths")
             .build()
@@ -122,7 +122,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_status_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:[\\s\\S]*)\\z".to_string()), Some((Some(1), Some(128))), None), AttributeType::refined_string(None, Some("^(?:[\\s\\S]*)\\z".to_string()), Some((None, Some(256))), None)))
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("[\\s\\S]*", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(128))), None), AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("[\\s\\S]*", carina_core::schema::PatternMatch::Full)), Some((None, Some(256))), None)))
                 .with_description("A list of tags that you want to attach to the newly created account. For each tag in the list, you must specify both a tag key and a value.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

@@ -14,7 +14,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for AWS::IdentityStore::Group");
     #[inline(never)]
     fn build_description_attribute() -> AttributeSchema {
-        AttributeSchema::optional("description", AttributeType::refined_string(None, Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  　]+$".to_string()), Some((Some(1), Some(1024))), None))
+        AttributeSchema::optional("description", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  \u{3000}]+$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(1024))), None))
                 .with_description("A string containing the description of the group.")
                 .with_provider_name("Description")
             .build()

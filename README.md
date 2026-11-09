@@ -30,7 +30,7 @@ $ carina plan
 
 ### Credentials
 
-The Carina host resolves AWS credentials with the standard AWS credential chain (environment, shared config, SSO, and so on) and hands them to the provider, refreshing them when they expire. Select a profile with `AWS_PROFILE`. Carina never starts an interactive login: if an SSO session has expired, run `aws sso login` and retry.
+The Carina host resolves AWS credentials with the standard AWS credential chain (environment, shared config, SSO, and so on) and hands them to the provider, refreshing them when they expire. The provider routes each credential generation through `carina-aws-types` and host registration before signing, including assumed-role credentials. Provider diagnostics use the typed protocol 25 channel; guest stdout/stderr are discarded. Select a profile with `AWS_PROFILE`. Carina never starts an interactive login: if an SSO session has expired, run `aws sso login` and retry.
 
 Planning KMS key references may require `kms:DescribeKey` for the effective identity,
 including any configured assumed role. The provider resolves aliases and key IDs to

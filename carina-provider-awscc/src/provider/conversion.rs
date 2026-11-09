@@ -145,6 +145,7 @@ fn json_integer(value: &serde_json::Value) -> Option<i64> {
 /// schema should prefer this entry point; the 4-arg shim above uses
 /// an empty def map and will panic if a `Ref` is reached.
 pub(crate) fn aws_value_to_dsl_with_defs(
+    diagnostics: &carina_plugin_sdk::ProviderDiagnostics,
     dsl_name: &str,
     value: &serde_json::Value,
     attr_type: &CompiledAttributeType,
@@ -184,6 +185,7 @@ pub(crate) fn aws_value_to_dsl_with_defs(
         && parsed_policy.is_object()
     {
         return aws_value_to_dsl_with_defs(
+            diagnostics,
             dsl_name,
             &parsed_policy,
             attr_type,
@@ -232,12 +234,27 @@ pub(crate) fn aws_value_to_dsl_with_defs(
             .iter()
             .enumerate()
             .filter_map(|(i, item)| {
-                let result = aws_value_to_dsl_with_defs(dsl_name, item, inner, resource_type, defs);
+                let result = aws_value_to_dsl_with_defs(
+                    diagnostics,
+                    dsl_name,
+                    item,
+                    inner,
+                    resource_type,
+                    defs,
+                );
                 if result.is_none() {
-                    log::warn!(
-                        "aws_value_to_dsl: dropping unconvertible array item at index {} for attribute '{}' in resource '{}': {:?}",
-                        i, dsl_name, resource_type, item
-                    );
+                    diagnostics.emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                        carina_plugin_sdk::EventLevel::Warn,
+                        "value conversion dropped an unsupported candidate".into(),
+                        &carina_core::provider_text::ProviderDiagnostic::new(
+                            ConversionWarning::AwsArrayItem {
+                                index: i,
+                                attribute: dsl_name.into(),
+                                resource_type: resource_type.into(),
+                            },
+                        ),
+                    ));
+                    emit_dropped_json(diagnostics, item);
                 }
                 result
             })
@@ -259,13 +276,18 @@ pub(crate) fn aws_value_to_dsl_with_defs(
             .map(|member| member.as_attr())
             .filter(|member| json_matches_shape(&schema, member, value))
         {
-            if let Some(result) =
-                aws_value_to_dsl_with_defs(dsl_name, value, member, resource_type, defs)
-            {
+            if let Some(result) = aws_value_to_dsl_with_defs(
+                diagnostics,
+                dsl_name,
+                value,
+                member,
+                resource_type,
+                defs,
+            ) {
                 return Some(result);
             }
         }
-        return json_to_value(value);
+        return json_to_value(diagnostics, value);
     }
 
     // For bare Struct{fields}, recurse into fields
@@ -279,6 +301,7 @@ pub(crate) fn aws_value_to_dsl_with_defs(
                 let provider_key = field.provider_name().unwrap_or(field.name());
                 let json_val = obj.get(provider_key)?;
                 let dsl_val = aws_value_to_dsl_with_defs(
+                    diagnostics,
                     field.name(),
                     json_val,
                     field.field_type(),
@@ -302,12 +325,26 @@ pub(crate) fn aws_value_to_dsl_with_defs(
         let map: IndexMap<String, Value> = obj
             .iter()
             .filter_map(|(k, v)| {
-                let result = aws_value_to_dsl_with_defs(dsl_name, v, inner, resource_type, defs);
+                let result = aws_value_to_dsl_with_defs(
+                    diagnostics,
+                    dsl_name,
+                    v,
+                    inner,
+                    resource_type,
+                    defs,
+                );
                 if result.is_none() {
-                    log::warn!(
-                        "aws_value_to_dsl: dropping unconvertible map entry '{}' for attribute '{}' in resource '{}': {:?}",
-                        k, dsl_name, resource_type, v
-                    );
+                    diagnostics.emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                        carina_plugin_sdk::EventLevel::Warn,
+                        "value conversion dropped an unsupported candidate".into(),
+                        &carina_core::provider_text::ProviderDiagnostic::new(
+                            ConversionWarning::AwsMapEntry {
+                                attribute: dsl_name.into(),
+                                resource_type: resource_type.into(),
+                            },
+                        ),
+                    ));
+                    emit_dropped_json(diagnostics, &json!({k: v}));
                 }
                 let key = if is_condition {
                     carina_aws_types::condition_operator_to_snake(k).unwrap_or_else(|| k.clone())
@@ -338,11 +375,14 @@ pub(crate) fn aws_value_to_dsl_with_defs(
         )));
     }
 
-    json_to_value(value)
+    json_to_value(diagnostics, value)
 }
 
 /// Convert JSON value to DSL Value
-pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
+pub(crate) fn json_to_value(
+    diagnostics: &carina_plugin_sdk::ProviderDiagnostics,
+    value: &serde_json::Value,
+) -> Option<Value> {
     match value {
         serde_json::Value::String(s) => {
             Some(Value::Concrete(ConcreteValue::String(s.clone().into())))
@@ -362,13 +402,16 @@ pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
                 .iter()
                 .enumerate()
                 .filter_map(|(i, item)| {
-                    let result = json_to_value(item);
+                    let result = json_to_value(diagnostics, item);
                     if result.is_none() {
-                        log::warn!(
-                            "json_to_value: dropping unconvertible array item at index {}: {:?}",
-                            i,
-                            item
-                        );
+                        diagnostics.emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                            carina_plugin_sdk::EventLevel::Warn,
+                            "value conversion dropped an unsupported candidate".into(),
+                            &carina_core::provider_text::ProviderDiagnostic::new(
+                                ConversionWarning::JsonArrayItem { index: i },
+                            ),
+                        ));
+                        emit_dropped_json(diagnostics, item);
                     }
                     result
                 })
@@ -379,13 +422,16 @@ pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
             let map: IndexMap<String, Value> = obj
                 .iter()
                 .filter_map(|(k, v)| {
-                    let result = json_to_value(v);
+                    let result = json_to_value(diagnostics, v);
                     if result.is_none() {
-                        log::warn!(
-                            "json_to_value: dropping unconvertible map entry '{}': {:?}",
-                            k,
-                            v
-                        );
+                        diagnostics.emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                            carina_plugin_sdk::EventLevel::Warn,
+                            "value conversion dropped an unsupported candidate".into(),
+                            &carina_core::provider_text::ProviderDiagnostic::new(
+                                ConversionWarning::JsonMapEntry,
+                            ),
+                        ));
+                        emit_dropped_json(diagnostics, &json!({k: v}));
                     }
                     result.map(|val| (k.clone(), val))
                 })
@@ -399,6 +445,7 @@ pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
 /// carina#3340: schema-aware variant — see [`aws_value_to_dsl_with_defs`]
 /// for the rationale. Same `Ref` chains, same `&defs` parameter.
 pub(crate) fn dsl_value_to_aws_with_defs(
+    diagnostics: &carina_plugin_sdk::ProviderDiagnostics,
     value: &Value,
     attr_type: &CompiledAttributeType,
     resource_type: &str,
@@ -414,7 +461,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
         match value {
             Value::Concrete(ConcreteValue::String(s)) => Some(json!(s.expose_plaintext())),
             Value::Concrete(ConcreteValue::CanonicalEnum(c)) => Some(json!(c.api_value())),
-            _ => value_to_json(value),
+            _ => value_to_json(diagnostics, value),
         }
     } else if let Shape::List {
         element_type: inner,
@@ -428,7 +475,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
         }
 
         let Value::Concrete(ConcreteValue::List(items)) = value else {
-            return value_to_json(value);
+            return value_to_json(diagnostics, value);
         };
 
         // Recurse into list items with inner type for type-aware conversion
@@ -436,12 +483,26 @@ pub(crate) fn dsl_value_to_aws_with_defs(
             .iter()
             .enumerate()
             .filter_map(|(i, item)| {
-                let result = dsl_value_to_aws_with_defs(item, inner, resource_type, attr_name, defs);
+                let result = dsl_value_to_aws_with_defs(
+                    diagnostics,
+                    item,
+                    inner,
+                    resource_type,
+                    attr_name,
+                    defs,
+                );
                 if result.is_none() {
-                    log::warn!(
-                        "dsl_value_to_aws: dropping unconvertible list item at index {} for attribute '{}' in resource '{}': {:?}",
-                        i, attr_name, resource_type, item
-                    );
+                    diagnostics.emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                        carina_plugin_sdk::EventLevel::Warn,
+                        "value conversion dropped an unsupported candidate".into(),
+                        &carina_core::provider_text::ProviderDiagnostic::new(
+                            ConversionWarning::DslListItem {
+                                index: i,
+                                attribute: attr_name.into(),
+                                resource_type: resource_type.into(),
+                            },
+                        ),
+                    ));
                 }
                 result
             })
@@ -457,9 +518,14 @@ pub(crate) fn dsl_value_to_aws_with_defs(
                 .map(|member| member.as_attr())
                 .filter(|member| is_list_of_strings(&schema, member))
             {
-                if let Some(result) =
-                    dsl_value_to_aws_with_defs(value, member, resource_type, attr_name, defs)
-                {
+                if let Some(result) = dsl_value_to_aws_with_defs(
+                    diagnostics,
+                    value,
+                    member,
+                    resource_type,
+                    attr_name,
+                    defs,
+                ) {
                     return Some(result);
                 }
             }
@@ -467,13 +533,18 @@ pub(crate) fn dsl_value_to_aws_with_defs(
 
         // Try each member type; use the first that produces a type-aware result
         for member in members.iter().flatten().map(|member| member.as_attr()) {
-            if let Some(result) =
-                dsl_value_to_aws_with_defs(value, member, resource_type, attr_name, defs)
-            {
+            if let Some(result) = dsl_value_to_aws_with_defs(
+                diagnostics,
+                value,
+                member,
+                resource_type,
+                attr_name,
+                defs,
+            ) {
                 return Some(result);
             }
         }
-        value_to_json(value)
+        value_to_json(diagnostics, value)
     } else if let Shape::Struct { .. } = shape
         && let Some(fields) = struct_fields_for(&schema, attr_type)
         && let Value::Concrete(ConcreteValue::Map(map)) = value
@@ -485,6 +556,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
                 let dsl_val = map.get(field.name())?;
                 let provider_key = field.provider_name().unwrap_or(field.name()).to_string();
                 let json_val = dsl_value_to_aws_with_defs(
+                    diagnostics,
                     dsl_val,
                     field.field_type(),
                     resource_type,
@@ -508,6 +580,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
                 let dsl_val = map.get(field.name())?;
                 let provider_key = field.provider_name().unwrap_or(field.name()).to_string();
                 let json_val = dsl_value_to_aws_with_defs(
+                    diagnostics,
                     dsl_val,
                     field.field_type(),
                     resource_type,
@@ -527,12 +600,25 @@ pub(crate) fn dsl_value_to_aws_with_defs(
         let obj: serde_json::Map<String, serde_json::Value> = map
             .iter()
             .filter_map(|(k, v)| {
-                let result = dsl_value_to_aws_with_defs(v, inner, resource_type, attr_name, defs);
+                let result = dsl_value_to_aws_with_defs(
+                    diagnostics,
+                    v,
+                    inner,
+                    resource_type,
+                    attr_name,
+                    defs,
+                );
                 if result.is_none() {
-                    log::warn!(
-                        "dsl_value_to_aws: dropping unconvertible map entry '{}' for attribute '{}' in resource '{}': {:?}",
-                        k, attr_name, resource_type, v
-                    );
+                    diagnostics.emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                        carina_plugin_sdk::EventLevel::Warn,
+                        "value conversion dropped an unsupported candidate".into(),
+                        &carina_core::provider_text::ProviderDiagnostic::new(
+                            ConversionWarning::DslMapEntry {
+                                attribute: attr_name.into(),
+                                resource_type: resource_type.into(),
+                            },
+                        ),
+                    ));
                 }
                 let key = if is_condition {
                     carina_aws_types::condition_operator_to_aws(k).unwrap_or_else(|| k.clone())
@@ -544,12 +630,15 @@ pub(crate) fn dsl_value_to_aws_with_defs(
             .collect();
         Some(serde_json::Value::Object(obj))
     } else {
-        value_to_json(value)
+        value_to_json(diagnostics, value)
     }
 }
 
 /// Convert DSL Value to JSON value
-pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
+pub(crate) fn value_to_json(
+    diagnostics: &carina_plugin_sdk::ProviderDiagnostics,
+    value: &Value,
+) -> Option<serde_json::Value> {
     match value {
         Value::Concrete(ConcreteValue::String(s)) => Some(json!(s.expose_plaintext())),
         Value::Concrete(ConcreteValue::EnumIdentifier(_)) => {
@@ -566,13 +655,15 @@ pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
                 .iter()
                 .enumerate()
                 .filter_map(|(i, item)| {
-                    let result = value_to_json(item);
+                    let result = value_to_json(diagnostics, item);
                     if result.is_none() {
-                        log::warn!(
-                            "value_to_json: dropping unconvertible list item at index {}: {:?}",
-                            i,
-                            item
-                        );
+                        diagnostics.emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                            carina_plugin_sdk::EventLevel::Warn,
+                            "value conversion dropped an unsupported candidate".into(),
+                            &carina_core::provider_text::ProviderDiagnostic::new(
+                                ConversionWarning::CoreListItem { index: i },
+                            ),
+                        ));
                     }
                     result
                 })
@@ -583,13 +674,15 @@ pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
             let obj: serde_json::Map<String, serde_json::Value> = map
                 .iter()
                 .filter_map(|(k, v)| {
-                    let result = value_to_json(v);
+                    let result = value_to_json(diagnostics, v);
                     if result.is_none() {
-                        log::warn!(
-                            "value_to_json: dropping unconvertible map entry '{}': {:?}",
-                            k,
-                            v
-                        );
+                        diagnostics.emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                            carina_plugin_sdk::EventLevel::Warn,
+                            "value conversion dropped an unsupported candidate".into(),
+                            &carina_core::provider_text::ProviderDiagnostic::new(
+                                ConversionWarning::CoreMapEntry,
+                            ),
+                        ));
                     }
                     result.map(|val| (k.clone(), val))
                 })
@@ -600,6 +693,64 @@ pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
     }
 }
 
+fn emit_dropped_json(
+    diagnostics: &carina_plugin_sdk::ProviderDiagnostics,
+    candidate: &serde_json::Value,
+) {
+    // A dropped candidate has no reliable schema address. Let the host apply
+    // its policy to the structured value, including unknown secret map keys.
+    diagnostics.emit(carina_plugin_sdk::ProviderEvent::value(
+        carina_plugin_sdk::EventLevel::Warn,
+        carina_plugin_sdk::ProviderValueDiagnostic::json(
+            None,
+            &[],
+            carina_plugin_sdk::ValueOrigin::Unclassified,
+            candidate,
+        ),
+    ));
+}
+
+#[derive(Debug, thiserror::Error)]
+enum ConversionWarning {
+    #[error(
+        "aws_value_to_dsl: dropping unconvertible array item at index {index} for attribute {attribute:?} in resource {resource_type:?}"
+    )]
+    AwsArrayItem {
+        index: usize,
+        attribute: String,
+        resource_type: String,
+    },
+    #[error(
+        "aws_value_to_dsl: dropping unconvertible map entry for attribute {attribute:?} in resource {resource_type:?}"
+    )]
+    AwsMapEntry {
+        attribute: String,
+        resource_type: String,
+    },
+    #[error("json_to_value: dropping unconvertible array item at index {index}")]
+    JsonArrayItem { index: usize },
+    #[error("json_to_value: dropping unconvertible map entry")]
+    JsonMapEntry,
+    #[error(
+        "dsl_value_to_aws: dropping unconvertible list item at index {index} for attribute {attribute:?} in resource {resource_type:?}"
+    )]
+    DslListItem {
+        index: usize,
+        attribute: String,
+        resource_type: String,
+    },
+    #[error(
+        "dsl_value_to_aws: dropping unconvertible map entry for attribute {attribute:?} in resource {resource_type:?}"
+    )]
+    DslMapEntry {
+        attribute: String,
+        resource_type: String,
+    },
+    #[error("value_to_json: dropping unconvertible list item at index {index}")]
+    CoreListItem { index: usize },
+    #[error("value_to_json: dropping unconvertible map entry")]
+    CoreMapEntry,
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -622,6 +773,7 @@ mod tests {
         // 21474836480 is returned as JSON 21474836480.0; 1.5 is truncated to 1.
         let json: serde_json::Value = serde_json::from_str("21474836480.0").unwrap();
         let read = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "size",
             &json,
             size.as_type(),
@@ -637,6 +789,7 @@ mod tests {
         assert!(size.validate(&read).is_ok());
         assert_eq!(
             dsl_value_to_aws_with_defs(
+                &crate::test_support::diagnostics(),
                 &read,
                 size.as_type(),
                 "wafv2.WebAcl",
@@ -664,20 +817,41 @@ mod tests {
         ] {
             let json: serde_json::Value = serde_json::from_str(source).unwrap();
             assert_eq!(
-                aws_value_to_dsl_with_defs("value", &json, &integer, "test.Resource", &defs),
+                aws_value_to_dsl_with_defs(
+                    &crate::test_support::diagnostics(),
+                    "value",
+                    &json,
+                    &integer,
+                    "test.Resource",
+                    &defs
+                ),
                 Some(Value::Concrete(expected)),
                 "{source}",
             );
         }
         assert_eq!(
-            aws_value_to_dsl_with_defs("value", &json!(1.0), &float, "test.Resource", &defs),
+            aws_value_to_dsl_with_defs(
+                &crate::test_support::diagnostics(),
+                "value",
+                &json!(1.0),
+                &float,
+                "test.Resource",
+                &defs
+            ),
             Some(Value::Concrete(ConcreteValue::Float(
                 FiniteF64::new(1.0).unwrap()
             ))),
         );
         let union = CompiledAttributeType::union(vec![integer, float]);
         assert_eq!(
-            aws_value_to_dsl_with_defs("value", &json!(1.0), &union, "test.Resource", &defs),
+            aws_value_to_dsl_with_defs(
+                &crate::test_support::diagnostics(),
+                "value",
+                &json!(1.0),
+                &union,
+                "test.Resource",
+                &defs
+            ),
             Some(Value::Concrete(ConcreteValue::Int(1))),
         );
     }
@@ -704,7 +878,14 @@ mod tests {
         ]);
         assert!(json_matches_shape(&schema, &union, &json!(42)));
         assert_eq!(
-            aws_value_to_dsl_with_defs("value", &json!(42), &union, "test.resource", &defs),
+            aws_value_to_dsl_with_defs(
+                &crate::test_support::diagnostics(),
+                "value",
+                &json!(42),
+                &union,
+                "test.resource",
+                &defs
+            ),
             Some(Value::Concrete(ConcreteValue::Int(42))),
         );
     }
@@ -733,12 +914,20 @@ mod tests {
             ]));
             for attr_type in [&list, &union] {
                 assert_eq!(
-                    dsl_value_to_aws_with_defs(&values, attr_type, "test.resource", "value", &defs),
+                    dsl_value_to_aws_with_defs(
+                        &crate::test_support::diagnostics(),
+                        &values,
+                        attr_type,
+                        "test.resource",
+                        "value",
+                        &defs
+                    ),
                     Some(json!(["first", "second"])),
                 );
             }
             assert_eq!(
                 aws_value_to_dsl_with_defs(
+                    &crate::test_support::diagnostics(),
                     "value",
                     &json!(["first", "second"]),
                     &union,
@@ -749,6 +938,7 @@ mod tests {
             );
             assert_eq!(
                 aws_value_to_dsl_with_defs(
+                    &crate::test_support::diagnostics(),
                     "value",
                     &json!("first"),
                     &union,
@@ -831,6 +1021,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let from_api = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "viewer_protocol_policy",
             &json!("redirect-to-https"),
             attr_type,
@@ -849,6 +1040,7 @@ mod tests {
         // If the API ever echoes the DSL-alias spelling, it must still be
         // canonicalized to the API form so state is stable.
         let from_alias = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "viewer_protocol_policy",
             &json!("redirect_to_https"),
             attr_type,
@@ -891,6 +1083,7 @@ mod tests {
         });
 
         let dsl = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "distribution_config",
             &aws_json,
             attr_schema.attr_type(),
@@ -970,6 +1163,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "versioning_configuration",
             &json_val,
             attr_type,
@@ -1015,6 +1209,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &dsl_value,
             attr_type,
             "AWS::S3::Bucket",
@@ -1057,6 +1252,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &dsl_value,
             attr_type,
             "AWS::S3::Bucket",
@@ -1090,6 +1286,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let dsl_value = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "versioning_configuration",
             &aws_json,
             attr_type,
@@ -1114,6 +1311,7 @@ mod tests {
 
         // Write path: convert DSL value back to AWS JSON
         let written_json = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &dsl_value,
             attr_type,
             "AWS::S3::Bucket",
@@ -1141,6 +1339,7 @@ mod tests {
         // AWS read-back side.
         let aws_json = serde_json::json!("Gateway");
         let aws_dsl = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "vpc_endpoint_type",
             &aws_json,
             attr_schema.attr_type(),
@@ -1188,6 +1387,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &value,
             attr_type,
             "logs.LogGroup",
@@ -1217,6 +1417,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &value,
             attr_type,
             "logs.LogGroup",
@@ -1243,6 +1444,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let _ = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &value,
             attr_type,
             "logs.LogGroup",
@@ -1278,6 +1480,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &value,
             attr_type,
             "s3.Bucket",
@@ -1305,6 +1508,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "allowed_methods",
             &json_val,
             attr_type,
@@ -1339,6 +1543,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let dsl = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "allowed_methods",
             &aws_json,
             attr_type,
@@ -1347,6 +1552,7 @@ mod tests {
         )
         .expect("read should succeed");
         let written = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &dsl,
             attr_type,
             "s3.Bucket",
@@ -1378,6 +1584,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &value,
             attr_type,
             "ec2.Sg",
@@ -1407,6 +1614,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &dsl_value,
             attr_type,
             "s3.Bucket",
@@ -1454,6 +1662,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &dsl_value,
             attr_type,
             "test.resource",
@@ -1483,6 +1692,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "tags",
             &aws_json,
             attr_type,
@@ -1530,6 +1740,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "protocol",
             &json_val,
             attr_type,
@@ -1564,6 +1775,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "protocol",
             &json_val,
             attr_type,
@@ -1630,6 +1842,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &value,
             attr_type,
             "iam.Role",
@@ -1724,6 +1937,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &value,
             attr_type,
             "iam.Role",
@@ -1792,6 +2006,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &value,
             attr_type,
             "iam.RolePolicy",
@@ -1843,6 +2058,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "assume_role_policy_document",
             &aws_json,
             attr_type,
@@ -1922,6 +2138,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let object_result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "inline_policy",
             &aws_object,
             attr_type,
@@ -1930,6 +2147,7 @@ mod tests {
         )
         .expect("object policy document should convert");
         let string_result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "inline_policy",
             &aws_string,
             attr_type,
@@ -1953,6 +2171,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "inline_policy",
             &aws_string,
             attr_type,
@@ -1985,6 +2204,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "policy_document",
             &aws_json,
             attr_type,
@@ -2036,6 +2256,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "policy_document",
             &aws_json,
             attr_type,
@@ -2095,6 +2316,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let read_side = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "assume_role_policy_document",
             &aws_json,
             attr_type,
@@ -2190,6 +2412,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "operating_regions",
             &json_val,
             attr_type,
@@ -2223,6 +2446,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "type",
             &json_val,
             attr_type,
@@ -2259,6 +2483,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &value,
             attr_type,
             "ec2.VpnGateway",
@@ -2286,6 +2511,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &value,
             attr_type,
             "ec2.VpnGateway",
@@ -2313,6 +2539,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let dsl_val = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "type",
             &aws_val,
             attr_type,
@@ -2328,6 +2555,7 @@ mod tests {
         );
 
         let back_to_aws = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &dsl_val.unwrap(),
             attr_type,
             "ec2.VpnGateway",
@@ -2371,12 +2599,16 @@ mod tests {
             ("18446744073709551615", u64::MAX as f64),
         ] {
             let json = serde_json::from_str(source).unwrap();
-            let value = json_to_value(&json).expect("finite JSON number");
+            let value = json_to_value(&crate::test_support::diagnostics(), &json)
+                .expect("finite JSON number");
             let Value::Concrete(ConcreteValue::Float(number)) = &value else {
                 panic!("expected a finite float for {source}, got {value:?}");
             };
             assert_eq!(number.get().to_bits(), expected.to_bits(), "{source}");
-            assert_eq!(value_to_json(&value), Some(json!(expected)));
+            assert_eq!(
+                value_to_json(&crate::test_support::diagnostics(), &value),
+                Some(json!(expected))
+            );
         }
     }
 
@@ -2402,7 +2634,10 @@ mod tests {
             value,
             Value::Concrete(ConcreteValue::CanonicalEnum(_))
         ));
-        assert_eq!(value_to_json(&value), Some(json!("Allow")));
+        assert_eq!(
+            value_to_json(&crate::test_support::diagnostics(), &value),
+            Some(json!("Allow"))
+        );
     }
 
     #[test]
@@ -2441,6 +2676,7 @@ mod tests {
             .expect("60 must be accepted by the generated integer union");
 
         let cloud_control = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &desired,
             evaluation_window_attr_type,
             config.resource_type_name,
@@ -2451,6 +2687,7 @@ mod tests {
         assert_eq!(cloud_control, json!(60));
 
         let read_back = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "evaluation_window_sec",
             &cloud_control,
             evaluation_window_attr_type,
@@ -2482,7 +2719,7 @@ mod tests {
     #[test]
     fn test_json_to_value_array_with_null_drops_null_items() {
         let json = serde_json::json!(["a", null, "b"]);
-        let result = json_to_value(&json);
+        let result = json_to_value(&crate::test_support::diagnostics(), &json);
         let expected = Value::Concrete(ConcreteValue::List(vec![
             Value::Concrete(ConcreteValue::String("a".to_string().into())),
             Value::Concrete(ConcreteValue::String("b".to_string().into())),
@@ -2493,7 +2730,7 @@ mod tests {
     #[test]
     fn test_json_to_value_map_with_null_value_drops_entry() {
         let json = serde_json::json!({"key1": "val1", "key2": null});
-        let result = json_to_value(&json);
+        let result = json_to_value(&crate::test_support::diagnostics(), &json);
         match result {
             Some(Value::Concrete(ConcreteValue::Map(map))) => {
                 assert_eq!(map.len(), 1);
@@ -2517,6 +2754,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "test_attr",
             &json,
             attr_type,
@@ -2538,7 +2776,7 @@ mod tests {
             Value::Concrete(ConcreteValue::Float(FiniteF64::new(-0.0).unwrap())),
             Value::Concrete(ConcreteValue::Float(FiniteF64::new(2.0).unwrap())),
         ]));
-        let result = value_to_json(&value);
+        let result = value_to_json(&crate::test_support::diagnostics(), &value);
         let expected = serde_json::json!([1.0, -0.0, 2.0]);
         assert_eq!(result, Some(expected));
     }
@@ -2588,6 +2826,7 @@ mod tests {
 
         // Read path: convert AWS JSON to DSL value
         let dsl_value = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "lifecycle_configuration",
             &aws_json,
             attr_schema.attr_type(),
@@ -2662,6 +2901,7 @@ mod tests {
 
         // Write path: convert DSL value back to AWS JSON
         let written_json = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &dsl_value,
             attr_schema.attr_type(),
             "s3.Bucket",
@@ -2774,6 +3014,7 @@ mod tests {
             "BucketOwnerEnforced",
         );
         let aws_json = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &canonical_value,
             object_ownership.field_type(),
             "s3.Bucket",
@@ -2785,6 +3026,7 @@ mod tests {
 
         // On read the AWS spelling is persisted verbatim, then lifted.
         let dsl = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "object_ownership",
             &json!("BucketOwnerEnforced"),
             object_ownership.field_type(),
@@ -2820,6 +3062,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &value,
             attr_type,
             "test.resource",
@@ -2844,6 +3087,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "name",
             &json_val,
             attr_type,
@@ -2873,6 +3117,7 @@ mod tests {
         let attr_type = &schema.parts()["test_value"];
 
         let result = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "name",
             &json_val,
             attr_type,
@@ -2886,5 +3131,44 @@ mod tests {
                 "carina-rs.dev.".to_string().into()
             )))
         );
+    }
+    #[test]
+    fn dropped_conversion_warning_uses_its_session_and_masks_unknown_values() {
+        use carina_core::provider_text::present_event;
+        use carina_core::test_utils::provider_text::{captured_session, context};
+        use carina_plugin_sdk::ProviderDiagnostics;
+
+        let secret = "unregistered-conversion-key";
+        let fixture = context(&[]);
+        let (session, events) = captured_session(fixture.session_builder());
+        let (other_session, other_events) = captured_session(context(&[]).session_builder());
+        let diagnostics = ProviderDiagnostics::from_session(&session);
+        let other = ProviderDiagnostics::from_session(&other_session);
+        let input = serde_json::json!({secret: null, "visible": 1});
+        let converted = json_to_value(&diagnostics, &input).unwrap();
+        assert_eq!(
+            converted,
+            Value::Concrete(ConcreteValue::Map(IndexMap::from([(
+                "visible".into(),
+                Value::Concrete(ConcreteValue::Int(1))
+            ),])))
+        );
+        let captured = events.lock().unwrap();
+        assert_eq!(captured.len(), 2);
+        for event in captured.iter() {
+            assert_eq!(event.severity(), carina_plugin_sdk::EventLevel::Warn);
+            assert!(!present_event(event).to_string().contains(secret));
+        }
+        assert!(
+            present_event(&captured[0])
+                .to_string()
+                .contains("dropping unconvertible map entry")
+        );
+        assert!(present_event(&captured[1]).to_string().contains("(secret)"));
+        assert!(other_events.lock().unwrap().is_empty());
+        drop(captured);
+        json_to_value(&other, &input).unwrap();
+        assert_eq!(events.lock().unwrap().len(), 2);
+        assert_eq!(other_events.lock().unwrap().len(), 2);
     }
 }

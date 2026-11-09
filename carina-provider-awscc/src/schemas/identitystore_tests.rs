@@ -50,7 +50,13 @@ fn group_display_name_preserves_pattern_and_bounds_in_direct_callback_dispatch()
         panic!("Group.DisplayName must retain its identity and validator callback");
     };
     assert_eq!(identity.to_string(), "aws.identitystore.Group.DisplayName");
-    assert_eq!(pattern, Some(r"^[\p{L}\p{M}\p{S}\p{N}\p{P}\t\n\r  ]+$"));
+    assert_eq!(
+        pattern,
+        Some(&carina_core::schema::PatternSpec::new(
+            r"^[\p{L}\p{M}\p{S}\p{N}\p{P}\t\n\r  ]+$",
+            carina_core::schema::PatternMatch::Full
+        ))
+    );
     assert_eq!(length, Some((Some(1), Some(1024))));
     for (value, valid) in [
         ("admins".to_string(), true),

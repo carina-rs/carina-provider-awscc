@@ -2,6 +2,9 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
+use carina_core::provider::Provider as _;
+use carina_core::test_utils::provider_text::BindProviderText as _;
+use carina_core::test_utils::provider_text::NativeWireFixture as _;
 mod common;
 
 use std::collections::{HashMap, VecDeque};
@@ -21,9 +24,9 @@ use carina_aws_types::sdk::cloudcontrol::{
     error::SdkError, operation::create_resource::CreateResourceError,
 };
 use carina_core::provider::{
-    AppliedIdentifier, AppliedState, CreateAttempt, CreateFailureKind, DeleteRequest, Observation,
-    PatchOp, PendingToken, Poll, ProviderDirectiveSchema, ProviderError, ReadOutcome,
-    ResumeCreateRequest, ResumeFailureKind, Sent, UpdateOutcome, UpdateOutcomeKind, UpdatePatch,
+    AppliedIdentifier, AppliedState, CreateFailureKind, DeleteRequest, Observation, PatchOp,
+    PendingToken, Poll, ProviderDirectiveSchema, ProviderError, ReadOutcome, ResumeCreateRequest,
+    ResumeFailureKind, Sent, UpdateOutcome, UpdateOutcomeKind, UpdatePatch,
 };
 use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
 use carina_plugin_sdk::PhasedToken;
@@ -566,7 +569,7 @@ impl CcIssuedCreate for TestIssuedCreate {
         Ok(TestCreateStep::Partial {
             identifier,
             attributes,
-            reason: reason.to_string(),
+            reason: reason.clone().into_host_for_test().to_string(),
             missing_attributes: missing_attributes.into(),
         })
     }
@@ -676,7 +679,7 @@ impl CcResumedCreate for TestIssuedCreate {
         Ok(TestCreateStep::Partial {
             identifier,
             attributes,
-            reason: reason.to_string(),
+            reason: reason.clone().into_host_for_test().to_string(),
             missing_attributes: missing_attributes.into(),
         })
     }
@@ -853,10 +856,40 @@ fn assert_cloudcontrol_api_error(
     cause: &str,
 ) {
     assert_eq!(error.variant_name(), "api_error");
-    assert_eq!(error.detail().context(), message);
-    assert_eq!(error.detail().operation.as_deref(), Some(operation));
-    assert_eq!(error.detail().status, Some(400));
-    assert_eq!(error.detail().code(), Some(code));
+    assert_eq!(
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
+        message
+    );
+    assert_eq!(
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .operation
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref(),
+        Some(operation)
+    );
+    assert_eq!(
+        error.clone().into_host_for_test().detail().status,
+        Some(400)
+    );
+    assert_eq!(
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .code()
+            .map(|code| code.to_string())
+            .as_deref(),
+        Some(code)
+    );
     assert_eq!(error.to_wire().cause.as_deref(), Some(cause));
 }
 
@@ -876,7 +909,8 @@ fn pending_create_for_token(
     let pending_token = PendingToken::new(
         serde_json::to_string(token).expect("serialize test Cloud Control create token"),
     );
-    let attempt = CreateAttempt::for_test(resource.id.clone());
+    let attempt =
+        carina_core::test_utils::provider_text::create_attempt_for_test(resource.id.clone());
     match token.identifier() {
         Some(identifier) => {
             let issued = attempt.issued(
@@ -902,7 +936,10 @@ async fn resume_request_for_token(
     let CreateFailureKind::InFlight { pending, error } = failure.into_kind() else {
         panic!("preserving a pending create must produce an in-flight create");
     };
-    assert_eq!(error.to_string(), "construct test in-flight create");
+    assert_eq!(
+        error.clone().into_host_for_test().to_string(),
+        "construct test in-flight create"
+    );
     ResumeCreateRequest::for_test(pending, common::create_request(resource).await)
         .expect("test resume request must preserve its resource route")
 }
@@ -981,7 +1018,10 @@ fn expect_update_pending(
             (pending, poll_after_secs)
         }
         OperationStep::Done(outcome) => panic!("expected pending update, got {outcome:?}"),
-        OperationStep::Verdict(error) => panic!("expected pending update, got {error}"),
+        OperationStep::Verdict(error) => panic!(
+            "expected pending update, got {error}",
+            error = error.clone().into_host_for_test()
+        ),
     }
 }
 
@@ -1676,7 +1716,10 @@ fn expect_delete_pending(
             (pending, poll_after_secs)
         }
         OperationStep::Done(()) => panic!("expected pending delete"),
-        OperationStep::Verdict(error) => panic!("expected pending delete, got {error}"),
+        OperationStep::Verdict(error) => panic!(
+            "expected pending delete, got {error}",
+            error = error.clone().into_host_for_test()
+        ),
     }
 }
 
@@ -1838,7 +1881,12 @@ async fn unconfirmed_create_rejection_from_native_drive_preserves_in_flight_toke
     };
     assert_eq!(error.variant_name(), "api_error");
     assert_eq!(
-        error.detail().context(),
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
         "Failed to resend create resource; the outcome of the earlier send is unknown"
     );
 
@@ -1886,7 +1934,12 @@ async fn unconfirmed_create_rejection_from_poll_preserves_in_flight_token() {
     };
     assert_eq!(error.variant_name(), "api_error");
     assert_eq!(
-        error.detail().context(),
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
         "Failed to resend create resource; the outcome of the earlier send is unknown"
     );
     assert_eq!(
@@ -1958,7 +2011,8 @@ async fn unconfirmed_create_rejection_from_resume_preserves_in_flight_token() {
     .expect("deserialize unconfirmed create continuation");
     let request = resume_request_for_token(resource, &token).await;
 
-    let failure = carina_core::executor::dispatch_resume_create(&provider, request)
+    let failure = provider
+        .resume_create(request)
         .await
         .expect_err("a rejected resumed send cannot disprove the earlier create send");
     let ResumeFailureKind::InFlight { pending, error } = failure.into_kind() else {
@@ -1966,7 +2020,12 @@ async fn unconfirmed_create_rejection_from_resume_preserves_in_flight_token() {
     };
     assert_eq!(error.variant_name(), "api_error");
     assert_eq!(
-        error.detail().context(),
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
         "Failed to resend create resource; the outcome of the earlier send is unknown"
     );
     assert_eq!(
@@ -2085,7 +2144,7 @@ async fn unconfirmed_create_pre_send_failure_from_resume_preserves_pending_token
     let request = resume_request_for_token(resource, &token).await;
     let failure = tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        carina_core::executor::dispatch_resume_create(&provider, request),
+        provider.resume_create(request),
     )
     .await
     .expect("permanent pre-send failure must settle promptly")
@@ -2100,10 +2159,21 @@ async fn unconfirmed_create_pre_send_failure_from_resume_preserves_pending_token
     assert_eq!(pending.identifier(), None);
     assert_eq!(error.variant_name(), "api_error");
     assert_eq!(
-        error.detail().context(),
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
         "Failed to resend create resource; the outcome of the earlier send is unknown"
     );
-    assert!(error.to_string().contains("test credentials unavailable"));
+    assert!(
+        error
+            .clone()
+            .into_host_for_test()
+            .to_string()
+            .contains("test credentials unavailable")
+    );
     assert_eq!(service.calls("CreateResource"), 0);
     assert!(service.actions().is_empty(), "no HTTP request may be sent");
 }
@@ -2216,6 +2286,8 @@ async fn resume_initialization_error_preserves_unissued_and_issued_continuations
     let initialization_error = provider
         .init_error()
         .expect("test provider must retain its initialization error")
+        .clone()
+        .into_host_for_test()
         .to_string();
     let cases = [
         (
@@ -2241,8 +2313,7 @@ async fn resume_initialization_error_preserves_unissued_and_issued_continuations
 
     for (label, token, expected_identifier) in cases {
         let request = resume_request_for_token(vpc_resource(), &token).await;
-        let failure = match carina_core::executor::dispatch_resume_create(&provider, request).await
-        {
+        let failure = match provider.resume_create(request).await {
             Err(failure) => failure,
             Ok(outcome) => {
                 panic!("{label} resume must preserve its initialization error, got {outcome:?}")
@@ -2257,10 +2328,30 @@ async fn resume_initialization_error_preserves_unissued_and_issued_continuations
         );
         assert_eq!(pending.identifier(), expected_identifier.as_ref());
         assert_eq!(error.variant_name(), "invalid_input");
-        assert_eq!(error.detail().context(), initialization_error.as_str());
-        assert_eq!(error.detail().provider_name.as_deref(), Some("awscc"));
         assert_eq!(
             error
+                .clone()
+                .into_host_for_test()
+                .detail()
+                .context()
+                .to_string(),
+            initialization_error.as_str()
+        );
+        assert_eq!(
+            error
+                .clone()
+                .into_host_for_test()
+                .detail()
+                .provider_name
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("awscc")
+        );
+        assert_eq!(
+            error
+                .clone()
+                .into_host_for_test()
                 .detail()
                 .resource_id
                 .as_deref()
@@ -2337,11 +2428,18 @@ async fn resume_unknown_resource_type_preserves_unissued_and_issued_witnesses() 
         assert_eq!(identifier, expected_identifier);
         assert_eq!(error.variant_name(), "internal");
         assert_eq!(
-            error.detail().context(),
+            error
+                .clone()
+                .into_host_for_test()
+                .detail()
+                .context()
+                .to_string(),
             "Unknown resource type: unknown.Resource"
         );
         assert_eq!(
             error
+                .clone()
+                .into_host_for_test()
                 .detail()
                 .resource_id
                 .as_deref()
@@ -2478,7 +2576,15 @@ async fn status_sdk_error_preserves_the_issued_create_in_flight() {
     assert_eq!(next_token, token);
     assert_eq!(identifier.as_str(), VPC_ID);
     assert_eq!(next_token.poll_after_secs(), 5);
-    assert_eq!(error.detail().context(), "Failed to get operation status");
+    assert_eq!(
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
+        "Failed to get operation status"
+    );
     assert_eq!(service.calls("GetResource"), 0);
     assert_eq!(service.calls("GetResourceRequestStatus"), 3);
 }
@@ -2662,7 +2768,13 @@ async fn resume_failed_with_identifier_returns_identifier_reported_failure_with_
         panic!("FAILED read-back must be retained as the created observation");
     };
     assert_eq!(state.identifier().as_str(), VPC_ID);
-    assert!(error.to_string().contains("handler rejected stabilization"));
+    assert!(
+        error
+            .clone()
+            .into_host_for_test()
+            .to_string()
+            .contains("handler rejected stabilization")
+    );
     assert_eq!(
         service.actions(),
         ["GetResourceRequestStatus", "GetResource"]
@@ -2705,7 +2817,13 @@ async fn resume_expired_token_with_identifier_and_not_found_leaves_no_resource()
     let TestCreateVerdict::NoResource(error) = failure else {
         panic!("expired token plus NotFound must discard the in-flight create");
     };
-    assert!(error.to_string().contains("no longer known"));
+    assert!(
+        error
+            .clone()
+            .into_host_for_test()
+            .to_string()
+            .contains("no longer known")
+    );
     assert_eq!(
         service.actions(),
         ["GetResourceRequestStatus", "GetResource"]
@@ -2739,7 +2857,13 @@ async fn poll_expired_token_with_identifier_and_not_found_leaves_no_resource() {
     let TestCreateVerdict::NoResource(error) = failure else {
         panic!("expired token plus NotFound must discard the pending create");
     };
-    assert!(error.to_string().contains("no longer known"));
+    assert!(
+        error
+            .clone()
+            .into_host_for_test()
+            .to_string()
+            .contains("no longer known")
+    );
     assert_eq!(
         service.actions(),
         ["GetResourceRequestStatus", "GetResource"]
@@ -2759,7 +2883,8 @@ async fn resume_expired_token_without_identifier_preserves_pending_token() {
     .await;
     let token = in_flight_create_token(None);
     let request = resume_request_for_token(vpc_resource(), &token).await;
-    let failure = carina_core::executor::dispatch_resume_create(&provider, request)
+    let failure = provider
+        .resume_create(request)
         .await
         .expect_err("an unknown request with no identifier remains in flight");
 
@@ -2773,7 +2898,12 @@ async fn resume_expired_token_without_identifier_preserves_pending_token() {
     assert_eq!(pending.identifier(), None);
     assert_eq!(error.variant_name(), "api_error");
     assert_eq!(
-        error.detail().context(),
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
         "Cloud Control request token is no longer known"
     );
     assert_eq!(service.calls("GetResource"), 0);
@@ -2817,7 +2947,15 @@ async fn resume_status_sdk_error_without_identifier_stays_in_flight_with_backoff
     };
     assert_eq!(next_token, token);
     assert_eq!(next_token.poll_after_secs(), 5);
-    assert_eq!(error.detail().context(), "Failed to get operation status");
+    assert_eq!(
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
+        "Failed to get operation status"
+    );
     assert_eq!(service.calls("GetResource"), 0);
     assert_eq!(service.calls("GetResourceRequestStatus"), 3);
 }
@@ -2915,7 +3053,13 @@ async fn resume_cancel_complete_with_identifier_reads_back_identifier_reported_f
         panic!("CANCEL_COMPLETE read-back must be retained as the created observation");
     };
     assert_eq!(state.identifier().as_str(), VPC_ID);
-    assert!(error.to_string().contains("request canceled"));
+    assert!(
+        error
+            .clone()
+            .into_host_for_test()
+            .to_string()
+            .contains("request canceled")
+    );
     assert_eq!(
         service.actions(),
         ["GetResourceRequestStatus", "GetResource"]
@@ -3420,7 +3564,12 @@ async fn failed_status_retry_follows_message_not_handler_error_code() {
     };
     assert_eq!(preserved, token);
     assert_eq!(
-        error.detail().context(),
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
         "Cloud Control create ended with FAILED: invalid configuration"
     );
     assert_eq!(service.calls("CreateResource"), 0);
@@ -3487,7 +3636,13 @@ async fn retryable_failed_create_with_identifier_is_identifier_reported_without_
                 observation.as_ref(),
                 Observation::Read(ReadOutcome::NotFound { .. })
             ));
-            assert!(error.to_string().contains("Throttling"));
+            assert!(
+                error
+                    .clone()
+                    .into_host_for_test()
+                    .to_string()
+                    .contains("Throttling")
+            );
         }
         other => panic!("expected identifier-reported failure, got {other:?}"),
     }
@@ -3529,7 +3684,13 @@ async fn cancel_complete_without_identifier_remains_in_flight_without_reissue() 
         panic!("identifier-less CANCEL_COMPLETE must remain tracked");
     };
     assert_eq!(preserved, expected);
-    assert!(error.to_string().contains("Throttling"));
+    assert!(
+        error
+            .clone()
+            .into_host_for_test()
+            .to_string()
+            .contains("Throttling")
+    );
     assert_eq!(service.calls("CreateResource"), 1);
 }
 
@@ -3645,7 +3806,12 @@ async fn unconfirmed_delete_rejection_reports_unknown_earlier_outcome() {
         .expect_err("a permanent rejection must stop the delete resend loop");
     assert_eq!(error.variant_name(), "api_error");
     assert_eq!(
-        error.detail().context(),
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
         "Failed to resend delete resource; the outcome of the earlier send is unknown"
     );
     let client_tokens = request_client_tokens(&service, "DeleteResource");
@@ -3690,7 +3856,7 @@ async fn delete_one_post_send_timeout_then_uncapped_throttling_stays_pending() {
                 .await
                 .unwrap_or_else(|error| {
                     panic!(
-                        "throttled unconfirmed delete resend {expected_resends} was capped: {error}"
+                        "throttled unconfirmed delete resend {expected_resends} was capped: {error}", error = error.clone().into_host_for_test()
                     )
                 }),
         );
@@ -3746,7 +3912,8 @@ async fn delete_repeated_post_send_timeouts_past_max_attempts_stay_pending() {
                 .await
                 .unwrap_or_else(|error| {
                     panic!(
-                        "post-send timeout on delete resend {expected_resends} was capped: {error}"
+                        "post-send timeout on delete resend {expected_resends} was capped: {error}",
+                        error = error.clone().into_host_for_test()
                     )
                 }),
         );
@@ -3788,7 +3955,10 @@ async fn delete_throttling_reuses_client_token_until_retry_cap() {
                 .poll_delete_step(&id, &vpc_identifier(), &request, token)
                 .await
                 .unwrap_or_else(|error| {
-                    panic!("throttled delete attempt {expected_attempt} failed early: {error}")
+                    panic!(
+                        "throttled delete attempt {expected_attempt} failed early: {error}",
+                        error = error.clone().into_host_for_test()
+                    )
                 }),
         );
         token = next;
@@ -3928,7 +4098,10 @@ async fn transit_gateway_delete_uses_per_type_retry_override_past_attempt_twelve
                 .poll_delete_step(&id, &transit_gateway_identifier(), &request, token)
                 .await
                 .unwrap_or_else(|error| {
-                    panic!("TransitGateway retry {attempt} exhausted too early: {error}")
+                    panic!(
+                        "TransitGateway retry {attempt} exhausted too early: {error}",
+                        error = error.clone().into_host_for_test()
+                    )
                 }),
         );
         assert!(matches!(
@@ -3980,8 +4153,23 @@ async fn retryable_failed_delete_with_identifier_errors_without_reissue() {
         .poll_delete_step(&id, &vpc_identifier(), &request, token)
         .await
         .expect_err("identifier-bearing delete failure should not retry");
-    assert_eq!(error.detail().context(), "Operation failed");
-    assert!(error.detail().cause().is_some());
+    assert_eq!(
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
+        "Operation failed"
+    );
+    assert!(
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .cause()
+            .is_some()
+    );
     assert_eq!(service.calls("DeleteResource"), 1);
 }
 
@@ -4023,7 +4211,13 @@ async fn non_retryable_failed_status_preserves_in_flight_and_identifier_reported
     };
     assert_eq!(preserved, expected);
     assert_eq!(error.variant_name(), "api_error");
-    assert!(error.to_string().contains("InvalidParameterValue"));
+    assert!(
+        error
+            .clone()
+            .into_host_for_test()
+            .to_string()
+            .contains("InvalidParameterValue")
+    );
 
     let (provider, _) = provider_with_script([
         ("CreateResource", vec![mutation_reply("create-0", VPC_ID)]),
@@ -4050,7 +4244,13 @@ async fn non_retryable_failed_status_preserves_in_flight_and_identifier_reported
         .expect_err("terminal failure must not become partial success")
     {
         TestCreateVerdict::IdentifierReported { error, .. } => {
-            assert!(error.to_string().contains("post-create read denied"));
+            assert!(
+                error
+                    .clone()
+                    .into_host_for_test()
+                    .to_string()
+                    .contains("post-create read denied")
+            );
         }
         other => panic!("expected identifier-reported failure, got {other:?}"),
     }
@@ -4131,7 +4331,12 @@ async fn status_retry_exhaustion_preserves_the_last_operation_failure() {
     };
     assert_eq!(preserved, token);
     assert_eq!(
-        error.detail().context(),
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
         "Cloud Control create ended with FAILED: Throttling"
     );
     assert_eq!(service.calls("GetResourceRequestStatus"), 1);
@@ -4361,7 +4566,12 @@ async fn unconfirmed_update_rejection_reports_unknown_earlier_outcome() {
         .expect_err("a permanent rejection must stop the update resend loop");
     assert_eq!(error.variant_name(), "api_error");
     assert_eq!(
-        error.detail().context(),
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
         "Failed to resend update resource; the outcome of the earlier send is unknown"
     );
     let client_tokens = request_client_tokens(&service, "UpdateResource");
@@ -4414,7 +4624,7 @@ async fn update_one_post_send_timeout_then_uncapped_throttling_stays_pending() {
                 .await
                 .unwrap_or_else(|error| {
                     panic!(
-                        "throttled unconfirmed update resend {expected_resends} was capped: {error}"
+                        "throttled unconfirmed update resend {expected_resends} was capped: {error}", error = error.clone().into_host_for_test()
                     )
                 }),
         );
@@ -4478,7 +4688,8 @@ async fn update_repeated_post_send_timeouts_past_max_attempts_stay_pending() {
                 .await
                 .unwrap_or_else(|error| {
                     panic!(
-                        "post-send timeout on update resend {expected_resends} was capped: {error}"
+                        "post-send timeout on update resend {expected_resends} was capped: {error}",
+                        error = error.clone().into_host_for_test()
                     )
                 }),
         );
@@ -4535,7 +4746,10 @@ async fn update_5xx_service_internal_error_is_maybe_sent_and_uncapped() {
                 )
                 .await
                 .unwrap_or_else(|error| {
-                    panic!("maybe-sent update resend {expected_resends} was capped: {error}")
+                    panic!(
+                        "maybe-sent update resend {expected_resends} was capped: {error}",
+                        error = error.clone().into_host_for_test()
+                    )
                 }),
         );
         let encoded = serde_json::to_value(&next).expect("serialize update continuation");
@@ -4584,7 +4798,10 @@ async fn update_throttling_reuses_client_token_until_retry_cap() {
                 )
                 .await
                 .unwrap_or_else(|error| {
-                    panic!("throttled update attempt {expected_attempt} failed early: {error}")
+                    panic!(
+                        "throttled update attempt {expected_attempt} failed early: {error}",
+                        error = error.clone().into_host_for_test()
+                    )
                 }),
         );
         token = next;
@@ -5042,14 +5259,26 @@ async fn internet_gateway_detach_partial_failure_does_not_reissue_or_delete() {
         .await
         .expect_err("partial detach must stop delete");
     assert_eq!(
-        error.detail().context(),
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
         "Failed to detach Internet Gateway from VPC before deletion"
     );
     assert_eq!(
-        error.to_string(),
+        error.clone().into_host_for_test().to_string(),
         "[ec2.InternetGateway.pending] Failed to detach Internet Gateway from VPC before deletion: Throttling"
     );
-    assert!(error.detail().cause().is_some());
+    assert!(
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .cause()
+            .is_some()
+    );
     assert_eq!(service.calls("UpdateResource"), 1);
     assert_eq!(service.calls("DeleteResource"), 0);
 }
@@ -5572,9 +5801,14 @@ async fn update_retains_handler_failure_across_polls() {
         panic!("partial")
     };
     assert!(
-        diagnostic.reason().contains("handler rejected description"),
+        diagnostic
+            .clone()
+            .into_host_for_test()
+            .reason()
+            .to_string()
+            .contains("handler rejected description"),
         "{}",
-        diagnostic.reason()
+        diagnostic.clone().into_host_for_test().reason().to_string()
     );
 }
 
@@ -5585,7 +5819,14 @@ async fn update_checks_patch_confirmation_when_declared_attribute_missing_at_dea
         panic!("partial")
     };
     assert_eq!(diagnostic.missing_attributes(), ["arn", "description"]);
-    assert!(diagnostic.reason().contains("description"));
+    assert!(
+        diagnostic
+            .clone()
+            .into_host_for_test()
+            .reason()
+            .to_string()
+            .contains("description")
+    );
 }
 
 #[test]
@@ -5615,7 +5856,10 @@ fn native_read_back_poll_transient_error_preserves_continuation() {
         serde_json::to_string(&token).unwrap()
     );
     assert_eq!(error.variant_name(), "timeout");
-    assert_eq!(error.to_string(), "temporary polling failure");
+    assert_eq!(
+        error.clone().into_host_for_test().to_string(),
+        "temporary polling failure"
+    );
 }
 
 #[test]

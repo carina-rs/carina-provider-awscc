@@ -48,6 +48,7 @@ fn validate(resource: Resource) -> Result<(), String> {
         &schemas,
         &HashSet::from(["awscc".to_string()]),
         &context,
+        &mut Vec::new(),
     )
 }
 

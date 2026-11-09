@@ -79,6 +79,7 @@ fn assert_omitted_attribute_is_rejected(
         schemas,
         &HashSet::from(["awscc".to_string()]),
         context,
+        &mut Vec::new(),
     ) {
         Err(error) => error,
         Ok(()) => {
@@ -184,6 +185,7 @@ fn validate_resource(
         schemas,
         &HashSet::from(["awscc".to_string()]),
         context,
+        &mut Vec::new(),
     )
 }
 
