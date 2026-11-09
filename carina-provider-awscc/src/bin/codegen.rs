@@ -14,13 +14,11 @@
 
 use anyhow::{Context, Result};
 use carina_aws_types::dsl_enum_value;
-use carina_core::schema::ListElements;
+use carina_core::schema::{ListElements, PatternMatch};
 use carina_docgen::example::{self, DocExample, ExampleKind};
 use carina_docgen::{Heading, PageBuilder, TableCell};
 use carina_provider_awscc::schemas::catalog::AwsccType;
-use carina_provider_awscc::schemas::pattern::{
-    ApprovedPattern, SUBSTRING_PATTERN_EXCEPTIONS, is_whole_anchored,
-};
+use carina_provider_awscc::schemas::pattern::{ApprovedPattern, SUBSTRING_PATTERN_EXCEPTIONS};
 use clap::{Parser, ValueEnum};
 use heck::{ToPascalCase, ToSnakeCase};
 use regex::Regex;
@@ -425,15 +423,17 @@ impl TypeOverride {
             source_path.push_str("/items");
         }
         for pattern in expression.patterns() {
-            carina_core::schema::CompiledPattern::try_new(pattern.as_str()).with_context(|| {
-                format!(
-                    "Invalid override string pattern for {}#{source_path}: {}",
-                    schema.type_name,
-                    pattern.as_str(),
-                )
-            })?;
+            carina_core::schema::CompiledPattern::try_new(pattern.as_spec()).with_context(
+                || {
+                    format!(
+                        "Invalid override string pattern for {}#{source_path}: {}",
+                        schema.type_name,
+                        pattern.as_str(),
+                    )
+                },
+            )?;
             anyhow::ensure!(
-                is_whole_anchored(pattern.as_str()),
+                matches!(pattern.as_spec().mode(), PatternMatch::Full),
                 "Unapproved override string pattern for {}#{source_path}: {}",
                 schema.type_name,
                 pattern.as_str(),
@@ -7231,10 +7231,6 @@ fn range_display_string(min: Option<i64>, max: Option<i64>) -> String {
 /// Check if a regex pattern represents a numeric string (digits only).
 /// Matches patterns like "[0-9]+", "^[0-9]+$", "^\d+$", etc.
 fn is_numeric_string_pattern(pattern: &str) -> bool {
-    let pattern = pattern
-        .strip_prefix("^(?:")
-        .and_then(|pattern| pattern.strip_suffix(r")\z"))
-        .unwrap_or(pattern);
     matches!(
         pattern,
         "[0-9]+" | "^[0-9]+$" | "\\d+" | "^\\d+$" | "[0-9]*" | "^[0-9]*$"
@@ -7533,14 +7529,14 @@ fn string_constraints(
             .and_then(|source| ApprovedPattern::substring_exception(cfn_type, source_path, source))
             .unwrap_or_else(|| ApprovedPattern::whole(source));
         let pattern = approved.as_str();
-        carina_core::schema::CompiledPattern::try_new(pattern).unwrap_or_else(|error| {
+        carina_core::schema::CompiledPattern::try_new(approved.as_spec()).unwrap_or_else(|error| {
             panic!(
                 "Invalid string pattern for {cfn_type}.{property_path}#{source_path}, source regex {:?}, emitted {pattern:?}: {error}",
                 prop.pattern,
             )
         });
         assert!(
-            is_whole_anchored(pattern)
+            matches!(approved.as_spec().mode(), PatternMatch::Full)
                 || SUBSTRING_PATTERN_EXCEPTIONS.iter().any(|exception| {
                     exception.resource_type == cfn_type
                         && exception.source_path == source_path
@@ -7868,14 +7864,38 @@ fn string_refinement_display(
 
 /// Format a validated pattern from `string_constraints` as a Rust literal.
 /// Escape quotes and backslashes without changing the regex itself.
-fn emit_pattern_option(pattern: Option<&ApprovedPattern>) -> String {
-    match pattern {
-        Some(p) => {
-            let escaped = p.as_str().replace('\\', "\\\\").replace('"', "\\\"");
-            format!("Some(\"{}\".to_string())", escaped) // rust-lit-guard: allow (already escaped; pattern text is not escape_default-normalized)
+fn emit_pattern_spec(pattern: &ApprovedPattern, literal: PatternLiteral) -> String {
+    let source = pattern.as_str();
+    let regex = match literal {
+        PatternLiteral::Quoted => format!("{source:?}"),
+        PatternLiteral::Raw => {
+            let mut hashes = String::new();
+            while source.contains(&format!("\"{hashes}")) {
+                hashes.push('#');
+            }
+            format!("r{hashes}\"{source}\"{hashes}")
         }
-        None => "None".to_string(),
-    }
+    };
+    let mode = match pattern.as_spec().mode() {
+        PatternMatch::Full => "carina_core::schema::PatternMatch::Full".to_string(),
+        PatternMatch::Substring { reason } => format!(
+            "carina_core::schema::PatternMatch::Substring {{ reason: carina_core::schema::PatternReason::new({}).expect(\"visible reviewed pattern reason\") }}",
+            rust_lit(reason.as_str()),
+        ),
+    };
+    format!("carina_core::schema::PatternSpec::new({regex}, {mode})")
+}
+
+fn emit_pattern_option(pattern: Option<&ApprovedPattern>) -> String {
+    pattern.map_or_else(
+        || "None".to_string(),
+        |pattern| {
+            format!(
+                "Some({})",
+                emit_pattern_spec(pattern, PatternLiteral::Quoted)
+            )
+        },
+    )
 }
 
 /// Emit a Rust expression for the `length` field on `AttributeType::Custom`
@@ -13927,19 +13947,36 @@ mod tests {
 
     // Parse the emitted Rust literals, so these tests exercise the constraints
     // that the provider will actually publish rather than a parallel rewrite.
-    fn emitted_patterns(code: &str) -> Vec<String> {
+    fn emitted_pattern_specs(code: &str) -> Vec<carina_core::schema::PatternSpec> {
         let pattern_field = Regex::new(
-            r#"AttributeType::refined_string\([^,]*, Some\(("(?:\\.|[^"\\])*")\.to_string\(\)\)"#,
-        )
-        .unwrap();
+            r#"carina_core::schema::PatternSpec::new\(("(?:\\.|[^"\\])*")\s*, carina_core::schema::PatternMatch::(Full|Substring \{ reason: carina_core::schema::PatternReason::new\(("(?:\\.|[^"\\])*")\)\.expect\("visible reviewed pattern reason"\) \})\)"#,
+        ).unwrap();
         pattern_field
             .captures_iter(code)
-            .map(|captures| serde_json::from_str(&captures[1]).unwrap())
+            .map(|captures| {
+                let source: String = serde_json::from_str(&captures[1]).unwrap();
+                let mode = if &captures[2] == "Full" {
+                    PatternMatch::Full
+                } else {
+                    let reason: String = serde_json::from_str(&captures[3]).unwrap();
+                    PatternMatch::Substring {
+                        reason: carina_core::schema::PatternReason::new(reason).unwrap(),
+                    }
+                };
+                carina_core::schema::PatternSpec::new(source, mode)
+            })
+            .collect()
+    }
+
+    fn emitted_patterns(code: &str) -> Vec<String> {
+        emitted_pattern_specs(code)
+            .into_iter()
+            .map(|pattern| pattern.as_str().to_owned())
             .collect()
     }
 
     fn emitted_string_accepts(code: &str, value: &str) -> bool {
-        let patterns = emitted_patterns(code);
+        let patterns = emitted_pattern_specs(code);
         assert_eq!(patterns.len(), 1, "constraint disappeared: {code}");
         let pattern = carina_core::schema::CompiledPattern::try_new(&patterns[0])
             .expect("emitted pattern must compile");
@@ -14020,16 +14057,21 @@ mod tests {
     }
 
     #[test]
-    fn codegen_normalizes_whole_value_patterns_including_partial_alternation() {
+    fn codegen_preserves_authored_patterns_with_full_mode() {
         let schema = empty_schema("AWS::Test::Resource");
         for (source, expected) in [
-            ("[a-z]+", r"^(?:[a-z]+)\z"),
-            ("^A|B$", r"^(?:^A|B$)\z"),
+            ("[a-z]+", "[a-z]+"),
+            ("^A|B$", "^A|B$"),
             ("^A$|^B$", "^A$|^B$"),
         ] {
             let prop = def(Some("string"), None, vec![], None, None, Some(source));
             let code = pattern_type_code(&schema, None, "UserValue", &prop);
             assert_eq!(emitted_patterns(&code), vec![expected]);
+            assert!(
+                emitted_pattern_specs(&code)
+                    .iter()
+                    .all(|pattern| matches!(pattern.mode(), PatternMatch::Full))
+            );
         }
     }
 
@@ -14040,13 +14082,10 @@ mod tests {
             Some((Some(1), Some(64))),
             PatternLiteral::Quoted,
         );
-        assert_eq!(
-            emitted_patterns(expression.as_str()),
-            vec![r"^(?:[a-z]+)\z"]
-        );
+        assert_eq!(emitted_patterns(expression.as_str()), vec!["[a-z]+"]);
         assert_eq!(
             expression.normalized_display("String (length: 1..=64, pattern: [a-z]+)"),
-            r"String (length: 1..=64, pattern: ^(?:[a-z]+)\z)",
+            r"String (length: 1..=64, pattern: [a-z]+)",
         );
         assert!(std::panic::catch_unwind(|| OverrideTypeExpression::raw(
             r#"AttributeType::refined_string(None, Some("unapproved".to_string()), None, None)"#,
@@ -14588,7 +14627,7 @@ mod tests {
                 "Name",
                 json!({"type":"string","pattern":"^[0-9]+$","format":"uri","minLength":2,"maxLength":8,"description":"Valid values: public | private"}),
                 None,
-                r#"AttributeType::refined_string(None, Some("^[0-9]+$".to_string()), Some((Some(2), Some(8))), Some(carina_core::schema::DslTransform::StripSuffix(".".to_string())))"#,
+                r#"AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[0-9]+$", carina_core::schema::PatternMatch::Full)), Some((Some(2), Some(8))), Some(carina_core::schema::DslTransform::StripSuffix(".".to_string())))"#,
                 "NumericString(len: 2..=8)",
             ),
             (
@@ -14596,7 +14635,7 @@ mod tests {
                 "Mode",
                 json!({"type":"string","pattern":"^[0-9]+$","format":"uri","minLength":2,"maxLength":8}),
                 None,
-                r#"AttributeType::refined_string(None, Some("^[0-9]+$".to_string()), Some((Some(2), Some(8))), None)"#,
+                r#"AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[0-9]+$", carina_core::schema::PatternMatch::Full)), Some((Some(2), Some(8))), None)"#,
                 "NumericString(len: 2..=8)",
             ),
             (
@@ -14604,7 +14643,7 @@ mod tests {
                 "Mode",
                 json!({"type":"string","pattern":"^[a-z]+$","format":"uri","minLength":2,"maxLength":8}),
                 None,
-                r#"AttributeType::refined_string(None, Some("^[a-z]+$".to_string()), Some((Some(2), Some(8))), None)"#,
+                r#"AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[a-z]+$", carina_core::schema::PatternMatch::Full)), Some((Some(2), Some(8))), None)"#,
                 "String(pattern, len: 2..=8)",
             ),
             (
@@ -14757,9 +14796,9 @@ mod tests {
             // Moving Scheduler's source shares its dialect translation, but
             // does not grant its path-specific substring exception.
             assert!(
-                emitted_patterns(&code)
+                emitted_pattern_specs(&code)
                     .iter()
-                    .all(|pattern| is_whole_anchored(pattern))
+                    .all(|pattern| matches!(pattern.mode(), PatternMatch::Full))
             );
             if type_name == "AWS::Scheduler::Schedule" {
                 for value in ["a!tail", "aw!tail", "awsxtail"] {
@@ -15728,7 +15767,17 @@ mod tests {
                     pattern: if args[1] == "None" {
                         Pattern::Absent
                     } else {
-                        Pattern::Text(rust_string(call_arguments(args[1], "Some")[0]))
+                        let spec = call_arguments(
+                            call_arguments(args[1], "Some")[0],
+                            "carina_core::schema::PatternSpec::new",
+                        );
+                        assert!(
+                            spec[1] == "carina_core::schema::PatternMatch::Full"
+                                || spec[1].starts_with(
+                                    "carina_core::schema::PatternMatch::Substring { reason: "
+                                )
+                        );
+                        Pattern::Text(rust_string(spec[0]))
                     },
                 };
             }
@@ -16084,8 +16133,7 @@ mod tests {
                 }
             }
 
-            let code =
-                r#"AttributeType::refined_string(None, Some("^[a-z]+$".to_string()), None, None)"#;
+            let code = r#"AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[a-z]+$", carina_core::schema::PatternMatch::Full)), None, None)"#;
             let actual = schema_shape(code);
             assert!(actual.agrees_with(&docs_shape("String(pattern)", "")));
             assert!(actual.agrees_with(&docs_shape(r#"String(pattern: "^[a-z]+$")"#, "")));
@@ -17843,7 +17891,7 @@ mod tests {
         assert_all_generated_struct_fields(
             generated_dynamodb_field(inline, "MetricsConfigurations"),
             "MetricsConfiguration.Id",
-            r#"AttributeType::refined_string(None, Some(r"^[A-Za-z0-9._-]+\z".to_string()), Some((None, Some(64))), None)"#,
+            r#"AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(r"^[A-Za-z0-9._-]+\z", carina_core::schema::PatternMatch::Full)), Some((None, Some(64))), None)"#,
         );
         let tierings = generated_budgets_field(
             generated_dynamodb_field(inline, "IntelligentTieringConfigurations"),
@@ -17915,7 +17963,7 @@ mod tests {
                 ("FilterRule.Name", "AttributeType::enum_("),
                 (
                     "WebsiteConfiguration.IndexDocument",
-                    r#"AttributeType::refined_string(None, Some(r"^[^/]+\z".to_string()), None, None)"#,
+                    r#"AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(r"^[^/]+\z", carina_core::schema::PatternMatch::Full)), None, None)"#,
                 ),
                 (
                     "WebsiteConfiguration.ErrorDocument",
@@ -19379,7 +19427,7 @@ mod tests {
     fn test_budgets_budget_nested_identity_is_emitted_inline_and_with_def() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
-        let identity_field = r#"StructField::optional("budget_name", AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)).create_only().identity()"#;
+        let identity_field = r#"StructField::optional("budget_name", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[^:\\\\]+$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(100))), None)).create_only().identity()"#;
         let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
         assert_eq!(inline.matches(identity_field).count(), 1);
         assert_eq!(definitions.matches(identity_field).count(), 1);
@@ -20079,7 +20127,7 @@ mod tests {
         let name = generated_budgets_field(&generated, "BudgetData.BudgetName");
         assert_eq!(
             name,
-            r#"AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)).create_only().identity()"#
+            r#"AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[^:\\\\]+$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(100))), None)).create_only().identity()"#
         );
         assert!(emitted_string_accepts(name, "monthly-cost"));
         assert!(!emitted_string_accepts(name, "monthly:cost"));
@@ -20683,7 +20731,10 @@ mod tests {
             };
             assert_eq!(display.as_str(), "String(yyyy-MM-ddTHH:mm:ss.SSSZ)");
             assert_eq!(expression.patterns().len(), 1);
-            assert!(is_whole_anchored(expression.patterns()[0].as_str()));
+            assert!(matches!(
+                expression.patterns()[0].as_spec().mode(),
+                PatternMatch::Full
+            ));
             assert!(generated.contains(&format!(
                 "AttributeSchema::optional(\"{dsl}\", {expression})"
             )));
@@ -21110,7 +21161,7 @@ mod tests {
                 "{generated}"
             );
             let compiled = carina_core::schema::CompiledPattern::try_new(
-                constraints.pattern.unwrap().as_str(),
+                constraints.pattern.unwrap().as_spec(),
             )
             .unwrap();
             assert!(compiled.is_match(accepted));
@@ -21255,7 +21306,7 @@ mod tests {
         assert!(enum_info.is_none());
         assert!(
             generated.contains(
-                "AttributeType::map_with_key(AttributeType::refined_string(None, Some(\"^[a-z]+$\".to_string()), None, None), AttributeType::struct_(\"CustomResponseBody\".to_string()"
+                "AttributeType::map_with_key(AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(\"^[a-z]+$\", carina_core::schema::PatternMatch::Full)), None, None), AttributeType::struct_(\"CustomResponseBody\".to_string()"
             ),
             "patternProperties $ref values must generate a typed struct map: {generated}"
         );
@@ -29595,9 +29646,40 @@ mod tests {
             type_str
         );
         assert!(
-            type_str.contains(r#"Some("^[.\\-_/#A-Za-z0-9]{1,512}\\z".to_string())"#),
+            type_str.contains(r#"Some(carina_core::schema::PatternSpec::new("^[.\\-_/#A-Za-z0-9]{1,512}\\z", carina_core::schema::PatternMatch::Full))"#),
             "Should carry pattern metadata, got: {}",
             type_str
+        );
+    }
+
+    #[test]
+    fn kms_reference_length_override_preserves_the_complete_pattern_spec() {
+        use carina_core::schema::{PatternReason, PatternSpec};
+
+        for mode in [
+            PatternMatch::Full,
+            PatternMatch::Substring {
+                reason: PatternReason::new("shared reference grammar keeps search semantics")
+                    .unwrap(),
+            },
+        ] {
+            let pattern = PatternSpec::new("reference-[a-z]+", mode);
+            let code =
+                kms_references::ReferenceKind::Key.constructor(Some((None, Some(42))), &pattern);
+            assert_eq!(emitted_pattern_specs(&code), vec![pattern]);
+            assert!(code.ends_with("Some((None, Some(42))))"));
+        }
+        let shared = carina_aws_types::kms_key_reference();
+        let carina_core::schema::RawShape::Reference {
+            pattern: Some(pattern),
+            ..
+        } = shared.raw_shape()
+        else {
+            panic!("shared KMS reference must carry its complete pattern");
+        };
+        assert_eq!(
+            kms_references::ReferenceKind::Key.default_pattern(),
+            pattern
         );
     }
 
@@ -29624,7 +29706,7 @@ mod tests {
         );
         assert_eq!(
             type_str,
-            r#"carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some("^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\\d{12}:(key|alias)/.+\\z".to_string()), Some((None, Some(256))))"#
+            r#"carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some(carina_core::schema::PatternSpec::new("^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\\d{12}:(key|alias)/.+\\z", carina_core::schema::PatternMatch::Full)), Some((None, Some(256))))"#
         );
     }
 
@@ -31253,7 +31335,7 @@ mod tests {
         );
         assert!(
             generated.contains(
-                "AttributeType::refined_string(None, Some(\"^(?:.*\\\\S.*)\\\\z\".to_string()), Some((Some(1), Some(512))), None)"
+                "AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(\".*\\\\S.*\", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(512))), None)"
             ),
             "the aliased object's field constraints must survive: {generated}"
         );
@@ -31405,7 +31487,7 @@ mod tests {
 
         for expected in [
             "StructField::required(\"attributes\", AttributeType::refined_list(AttributeType::struct_(\"ApplicationAttribute\".to_string()",
-            "StructField::required(\"values\", AttributeType::refined_list(AttributeType::refined_string(None, Some(\"^[\\\\w\\\\-]+$\".to_string()), Some((Some(1), Some(64))), None), true, Some((Some(1), Some(10))), carina_core::schema::ListElements::AllowDuplicates)",
+            "StructField::required(\"values\", AttributeType::refined_list(AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(\"^[\\\\w\\\\-]+$\", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(64))), None), true, Some((Some(1), Some(10))), carina_core::schema::ListElements::AllowDuplicates)",
             "StructField::required(\"data_protections\", AttributeType::refined_list(AttributeType::struct_(\"DataProtect\".to_string()",
             "StructField::optional(\"address_fields\", AttributeType::list(AttributeType::struct_(\"FieldIdentifier\".to_string()",
             "StructField::optional(\"phone_number_fields\", AttributeType::list(AttributeType::struct_(\"FieldIdentifier\".to_string()",
@@ -31562,7 +31644,7 @@ mod tests {
             type_str
         );
         assert!(
-            type_str.contains(r#"Some("^(\\d{4})"#),
+            type_str.contains(r#"Some(carina_core::schema::PatternSpec::new("^(\\d{4})"#),
             "Should carry pattern metadata, got: {}",
             type_str
         );
@@ -31928,7 +32010,7 @@ mod tests {
 
         assert_eq!(
             generated
-                .matches(r#"Some("^(?:[0-9]+)\\z".to_string())"#)
+                .matches(r#"Some(carina_core::schema::PatternSpec::new("[0-9]+", carina_core::schema::PatternMatch::Full))"#)
                 .count(),
             2,
             "Both properties should retain their pattern metadata: {generated}"
@@ -32095,8 +32177,8 @@ mod tests {
         let pattern = constraints
             .pattern
             .expect("date-time must become an ApprovedPattern");
-        assert!(is_whole_anchored(pattern.as_str()));
-        let compiled = carina_core::schema::CompiledPattern::try_new(pattern.as_str()).unwrap();
+        assert!(matches!(pattern.as_spec().mode(), PatternMatch::Full));
+        let compiled = carina_core::schema::CompiledPattern::try_new(pattern.as_spec()).unwrap();
         for value in [
             "2026-11-05T10:32:55Z",
             "2030-01-01T00:00:00.123Z",
@@ -32223,7 +32305,7 @@ mod tests {
             &BTreeMap::new(),
         );
         assert!(
-            type_str.contains("Some(\"^(?:[0-9]+)\\\\z\".to_string())"),
+            type_str.contains("Some(carina_core::schema::PatternSpec::new(\"[0-9]+\", carina_core::schema::PatternMatch::Full))"),
             "Numeric string pattern should be captured in Custom.pattern: {type_str}"
         );
         assert!(
@@ -32330,7 +32412,7 @@ mod tests {
         );
         // Should mention both constraints
         assert!(
-            type_str.contains("Some(\"^(?:[0-9]+)\\\\z\".to_string())"),
+            type_str.contains("Some(carina_core::schema::PatternSpec::new(\"[0-9]+\", carina_core::schema::PatternMatch::Full))"),
             "Should capture pattern: {type_str}"
         );
         assert!(
@@ -32360,7 +32442,7 @@ mod tests {
             cfn_type_to_carina_type_with_enum(&prop, "SomeName", &schema, "", &BTreeMap::new());
         // Should mention both constraints
         assert!(
-            type_str.contains("Some(\"^[a-z]+$\".to_string())"),
+            type_str.contains("Some(carina_core::schema::PatternSpec::new(\"^[a-z]+$\", carina_core::schema::PatternMatch::Full))"),
             "Should capture pattern: {type_str}"
         );
         assert!(
@@ -32392,7 +32474,7 @@ mod tests {
 
         assert!(
             code.contains(
-                r#"AttributeType::refined_string(None, Some("^(?:[0-9A-Fa-f]{40})\\z".to_string()), Some((Some(40), Some(40))), None)"#
+                r#"AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("[0-9A-Fa-f]{40}", carina_core::schema::PatternMatch::Full)), Some((Some(40), Some(40))), None)"#
             ),
             "Array items should retain both constraints, got:\n{code}"
         );
@@ -32763,8 +32845,8 @@ mod tests {
                 generated,
                 concat!(
                     "AttributeType::refined_map(",
-                    "AttributeType::refined_string(None, Some(\"^(?:[a-z]+)\\\\z\".to_string()), Some((Some(2), Some(17))), None), ",
-                    "AttributeType::refined_string(None, Some(\"^(?:[A-Z]*)\\\\z\".to_string()), Some((None, Some(23))), None), Some((None, Some(50))))",
+                    "AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(\"[a-z]+\", carina_core::schema::PatternMatch::Full)), Some((Some(2), Some(17))), None), ",
+                    "AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(\"[A-Z]*\", carina_core::schema::PatternMatch::Full)), Some((None, Some(23))), None), Some((None, Some(50))))",
                 )
             );
             schema.edit_json(|source| {
@@ -32858,8 +32940,8 @@ mod tests {
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let expected = concat!(
             "AttributeType::map_with_key(",
-            "AttributeType::refined_string(None, Some(\"^(?:[a-z]+)\\\\z\".to_string()), None, None), ",
-            "AttributeType::refined_string(None, Some(\"^(?:[A-Z]+)\\\\z\".to_string()), Some((Some(2), Some(17))), None))",
+            "AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(\"[a-z]+\", carina_core::schema::PatternMatch::Full)), None, None), ",
+            "AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(\"[A-Z]+\", carina_core::schema::PatternMatch::Full)), Some((Some(2), Some(17))), None))",
         );
         assert!(
             generated.contains(&format!(
@@ -32953,7 +33035,7 @@ mod tests {
         );
         assert_eq!(
             attribute_type,
-            r#"AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:.*)\\z".to_string()), None, None), AttributeType::string())"#
+            r#"AttributeType::map_with_key(AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(".*", carina_core::schema::PatternMatch::Full)), None, None), AttributeType::string())"#
         );
         assert!(enum_info.is_none());
     }

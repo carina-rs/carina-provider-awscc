@@ -107,7 +107,7 @@ fn every_registered_tag_map_preserves_its_cfn_constraints() {
                 pattern,
                 expected_pattern
                     .as_ref()
-                    .map(super::pattern::ApprovedPattern::as_str),
+                    .map(super::pattern::ApprovedPattern::as_spec),
                 "{} {name}",
                 config.aws_type_name
             );

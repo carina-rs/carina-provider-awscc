@@ -32,7 +32,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_instance_arn_attribute());
     #[inline(never)]
     fn build_name_attribute() -> AttributeSchema {
-        AttributeSchema::optional("name", AttributeType::refined_string(None, Some("^[\\w+=,.@-]+$".to_string()), Some((Some(1), Some(32))), None))
+        AttributeSchema::optional("name", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[\\w+=,.@-]+$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(32))), None))
                 .with_description("The name you want to assign to this Identity Center (SSO) Instance")
                 .with_provider_name("Name")
             .build()
@@ -56,7 +56,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_status_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::refined_map(AttributeType::refined_string(None, Some("^(?:[\\w+=,.@-]+)\\z".to_string()), Some((Some(1), Some(128))), None), AttributeType::refined_string(None, Some("^(?:[\\w+=,.@-]+)\\z".to_string()), Some((None, Some(256))), None), Some((None, Some(75)))))
+        AttributeSchema::optional("tags", AttributeType::refined_map(AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("[\\w+=,.@-]+", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(128))), None), AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("[\\w+=,.@-]+", carina_core::schema::PatternMatch::Full)), Some((None, Some(256))), None), Some((None, Some(75)))))
                 .with_provider_name("Tags")
                 .with_block_name("tag")
             .build()

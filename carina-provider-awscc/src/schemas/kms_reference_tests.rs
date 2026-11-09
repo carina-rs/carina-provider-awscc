@@ -4,7 +4,6 @@
 #[allow(dead_code)]
 mod classification;
 
-use super::pattern::ApprovedPattern;
 use carina_core::schema::{CompiledAttributeType, CompiledResourceSchema, Shape, ShapeWalkBudget};
 use classification::{
     CLASSIFICATIONS, Classification, NotReference, PathSegment, classify_string, property_path,
@@ -33,14 +32,21 @@ impl Coverage {
         if !self.ancestors.insert(pointer) {
             return;
         }
-        let mut check = |pattern: Option<&str>,
+        let mut check = |pattern: Option<&carina_core::schema::PatternSpec>,
                          identity: Option<&carina_core::schema::TypeIdentity>,
                          length| {
             if read_only {
                 return;
             }
-            match classify_string(schema.resource_type(), path, name, pattern, description, [])
-                .unwrap()
+            match classify_string(
+                schema.resource_type(),
+                path,
+                name,
+                pattern.map(carina_core::schema::PatternSpec::as_str),
+                description,
+                [],
+            )
+            .unwrap()
             {
                 Some(Classification::Reference(kind)) => {
                     assert_eq!(
@@ -51,12 +57,17 @@ impl Coverage {
                     );
                     let entry = classification::entry(schema.resource_type(), path).unwrap();
                     let expected_pattern = entry.cfn_pattern.map_or_else(
-                        || kind.default_pattern().to_string(),
-                        |pattern| pattern.replace(r"\Z", r"\z"),
+                        || kind.default_pattern().clone(),
+                        |pattern| {
+                            carina_core::schema::PatternSpec::new(
+                                pattern.replace(r"\Z", r"\z"),
+                                carina_core::schema::PatternMatch::Full,
+                            )
+                        },
                     );
                     assert_eq!(
                         pattern,
-                        Some(expected_pattern.as_str()),
+                        Some(&expected_pattern),
                         "{}.{path}: wrong KMS reference pattern",
                         schema.resource_type()
                     );

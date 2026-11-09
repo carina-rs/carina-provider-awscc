@@ -199,7 +199,7 @@ fn non_reference_string_maps_refine_keys_and_keep_existing_value_behavior() {
         schema["properties"]["Settings"] = json!({"type": "object", "properties": {"Modes": map}});
         let rust = rendered(&schema, "rust");
         assert_eq!(
-            rust.matches(r#"AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:.*)\\z".to_string()), None, None), AttributeType::string())"#)
+            rust.matches(r#"AttributeType::map_with_key(AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(".*", carina_core::schema::PatternMatch::Full)), None, None), AttributeType::string())"#)
                 .count(),
             2,
             "{rust}"
@@ -348,7 +348,10 @@ fn logs_reference_keeps_cfn_maximum_and_no_synthetic_minimum() {
     };
     assert_eq!(
         pattern,
-        Some(r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z")
+        Some(&carina_core::schema::PatternSpec::new(
+            r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z",
+            carina_core::schema::PatternMatch::Full
+        ))
     );
     assert_eq!(length, Some((None, Some(256))));
     let pattern = carina_core::schema::CompiledPattern::try_new(pattern.unwrap()).unwrap();

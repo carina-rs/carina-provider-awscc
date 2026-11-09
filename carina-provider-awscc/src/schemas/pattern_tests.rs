@@ -4,7 +4,7 @@ use super::pattern::{ApprovedPattern, SUBSTRING_PATTERN_EXCEPTIONS, is_whole_anc
 use crate::test_support::{field, string};
 
 #[test]
-fn whole_pattern_preserves_only_whole_anchored_sources_and_is_idempotent() {
+fn whole_pattern_preserves_authored_source_and_full_mode() {
     for source in [
         r"^A$",
         r"^(?:A|B)\z",
@@ -37,13 +37,19 @@ fn whole_pattern_preserves_only_whole_anchored_sources_and_is_idempotent() {
     ] {
         assert!(!is_whole_anchored(source), "{source}");
         let approved = ApprovedPattern::whole(source);
-        assert_eq!(approved.as_str(), format!(r"^(?:{source})\z"));
-        assert!(is_whole_anchored(approved.as_str()), "{source}");
+        assert_eq!(approved.as_str(), source);
+        assert!(
+            matches!(
+                approved.as_spec().mode(),
+                carina_core::schema::PatternMatch::Full
+            ),
+            "{source}"
+        );
         assert_eq!(ApprovedPattern::whole(approved.as_str()), approved);
     }
     // Unsupported syntax must survive normalization for the compilation gate
     // to report it; normalization must never drop a constraint.
-    assert_eq!(ApprovedPattern::whole("(?=x)x").as_str(), r"^(?:(?=x)x)\z");
+    assert_eq!(ApprovedPattern::whole("(?=x)x").as_str(), "(?=x)x");
 }
 
 #[test]
@@ -98,11 +104,12 @@ fn audit_patterns(
         RawShape::String { pattern, .. } | RawShape::Reference { pattern, .. } => {
             if let Some(pattern) = pattern {
                 count += 1;
-                if !is_whole_anchored(pattern)
+                if !matches!(pattern.mode(), carina_core::schema::PatternMatch::Full)
                     && !SUBSTRING_PATTERN_EXCEPTIONS.iter().any(|exception| {
                         exception.resource_type == resource
                             && exception.schema_paths.contains(&path)
-                            && exception.emitted == pattern
+                            && exception.emitted == pattern.as_str()
+                            && matches!(pattern.mode(), carina_core::schema::PatternMatch::Substring { reason } if reason.as_str() == exception.reason)
                     })
                 {
                     failures.push(format!("{resource} {path}: {pattern:?}"));
@@ -185,13 +192,19 @@ fn pattern_audit_requires_the_exception_schema_path() {
         failures,
         vec![format!(
             "{} {unrelated_path}: {:?}",
-            exception.resource_type, exception.emitted
+            exception.resource_type,
+            carina_core::schema::PatternSpec::new(
+                exception.emitted,
+                carina_core::schema::PatternMatch::Substring {
+                    reason: carina_core::schema::PatternReason::new(exception.reason).unwrap()
+                },
+            )
         )]
     );
 }
 
 #[test]
-fn all_registered_provider_schema_patterns_are_whole_anchored_or_registered_exceptions() {
+fn all_registered_provider_schema_patterns_have_full_or_registered_substring_modes() {
     let mut failures = Vec::new();
     let mut count = 0;
     let mut tag_patterns = 0;
@@ -240,7 +253,13 @@ fn oidc_thumbprint_items_match_exactly_forty_hex_characters() {
     else {
         panic!("thumbprint items must retain their pattern");
     };
-    assert_eq!(pattern, r"^(?:[0-9A-Fa-f]{40})\z");
+    assert_eq!(
+        pattern,
+        &carina_core::schema::PatternSpec::new(
+            "[0-9A-Fa-f]{40}",
+            carina_core::schema::PatternMatch::Full
+        )
+    );
     let forty_hex = "aB01".repeat(10);
     assert!(item.validate(&string(&forty_hex)).is_ok());
     let embedded = format!("x{forty_hex}");
@@ -306,7 +325,13 @@ fn wafv2_non_whitespace_name_pattern_preserves_multiline_search_language() {
     else {
         panic!("WAF cookie name must retain its pattern");
     };
-    assert_eq!(pattern, r"^[\s\S]*\S[\s\S]*\z");
+    assert_eq!(
+        pattern,
+        &carina_core::schema::PatternSpec::new(
+            r"^[\s\S]*\S[\s\S]*\z",
+            carina_core::schema::PatternMatch::Full
+        )
+    );
     for (value, valid) in [
         ("\nx\n", true),
         ("\r\nx\r\n", true),
@@ -328,7 +353,16 @@ fn scheduler_source_preserves_the_registered_substring_language() {
     else {
         panic!("Scheduler Source must retain its reviewed pattern");
     };
-    assert_eq!(pattern, SUBSTRING_PATTERN_EXCEPTIONS[0].emitted);
+    assert_eq!(
+        pattern,
+        ApprovedPattern::substring_exception(
+            SUBSTRING_PATTERN_EXCEPTIONS[0].resource_type,
+            SUBSTRING_PATTERN_EXCEPTIONS[0].source_path,
+            SUBSTRING_PATTERN_EXCEPTIONS[0].source
+        )
+        .unwrap()
+        .as_spec()
+    );
     for (value, valid) in [
         ("my source!?", true),
         ("a\n", true),

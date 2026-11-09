@@ -7,6 +7,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use carina_core::test_utils::provider_text::NativeWireFixture as _;
 use carina_plugin_sdk::{CarinaProvider, Pending, UpdateOutcome};
 use carina_provider_awscc::{AwsccProvider, BoundedSdkConfig};
 use carina_provider_protocol::{PendingPhase, PollFinality, PollRequest, types as proto};
@@ -49,13 +50,16 @@ mod guest {
         fn provider_config_attribute_types(&self) -> ValidatedConfigSchema {
             unreachable!("this fixture only polls read-back continuations")
         }
-        fn validate_config(&self, attrs: &BTreeMap<String, proto::Value>) -> Result<(), String> {
+        fn validate_config(
+            &self,
+            attrs: &BTreeMap<String, proto::Value>,
+        ) -> Result<(), proto::ProviderError> {
             unreachable!("this fixture only polls read-back continuations")
         }
         fn initialize(
             &mut self,
             attrs: &BTreeMap<String, proto::Value>,
-        ) -> Result<proto::ReferenceScope, String> {
+        ) -> Result<proto::ReferenceScope, proto::ProviderError> {
             unreachable!("this fixture only polls read-back continuations")
         }
         fn read(
@@ -315,6 +319,7 @@ fn run_guest_read_back() {
     let proto::CreateStep::PartialSuccess { diagnostic, .. } = step else {
         panic!("expected final partial create")
     };
+    let diagnostic = diagnostic.to_wire();
     assert!(
         diagnostic
             .missing_attributes
@@ -375,7 +380,7 @@ fn run_guest_read_back() {
     };
     assert!(matches!(
         outcome,
-        proto::UpdateOutcome::PartialSuccess { .. }
+        carina_plugin_sdk::types::UpdateOutcome::PartialSuccess { .. }
     ));
     assert_eq!(service.creates.load(Ordering::Relaxed), 1);
     assert_eq!(service.updates.load(Ordering::Relaxed), 1);
@@ -427,8 +432,14 @@ fn guest_read_back_poll_transient_error_preserves_continuation() {
     assert_eq!(in_flight.pending.token, token);
     assert_eq!(in_flight.pending.sent, sent);
     assert_eq!(in_flight.pending.poll_after_secs, 5);
-    assert_eq!(in_flight.error.kind, proto::ProviderErrorKind::Timeout);
-    assert_eq!(in_flight.error.message, "temporary polling failure");
+    assert_eq!(
+        in_flight.error.to_wire().kind,
+        proto::ProviderErrorKind::Timeout
+    );
+    assert_eq!(
+        in_flight.error.to_wire().message,
+        "temporary polling failure"
+    );
 
     // Persisted continuations initially arrive with operation progress. The
     // same read-back token must advance it even when the poll reports an error.
@@ -453,7 +464,13 @@ fn guest_read_back_poll_transient_error_preserves_continuation() {
         assert_eq!(in_flight.pending.progress, progress);
         assert_eq!(in_flight.pending.token, token);
         assert_eq!(in_flight.pending.poll_after_secs, 5);
-        assert_eq!(in_flight.error.kind, proto::ProviderErrorKind::Timeout);
-        assert_eq!(in_flight.error.message, "temporary polling failure");
+        assert_eq!(
+            in_flight.error.to_wire().kind,
+            proto::ProviderErrorKind::Timeout
+        );
+        assert_eq!(
+            in_flight.error.to_wire().message,
+            "temporary polling failure"
+        );
     }
 }

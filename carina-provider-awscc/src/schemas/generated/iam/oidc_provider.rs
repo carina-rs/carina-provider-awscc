@@ -41,7 +41,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_thumbprint_list_attribute() -> AttributeSchema {
-        AttributeSchema::optional("thumbprint_list", AttributeType::refined_list(AttributeType::refined_string(None, Some("^(?:[0-9A-Fa-f]{40})\\z".to_string()), Some((Some(40), Some(40))), None), false, Some((None, Some(5))), carina_core::schema::ListElements::AllowDuplicates))
+        AttributeSchema::optional("thumbprint_list", AttributeType::refined_list(AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("[0-9A-Fa-f]{40}", carina_core::schema::PatternMatch::Full)), Some((Some(40), Some(40))), None), false, Some((None, Some(5))), carina_core::schema::ListElements::AllowDuplicates))
                 .with_provider_name("ThumbprintList")
             .build()
     }

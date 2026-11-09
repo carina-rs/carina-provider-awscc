@@ -62,7 +62,7 @@ pub fn cloudfront_function_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_function_metadata_attribute());
     #[inline(never)]
     fn build_name_attribute() -> AttributeSchema {
-        AttributeSchema::required("name", AttributeType::refined_string(None, Some(r"^[a-zA-Z0-9_-]{1,64}\z".to_string()), Some((Some(1), Some(64))), None))
+        AttributeSchema::required("name", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(r"^[a-zA-Z0-9_-]{1,64}\z", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(64))), None))
                 .create_only()
                 .with_description("A name to identify the function.")
                 .with_provider_name("Name")
@@ -79,7 +79,7 @@ pub fn cloudfront_function_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_stage_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, Some("^([\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*)$".to_string()), Some((Some(1), Some(128))), None), AttributeType::refined_string(None, Some("^([\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*)$".to_string()), Some((None, Some(256))), None)))
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^([\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*)$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(128))), None), AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^([\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*)$", carina_core::schema::PatternMatch::Full)), Some((None, Some(256))), None)))
                 .with_description("A complex type that contains zero or more ``Tag`` elements.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")

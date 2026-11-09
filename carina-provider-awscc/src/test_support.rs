@@ -132,12 +132,18 @@ pub(crate) fn try_validate_fixtures(cases: &[(&str, &str)]) -> Result<(), String
             &schemas,
             &HashSet::from(["awscc".to_string()]),
             context,
+            &mut Vec::new(),
         )
         .map_err(|error| format!("{path}: {error}"))?;
         let bindings = BindingIndex::from_parsed(&parsed, &schemas, context);
         let configuration = load_buffer_configuration(&parsed, &schemas, context);
-        validate_resource_ref_types(configuration.judged(), &HashSet::new(), &bindings)
-            .map_err(|error| format!("{path}: {error}"))?;
+        validate_resource_ref_types(
+            configuration.judged(),
+            &HashSet::new(),
+            &bindings,
+            &mut Vec::new(),
+        )
+        .map_err(|error| format!("{path}: {error}"))?;
     }
     Ok(())
 }
@@ -168,11 +174,15 @@ pub(crate) async fn with_preparation_and_configs<T>(
             schemas.insert("awscc", config.schema.clone());
             let factories: Vec<Box<dyn ProviderFactory>> =
                 vec![Box::new(crate::OwnerOnlyAwsccFactory)];
+            let normalizer = carina_core::test_utils::provider_text::normalizer(
+                "awscc",
+                Box::new(crate::AwsccNormalizer),
+            );
             let preparation = ProviderPreparationContext::new(
                 &bindings,
                 &gate,
                 configs,
-                &crate::AwsccNormalizer,
+                &normalizer,
                 &factories,
                 &schemas,
                 type_checks,
@@ -181,4 +191,10 @@ pub(crate) async fn with_preparation_and_configs<T>(
         },
     )
     .await
+}
+
+/// A real session-owned channel for offline conversion and retry fixtures.
+pub(crate) fn diagnostics() -> carina_plugin_sdk::ProviderDiagnostics {
+    let session = carina_core::provider::ProviderPlan::state_only().session("awscc", None, None);
+    carina_plugin_sdk::ProviderDiagnostics::from_session(&session)
 }

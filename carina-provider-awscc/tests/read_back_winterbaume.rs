@@ -20,9 +20,8 @@ use carina_core::executor::{
 use carina_core::plan::Plan;
 use carina_core::provider::{
     AppliedIdentifier, BoxFuture, CreateAttempt, CreateFailure, CreateOutcome, CreateRequest,
-    DeleteRequest, Provider, ProviderReadyDataSource, ProviderResult, ReadBackEnd, ReadOutcome,
-    ReadRequest, ResumeCreateRequest, ResumeFailure, ResumeOutcome, Sent, UpdateOutcome,
-    UpdateRequest,
+    Provider, ProviderReadyDataSource, ProviderResult, ReadBackEnd, ReadOutcome, ReadRequest,
+    ResumeCreateRequest, ResumeFailure, ResumeOutcome, Sent, UpdateOutcome, UpdateRequest,
 };
 use carina_core::resource::{
     ConcreteValue, Current, ResolvedResourceId, Resource, ResourceId, State, Value,
@@ -103,11 +102,12 @@ impl MockService for CloudControlService {
 
 /// Only the dependent sink is synthetic. CloudControl and polling use the
 /// production provider; the executor prepares and resolves every request.
+#[derive(Clone)]
 struct FixtureProvider {
-    aws: AwsccProvider,
-    sleeps: Mutex<Vec<Duration>>,
-    ends: Mutex<Vec<ReadBackEnd>>,
-    sinks: Mutex<HashMap<String, Value>>,
+    aws: Arc<AwsccProvider>,
+    sleeps: Arc<Mutex<Vec<Duration>>>,
+    ends: Arc<Mutex<Vec<ReadBackEnd>>>,
+    sinks: Arc<Mutex<HashMap<String, Value>>>,
 }
 impl Provider for FixtureProvider {
     fn name(&self) -> &str {
@@ -172,16 +172,15 @@ impl Provider for FixtureProvider {
         id: &ResourceId,
         identifier: &AppliedIdentifier,
         request: UpdateRequest,
+        attempt: carina_core::provider::UpdateAttempt,
     ) -> BoxFuture<'_, ProviderResult<UpdateOutcome>> {
-        self.aws.update(id, identifier, request)
+        self.aws.update(id, identifier, request, attempt)
     }
     fn delete(
         &self,
-        id: &ResourceId,
-        identifier: &AppliedIdentifier,
-        request: DeleteRequest,
+        attempt: carina_core::provider::DeleteAttempt,
     ) -> BoxFuture<'_, ProviderResult<()>> {
-        self.aws.delete(id, identifier, request)
+        self.aws.delete(attempt)
     }
     fn required_permissions(&self, _id: &ResourceId, _op: PlanOp) -> ProviderResult<Vec<String>> {
         Ok(vec![])
@@ -226,10 +225,10 @@ async fn fixture(
     );
     (
         FixtureProvider {
-            aws,
-            sleeps: Mutex::new(vec![]),
-            ends: Mutex::new(vec![]),
-            sinks: Mutex::new(HashMap::new()),
+            aws: Arc::new(aws),
+            sleeps: Arc::new(Mutex::new(vec![])),
+            ends: Arc::new(Mutex::new(vec![])),
+            sinks: Arc::new(Mutex::new(HashMap::new())),
         },
         service,
     )
@@ -344,6 +343,16 @@ async fn execute(
     }
     let factories: Vec<Box<dyn carina_core::provider::ProviderFactory>> =
         vec![Box::new(AwsccProviderFactory)];
+    let plan = carina_core::input_rules::finalize_plan_for_test(plan)
+        .check_inputs(&schemas, &current)
+        .expect("fixture plan must pass input admission");
+    let normalizer =
+        carina_core::test_utils::provider_text::normalizer("awscc", Box::new(AwsccNormalizer));
+    let boundary = carina_core::test_utils::provider_text::boundary_with_components(
+        Box::new(provider.clone()),
+        Box::new(AwsccNormalizer),
+        &schemas,
+    );
     let input = LiveExecutionInput {
         provider_context: carina_core::parser::ProviderContext::clone(
             &carina_core::parser::LoadedProviderContext::empty_for_test(),
@@ -357,7 +366,7 @@ async fn execute(
         bindings,
         managed_current: current,
         data_source_values: ExecutableDataSourceValues::empty(),
-        normalizer: &AwsccNormalizer,
+        normalizer: &normalizer,
         provider_configs: &[],
         factories: &factories,
         schemas: &schemas,
@@ -366,7 +375,7 @@ async fn execute(
         checkpoint_sink: ExecutionCheckpointSink::noop(),
     };
     match Box::pin(executor::execute_live_plan_for_test(
-        provider,
+        &boundary,
         input,
         observer,
         ShutdownToken::running(),

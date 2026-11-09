@@ -297,10 +297,10 @@ impl CcCreateToken {
         // Every field in this closed continuation type is a string, integer, or
         // option thereof. Serde's JSON serializer therefore has no fallible data
         // path; keep the assertion at the single encoding boundary.
-        PendingToken::new(
+        PendingToken::new(carina_plugin_sdk::expect_diagnostic(
             serde_json::to_string(&self)
-                .expect("Cloud Control create continuations are always JSON-serializable"),
-        )
+                .map_err(carina_core::provider_text::ProviderDiagnostic::new),
+        ))
     }
 
     fn into_pending_token_with_cadence(self, poll_after_secs: u32) -> PendingToken {
@@ -329,11 +329,14 @@ fn decode_create_token(token: &PendingToken) -> ProviderResult<CcCreateToken> {
     })
 }
 
-fn diagnostic(
-    reason: &ProviderError,
+fn partial_read_diagnostic(
+    reason: ProviderError,
     missing_attributes: NonEmptyAttributeNames,
-) -> ProviderResult<PartialReadDiagnostic> {
-    missing_attributes.diagnostic(reason)
+) -> PartialReadDiagnostic {
+    PartialReadDiagnostic::new(
+        carina_core::provider_text::ProviderDiagnostic::new(reason),
+        missing_attributes.into(),
+    )
 }
 
 impl CcCreateAttempt for CreateAttempt {
@@ -431,15 +434,10 @@ impl CcIssuedCreate for IssuedCreate {
         missing_attributes: NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.canonicalize(identifier);
-        match diagnostic(&reason, missing_attributes) {
-            Ok(diagnostic) => Ok(CoreCreateStep::Done(
-                finishing.partial(attributes, diagnostic),
-            )),
-            Err(error) => {
-                let (observation, error) = failed_read(error);
-                Err(finishing.identifier_reported(observation, error))
-            }
-        }
+        Ok(CoreCreateStep::Done(finishing.partial(
+            attributes,
+            partial_read_diagnostic(reason, missing_attributes),
+        )))
     }
 
     fn identifier_reported(
@@ -540,15 +538,7 @@ impl CcResumedCreate for ResumedCreate {
         reason: ProviderError,
         missing_attributes: NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict> {
-        let diagnostic = match diagnostic(&reason, missing_attributes) {
-            Ok(diagnostic) => diagnostic,
-            Err(error) => {
-                let (observation, error) = failed_read(error);
-                return Err(self
-                    .canonicalize(identifier)
-                    .identifier_reported(observation, error));
-            }
-        };
+        let diagnostic = partial_read_diagnostic(reason, missing_attributes);
         Ok(CoreResumeStep::Done(
             self.canonicalize(identifier)
                 .partial(attributes, diagnostic),
@@ -679,15 +669,10 @@ impl CcIssuedCreate for ResentIssuedCreate {
         missing_attributes: NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.canonicalize(identifier);
-        match diagnostic(&reason, missing_attributes) {
-            Ok(diagnostic) => Ok(CoreResumeStep::Done(
-                finishing.partial(attributes, diagnostic),
-            )),
-            Err(error) => {
-                let (observation, error) = failed_read(error);
-                Err(finishing.identifier_reported(observation, error))
-            }
-        }
+        Ok(CoreResumeStep::Done(finishing.partial(
+            attributes,
+            partial_read_diagnostic(reason, missing_attributes),
+        )))
     }
 
     fn identifier_reported(
@@ -822,9 +807,7 @@ fn native_resume_step(
 impl AwsccProvider {
     fn ensure_initialized(&self, id: &ResourceId) -> ProviderResult<()> {
         if let Some(err) = self.init_error() {
-            return Err(ProviderError::invalid_input(err.to_string())
-                .for_provider("awscc")
-                .for_resource(id.clone()));
+            return Err(err.clone().for_provider("awscc").for_resource(id.clone()));
         }
         Ok(())
     }
@@ -851,6 +834,7 @@ impl AwsccProvider {
         };
 
         let mut attributes = map_aws_props_to_attributes(
+            &self.diagnostics,
             &props,
             config.schema.as_schema().attributes(),
             &id.resource_type,
@@ -928,6 +912,7 @@ impl AwsccProvider {
                 && let Some(value) = resource.get_attr(dsl_name.as_str())
             {
                 let aws_value = dsl_value_to_aws_with_defs(
+                    &self.diagnostics,
                     value,
                     attr_schema.attr_type(),
                     &resource.id.resource_type,
@@ -2249,7 +2234,7 @@ impl AwsccProvider {
             ProviderError::internal(format!("Unknown resource type: {}", id.resource_type))
                 .for_resource(id.clone())
         })?;
-        let patch_plan = build_update_patches(config, &id.resource_type, patch);
+        let patch_plan = build_update_patches(&self.diagnostics, config, &id.resource_type, patch);
         let step = self
             .cc_update_step(
                 config.aws_type_name,
@@ -2288,7 +2273,7 @@ impl AwsccProvider {
             ProviderError::internal(format!("Unknown resource type: {}", id.resource_type))
                 .for_resource(id.clone())
         })?;
-        let patch_plan = build_update_patches(config, &id.resource_type, patch);
+        let patch_plan = build_update_patches(&self.diagnostics, config, &id.resource_type, patch);
         let fallback = post_update_attributes(from, patch);
         match token {
             CcUpdateToken::ReadBack(continuation) => {
@@ -2459,7 +2444,7 @@ impl AwsccProvider {
                 missing_attributes,
             } => OperationStep::Done(UpdateOutcome::partial_success(
                 AppliedState::from_snapshot_parts(id.clone(), identifier, attributes),
-                reason.to_string(),
+                carina_core::provider_text::ProviderDiagnostic::new(reason),
                 missing_attributes.into(),
             )),
             ReadBackCompletion::Failed {
@@ -2962,11 +2947,9 @@ fn add_update_confirmation(
             reason
         } else {
             ProviderError::api_error_caused_by(
-                "post-update read-back incomplete",
-                UpdateReadBackCause {
-                    context,
-                    source: reason,
-                },
+                carina_core::provider_text::ProviderText::new(context)
+                    .with_context("post-update read-back incomplete"),
+                reason,
             )
         };
         missing
@@ -3011,14 +2994,6 @@ fn add_update_confirmation(
         },
         terminal @ (CreateCompletion::Success { .. } | CreateCompletion::Failed { .. }) => terminal,
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("{context}")]
-struct UpdateReadBackCause {
-    context: String,
-    #[source]
-    source: ProviderError,
 }
 
 fn post_update_attributes(
@@ -3166,7 +3141,16 @@ fn update_outcome_from_read_back(
         &patch_plan.unsent,
         handler_failure,
     );
-    UpdateOutcome::partial_success(state, reason, unconfirmed_attributes)
+    UpdateOutcome::partial_success(
+        state,
+        carina_core::provider_text::ProviderDiagnostic::message(
+            carina_core::provider_text::ProviderText::new(reason),
+        ),
+        carina_plugin_sdk::expect_diagnostic(
+            carina_core::provider::NonEmptyMissingAttributes::try_from(unconfirmed_attributes)
+                .map_err(carina_core::provider_text::ProviderDiagnostic::new),
+        ),
+    )
 }
 
 fn update_confirmation_failure_reason(
@@ -3219,6 +3203,7 @@ fn unsent_attributes_reason(attributes: &[String]) -> String {
 /// Tags are skipped here because they go through a dedicated parsing
 /// path in [`AwsccProvider::read_resource`].
 fn map_aws_props_to_attributes(
+    diagnostics: &carina_plugin_sdk::ProviderDiagnostics,
     props: &serde_json::Value,
     schema_attributes: &BTreeMap<String, CompiledAttributeSchema>,
     resource_type: &str,
@@ -3240,6 +3225,7 @@ fn map_aws_props_to_attributes(
         match props.get(aws_name) {
             Some(value) => {
                 if let Some(v) = aws_value_to_dsl_with_defs(
+                    diagnostics,
                     dsl_name,
                     value,
                     attr_schema.attr_type(),
@@ -3284,6 +3270,7 @@ mod tests {
     };
     use carina_core::resource::DeferredValue;
     use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, SchemaRegistry};
+    use carina_core::test_utils::provider_text::BindProviderText as _;
     use carina_provider_protocol::types as proto;
     use serde_json::json;
     use std::future::Future;
@@ -3371,7 +3358,7 @@ mod tests {
         provider
             .drive_native_create_with_budgets(
                 request.resource().as_resource(),
-                CreateAttempt::for_test(id),
+                carina_core::test_utils::provider_text::create_attempt_for_test(id),
                 DEFAULT_OPERATION_BUDGET,
                 Duration::ZERO,
                 |_| std::future::ready(()),
@@ -3407,6 +3394,8 @@ mod tests {
         assert_eq!(error.variant_name(), "timeout");
         assert!(
             error
+                .clone()
+                .into_host_for_test()
                 .to_string()
                 .contains("create of ec2.Vpc did not finish within 0ns")
         );
@@ -3481,7 +3470,9 @@ mod tests {
         let outcome = provider
             .drive_native_create_with_budgets(
                 &resource,
-                CreateAttempt::for_test(resource.id.clone()),
+                carina_core::test_utils::provider_text::create_attempt_for_test(
+                    resource.id.clone(),
+                ),
                 DEFAULT_OPERATION_BUDGET,
                 Duration::ZERO,
                 |_| std::future::ready(()),
@@ -3522,14 +3513,16 @@ mod tests {
             })),
             |_, request| {
                 assert_eq!(request.finality, PollFinality::FinalAttempt);
-                std::future::ready(Ok(OperationStep::Done(UpdateOutcome::partial_success(
+                std::future::ready(Ok(OperationStep::Done(UpdateOutcome::<
+                    carina_core::provider_text::Unbound,
+                >::partial_success(
                     AppliedState::from_identifier(
                         resource.id.clone(),
                         test_identifier("partial-bucket"),
                         HashMap::new(),
                     ),
-                    "read failed".into(),
-                    vec!["bucket_name".into()],
+                    carina_core::provider_text::ProviderDiagnostic::message("read failed".into()),
+                    vec!["bucket_name".into()].try_into().unwrap(),
                 ))))
             },
             |_| std::future::ready(()),
@@ -3568,7 +3561,13 @@ mod tests {
         .expect_err("phase regression must be an internal provider error");
 
         assert_eq!(error.variant_name(), "internal");
-        assert!(error.to_string().contains("invalid pending phase"));
+        assert!(
+            error
+                .clone()
+                .into_host_for_test()
+                .to_string()
+                .contains("invalid pending phase")
+        );
     }
 
     fn web_acl_association_state(
@@ -3663,7 +3662,13 @@ mod tests {
         let error = canonicalize_identifier_from_read(&config, &state.id, &state.attributes)
             .expect_err("an empty canonical identifier must be a provider error");
 
-        assert!(error.to_string().contains("empty canonical identifier"));
+        assert!(
+            error
+                .clone()
+                .into_host_for_test()
+                .to_string()
+                .contains("empty canonical identifier")
+        );
     }
 
     #[derive(Debug)]
@@ -3897,8 +3902,20 @@ mod tests {
             .expect_err("a non-string tag value must fail before create is sent");
 
         assert_eq!(error.variant_name(), "invalid_input");
-        assert!(error.to_string().contains("`tags`"));
-        assert!(error.to_string().contains("s3.Bucket"));
+        assert!(
+            error
+                .clone()
+                .into_host_for_test()
+                .to_string()
+                .contains("`tags`")
+        );
+        assert!(
+            error
+                .clone()
+                .into_host_for_test()
+                .to_string()
+                .contains("s3.Bucket")
+        );
         assert!(!service.saw_create_resource.load(Ordering::SeqCst));
     }
 
@@ -3988,7 +4005,9 @@ mod tests {
     async fn read_resource_still_enforces_initialization_error_for_pending_identity() {
         let service = PartialCreateCloudControlService::new(true);
         let mut provider = provider_with_partial_create_service(service.clone()).await;
-        provider.initialized = Err("provider initialization failed".to_string());
+        provider.initialized = Err(ProviderError::invalid_input(
+            "provider initialization failed",
+        ));
         let id = ResourceId::pending_with_provider("awscc", "s3.Bucket", None);
         let identifier = test_identifier("partial-bucket");
 
@@ -3998,7 +4017,13 @@ mod tests {
             .expect_err("initialization error must still short-circuit provider reads");
 
         assert_eq!(
-            error.into_error().detail().context(),
+            error
+                .into_error()
+                .clone()
+                .into_host_for_test()
+                .detail()
+                .context()
+                .to_string(),
             "provider initialization failed"
         );
         assert!(!service.saw_get_resource.load(Ordering::SeqCst));
@@ -4008,7 +4033,9 @@ mod tests {
     async fn read_data_source_reports_unsupported_type_without_managed_read() {
         let service = PartialCreateCloudControlService::new(true);
         let mut provider = provider_with_partial_create_service(service.clone()).await;
-        provider.initialized = Err("provider initialization failed".to_string());
+        provider.initialized = Err(ProviderError::invalid_input(
+            "provider initialization failed",
+        ));
         let id = ResourceId::pending_with_provider("awscc", "s3.Bucket", None);
 
         let error = provider
@@ -4018,6 +4045,8 @@ mod tests {
 
         assert!(
             error
+                .clone()
+                .into_host_for_test()
                 .to_string()
                 .contains("awscc does not provide data sources; requested type s3.Bucket")
         );
@@ -4056,7 +4085,13 @@ mod tests {
             attributes.get("bucket_name"),
             Some(&test_string("partial-bucket"))
         );
-        assert!(reason.to_string().contains("empty canonical identifier"));
+        assert!(
+            reason
+                .clone()
+                .into_host_for_test()
+                .to_string()
+                .contains("empty canonical identifier")
+        );
     }
 
     #[tokio::test]
@@ -4736,13 +4771,16 @@ mod tests {
             HashMap::from([("bucket_name".into(), persisted_secret_snapshot())]),
         )
         .expect_err("a consumed attribute must report an unavailable secret");
-        let cause = error
-            .detail()
-            .cause()
-            .unwrap()
-            .downcast_ref::<carina_core::resource::UnavailableSecretError>()
-            .expect("retain the typed conversion cause");
-        assert_eq!(cause.path(), format!("{id}.bucket_name"));
+        assert!(
+            error
+                .detail()
+                .cause()
+                .unwrap()
+                .as_cause()
+                .matches_for_test::<carina_core::resource::UnavailableSecretError>(|cause| cause
+                    .path()
+                    == format!("{}.bucket_name", partial_update_bucket_state().id))
+        );
     }
 
     fn create_only_bucket_name_patch() -> UpdatePatch {
@@ -4825,7 +4863,7 @@ mod tests {
             &["object_lock_enabled".to_string()]
         );
         assert_eq!(
-            diagnostic.reason(),
+            diagnostic.clone().into_host_for_test().reason().to_string(),
             "Cloud Control reported success, but the post-update read-back does not contain patched attributes: object_lock_enabled"
         );
     }
@@ -4865,7 +4903,7 @@ mod tests {
                 &["bucket_name".to_string()]
             );
             assert_eq!(
-                diagnostic.reason(),
+                diagnostic.clone().into_host_for_test().reason().to_string(),
                 "update attributes were not sent to Cloud Control (schema marks the attribute read-only/create-only or the value is not convertible): bucket_name"
             );
             let actual_bucket_name = state.attributes().get("bucket_name").and_then(|value| {
@@ -5124,7 +5162,7 @@ mod tests {
             &["object_lock_enabled".to_string()]
         );
         assert_eq!(
-            diagnostic.reason(),
+            diagnostic.clone().into_host_for_test().reason().to_string(),
             "handler failed: post-update read denied; the post-update read-back does not contain patched attributes: object_lock_enabled"
         );
     }
@@ -5303,7 +5341,12 @@ mod tests {
         assert_eq!(state.attributes(), &post_update_attributes(&from, &patch));
 
         assert_structured_partial_read_error(
-            diagnostic.reason().as_str(),
+            diagnostic
+                .clone()
+                .into_host_for_test()
+                .reason()
+                .to_string()
+                .as_str(),
             "post-update read denied",
         );
         assert_eq!(
@@ -5338,7 +5381,7 @@ mod tests {
             schema_attribute_names("s3.Bucket")
         );
         assert_eq!(
-            diagnostic.reason(),
+            diagnostic.clone().into_host_for_test().reason().to_string(),
             "post-update read-back did not find the updated resource"
         );
     }
@@ -5370,12 +5413,18 @@ mod tests {
         );
         assert!(
             diagnostic
+                .clone()
+                .into_host_for_test()
                 .reason()
+                .to_string()
                 .contains("handler failed: post-update read denied")
         );
         assert!(
             diagnostic
+                .clone()
+                .into_host_for_test()
                 .reason()
+                .to_string()
                 .contains("post-update read-back did not find the updated resource")
         );
     }
@@ -5407,7 +5456,10 @@ mod tests {
         );
         assert!(
             diagnostic
+                .clone()
+                .into_host_for_test()
                 .reason()
+                .to_string()
                 .starts_with("read error: Failed to get resource")
         );
     }
@@ -5473,7 +5525,12 @@ mod tests {
             schema_attribute_names("s3.Bucket")
         );
         assert_structured_partial_read_error(
-            diagnostic.reason().as_str(),
+            diagnostic
+                .clone()
+                .into_host_for_test()
+                .reason()
+                .to_string()
+                .as_str(),
             "post-update read denied",
         );
     }
@@ -5504,11 +5561,21 @@ mod tests {
             schema_attribute_names("s3.Bucket")
         );
         assert_structured_partial_read_error(
-            diagnostic.reason().as_str(),
+            diagnostic
+                .clone()
+                .into_host_for_test()
+                .reason()
+                .to_string()
+                .as_str(),
             "post-update read denied",
         );
         assert!(
-            diagnostic.reason().contains("not sent to Cloud Control"),
+            diagnostic
+                .clone()
+                .into_host_for_test()
+                .reason()
+                .to_string()
+                .contains("not sent to Cloud Control"),
             "the diagnostic must distinguish provider-dropped updates from read-back omissions"
         );
     }
@@ -5616,7 +5683,10 @@ mod tests {
                 .to_snapshot()
                 .resolved_attributes()
         );
-        assert_eq!(diagnostic.reason(), "read-back returned not_found");
+        assert_eq!(
+            diagnostic.clone().into_host_for_test().reason().to_string(),
+            "read-back returned not_found"
+        );
         assert_eq!(
             diagnostic.missing_attributes(),
             schema_attribute_names("s3.Bucket")
@@ -5645,7 +5715,13 @@ mod tests {
             identified.observation(),
             CreateObservation::Unobserved(UnobservedReason::ReadFailed(_))
         ));
-        assert!(error.to_string().contains("post-create read denied"));
+        assert!(
+            error
+                .clone()
+                .into_host_for_test()
+                .to_string()
+                .contains("post-create read denied")
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -5664,7 +5740,10 @@ mod tests {
         assert_eq!(state.identifier().as_str(), "partial-bucket");
         assert!(
             diagnostic
+                .clone()
+                .into_host_for_test()
                 .reason()
+                .to_string()
                 .starts_with("read error: Failed to get resource")
         );
     }
@@ -5723,7 +5802,7 @@ mod tests {
         assert!(!state.attributes().contains_key("arn"));
         assert_eq!(diagnostic.missing_attributes(), &["arn".to_string()]);
         assert_eq!(
-            diagnostic.reason(),
+            diagnostic.clone().into_host_for_test().reason().to_string(),
             "read-back missing declared attributes: arn"
         );
     }
@@ -5762,10 +5841,18 @@ mod tests {
         );
         assert!(
             reason
+                .clone()
+                .into_host_for_test()
                 .to_string()
                 .contains("Failed to call sts:GetCallerIdentity")
         );
-        assert!(reason.to_string().contains("synthesis denied"));
+        assert!(
+            reason
+                .clone()
+                .into_host_for_test()
+                .to_string()
+                .contains("synthesis denied")
+        );
     }
 
     #[tokio::test]
@@ -5824,8 +5911,9 @@ mod tests {
             Some(&test_string("flow-log-role"))
         );
         assert_eq!(missing_attributes.as_slice(), ["arn"]);
-        let issued = CreateAttempt::for_test(resource.id.clone())
-            .issued(identifier, Sent::AllRequestAttributes);
+        let issued =
+            carina_core::test_utils::provider_text::create_attempt_for_test(resource.id.clone())
+                .issued(identifier, Sent::AllRequestAttributes);
         let CoreCreateStep::Pending(pending) = provider
             .finish_issued_completion(
                 issued,
@@ -5885,23 +5973,44 @@ mod tests {
         else {
             panic!("final partial")
         };
-        let mut source = reason
-            .detail()
-            .cause()
-            .map(|cause| cause as &dyn std::error::Error);
+        let mut source = reason.detail().cause().map(|cause| cause.as_cause());
         while let Some(error) = source {
-            if error.downcast_ref::<std::io::Error>().is_some() {
+            if error.is::<std::io::Error>() {
                 return;
             }
-            source = match error.downcast_ref::<ProviderError>() {
-                Some(error) => error
-                    .detail()
-                    .cause()
-                    .map(|cause| cause as &dyn std::error::Error),
-                None => error.source(),
-            };
+            source = error.source();
         }
         panic!("typed I/O source was discarded");
+    }
+
+    #[test]
+    fn update_confirmation_retains_rendered_reason_and_cause() {
+        let completion = CreateCompletion::Partial {
+            identifier: test_identifier("partial-bucket"),
+            attributes: HashMap::new(),
+            reason: ProviderError::api_error_caused_by(
+                "read denied",
+                std::io::Error::other("reason witness"),
+            ),
+            missing_attributes: vec!["arn".to_string()].try_into().unwrap(),
+        };
+        let CreateCompletion::Partial { reason, .. } = add_update_confirmation(
+            completion,
+            &UpdatePatchPlan::default(),
+            Some("handler witness"),
+            true,
+        ) else {
+            panic!("partial read-back must retain its reason")
+        };
+
+        assert_eq!(
+            reason.clone().into_host_for_test().to_string(),
+            "post-update read-back incomplete: handler failed: handler witness: read denied: reason witness"
+        );
+        assert!(
+            reason.detail().cause().unwrap().source().is_some(),
+            "the cause chain must still reach the original read failure"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -5958,7 +6067,10 @@ mod tests {
                 .attributes()
                 .contains_key("assume_role_policy_document")
         );
-        assert_eq!(diagnostic.reason(), "read-back returned not_found");
+        assert_eq!(
+            diagnostic.clone().into_host_for_test().reason().to_string(),
+            "read-back returned not_found"
+        );
         assert_eq!(
             diagnostic.missing_attributes(),
             schema_attribute_names("iam.Role")
@@ -6017,7 +6129,7 @@ mod tests {
         );
         assert_eq!(diagnostic.missing_attributes(), &["arn".to_string()]);
         assert_eq!(
-            diagnostic.reason(),
+            diagnostic.clone().into_host_for_test().reason().to_string(),
             "read-back missing declared attributes: arn"
         );
         assert!(
@@ -6058,6 +6170,7 @@ mod tests {
         .expect("captured CloudControl Properties must be valid JSON");
 
         let attributes = map_aws_props_to_attributes(
+            &crate::test_support::diagnostics(),
             &props,
             config.schema.as_schema().attributes(),
             "cloudfront.ResponseHeadersPolicy",
@@ -6221,6 +6334,7 @@ mod tests {
         });
 
         let attributes = map_aws_props_to_attributes(
+            &crate::test_support::diagnostics(),
             &props,
             config.schema.as_schema().attributes(),
             "cloudfront.Function",
@@ -6417,6 +6531,7 @@ mod tests {
         let props = json!({});
 
         let result = map_aws_props_to_attributes(
+            &crate::test_support::diagnostics(),
             &props,
             attrs.as_schema().attributes(),
             "iam.Role",
@@ -6442,6 +6557,7 @@ mod tests {
         let props = json!({});
 
         let result = map_aws_props_to_attributes(
+            &crate::test_support::diagnostics(),
             &props,
             attrs.as_schema().attributes(),
             "some.Resource",
@@ -6470,6 +6586,7 @@ mod tests {
         let props = json!({});
 
         let result = map_aws_props_to_attributes(
+            &crate::test_support::diagnostics(),
             &props,
             attrs.as_schema().attributes(),
             "some.Resource",
@@ -6495,6 +6612,7 @@ mod tests {
         let props = json!({});
 
         let result = map_aws_props_to_attributes(
+            &crate::test_support::diagnostics(),
             &props,
             attrs.as_schema().attributes(),
             "some.Resource",
@@ -6521,6 +6639,7 @@ mod tests {
         });
 
         let result = map_aws_props_to_attributes(
+            &crate::test_support::diagnostics(),
             &props,
             attrs.as_schema().attributes(),
             "iam.Role",
@@ -6549,6 +6668,7 @@ mod tests {
         let props = json!({});
 
         let result = map_aws_props_to_attributes(
+            &crate::test_support::diagnostics(),
             &props,
             attrs.as_schema().attributes(),
             "some.Resource",

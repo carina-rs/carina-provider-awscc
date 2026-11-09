@@ -38,7 +38,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_feature_set_attribute());
     #[inline(never)]
     fn build_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("id", AttributeType::refined_string(None, Some("^o-[a-z0-9]{10,32}$".to_string()), None, None))
+        AttributeSchema::provider_populated("id", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^o-[a-z0-9]{10,32}$", carina_core::schema::PatternMatch::Full)), None, None))
                 .with_description("The unique identifier (ID) of an organization. (read-only)")
                 .with_provider_name("Id")
             .build()
@@ -54,7 +54,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_management_account_arn_attribute());
     #[inline(never)]
     fn build_management_account_email_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("management_account_email", AttributeType::refined_string(None, Some("^(?:[^\\s@]+@[^\\s@]+\\.[^\\s@]+)\\z".to_string()), Some((Some(6), Some(64))), None))
+        AttributeSchema::provider_populated("management_account_email", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("[^\\s@]+@[^\\s@]+\\.[^\\s@]+", carina_core::schema::PatternMatch::Full)), Some((Some(6), Some(64))), None))
                 .with_description("The email address that is associated with the AWS account that is designated as the management account for the organization. (read-only)")
                 .with_provider_name("ManagementAccountEmail")
             .build()
@@ -70,7 +70,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_management_account_id_attribute());
     #[inline(never)]
     fn build_root_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("root_id", AttributeType::refined_string(None, Some("^r-[0-9a-z]{4,32}$".to_string()), Some((None, Some(64))), None))
+        AttributeSchema::provider_populated("root_id", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^r-[0-9a-z]{4,32}$", carina_core::schema::PatternMatch::Full)), Some((None, Some(64))), None))
                 .with_description("The unique identifier (ID) for the root. (read-only)")
                 .with_provider_name("RootId")
             .build()

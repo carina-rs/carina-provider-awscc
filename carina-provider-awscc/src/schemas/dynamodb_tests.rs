@@ -88,6 +88,7 @@ fn documented_enums_validate_and_round_trip_exact_aws_wire_strings() {
             }
 
             let read = aws_value_to_dsl_with_defs(
+                &crate::test_support::diagnostics(),
                 path,
                 &json!(wire),
                 attr_type.as_type(),
@@ -98,6 +99,7 @@ fn documented_enums_validate_and_round_trip_exact_aws_wire_strings() {
             let canonical = attr_type.canonicalize_state(read).into_present().unwrap();
             assert_eq!(
                 dsl_value_to_aws_with_defs(
+                    &crate::test_support::diagnostics(),
                     &canonical,
                     attr_type.as_type(),
                     "dynamodb.Table",
@@ -179,6 +181,7 @@ async fn authored_encryption_and_compression_identifiers_serialize_to_wire_strin
             let schema = table_schema();
             assert_eq!(
                 dsl_value_to_aws_with_defs(
+                    &crate::test_support::diagnostics(),
                     &ready.as_resource().attributes[path],
                     field(&schema, path).as_type(),
                     "dynamodb.Table",

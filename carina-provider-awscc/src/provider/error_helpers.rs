@@ -2,6 +2,8 @@
 
 use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 use carina_core::provider::ProviderError;
+#[cfg(test)]
+use carina_core::test_utils::provider_text::NativeWireFixture as _;
 use thiserror::Error;
 
 type AwsSdkError<E> = aws_smithy_runtime_api::client::result::SdkError<
@@ -224,6 +226,7 @@ mod tests {
     use carina_aws_types::sdk::cloudcontrol::error::SdkError;
     use carina_aws_types::sdk::cloudcontrol::operation::create_resource::CreateResourceError;
     use carina_aws_types::sdk::cloudcontrol::types::error::GeneralServiceException;
+    use carina_core::test_utils::provider_text::BindProviderText as _;
     use carina_provider_protocol::types::ProviderErrorKind;
 
     #[test]
@@ -255,19 +258,53 @@ mod tests {
         );
 
         assert!(matches!(&error, ProviderError::ApiError(_)));
-        assert_eq!(error.detail().context(), "Failed to create resource");
         assert_eq!(
-            error.detail().operation.as_deref(),
+            error
+                .clone()
+                .into_host_for_test()
+                .detail()
+                .context()
+                .to_string(),
+            "Failed to create resource"
+        );
+        assert_eq!(
+            error
+                .clone()
+                .into_host_for_test()
+                .detail()
+                .operation
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref(),
             Some("cloudcontrol.CreateResource")
         );
-        assert_eq!(error.detail().status, Some(500));
-        assert_eq!(error.detail().code(), Some("GeneralServiceException"));
         assert_eq!(
-            error.detail().request_id.as_deref(),
+            error.clone().into_host_for_test().detail().status,
+            Some(500)
+        );
+        assert_eq!(
+            error
+                .clone()
+                .into_host_for_test()
+                .detail()
+                .code()
+                .map(|code| code.to_string())
+                .as_deref(),
+            Some("GeneralServiceException")
+        );
+        assert_eq!(
+            error
+                .clone()
+                .into_host_for_test()
+                .detail()
+                .request_id
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref(),
             Some("test-request-id")
         );
 
-        let rendered = error.to_string();
+        let rendered = error.clone().into_host_for_test().to_string();
         assert_eq!(
             rendered.matches(AWS_MESSAGE).count(),
             1,
@@ -279,7 +316,10 @@ mod tests {
         assert_eq!(wire.message, "Failed to create resource");
         assert_eq!(wire.status, Some(500));
         assert_eq!(wire.code.as_deref(), Some("GeneralServiceException"));
-        assert_eq!(wire.request_id.as_deref(), Some("test-request-id"));
+        assert_eq!(
+            wire.request_id.as_ref().map(ToString::to_string).as_deref(),
+            Some("test-request-id")
+        );
         let wire_rendered = format!(
             "{}: {}",
             wire.message,

@@ -200,6 +200,9 @@ const SHARED_TYPES: &[SharedType] = shared_type_allowlist! {
 // These items supply metadata, SDK support or non-type utilities. They are
 // exact paths, not prefixes: new items also require explicit review.
 const SHARED_UTILITIES: &[&str] = &[
+    "AwsSdkConfig",
+    "AwsSdkConfig::for_test",
+    "AwsSdkConfig::from_source",
     "AssumeRoleFailure",
     "AwsType",
     "AwsType::ALL",
@@ -235,7 +238,7 @@ const SHARED_UTILITIES: &[&str] = &[
     "kms_reference::DescribeKeyFailure",
     "kms_reference::describe_key_failure",
     "kms_reference::resolve_core_reference_batch",
-    "kms_reference::resolve_reference_batch",
+    "kms_reference::resolve_guest_reference_batch",
     "load_sdk_config",
     "region_completions",
     "validate_iam_policy_document",
@@ -523,8 +526,8 @@ fn assert_shared_type_has_no_partition_decision(name: &str, ty: &AttributeType) 
         RawShape::String { pattern, .. } | RawShape::Reference { pattern, .. } => {
             if let Some(pattern) = pattern {
                 assert!(
-                    !pattern.contains("arn:"),
-                    "{name} carries an ARN pattern: {pattern}"
+                    !pattern.as_str().contains("arn:"),
+                    "{name} carries an ARN pattern: {pattern:?}"
                 );
             }
         }
@@ -570,7 +573,7 @@ fn shared_type_allowlist_has_no_partition_decisions() {
         if entry.name == "kms_key_reference" {
             // #541: the one deliberately shared partition-bearing type.
             assert!(
-                matches!(ty.raw_shape(), RawShape::Reference { pattern: Some(pattern), .. } if pattern.contains("arn:"))
+                matches!(ty.raw_shape(), RawShape::Reference { pattern: Some(pattern), .. } if pattern.as_str().contains("arn:"))
             );
         } else {
             assert_shared_type_has_no_partition_decision(entry.name, &ty);
@@ -854,7 +857,10 @@ fn shared_type_audit_rejects_arn_patterns_and_hidden_partition_validators() {
         std::panic::catch_unwind(|| {
             let ty = AttributeType::list(AttributeType::refined_string(
                 None,
-                Some("^arn:.*$".into()),
+                Some(carina_core::schema::PatternSpec::new(
+                    "^arn:.*$",
+                    carina_core::schema::PatternMatch::Full,
+                )),
                 None,
                 None,
             ));
@@ -874,7 +880,7 @@ fn shared_type_audit_rejects_arn_patterns_and_hidden_partition_validators() {
                     {
                         Ok(())
                     } else {
-                        Err("unsupported value".to_string())
+                        Err("unsupported value".into())
                     }
                 }),
                 None,
@@ -1142,7 +1148,10 @@ fn specialized_arn_rows_accept_every_awscc_partition() {
         );
         assert_eq!(
             pattern,
-            crate::partition::arn_regex(rest),
+            &carina_core::schema::PatternSpec::new(
+                crate::partition::arn_regex(rest),
+                carina_core::schema::PatternMatch::Full
+            ),
             "{segments:?}: partition builder, resource grammar and anchors"
         );
         let pattern = CompiledPattern::try_new(pattern).unwrap();

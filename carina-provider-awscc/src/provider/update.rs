@@ -90,6 +90,7 @@ impl UpdatePatchPlan {
 /// `tags` is converted from the per-key DSL `Map<String, String>` through
 /// the schema-declared CloudControl wire shape.
 pub(crate) fn build_update_patches(
+    diagnostics: &carina_plugin_sdk::ProviderDiagnostics,
     config: &AwsccSchemaConfig,
     resource_type: &str,
     patch: &UpdatePatch,
@@ -160,6 +161,7 @@ pub(crate) fn build_update_patches(
             | PatchOp::Replace { value, .. }
             | PatchOp::Reassert { value, .. } => {
                 if let Some(aws_value) = dsl_value_to_aws_with_defs(
+                    diagnostics,
                     value,
                     attr_schema.attr_type(),
                     resource_type,
@@ -232,6 +234,7 @@ pub(crate) fn build_update_patches(
 
 #[cfg(test)]
 mod tests {
+    use carina_core::test_utils::provider_text::BindProviderText as _;
     use std::collections::HashMap;
 
     use carina_core::executor::prepare_provider_ready_resource;
@@ -315,11 +318,14 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            err.detail()
+            err.clone()
+                .into_host_for_test()
+                .detail()
                 .context()
+                .to_string()
                 .contains("Failed to parse resource properties"),
             "Expected error message about parsing, got: {}",
-            err
+            err.clone().into_host_for_test()
         );
         assert!(
             matches!(err, ProviderError::Internal(_)),
@@ -352,7 +358,13 @@ mod tests {
             ops: vec![replace("tags", Value::Concrete(ConcreteValue::Map(tags)))],
         };
 
-        let patches = build_update_patches(config, "iam.Role", &patch).ops;
+        let patches = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "iam.Role",
+            &patch,
+        )
+        .ops;
 
         assert_eq!(
             patches.len(),
@@ -376,7 +388,13 @@ mod tests {
     fn test_empty_patch_produces_no_ops() {
         let config = get_vpc_config();
         let patch = UpdatePatch::default();
-        let patches = build_update_patches(config, "ec2.Vpc", &patch).ops;
+        let patches = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "ec2.Vpc",
+            &patch,
+        )
+        .ops;
         assert!(
             patches.is_empty(),
             "Empty patch must produce no JSON Patch ops, got: {patches:?}"
@@ -397,7 +415,13 @@ mod tests {
                 )),
             )],
         };
-        let patches = build_update_patches(config, "ec2.Vpc", &patch).ops;
+        let patches = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "ec2.Vpc",
+            &patch,
+        )
+        .ops;
 
         assert_eq!(patches.len(), 1, "got: {patches:?}");
         let op = &patches[0];
@@ -418,7 +442,13 @@ mod tests {
                 Value::Concrete(ConcreteValue::Int(14)),
             )],
         };
-        let patches = build_update_patches(config, "logs.LogGroup", &patch).ops;
+        let patches = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "logs.LogGroup",
+            &patch,
+        )
+        .ops;
 
         assert_eq!(patches.len(), 1, "got: {patches:?}");
         let op = &patches[0];
@@ -439,7 +469,13 @@ mod tests {
             ],
         };
 
-        let ops = build_update_patches(get_route_config(), "ec2.Route", &patch).ops;
+        let ops = build_update_patches(
+            &crate::test_support::diagnostics(),
+            get_route_config(),
+            "ec2.Route",
+            &patch,
+        )
+        .ops;
 
         assert_eq!(
             ops,
@@ -488,7 +524,13 @@ mod tests {
             )],
         };
 
-        let ops = build_update_patches(get_route_config(), "ec2.Route", &patch).ops;
+        let ops = build_update_patches(
+            &crate::test_support::diagnostics(),
+            get_route_config(),
+            "ec2.Route",
+            &patch,
+        )
+        .ops;
 
         assert_eq!(ops[0]["op"], "add");
         assert_eq!(ops[0]["path"], "/NetworkInterfaceId");
@@ -517,8 +559,13 @@ mod tests {
 
     #[test]
     fn route_patch_without_target_change_emits_no_extra_removes() {
-        let ops =
-            build_update_patches(get_route_config(), "ec2.Route", &UpdatePatch::default()).ops;
+        let ops = build_update_patches(
+            &crate::test_support::diagnostics(),
+            get_route_config(),
+            "ec2.Route",
+            &UpdatePatch::default(),
+        )
+        .ops;
 
         assert!(ops.is_empty());
     }
@@ -530,7 +577,13 @@ mod tests {
             ops: vec![replace("enable_dns_support", bool_(false))],
         };
 
-        let ops = build_update_patches(get_vpc_config(), "ec2.Vpc", &patch).ops;
+        let ops = build_update_patches(
+            &crate::test_support::diagnostics(),
+            get_vpc_config(),
+            "ec2.Vpc",
+            &patch,
+        )
+        .ops;
 
         assert_eq!(
             ops,
@@ -549,7 +602,12 @@ mod tests {
             ops: vec![reassert("tier", string("Advanced"))],
         };
 
-        let plan = build_update_patches(config, "ssm.Parameter", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "ssm.Parameter",
+            &patch,
+        );
 
         assert_eq!(
             plan.ops,
@@ -615,7 +673,12 @@ mod tests {
                 && value == &bool_(true)
         ));
 
-        let plan = build_update_patches(config, "cloudfront.Function", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "cloudfront.Function",
+            &patch,
+        );
 
         assert_eq!(
             plan.ops,
@@ -643,7 +706,13 @@ mod tests {
         let patch = UpdatePatch {
             ops: vec![remove("instance_tenancy")],
         };
-        let patches = build_update_patches(config, "ec2.Vpc", &patch).ops;
+        let patches = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "ec2.Vpc",
+            &patch,
+        )
+        .ops;
 
         assert_eq!(patches.len(), 1, "got: {patches:?}");
         let op = &patches[0];
@@ -671,7 +740,12 @@ mod tests {
                 Value::Concrete(ConcreteValue::String("arn:aws:logs:::*".to_string().into())),
             )],
         };
-        let plan = build_update_patches(config, "logs.LogGroup", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "logs.LogGroup",
+            &patch,
+        );
         assert!(
             plan.ops.is_empty(),
             "read-only attribute must be dropped, got: {:?}",
@@ -712,7 +786,12 @@ mod tests {
             ],
         };
 
-        let plan = build_update_patches(&config, "test.Resource", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            &config,
+            "test.Resource",
+            &patch,
+        );
 
         assert!(plan.ops.is_empty());
         assert!(plan.requires_confirmation.is_empty());
@@ -744,7 +823,12 @@ mod tests {
             )],
         };
 
-        let plan = build_update_patches(&config, "test.Resource", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            &config,
+            "test.Resource",
+            &patch,
+        );
 
         assert!(plan.ops.is_empty());
         assert_eq!(plan.requires_confirmation, ["unmapped_attribute"]);
@@ -762,7 +846,12 @@ mod tests {
             )],
         };
 
-        let plan = build_update_patches(config, "ec2.Vpc", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "ec2.Vpc",
+            &patch,
+        );
 
         assert!(plan.ops.is_empty());
         assert_eq!(plan.requires_confirmation, ["instance_tenancy"]);
@@ -779,7 +868,12 @@ mod tests {
             )],
         };
 
-        let plan = build_update_patches(config, "ec2.Vpc", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "ec2.Vpc",
+            &patch,
+        );
 
         assert!(
             plan.ops.is_empty(),
@@ -805,7 +899,12 @@ mod tests {
             ops: vec![replace("tags", Value::Concrete(ConcreteValue::Map(tags)))],
         };
 
-        let plan = build_update_patches(config, "ec2.Vpc", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "ec2.Vpc",
+            &patch,
+        );
 
         assert!(
             plan.ops.is_empty(),
@@ -821,7 +920,12 @@ mod tests {
         let patch = UpdatePatch {
             ops: vec![remove("tags")],
         };
-        let plan = build_update_patches(config, "ec2.Vpc", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "ec2.Vpc",
+            &patch,
+        );
 
         assert_eq!(plan.ops.len(), 1);
         assert!(plan.requires_confirmation.is_empty());
@@ -846,7 +950,12 @@ mod tests {
         let patch = UpdatePatch {
             ops: vec![replace("tags", Value::Concrete(ConcreteValue::Map(tags)))],
         };
-        let plan = build_update_patches(config, "ec2.Vpc", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "ec2.Vpc",
+            &patch,
+        );
 
         assert_eq!(plan.ops.len(), 1);
         assert_eq!(plan.requires_confirmation, ["tags"]);
@@ -877,7 +986,12 @@ mod tests {
             ops: vec![replace("tags", Value::Concrete(ConcreteValue::Map(tags)))],
         };
 
-        let plan = build_update_patches(config, "ssm.Parameter", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "ssm.Parameter",
+            &patch,
+        );
 
         assert_eq!(
             plan.ops,
@@ -901,7 +1015,12 @@ mod tests {
             )],
         };
 
-        let plan = build_update_patches(config, "ssm.Parameter", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "ssm.Parameter",
+            &patch,
+        );
 
         assert_eq!(
             plan.ops,
@@ -945,7 +1064,12 @@ mod tests {
             )],
         };
 
-        let plan = build_update_patches(config, "cloudfront.ResponseHeadersPolicy", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "cloudfront.ResponseHeadersPolicy",
+            &patch,
+        );
 
         assert_eq!(
             plan.ops,
@@ -1023,7 +1147,12 @@ mod tests {
             config.tags.as_ref().map(|tags| tags.provider_name),
             Some("ResourceTags")
         );
-        let plan = build_update_patches(&config, "test.Resource", &patch);
+        let plan = build_update_patches(
+            &crate::test_support::diagnostics(),
+            &config,
+            "test.Resource",
+            &patch,
+        );
 
         assert_eq!(plan.ops.len(), 1);
         assert_eq!(
@@ -1041,7 +1170,13 @@ mod tests {
                 Value::Concrete(ConcreteValue::String("x".to_string().into())),
             )],
         };
-        let patches = build_update_patches(config, "ec2.Vpc", &patch).ops;
+        let patches = build_update_patches(
+            &crate::test_support::diagnostics(),
+            config,
+            "ec2.Vpc",
+            &patch,
+        )
+        .ops;
         assert!(
             patches.is_empty(),
             "unknown attributes must be dropped, got: {patches:?}"

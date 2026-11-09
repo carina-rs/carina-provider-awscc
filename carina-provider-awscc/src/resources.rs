@@ -287,10 +287,28 @@ mod tests {
 
         let mut registry = SchemaRegistry::new();
         registry.insert("awscc", config.schema.clone());
-        registry
-            .get("awscc", "ec2.VpcGatewayAttachment", SchemaKind::Resource)
-            .expect("gateway attachment schema must be registered")
-            .validate_with_resolver(attributes, &|_| false, &*CUSTOM_TYPES)
+        let classified = attributes
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.clone(),
+                    value
+                        .knowledge(
+                            &carina_core::resource::knowledge::KnowledgeContext::validation(),
+                        )
+                        .unwrap()
+                        .into_classification(),
+                )
+            })
+            .collect();
+        carina_core::test_utils::admit_resource_attributes(
+            registry
+                .get("awscc", "ec2.VpcGatewayAttachment", SchemaKind::Resource)
+                .expect("gateway attachment schema must be registered"),
+            &classified,
+            &|_| false,
+            &CUSTOM_TYPES,
+        )
     }
 
     /// VPCGatewayAttachment requires exactly one of internet_gateway_id or vpn_gateway_id.

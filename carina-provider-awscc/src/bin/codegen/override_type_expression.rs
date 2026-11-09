@@ -1,6 +1,6 @@
 //! Override expressions with typed pattern emission, including union members.
 
-use super::{ApprovedPattern, catalog_type_display, emit_pattern_option};
+use super::{ApprovedPattern, catalog_type_display, emit_pattern_spec};
 use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,19 +36,10 @@ impl OverrideTypeExpression {
         length: Option<(Option<u64>, Option<u64>)>,
         literal: PatternLiteral,
     ) -> Self {
-        let emitted = match (literal, pattern.as_ref()) {
-            (PatternLiteral::Raw, Some(pattern)) => {
-                let source = pattern.as_str();
-                // Choose enough raw-string delimiters even if a future
-                // approved source contains a quote or a quote/hash pair.
-                let mut hashes = String::new();
-                while source.contains(&format!("\"{hashes}")) {
-                    hashes.push('#');
-                }
-                format!("Some(r{hashes}\"{source}\"{hashes}.to_string())")
-            }
-            _ => emit_pattern_option(pattern.as_ref()),
-        };
+        let emitted = pattern.as_ref().map_or_else(
+            || "None".to_string(),
+            |pattern| format!("Some({})", emit_pattern_spec(pattern, literal)),
+        );
         Self {
             code: Cow::Owned(format!(
                 "AttributeType::refined_string(None, {emitted}, {length:?}, None)"
