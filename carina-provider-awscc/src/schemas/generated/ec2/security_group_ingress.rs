@@ -54,7 +54,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_cidr_ipv6_attribute());
     #[inline(never)]
     fn build_description_attribute() -> AttributeSchema {
-        AttributeSchema::optional("description", AttributeType::refined_string(None, Some("^[a-zA-Z0-9. _:/()#,@\\[\\]+=&;{}!$*-]*$".to_string()), Some((None, Some(255))), None))
+        AttributeSchema::optional("description", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[a-zA-Z0-9. _:/()#,@\\[\\]+=&;{}!$*-]*$", carina_core::schema::PatternMatch::Full)), Some((None, Some(255))), None))
                 .with_description("Updates the description of an ingress (inbound) security group rule. You can replace an existing description, or add a description to a rule that did not have one previously")
                 .with_provider_name("Description")
             .build()

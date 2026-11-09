@@ -561,7 +561,14 @@ fn deferred_interpolated_role_names_validate_constraints_after_resolution() {
             .resolve_root_for_test()
             .into_expanded()
             .unwrap();
-        assert!(!authored.is_fully_resolved());
+        assert!(
+            authored
+                .knowledge(&carina_core::resource::knowledge::KnowledgeContext::validation())
+                .unwrap()
+                .into_classification()
+                .into_known()
+                .is_err()
+        );
         assert!(
             check_type_expr_value(expected, &authored, &context, expression)
                 .require_provider_schemas()
@@ -612,7 +619,14 @@ fn deferred_interpolated_role_names_validate_constraints_after_resolution() {
                 );
             }
         }
-        assert!(!authored.is_fully_resolved());
+        assert!(
+            authored
+                .knowledge(&carina_core::resource::knowledge::KnowledgeContext::validation())
+                .unwrap()
+                .into_classification()
+                .into_known()
+                .is_err()
+        );
     }
 }
 
@@ -674,5 +688,5 @@ fn every_example_and_acceptance_fixture_declaring_iam_resources_keep_cfn_referen
         .iter()
         .map(|(path, source)| (path.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    crate::test_support::validate_fixtures_with_cfn_reference_limits(&cases);
+    crate::test_support::validate_fixtures(&cases);
 }

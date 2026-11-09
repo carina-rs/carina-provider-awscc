@@ -1890,7 +1890,13 @@ pub(super) fn intersect_literals(p: &mut Projection) -> Result<(), SchemaError> 
                     .is_some_and(|values| values.iter().any(Value::is_string))
         })
         .map(|pattern| {
-            carina_core::schema::CompiledPattern::try_new(pattern).map_err(|error| {
+            carina_core::schema::CompiledPattern::try_new(
+                &carina_core::schema::PatternSpec::new(pattern, carina_core::schema::PatternMatch::Substring {
+                    reason: carina_core::schema::PatternReason::new(
+                        "Evaluate the source JSON Schema search pattern before intersecting its finite enum or const domain; only matching literals are emitted.",
+                    ).expect("visible JSON Schema literal intersection reason"),
+                }),
+            ).map_err(|error| {
                 p.emission_error(format!(
                     "literal pattern intersection is unsupported: {error}"
                 ))
@@ -2384,4 +2390,27 @@ pub(super) fn definition_enum_fields(
         }
     }
     Ok(fields)
+}
+
+#[cfg(test)]
+mod pattern_mode_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn finite_literal_intersections_keep_json_schema_search_semantics() {
+        for (pattern, expected) in [
+            ("foo", vec![json!("foo"), json!("prefix-foo-suffix")]),
+            ("^foo$", vec![json!("foo")]),
+        ] {
+            let mut projection = Projection {
+                types: vec![JsonType::String],
+                pattern: Some(pattern.into()),
+                enum_values: Some(vec![json!("foo"), json!("prefix-foo-suffix"), json!("bar")]),
+                ..Projection::default()
+            };
+            intersect_literals(&mut projection).unwrap();
+            assert_eq!(projection.enum_values, Some(expected));
+        }
+    }
 }

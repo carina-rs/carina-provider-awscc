@@ -215,7 +215,7 @@ fn non_reference_string_maps_refine_keys_and_preserve_scalar_values() {
         let rust = rendered(&schema, "rust");
         let markdown = rendered(&schema, "markdown");
         if value.get("pattern").is_some() {
-            assert_eq!(rust.matches(r#"AttributeType::refined_string(None, Some("^[a-z]+$".to_string()), Some((Some(1), Some(256))), None)"#).count(), 2, "{rust}");
+            assert_eq!(rust.matches(r#"AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[a-z]+$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(256))), None)"#).count(), 2, "{rust}");
             assert_eq!(
                 markdown
                     .matches("Map<String(pattern), String(pattern, len: 1..=256)>")
@@ -238,7 +238,7 @@ fn non_reference_string_maps_refine_keys_and_preserve_scalar_values() {
                 "{markdown}"
             );
         } else {
-            assert_eq!(rust.matches(r#"AttributeType::map_with_key(AttributeType::refined_string(None, Some("^(?:.*)\\z".to_string()), None, None), AttributeType::string())"#).count(), 2, "{rust}");
+            assert_eq!(rust.matches(r#"AttributeType::map_with_key(AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(".*", carina_core::schema::PatternMatch::Full)), None, None), AttributeType::string())"#).count(), 2, "{rust}");
             assert_eq!(
                 markdown.matches("Map<String(pattern), String>").count(),
                 2,
@@ -441,7 +441,10 @@ fn logs_reference_keeps_cfn_maximum_and_no_synthetic_minimum() {
     };
     assert_eq!(
         pattern,
-        Some(r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z")
+        Some(&carina_core::schema::PatternSpec::new(
+            r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z",
+            carina_core::schema::PatternMatch::Full
+        ))
     );
     assert_eq!(length, Some((None, Some(256))));
     let pattern = carina_core::schema::CompiledPattern::try_new(pattern.unwrap()).unwrap();

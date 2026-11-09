@@ -569,8 +569,7 @@ impl<'a> EmissionContext<'a> {
         let entry = kms_references::entry(&self.resource, &self.dsl_path(path))
             .ok_or_else(|| plan.emission_error("missing classified reference constructor"))?;
         if plan.pattern.is_none() {
-            let pattern = super::ApprovedPattern::whole(kind.default_pattern());
-            return Ok(kind.constructor(entry.cfn_length, &pattern));
+            return Ok(kind.constructor(entry.cfn_length, kind.default_pattern()));
         }
         let source_path = self.pattern_source_path(path, plan.pattern, cfn_property_path);
         let constraints = project_string_constraints(

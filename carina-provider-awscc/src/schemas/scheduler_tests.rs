@@ -313,7 +313,7 @@ fn scheduler_live_expressions_and_dates_validate_through_test_support() {
 
 #[test]
 fn scheduler_examples_and_acceptance_fixtures_keep_cfn_reference_limits() {
-    crate::test_support::validate_fixtures_with_cfn_reference_limits(&[
+    crate::test_support::validate_fixtures(&[
         (
             "examples/scheduler_schedule/main.crn",
             include_str!("../../../examples/scheduler_schedule/main.crn"),

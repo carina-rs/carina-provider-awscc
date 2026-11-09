@@ -41,7 +41,7 @@ pub fn ssm_parameter_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_allowed_pattern_attribute());
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), Some("^(?:arn:aws(-[a-z0-9-]+)*:ssm:[a-z0-9-]+:[0-9]{12}:parameter/.+)\\z".to_string()), None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), Some(carina_core::schema::PatternSpec::new("arn:aws(-[a-z0-9-]+)*:ssm:[a-z0-9-]+:[0-9]{12}:parameter/.+", carina_core::schema::PatternMatch::Full)), None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
                 .with_description(" (read-only)")
                 .with_provider_name("Arn")
             .build()
@@ -84,7 +84,7 @@ pub fn ssm_parameter_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_policies_attribute());
     #[inline(never)]
     fn build_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, Some("^([\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*)$".to_string()), None, None), AttributeType::string()))
+        AttributeSchema::optional("tags", AttributeType::map_with_key(AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^([\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*)$", carina_core::schema::PatternMatch::Full)), None, None), AttributeType::string()))
                 .with_description("Optional metadata that you assign to a resource in the form of an arbitrary set of tags (key-value pairs). Tags enable you to categorize a resource in different ways, such as by purpose, owner, or environment. For example, you might want to tag a SYS parameter to identify the type of resource to which it applies, the environment, or the type of configuration data referenced by the parameter.")
                 .with_provider_name("Tags")
             .build()

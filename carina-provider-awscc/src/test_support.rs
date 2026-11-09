@@ -132,12 +132,18 @@ pub(crate) fn try_validate_fixtures(cases: &[(&str, &str)]) -> Result<(), String
             &schemas,
             &HashSet::from(["awscc".to_string()]),
             context,
+            &mut Vec::new(),
         )
         .map_err(|error| format!("{path}: {error}"))?;
         let bindings = BindingIndex::from_parsed(&parsed, &schemas, context);
         let configuration = load_buffer_configuration(&parsed, &schemas, context);
-        validate_resource_ref_types(configuration.judged(), &HashSet::new(), &bindings)
-            .map_err(|error| format!("{path}: {error}"))?;
+        validate_resource_ref_types(
+            configuration.judged(),
+            &HashSet::new(),
+            &bindings,
+            &mut Vec::new(),
+        )
+        .map_err(|error| format!("{path}: {error}"))?;
     }
     Ok(())
 }
@@ -168,11 +174,15 @@ pub(crate) async fn with_preparation_and_configs<T>(
             schemas.insert("awscc", config.schema.clone());
             let factories: Vec<Box<dyn ProviderFactory>> =
                 vec![Box::new(crate::OwnerOnlyAwsccFactory)];
+            let normalizer = carina_core::test_utils::provider_text::normalizer(
+                "awscc",
+                Box::new(crate::AwsccNormalizer),
+            );
             let preparation = ProviderPreparationContext::new(
                 &bindings,
                 &gate,
                 configs,
-                &crate::AwsccNormalizer,
+                &normalizer,
                 &factories,
                 &schemas,
                 type_checks,
@@ -183,34 +193,8 @@ pub(crate) async fn with_preparation_and_configs<T>(
     .await
 }
 
-/// These existing examples pass unbounded ARN outputs to CFN-bounded sinks.
-/// Option D must retain those bounds, including across named-type edges.
-/// Keep the examples as explicit regression cases until core can refine such
-/// references (carina#4294); all other examples must continue validating.
-#[cfg(test)]
-pub(crate) fn validate_fixtures_with_cfn_reference_limits(cases: &[(&str, &str)]) {
-    for &(path, source) in cases {
-        let expected = match path {
-            "examples/scheduler_schedule/main.crn" => {
-                Some(("notifications.topic_arn", "length 1..=1600"))
-            }
-            "examples/wafv2_web_acl_association/main.crn" => {
-                Some(("load_balancer.load_balancer_arn", "length 20..=2048"))
-            }
-            "acceptance-tests/scheduler/basic.crn" => {
-                Some(("scheduler_role.arn", "expected aws.Arn"))
-            }
-            _ => None,
-        };
-        if let Some((reference, bound)) = expected {
-            let error = try_validate_fixtures(&[(path, source)])
-                .expect_err("CFN bounds must reject the unbounded reference");
-            assert!(
-                error.contains(reference) && error.contains(bound),
-                "{path}: {error}"
-            );
-        } else {
-            validate_fixtures(&[(path, source)]);
-        }
-    }
+/// A real session-owned channel for offline conversion and retry fixtures.
+pub(crate) fn diagnostics() -> carina_plugin_sdk::ProviderDiagnostics {
+    let session = carina_core::provider::ProviderPlan::state_only().session("awscc", None, None);
+    carina_plugin_sdk::ProviderDiagnostics::from_session(&session)
 }

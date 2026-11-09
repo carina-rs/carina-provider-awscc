@@ -3,6 +3,7 @@
 //! These types live here, instead of in `carina-aws-types`, until another
 //! provider needs the same Cloud Control document shapes.
 
+use super::pattern::{ApprovedPattern, refined_string};
 use carina_core::schema::{
     AttributeSchema, AttributeType, FieldGroup, ListElements, OptionalAttributeSchemaBuilder,
     OptionalStructFieldBuilder, ProviderPopulatedAttributeSchemaBuilder,
@@ -158,7 +159,7 @@ fn iam_policy_document_from_seed(legacy: &AttributeType) -> AttributeType {
                     .unwrap(),
             ],
         ),
-        AttributeType::refined_string(None, Some(r"^\*\z".to_string()), None, None),
+        refined_string(None, Some(ApprovedPattern::whole(r"^\*\z")), None, None),
     ]);
     let effect = fields
         .iter()

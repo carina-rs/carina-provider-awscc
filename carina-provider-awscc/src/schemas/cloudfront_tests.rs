@@ -99,6 +99,7 @@ fn documented_enums_validate_and_round_trip_exact_wire_strings() {
                 assert!(attr_type.validate(&string(quoted)).is_err(), "{path}");
             }
             let read = aws_value_to_dsl_with_defs(
+                &crate::test_support::diagnostics(),
                 lookup,
                 &json!(wire),
                 attr_type.as_type(),
@@ -109,6 +110,7 @@ fn documented_enums_validate_and_round_trip_exact_wire_strings() {
             let canonical = attr_type.canonicalize_state(read).into_present().unwrap();
             assert_eq!(
                 dsl_value_to_aws_with_defs(
+                    &crate::test_support::diagnostics(),
                     &canonical,
                     attr_type.as_type(),
                     resource_type,
@@ -171,6 +173,7 @@ async fn authored_none_price_class_and_2025_tls_policies_serialize_exact_wire_st
                 .unwrap();
             let schema = schema("cloudfront.Distribution");
             let serialized = dsl_value_to_aws_with_defs(
+                &crate::test_support::diagnostics(),
                 &ready.as_resource().attributes["distribution_config"],
                 field(&schema, "distribution_config").as_type(),
                 "cloudfront.Distribution",
@@ -221,6 +224,7 @@ fn all_seven_ttls_retain_cfn_numbers_and_round_trip_fractions() {
         for value in [-10000, -1, 0, 10, 300, 86400, 100000] {
             ttl.validate(&int(value)).unwrap();
             let read = aws_value_to_dsl_with_defs(
+                &crate::test_support::diagnostics(),
                 &path,
                 &json!(value),
                 ttl.as_type(),
@@ -231,6 +235,7 @@ fn all_seven_ttls_retain_cfn_numbers_and_round_trip_fractions() {
             assert_eq!(read, int(value), "{path}");
             let canonical = ttl.canonicalize_state(read).into_present().unwrap();
             let wire = dsl_value_to_aws_with_defs(
+                &crate::test_support::diagnostics(),
                 &canonical,
                 ttl.as_type(),
                 "cloudfront.Distribution",
@@ -243,6 +248,7 @@ fn all_seven_ttls_retain_cfn_numbers_and_round_trip_fractions() {
         for value in [0.0, 1.0, 1.5] {
             assert!(ttl.validate(&float(value)).is_ok(), "{path}: {value}");
             let read = aws_value_to_dsl_with_defs(
+                &crate::test_support::diagnostics(),
                 &path,
                 &json!(value),
                 ttl.as_type(),
@@ -254,6 +260,7 @@ fn all_seven_ttls_retain_cfn_numbers_and_round_trip_fractions() {
             let canonical = ttl.canonicalize_state(read).into_present().unwrap();
             assert_eq!(
                 dsl_value_to_aws_with_defs(
+                    &crate::test_support::diagnostics(),
                     &canonical,
                     ttl.as_type(),
                     "cloudfront.Distribution",
@@ -310,6 +317,7 @@ fn method_lists_enforce_counts_at_both_behaviors_and_remain_unordered_enums() {
             // carina-test-001, 2026-11-04: Cloud Control returned these
             // three strings in an order that may differ from the authored list.
             let read = aws_value_to_dsl_with_defs(
+                &crate::test_support::diagnostics(),
                 name,
                 &json!(["OPTIONS", "HEAD", "GET"]),
                 attr_type.as_type(),
@@ -320,6 +328,7 @@ fn method_lists_enforce_counts_at_both_behaviors_and_remain_unordered_enums() {
             let canonical = attr_type.canonicalize_state(read).into_present().unwrap();
             attr_type.validate(&canonical).unwrap();
             let wire = dsl_value_to_aws_with_defs(
+                &crate::test_support::diagnostics(),
                 &canonical,
                 attr_type.as_type(),
                 "cloudfront.Distribution",

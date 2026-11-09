@@ -2,6 +2,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
+use carina_core::test_utils::provider_text::BindProviderText as _;
 mod common;
 
 use std::collections::{HashMap, VecDeque};
@@ -148,7 +149,13 @@ async fn credentials_not_loaded_fails_promptly_without_resends_or_http_calls() {
     let CreateFailureKind::NoResource(error) = failure.into_kind() else {
         panic!("a create that never reached transmit must fail with no resource");
     };
-    assert!(error.to_string().contains("test credentials unavailable"));
+    assert!(
+        error
+            .clone()
+            .into_host_for_test()
+            .to_string()
+            .contains("test credentials unavailable")
+    );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert!(script.lock().expect("script lock").client_tokens.is_empty());
 }
@@ -202,10 +209,21 @@ async fn maybe_sent_then_permanent_not_sent_in_not_issued_update_reports_unknown
     .expect_err("the earlier update send may have been accepted");
 
     assert_eq!(
-        error.detail().context(),
+        error
+            .clone()
+            .into_host_for_test()
+            .detail()
+            .context()
+            .to_string(),
         "Failed to resend update resource; the outcome of the earlier send is unknown"
     );
-    assert!(error.to_string().contains("test credentials unavailable"));
+    assert!(
+        error
+            .clone()
+            .into_host_for_test()
+            .to_string()
+            .contains("test credentials unavailable")
+    );
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     assert_eq!(script.lock().expect("script lock").client_tokens.len(), 1);
 }
@@ -238,7 +256,13 @@ async fn assert_preserved_promptly(
     let CreateFailureKind::InFlight { pending, error } = failure.into_kind() else {
         panic!("the earlier possible send must never be forgotten");
     };
-    assert!(error.to_string().contains("test credentials unavailable"));
+    assert!(
+        error
+            .clone()
+            .into_host_for_test()
+            .to_string()
+            .contains("test credentials unavailable")
+    );
     let token: serde_json::Value =
         serde_json::from_str(pending.token().expose_for_provider_call()).expect("continuation");
     assert_eq!(token["phase"], "unconfirmed");

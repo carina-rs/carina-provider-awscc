@@ -50,7 +50,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_health_check_path_attribute());
     #[inline(never)]
     fn build_health_check_port_attribute() -> AttributeSchema {
-        AttributeSchema::optional("health_check_port", AttributeType::refined_string(None, Some("^(?:traffic-port|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])\\z".to_string()), None, None))
+        AttributeSchema::optional("health_check_port", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^(?:traffic-port|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])\\z", carina_core::schema::PatternMatch::Full)), None, None))
                 .with_description("The port the load balancer uses when performing health checks on targets. ")
                 .with_provider_name("HealthCheckPort")
             .build()
@@ -108,7 +108,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_matcher_attribute());
     #[inline(never)]
     fn build_name_attribute() -> AttributeSchema {
-        AttributeSchema::optional("name", AttributeType::refined_string(None, Some("^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\z".to_string()), Some((Some(1), Some(32))), None))
+        AttributeSchema::optional("name", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\z", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(32))), None))
                 .create_only()
                 .with_description("The name of the target group.")
                 .with_provider_name("Name")
@@ -169,7 +169,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_target_group_arn_attribute());
     #[inline(never)]
     fn build_target_group_attributes_attribute() -> AttributeSchema {
-        AttributeSchema::optional("target_group_attributes", AttributeType::refined_list(AttributeType::struct_("TargetGroupAttribute".to_string(), vec![StructField::optional("key", AttributeType::refined_string(None, Some("^[a-zA-Z0-9._]+\\z".to_string()), Some((None, Some(256))), None)).with_description("The value of the attribute.").with_provider_name("Key").build(),
+        AttributeSchema::optional("target_group_attributes", AttributeType::refined_list(AttributeType::struct_("TargetGroupAttribute".to_string(), vec![StructField::optional("key", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[a-zA-Z0-9._]+\\z", carina_core::schema::PatternMatch::Full)), Some((None, Some(256))), None)).with_description("The value of the attribute.").with_provider_name("Key").build(),
                     StructField::optional("value", AttributeType::string()).with_description("The name of the attribute.").with_provider_name("Value").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The attributes.")
                 .with_provider_name("TargetGroupAttributes")
@@ -187,7 +187,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_target_group_full_name_attribute());
     #[inline(never)]
     fn build_target_group_name_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("target_group_name", AttributeType::refined_string(None, Some("^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\z".to_string()), Some((Some(1), Some(32))), None))
+        AttributeSchema::provider_populated("target_group_name", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\z", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(32))), None))
                 .with_description("The name of the target group. (read-only)")
                 .with_provider_name("TargetGroupName")
             .build()
@@ -204,10 +204,10 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_target_type_attribute());
     #[inline(never)]
     fn build_targets_attribute() -> AttributeSchema {
-        AttributeSchema::optional("targets", AttributeType::refined_list(AttributeType::struct_("TargetDescription".to_string(), vec![StructField::optional("availability_zone", AttributeType::union(vec![AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneName.identity(), None, None, crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneName.check().expect("shared string check"), None), AttributeType::refined_string(None, Some("^all\\z".to_string()), None, None)])).with_description("An Availability Zone or all. This determines whether the target receives traffic from the load balancer nodes in the specified Availability Zone or from all enabled Availability Zones for the load balancer.").with_provider_name("AvailabilityZone").build(),
+        AttributeSchema::optional("targets", AttributeType::refined_list(AttributeType::struct_("TargetDescription".to_string(), vec![StructField::optional("availability_zone", AttributeType::union(vec![AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneName.identity(), None, None, crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneName.check().expect("shared string check"), None), AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^all\\z", carina_core::schema::PatternMatch::Full)), None, None)])).with_description("An Availability Zone or all. This determines whether the target receives traffic from the load balancer nodes in the specified Availability Zone or from all enabled Availability Zones for the load balancer.").with_provider_name("AvailabilityZone").build(),
                     StructField::required("id", AttributeType::string()).with_description("The ID of the target. If the target type of the target group is instance, specify an instance ID. If the target type is ip, specify an IP address. If the target type is lambda, specify the ARN of the Lambda function. If the target type is alb, specify the ARN of the Application Load Balancer target. ").with_provider_name("Id").build(),
                     StructField::optional("port", AttributeType::refined_int(None, Some((Some(1), Some(65535))))).with_description("The port on which the target is listening. If the target group protocol is GENEVE, the supported port is 6081. If the target type is alb, the targeted Application Load Balancer must have at least one listener whose port matches the target group port. Not used if the target is a Lambda function.").with_provider_name("Port").build(),
-                    StructField::optional("quic_server_id", AttributeType::refined_string(None, Some("^0x[0-9a-f]{16}\\z".to_string()), None, None)).with_description("The Server ID used by targets when using QUIC or TCP_QUIC protocols.").with_provider_name("QuicServerId").build()]), false, None, carina_core::schema::ListElements::Unique))
+                    StructField::optional("quic_server_id", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^0x[0-9a-f]{16}\\z", carina_core::schema::PatternMatch::Full)), None, None)).with_description("The Server ID used by targets when using QUIC or TCP_QUIC protocols.").with_provider_name("QuicServerId").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The targets.")
                 .with_provider_name("Targets")
                 .with_block_name("target")

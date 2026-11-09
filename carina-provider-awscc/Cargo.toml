@@ -25,7 +25,7 @@ test-utils = []
 
 [dependencies]
 carina-core = { workspace = true }
-carina-aws-types = { workspace = true, features = ["cloudcontrol", "kms", "s3", "sts"] }
+carina-aws-types = { workspace = true, features = ["cloudcontrol", "guest", "kms", "s3", "sts"] }
 carina-docgen = { workspace = true }
 carina-plugin-sdk = { workspace = true }
 carina-provider-protocol = { workspace = true }
@@ -47,7 +47,6 @@ regex-syntax = "0.8"
 regex-automata = "0.4"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-log = "0.4"
 http = "1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -62,6 +61,7 @@ fancy-regex = "=0.16.2"
 carina-aws-types = { workspace = true, features = ["test-utils"] }
 carina-core = { workspace = true, features = ["test-utils"] }
 carina-plugin-host = { workspace = true }
+carina-plugin-sdk = { workspace = true, features = ["test-utils"] }
 carina-provider-resolver = { workspace = true, features = ["test-utils"] }
 tokio = { version = "1", features = ["test-util"] }
 tempfile = "3"

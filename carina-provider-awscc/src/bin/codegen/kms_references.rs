@@ -4,8 +4,8 @@
 //! `$ref` names never replace the use site's path. The final-registry coverage
 //! test imports this same module, including its path and candidate rules.
 
-use super::ApprovedPattern;
 use anyhow::{Result, bail};
+use carina_core::schema::PatternSpec;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Classification {
@@ -32,24 +32,30 @@ impl ReferenceKind {
     pub fn constructor(
         self,
         cfn_length: Option<(Option<u64>, Option<u64>)>,
-        pattern: &ApprovedPattern,
+        pattern: &PatternSpec,
     ) -> String {
         if cfn_length.is_none() || cfn_length == self.default_length() {
             return "carina_aws_types::kms_key_reference()".to_string();
         }
-        let pattern = if pattern.as_str() == self.default_pattern() {
-            // Retain the shared symbol in generated output after approving
-            // its exact value, avoiding unrelated generated-resource diffs.
-            "Some(carina_aws_types::KMS_KEY_REFERENCE_PATTERN.to_string())".to_string()
-        } else {
-            format!("Some({:?}.to_string())", pattern.as_str())
+        let mode = match pattern.mode() {
+            carina_core::schema::PatternMatch::Full => {
+                "carina_core::schema::PatternMatch::Full".to_string()
+            }
+            carina_core::schema::PatternMatch::Substring { reason } => format!(
+                "carina_core::schema::PatternMatch::Substring {{ reason: carina_core::schema::PatternReason::new({:?}).expect(\"visible reviewed pattern reason\") }}",
+                reason.as_str(),
+            ),
         };
+        let pattern = format!(
+            "Some(carina_core::schema::PatternSpec::new({:?}, {mode}))",
+            pattern.as_str()
+        );
         format!(
             "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), {pattern}, {cfn_length:?})"
         )
     }
 
-    pub fn default_pattern(self) -> &'static str {
+    pub fn default_pattern(self) -> &'static PatternSpec {
         // This comparison-only reference type is shared across providers (#541).
         // Read its grammar from the type instead of maintaining a second source.
         static DEFAULT_TYPE: std::sync::LazyLock<carina_core::schema::AttributeType> =

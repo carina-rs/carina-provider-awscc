@@ -449,7 +449,7 @@ impl TypeOverride {
     ) -> Result<()> {
         if let Some(expression) = self.expression() {
             for pattern in expression.patterns() {
-                carina_core::schema::CompiledPattern::try_new(pattern.as_str()).with_context(
+                carina_core::schema::CompiledPattern::try_new(pattern.as_spec()).with_context(
                     || {
                         format!(
                             "Invalid narrowing string pattern for {}#{}: {}",
@@ -460,7 +460,7 @@ impl TypeOverride {
                     },
                 )?;
                 anyhow::ensure!(
-                    is_whole_anchored(pattern.as_str()),
+                    matches!(pattern.as_spec().mode(), PatternMatch::Full),
                     "Unapproved narrowing string pattern for {}#{}: {}",
                     schema.type_name,
                     path.source_pointer(),

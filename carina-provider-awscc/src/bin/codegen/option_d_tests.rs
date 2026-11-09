@@ -178,7 +178,7 @@ fn accepts(constraints: &StringConstraints, value: &str) -> bool {
     constraints.min_length.is_none_or(|min| n >= min)
         && constraints.max_length.is_none_or(|max| n <= max)
         && constraints.pattern.as_ref().is_none_or(|p| {
-            carina_core::schema::CompiledPattern::try_new(p.as_str())
+            carina_core::schema::CompiledPattern::try_new(p.as_spec())
                 .unwrap()
                 .is_match(value)
         })
@@ -369,7 +369,11 @@ fn option_d_waf_description_intersection_preserves_both_patterns() {
     use override_type_expression::{
         WAF_DESCRIPTION_API, WAF_DESCRIPTION_CFN, WAF_DESCRIPTION_INTERSECTION,
     };
-    let compile = |pattern| carina_core::schema::CompiledPattern::try_new(pattern).unwrap();
+    let compile = |pattern| {
+        carina_core::schema::CompiledPattern::try_new(
+            &carina_core::schema::PatternSpec::new(pattern, PatternMatch::Full),
+        ).unwrap()
+    };
     let cfn = compile(WAF_DESCRIPTION_CFN);
     let api = compile(WAF_DESCRIPTION_API);
     let actual = compile(WAF_DESCRIPTION_INTERSECTION);
@@ -855,7 +859,7 @@ fn option_d_top_level_identity_does_not_leak_to_a_nested_same_name() {
             1,
             "{rust}"
         );
-        assert!(rust.contains("StructField::optional(\"probe\", AttributeType::refined_string(None, Some(\"^[a-z]+$\".to_string())"),"{rust}");
+        assert!(rust.contains("StructField::optional(\"probe\", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(\"^[a-z]+$\", carina_core::schema::PatternMatch::Full))"),"{rust}");
         generate_test_markdown(&schema, &schema.type_name).unwrap();
     });
 }

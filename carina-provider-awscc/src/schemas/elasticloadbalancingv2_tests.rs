@@ -308,6 +308,7 @@ async fn target_group_health_check_strings_and_attribute_values_round_trip_uncha
                 let attr_type = field(&schema, attribute);
                 assert_eq!(
                     dsl_value_to_aws_with_defs(
+                        &crate::test_support::diagnostics(),
                         &ready.as_resource().attributes[attribute],
                         attr_type.as_type(),
                         "elasticloadbalancingv2.TargetGroup",
@@ -318,6 +319,7 @@ async fn target_group_health_check_strings_and_attribute_values_round_trip_uncha
                     "authored {attribute}"
                 );
                 let read = aws_value_to_dsl_with_defs(
+                    &crate::test_support::diagnostics(),
                     attribute,
                     &expected,
                     attr_type.as_type(),
@@ -329,6 +331,7 @@ async fn target_group_health_check_strings_and_attribute_values_round_trip_uncha
                 attr_type.validate(&canonical).unwrap();
                 assert_eq!(
                     dsl_value_to_aws_with_defs(
+                        &crate::test_support::diagnostics(),
                         &canonical,
                         attr_type.as_type(),
                         "elasticloadbalancingv2.TargetGroup",
@@ -456,6 +459,7 @@ fn documented_enums_validate_and_round_trip_exact_aws_wire_strings() {
                 );
             }
             let read = aws_value_to_dsl_with_defs(
+                &crate::test_support::diagnostics(),
                 path,
                 &json!(wire),
                 attr_type.as_type(),
@@ -466,6 +470,7 @@ fn documented_enums_validate_and_round_trip_exact_aws_wire_strings() {
             let canonical = attr_type.canonicalize_state(read).into_present().unwrap();
             assert_eq!(
                 dsl_value_to_aws_with_defs(
+                    &crate::test_support::diagnostics(),
                     &canonical,
                     attr_type.as_type(),
                     schema.as_schema().resource_type(),
@@ -519,6 +524,7 @@ async fn authored_listener_identifiers_serialize_to_exact_wire_strings() {
             let schema = listener_schema();
             assert_eq!(
                 dsl_value_to_aws_with_defs(
+                    &crate::test_support::diagnostics(),
                     &ready.as_resource().attributes[attribute],
                     field(&schema, attribute).as_type(),
                     "elasticloadbalancingv2.Listener",
@@ -679,7 +685,7 @@ async fn authored_quic_protocols_and_all_availability_zone_serialize_unchanged()
                 ("protocol", json!(wire)),
                 ("targets", json!([{"Id": "10.0.1.10", "AvailabilityZone": "all", "Port": 443, "QuicServerId": "0x0123456789abcdef"}])),
             ] {
-                assert_eq!(dsl_value_to_aws_with_defs(
+                assert_eq!(dsl_value_to_aws_with_defs(&crate::test_support::diagnostics(),
                     &ready.as_resource().attributes[attribute], field(&schema, attribute).as_type(),
                     "elasticloadbalancingv2.TargetGroup", attribute, schema.as_schema().defs(),
                 ), Some(expected));
@@ -1112,6 +1118,7 @@ fn target_availability_zone_keeps_the_zone_identity_and_all_literal() {
         assert!(zone.validate(&string(value)).is_err(), "{value:?}");
     }
     let read = aws_value_to_dsl_with_defs(
+        &crate::test_support::diagnostics(),
         "availability_zone",
         &json!("all"),
         zone.as_type(),
@@ -1122,6 +1129,7 @@ fn target_availability_zone_keeps_the_zone_identity_and_all_literal() {
     let canonical = zone.canonicalize_state(read).into_present().unwrap();
     assert_eq!(
         dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &canonical,
             zone.as_type(),
             "elasticloadbalancingv2.TargetGroup",
@@ -1362,5 +1370,5 @@ fn every_example_and_acceptance_fixture_declaring_elbv2_resources_keep_cfn_refer
         .iter()
         .map(|(path, source)| (path.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    crate::test_support::validate_fixtures_with_cfn_reference_limits(&cases);
+    crate::test_support::validate_fixtures(&cases);
 }

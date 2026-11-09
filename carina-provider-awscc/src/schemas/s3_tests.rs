@@ -193,6 +193,7 @@ fn lifecycle_dates_validate_the_calendar_and_preserve_both_midnight_wire_forms()
             attr.validate(&string(value))
                 .unwrap_or_else(|error| panic!("{path}: {error}"));
             let read = aws_value_to_dsl_with_defs(
+                &crate::test_support::diagnostics(),
                 path,
                 &json!(value),
                 attr.as_type(),
@@ -203,6 +204,7 @@ fn lifecycle_dates_validate_the_calendar_and_preserve_both_midnight_wire_forms()
             let canonical = attr.canonicalize_state(read).into_present().unwrap();
             assert_eq!(
                 dsl_value_to_aws_with_defs(
+                    &crate::test_support::diagnostics(),
                     &canonical,
                     attr.as_type(),
                     "s3.Bucket",
@@ -264,6 +266,7 @@ fn lifecycle_size_thresholds_are_canonical_decimal_strings_with_the_cfn_cap() {
         for value in ["0", "1", "128", "1048576", "99999999999999999999"] {
             attr.validate(&string(value)).unwrap();
             let read = aws_value_to_dsl_with_defs(
+                &crate::test_support::diagnostics(),
                 name,
                 &json!(value),
                 attr.as_type(),
@@ -275,6 +278,7 @@ fn lifecycle_size_thresholds_are_canonical_decimal_strings_with_the_cfn_cap() {
             let canonical = attr.canonicalize_state(read).into_present().unwrap();
             assert_eq!(
                 dsl_value_to_aws_with_defs(
+                    &crate::test_support::diagnostics(),
                     &canonical,
                     attr.as_type(),
                     "s3.Bucket",
@@ -522,6 +526,7 @@ fn analytics_is_csv_only_while_inventory_retains_all_three_formats() {
             if expected.contains(&wire) {
                 assert_eq!(aliases.api_for(dsl), wire);
                 let read = aws_value_to_dsl_with_defs(
+                    &crate::test_support::diagnostics(),
                     "format",
                     &json!(wire),
                     attr.as_type(),
@@ -532,6 +537,7 @@ fn analytics_is_csv_only_while_inventory_retains_all_three_formats() {
                 let canonical = attr.canonicalize_state(read).into_present().unwrap();
                 assert_eq!(
                     dsl_value_to_aws_with_defs(
+                        &crate::test_support::diagnostics(),
                         &canonical,
                         attr.as_type(),
                         "s3.Bucket",
@@ -549,6 +555,7 @@ fn analytics_is_csv_only_while_inventory_retains_all_three_formats() {
     let attr = field(&schema, path);
     let wire = json!({"BucketArn": "arn:aws:s3:::reports", "BucketAccountId": "123456789012", "Format": "CSV", "Prefix": "reports/"});
     let read = aws_value_to_dsl_with_defs(
+        &crate::test_support::diagnostics(),
         "destination",
         &wire,
         attr.as_type(),
@@ -559,6 +566,7 @@ fn analytics_is_csv_only_while_inventory_retains_all_three_formats() {
     let canonical = attr.canonicalize_state(read).into_present().unwrap();
     assert_eq!(
         dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &canonical,
             attr.as_type(),
             "s3.Bucket",
@@ -663,6 +671,7 @@ fn notification_events_and_filter_names_have_exact_wire_strings_and_legal_aliase
                 }
                 assert!(attr.validate(&string(wire)).is_err(), "{path}");
                 let read = aws_value_to_dsl_with_defs(
+                    &crate::test_support::diagnostics(),
                     suffix,
                     &json!(wire),
                     attr.as_type(),
@@ -673,6 +682,7 @@ fn notification_events_and_filter_names_have_exact_wire_strings_and_legal_aliase
                 let canonical = attr.canonicalize_state(read).into_present().unwrap();
                 assert_eq!(
                     dsl_value_to_aws_with_defs(
+                        &crate::test_support::diagnostics(),
                         &canonical,
                         attr.as_type(),
                         "s3.Bucket",

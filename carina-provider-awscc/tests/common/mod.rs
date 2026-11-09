@@ -33,14 +33,14 @@ impl ProviderFactory for OwnerOnlyAwsccFactory {
     fn validate_config(
         &self,
         _attributes: &carina_core::provider::CanonicalProviderConfigAttributes,
+        _inputs: &carina_core::provider::ProviderValidationInputs,
     ) -> carina_core::provider::ProviderResult<()> {
         Ok(())
     }
 
     fn create_provider(
         &self,
-        _binding: Option<&str>,
-        _config: &carina_core::provider::ProviderReadyConfig,
+        _session: &carina_core::provider::ProviderSession,
         _initialize_outcome: InitializeOutcomeMint,
     ) -> carina_core::provider::BoxFuture<
         '_,
@@ -76,8 +76,13 @@ pub async fn dispatch_create<P: carina_core::provider::Provider + ?Sized>(
     id: &ResourceId,
     request: CreateRequest,
 ) -> Result<CreateOutcome, CreateFailure> {
-    let (create, _cancellation) = carina_core::executor::dispatch_create(provider, id, request);
-    create.await
+    provider
+        .create(
+            id,
+            request,
+            carina_core::test_utils::provider_text::create_attempt_for_test(id.clone()),
+        )
+        .await
 }
 
 #[allow(dead_code)]
@@ -100,11 +105,15 @@ async fn with_preparation<T>(
             let mut schemas = SchemaRegistry::new();
             schemas.insert("awscc", schema_for_test(resource_type));
             let factories: Vec<Box<dyn ProviderFactory>> = vec![Box::new(OwnerOnlyAwsccFactory)];
+            let normalizer = carina_core::test_utils::provider_text::normalizer(
+                "awscc",
+                Box::new(AwsccNormalizer),
+            );
             let preparation = ProviderPreparationContext::new(
                 &bindings,
                 &gate,
                 &[],
-                &AwsccNormalizer,
+                &normalizer,
                 &factories,
                 &schemas,
                 type_checks,

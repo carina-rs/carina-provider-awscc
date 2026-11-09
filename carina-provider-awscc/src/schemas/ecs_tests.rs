@@ -38,6 +38,7 @@ fn container_insights_validates_and_round_trips_the_exact_aws_wire_string() {
     }
 
     let read = aws_value_to_dsl_with_defs(
+        &crate::test_support::diagnostics(),
         path,
         &json!("containerInsights"),
         name.as_type(),
@@ -48,6 +49,7 @@ fn container_insights_validates_and_round_trips_the_exact_aws_wire_string() {
     let canonical = name.canonicalize_state(read).into_present().unwrap();
     assert_eq!(
         dsl_value_to_aws_with_defs(
+            &crate::test_support::diagnostics(),
             &canonical,
             name.as_type(),
             "ecs.Cluster",
@@ -79,6 +81,7 @@ async fn authored_container_insights_serializes_to_the_aws_wire_string() {
         let schema = cluster_schema();
         assert_eq!(
             dsl_value_to_aws_with_defs(
+                &crate::test_support::diagnostics(),
                 &ready.as_resource().attributes["cluster_settings"],
                 field(&schema, "cluster_settings").as_type(),
                 "ecs.Cluster",

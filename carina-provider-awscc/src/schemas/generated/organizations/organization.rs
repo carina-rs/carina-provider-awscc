@@ -29,7 +29,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
         .with_description("Resource schema for AWS::Organizations::Organization");
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::OrganizationsOrganizationArn.identity(), Some("^(?:^arn:aws.*:organizations::\\d{12}:organization\\/o-[a-z0-9]{10,32})\\z".to_string()), None, crate::schemas::string_identity::StringIdentity::OrganizationsOrganizationArn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::OrganizationsOrganizationArn.identity(), Some(carina_core::schema::PatternSpec::new("^arn:aws.*:organizations::\\d{12}:organization\\/o-[a-z0-9]{10,32}", carina_core::schema::PatternMatch::Full)), None, crate::schemas::string_identity::StringIdentity::OrganizationsOrganizationArn.check().expect("shared string check"), None))
                 .with_description("The Amazon Resource Name (ARN) of an organization. (read-only)")
                 .with_provider_name("Arn")
             .build()
@@ -46,7 +46,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_feature_set_attribute());
     #[inline(never)]
     fn build_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("id", AttributeType::refined_string(None, Some("^o-[a-z0-9]{10,32}$".to_string()), None, None))
+        AttributeSchema::provider_populated("id", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^o-[a-z0-9]{10,32}$", carina_core::schema::PatternMatch::Full)), None, None))
                 .with_description("The unique identifier (ID) of an organization. (read-only)")
                 .with_provider_name("Id")
             .build()
@@ -54,7 +54,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_id_attribute());
     #[inline(never)]
     fn build_management_account_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("management_account_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), Some("^(?:^arn:aws.*:organizations::\\d{12}:account\\/o-[a-z0-9]{10,32}\\/\\d{12})\\z".to_string()), None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("management_account_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), Some(carina_core::schema::PatternSpec::new("^arn:aws.*:organizations::\\d{12}:account\\/o-[a-z0-9]{10,32}\\/\\d{12}", carina_core::schema::PatternMatch::Full)), None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
                 .with_description("The Amazon Resource Name (ARN) of the account that is designated as the management account for the organization. (read-only)")
                 .with_provider_name("ManagementAccountArn")
             .build()
@@ -62,7 +62,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_management_account_arn_attribute());
     #[inline(never)]
     fn build_management_account_email_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("management_account_email", AttributeType::refined_string(None, Some("^(?:[^\\s@]+@[^\\s@]+\\.[^\\s@]+)\\z".to_string()), Some((Some(6), Some(64))), None))
+        AttributeSchema::provider_populated("management_account_email", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("[^\\s@]+@[^\\s@]+\\.[^\\s@]+", carina_core::schema::PatternMatch::Full)), Some((Some(6), Some(64))), None))
                 .with_description("The email address that is associated with the AWS account that is designated as the management account for the organization. (read-only)")
                 .with_provider_name("ManagementAccountEmail")
             .build()
@@ -70,7 +70,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_management_account_email_attribute());
     #[inline(never)]
     fn build_management_account_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("management_account_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::AccountId.identity(), Some("^\\d{12}$".to_string()), None, crate::schemas::string_identity::StringIdentity::AccountId.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("management_account_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::AccountId.identity(), Some(carina_core::schema::PatternSpec::new("^\\d{12}$", carina_core::schema::PatternMatch::Full)), None, crate::schemas::string_identity::StringIdentity::AccountId.check().expect("shared string check"), None))
                 .with_description("The unique identifier (ID) of the management account of an organization. (read-only)")
                 .with_provider_name("ManagementAccountId")
             .build()
@@ -78,7 +78,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_management_account_id_attribute());
     #[inline(never)]
     fn build_root_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("root_id", AttributeType::refined_string(None, Some("^r-[0-9a-z]{4,32}$".to_string()), Some((None, Some(64))), None))
+        AttributeSchema::provider_populated("root_id", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^r-[0-9a-z]{4,32}$", carina_core::schema::PatternMatch::Full)), Some((None, Some(64))), None))
                 .with_description("The unique identifier (ID) for the root. (read-only)")
                 .with_provider_name("RootId")
             .build()

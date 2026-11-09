@@ -1,5 +1,7 @@
 //! Integration tests for service resend guards using the real SDK loop.
 
+#[cfg(test)]
+use carina_core::test_utils::provider_text::BindProviderText as _;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
@@ -215,7 +217,12 @@ async fn s3_cleanup_rejects_entries_without_version_id_before_deleting() {
         );
         let error = result.expect_err("cleanup must reject an entry without VersionId");
         assert_eq!(
-            error.detail().context(),
+            error
+                .clone()
+                .into_host_for_test()
+                .detail()
+                .context()
+                .to_string(),
             "ListObjectVersions returned no VersionId for key \"missing-version-id-key\""
         );
     }
@@ -299,7 +306,13 @@ async fn permanent_create_rejection_is_rejected_and_fails_not_issued_create() {
         panic!("a permanent rejection must fail instead of becoming unconfirmed");
     };
     assert_eq!(
-        error.into_error().detail().code(),
+        error
+            .into_error()
+            .into_host_for_test()
+            .detail()
+            .code()
+            .map(|code| code.to_string())
+            .as_deref(),
         Some("ValidationException")
     );
     assert_eq!(provider_connector.requests(), 1);
@@ -549,7 +562,7 @@ async fn exhausted_not_sent_transport_errors_render_as_io() {
         .cc_get_resource("AWS::S3::Bucket", "partial-bucket")
         .await
         .expect_err("three not-sent failures should exhaust the production retry budget");
-    let rendered = error.to_string();
+    let rendered = error.into_error().into_host_for_test().to_string();
 
     assert_eq!(connector.requests(), 3);
     assert!(

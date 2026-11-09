@@ -17,6 +17,8 @@ use carina_aws_types::sdk::cloudcontrol::{
 };
 use carina_aws_types::{FinalAttempt, SendClassification, Transience};
 use carina_core::provider::{ProviderError, ProviderResult};
+#[cfg(test)]
+use carina_core::test_utils::provider_text::BindProviderText as _;
 use carina_plugin_sdk::PhasedToken;
 use carina_provider_protocol::{OperationStep, PendingPhase};
 use serde::{Deserialize, Serialize};
@@ -1277,9 +1279,18 @@ impl AwsccProvider {
                         poll_after_secs: FIRST_POLL_AFTER_SECS,
                     })),
                     None => {
-                        log::warn!(
-                            "Cloud Control accepted create {type_name} without returning a request token; resending with the same client token"
-                        );
+                        self.diagnostics
+                            .emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                                carina_plugin_sdk::EventLevel::Warn,
+                                "CloudControl create requires another poll".into(),
+                                &carina_core::provider_text::ProviderDiagnostic::new(
+                                    CloudControlWarning::AcceptedWithoutToken {
+                                        type_name: type_name.into(),
+                                        resends: 1,
+                                        delay_secs: FIRST_POLL_AFTER_SECS,
+                                    },
+                                ),
+                            ));
                         Ok(CcCreateSend::Pending(CcCreatePending {
                             token: token.into_unconfirmed(1).into(),
                             poll_after_secs: FIRST_POLL_AFTER_SECS,
@@ -1289,6 +1300,7 @@ impl AwsccProvider {
             }
             Err(error) => {
                 match Self::not_issued_retry_decision(
+                    &self.diagnostics,
                     error.as_ref(),
                     type_name,
                     token,
@@ -1360,9 +1372,18 @@ impl AwsccProvider {
                     None => {
                         let delay_secs = retry_policy.delay_secs(token.resends());
                         let resends = token.resends().saturating_add(1);
-                        log::warn!(
-                            "Cloud Control accepted create {type_name} without returning a request token; resending with the same client token in {delay_secs}s"
-                        );
+                        self.diagnostics
+                            .emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                                carina_plugin_sdk::EventLevel::Warn,
+                                "CloudControl create requires another poll".into(),
+                                &carina_core::provider_text::ProviderDiagnostic::new(
+                                    CloudControlWarning::AcceptedWithoutToken {
+                                        type_name: type_name.into(),
+                                        resends,
+                                        delay_secs,
+                                    },
+                                ),
+                            ));
                         Ok(CcCreatePending {
                             token: token.resend(resends).into(),
                             poll_after_secs: delay_secs,
@@ -1372,6 +1393,7 @@ impl AwsccProvider {
             }
             Err(error) => {
                 match Self::unconfirmed_retry_decision(
+                    &self.diagnostics,
                     error.as_ref(),
                     type_name,
                     token,
@@ -1472,10 +1494,16 @@ impl AwsccProvider {
                 }
             }
             Some(future_status) => {
-                log::warn!(
-                    "Cloud Control returned unknown create operation status {}; preserving the request as pending",
-                    future_status.as_str()
-                );
+                self.diagnostics
+                    .emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                        carina_plugin_sdk::EventLevel::Warn,
+                        "CloudControl create is still pending".into(),
+                        &carina_core::provider_text::ProviderDiagnostic::new(
+                            CloudControlWarning::UnknownStatus {
+                                status: future_status.clone(),
+                            },
+                        ),
+                    ));
                 CcCreateStatus::Pending {
                     token,
                     poll_after_secs: POLL_AFTER_SECS,
@@ -1595,6 +1623,7 @@ impl AwsccProvider {
             .send_update_request(type_name, identifier, patch_ops, token.client_token())
             .await?;
         Self::finish_not_issued(
+            &self.diagnostics,
             result,
             type_name,
             token,
@@ -1622,6 +1651,7 @@ impl AwsccProvider {
             .send_update_request(type_name, identifier, patch_ops, token.client_token())
             .await?;
         Self::finish_unconfirmed(
+            &self.diagnostics,
             result,
             type_name,
             token,
@@ -1712,6 +1742,7 @@ impl AwsccProvider {
             .send_delete_request(type_name, identifier, token.client_token())
             .await;
         Self::finish_not_issued(
+            &self.diagnostics,
             result,
             type_name,
             token,
@@ -1738,6 +1769,7 @@ impl AwsccProvider {
             .send_delete_request(type_name, identifier, token.client_token())
             .await;
         Self::finish_unconfirmed(
+            &self.diagnostics,
             result,
             type_name,
             token,
@@ -1771,14 +1803,18 @@ impl AwsccProvider {
                     return Err(error);
                 }
                 let delay_secs = retry_policy.delay_secs(attempt);
-                log::warn!(
-                    "Retryable error {} {type_name} (attempt {}/{}): {}. Retrying in {}s...",
-                    retry_policy.action,
-                    attempt + 1,
-                    retry_policy.max_attempts,
-                    error,
-                    delay_secs,
-                );
+                self.diagnostics
+                    .emit(carina_plugin_sdk::ProviderEvent::failure(
+                    carina_plugin_sdk::EventLevel::Warn,
+                    carina_core::provider_text::ProviderText::new(format!(
+                        "Retryable error {} {type_name} (attempt {}/{}); retrying in {delay_secs}s",
+                        retry_policy.action,
+                        attempt + 1,
+                        retry_policy.max_attempts
+                    ))
+                    .into(),
+                    &error,
+                ));
                 Ok(OperationStep::Pending {
                     pending: failure.retry_after_terminal_failure().into(),
                     poll_after_secs: delay_secs,
@@ -1797,6 +1833,7 @@ impl AwsccProvider {
     /// Unconfirmed resends have no attempt cap: update and delete stay bounded by the
     /// host drive budget and are reconciled on the next plan.
     fn not_issued_retry_decision<E, Phase>(
+        diagnostics: &carina_plugin_sdk::ProviderDiagnostics,
         error: &SdkError<E, HttpResponse>,
         type_name: &str,
         pending: Phase,
@@ -1815,12 +1852,23 @@ impl AwsccProvider {
                 };
             }
             let delay_secs = retry_policy.delay_secs(attempt);
-            log::warn!(
-                "Retryable failure {} {type_name} (attempt {}/{}): {error:?}. Retrying in {delay_secs}s...",
-                retry_policy.action,
-                attempt + 1,
-                retry_policy.max_attempts,
-            );
+            diagnostics.emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                carina_plugin_sdk::EventLevel::Warn,
+                "CloudControl request will retry".into(),
+                &carina_core::provider_text::ProviderDiagnostic::new(
+                    CloudControlWarning::TransportRetry {
+                        type_name: type_name.into(),
+                        action: retry_policy.action,
+                        stage: "not issued",
+                        attempt: attempt + 1,
+                        limit: retry_policy.max_attempts,
+                        delay_secs,
+                        classification,
+                        status: error.raw_response().map(|r| r.status().as_u16()),
+                        code: error.code().map(str::to_owned),
+                    },
+                ),
+            ));
             NotIssuedDecision::Retry {
                 pending: pending.retry_not_issued(),
                 delay_secs,
@@ -1840,10 +1888,23 @@ impl AwsccProvider {
                 final_attempt: FinalAttempt::NotSent(Transience::Transient) | FinalAttempt::Sent,
             } => {
                 let delay_secs = retry_policy.delay_secs(0);
-                log::warn!(
-                    "Outcome unknown {} {type_name} after 1 send(s): {error:?}. Retrying with the same client token in {delay_secs}s...",
-                    retry_policy.action,
-                );
+                diagnostics.emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                    carina_plugin_sdk::EventLevel::Warn,
+                    "CloudControl request outcome is unknown".into(),
+                    &carina_core::provider_text::ProviderDiagnostic::new(
+                        CloudControlWarning::TransportRetry {
+                            type_name: type_name.into(),
+                            action: retry_policy.action,
+                            stage: "unconfirmed",
+                            attempt: 1,
+                            limit: retry_policy.max_attempts,
+                            delay_secs,
+                            classification,
+                            status: error.raw_response().map(|r| r.status().as_u16()),
+                            code: error.code().map(str::to_owned),
+                        },
+                    ),
+                ));
                 NotIssuedDecision::Unconfirmed {
                     pending: pending.into_unconfirmed(1),
                     delay_secs,
@@ -1857,6 +1918,7 @@ impl AwsccProvider {
     }
 
     fn unconfirmed_retry_decision<E, Phase>(
+        diagnostics: &carina_plugin_sdk::ProviderDiagnostics,
         error: &SdkError<E, HttpResponse>,
         type_name: &str,
         pending: &Phase,
@@ -1867,13 +1929,26 @@ impl AwsccProvider {
         Phase: UnconfirmedPhase,
     {
         let classification = SendClassification::of(error);
-        let resend = |failure: &str| {
+        let resend = |failure: &'static str| {
             let delay_secs = retry_policy.delay_secs(pending.resends());
             let resends = pending.resends().saturating_add(1);
-            log::warn!(
-                "Resend while {} {type_name} {failure} (resend {resends}); an earlier send may have been accepted: {error:?}. Retrying with the same client token in {delay_secs}s...",
-                retry_policy.action,
-            );
+            diagnostics.emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                carina_plugin_sdk::EventLevel::Warn,
+                "CloudControl request will resend with the same client token".into(),
+                &carina_core::provider_text::ProviderDiagnostic::new(
+                    CloudControlWarning::TransportRetry {
+                        type_name: type_name.into(),
+                        action: retry_policy.action,
+                        stage: failure,
+                        attempt: resends,
+                        limit: retry_policy.max_attempts,
+                        delay_secs,
+                        classification,
+                        status: error.raw_response().map(|r| r.status().as_u16()),
+                        code: error.code().map(str::to_owned),
+                    },
+                ),
+            ));
             UnconfirmedDecision::Resend {
                 pending: pending.resend(resends),
                 delay_secs,
@@ -1897,6 +1972,7 @@ impl AwsccProvider {
 
     #[allow(clippy::too_many_arguments)]
     fn finish_not_issued<E, Subject, NoRequest>(
+        diagnostics: &carina_plugin_sdk::ProviderDiagnostics,
         result: Result<Option<RequestToken>, Box<SdkError<E, HttpResponse>>>,
         type_name: &str,
         token: NotIssuedRequest,
@@ -1920,6 +1996,7 @@ impl AwsccProvider {
             Ok(None) => no_request().map(OperationStep::Done),
             Err(error) => {
                 match Self::not_issued_retry_decision(
+                    diagnostics,
                     error.as_ref(),
                     type_name,
                     token,
@@ -1957,6 +2034,7 @@ impl AwsccProvider {
 
     #[allow(clippy::too_many_arguments)]
     fn finish_unconfirmed<E, Subject, NoRequest>(
+        diagnostics: &carina_plugin_sdk::ProviderDiagnostics,
         result: Result<Option<RequestToken>, Box<SdkError<E, HttpResponse>>>,
         type_name: &str,
         token: UnconfirmedRequest,
@@ -1979,6 +2057,7 @@ impl AwsccProvider {
             Ok(None) => no_request().map(OperationStep::Done),
             Err(error) => {
                 match Self::unconfirmed_retry_decision(
+                    diagnostics,
                     error.as_ref(),
                     type_name,
                     &token,
@@ -2197,7 +2276,7 @@ impl AwsccProvider {
         let Some(progress) = status.progress_event() else {
             return Ok(RequestStatusStep::Pending(token));
         };
-        match Self::classify_progress_event(progress) {
+        match Self::classify_progress_event(&self.diagnostics, progress) {
             Ok(Some(outcome)) => Ok(RequestStatusStep::Done(outcome)),
             Ok(None) => Ok(RequestStatusStep::Pending(token)),
             Err(error)
@@ -2237,6 +2316,7 @@ impl AwsccProvider {
     }
 
     pub(crate) fn classify_progress_event(
+        diagnostics: &carina_plugin_sdk::ProviderDiagnostics,
         progress: &ProgressEvent,
     ) -> ProviderResult<Option<WaitOutcome>> {
         match progress.operation_status() {
@@ -2250,10 +2330,15 @@ impl AwsccProvider {
             Some(OperationStatus::Failed) => Self::terminal_failure_outcome(progress),
             Some(OperationStatus::CancelComplete) => Self::terminal_failure_outcome(progress),
             Some(future_status) => {
-                log::warn!(
-                    "Cloud Control returned unknown operation status {}; preserving the request as pending",
-                    future_status.as_str()
-                );
+                diagnostics.emit(carina_plugin_sdk::ProviderEvent::diagnostic(
+                    carina_plugin_sdk::EventLevel::Warn,
+                    "CloudControl operation is still pending".into(),
+                    &carina_core::provider_text::ProviderDiagnostic::new(
+                        CloudControlWarning::UnknownStatus {
+                            status: future_status.clone(),
+                        },
+                    ),
+                ));
                 Ok(None)
             }
         }
@@ -2279,6 +2364,36 @@ impl AwsccProvider {
     }
 }
 
+/// Retry metadata contains no raw SDK request or signing material.
+#[derive(Debug, thiserror::Error)]
+enum CloudControlWarning {
+    #[error(
+        "CloudControl accepted create {type_name} without a request token; resending with the same client token (send {resends}) in {delay_secs}s"
+    )]
+    AcceptedWithoutToken {
+        type_name: String,
+        resends: u32,
+        delay_secs: u32,
+    },
+    #[error(
+        "CloudControl returned unknown operation status {status}; preserving the request as pending"
+    )]
+    UnknownStatus { status: OperationStatus },
+    #[error(
+        "Retrying {action} {type_name} ({stage}, attempt {attempt}/{limit}) in {delay_secs}s; send classification {classification:?}, HTTP {status:?}, service code {code:?}"
+    )]
+    TransportRetry {
+        type_name: String,
+        action: &'static str,
+        stage: &'static str,
+        attempt: u32,
+        limit: u32,
+        delay_secs: u32,
+        classification: SendClassification,
+        status: Option<u16>,
+        code: Option<String>,
+    },
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2331,7 +2446,10 @@ mod tests {
             transience: Transience,
             prior_maybe_sent: bool,
         ) -> SdkError<CreateResourceError, HttpResponse> {
-            let guard = ResendGuard::new(crate::resend_safety::cloudcontrol_idempotency);
+            let guard = ResendGuard::new(
+                crate::resend_safety::cloudcontrol_idempotency,
+                crate::test_support::diagnostics(),
+            );
             let runtime = RuntimeComponentsBuilder::for_tests().build().unwrap();
             let mut cfg = ConfigBag::base();
             cfg.interceptor_state()
@@ -2412,6 +2530,7 @@ mod tests {
                 pending,
                 delay_secs,
             } = AwsccProvider::not_issued_retry_decision(
+                &crate::test_support::diagnostics(),
                 &error,
                 "AWS::Test::Resource",
                 pending,
@@ -2427,6 +2546,7 @@ mod tests {
             assert!(
                 matches!(
                     AwsccProvider::not_issued_retry_decision(
+                        &crate::test_support::diagnostics(),
                         &error,
                         "AWS::Test::Resource",
                         pending,
@@ -2447,6 +2567,7 @@ mod tests {
                     pending: retry,
                     delay_secs,
                 } = AwsccProvider::unconfirmed_retry_decision(
+                    &crate::test_support::diagnostics(),
                     &error,
                     "AWS::Test::Resource",
                     &pending,
@@ -2475,6 +2596,7 @@ mod tests {
             let client_token = pending.client_token().clone();
             let NotIssuedDecision::Unconfirmed { pending, .. } =
                 AwsccProvider::not_issued_retry_decision(
+                    &crate::test_support::diagnostics(),
                     &error,
                     "AWS::Test::Resource",
                     pending,
@@ -2493,6 +2615,7 @@ mod tests {
             let error = before_transmit_error(Transience::Permanent, false);
             let pending = NotIssuedCreate::start();
             let NotIssuedDecision::Fail { not_issued } = AwsccProvider::not_issued_retry_decision(
+                &crate::test_support::diagnostics(),
                 &error,
                 "AWS::Test::Resource",
                 pending.clone(),
@@ -2510,6 +2633,7 @@ mod tests {
             let pending = NotIssuedCreate::start();
             let client_token = pending.client_token().clone();
             let NotIssuedDecision::Preserve { pending } = AwsccProvider::not_issued_retry_decision(
+                &crate::test_support::diagnostics(),
                 &error,
                 "AWS::Test::Resource",
                 pending,
@@ -2529,6 +2653,7 @@ mod tests {
                 let pending = NotIssuedCreate::start().into_unconfirmed(1);
                 assert!(matches!(
                     AwsccProvider::unconfirmed_retry_decision(
+                        &crate::test_support::diagnostics(),
                         &error,
                         "AWS::Test::Resource",
                         &pending,
@@ -2628,9 +2753,10 @@ mod tests {
             Some("post-create read denied"),
         );
 
-        let outcome = AwsccProvider::classify_progress_event(&progress)
-            .expect("classification should not fail")
-            .expect("terminal failed progress must produce an outcome");
+        let outcome =
+            AwsccProvider::classify_progress_event(&crate::test_support::diagnostics(), &progress)
+                .expect("classification should not fail")
+                .expect("terminal failed progress must produce an outcome");
 
         assert_eq!(
             outcome,
@@ -2649,12 +2775,20 @@ mod tests {
             Some("handler failed before identifier"),
         );
 
-        let err = AwsccProvider::classify_progress_event(&progress)
-            .expect_err("failed progress without identifier must remain an error");
+        let err =
+            AwsccProvider::classify_progress_event(&crate::test_support::diagnostics(), &progress)
+                .expect_err("failed progress without identifier must remain an error");
 
-        assert_eq!(err.detail().context(), "Operation failed");
         assert_eq!(
-            err.to_string(),
+            err.clone()
+                .into_host_for_test()
+                .detail()
+                .context()
+                .to_string(),
+            "Operation failed"
+        );
+        assert_eq!(
+            err.clone().into_host_for_test().to_string(),
             "Operation failed: handler failed before identifier"
         );
     }
@@ -2667,12 +2801,20 @@ mod tests {
             Some("handler failed before useful identifier"),
         );
 
-        let err = AwsccProvider::classify_progress_event(&progress)
-            .expect_err("empty identifier must not be treated as partial success");
+        let err =
+            AwsccProvider::classify_progress_event(&crate::test_support::diagnostics(), &progress)
+                .expect_err("empty identifier must not be treated as partial success");
 
-        assert_eq!(err.detail().context(), "Operation failed");
         assert_eq!(
-            err.to_string(),
+            err.clone()
+                .into_host_for_test()
+                .detail()
+                .context()
+                .to_string(),
+            "Operation failed"
+        );
+        assert_eq!(
+            err.clone().into_host_for_test().to_string(),
             "Operation failed: handler failed before useful identifier"
         );
     }
@@ -2685,9 +2827,10 @@ mod tests {
             Some("operation cancelled after identifier"),
         );
 
-        let outcome = AwsccProvider::classify_progress_event(&progress)
-            .expect("classification should not fail")
-            .expect("terminal cancelled progress must produce an outcome");
+        let outcome =
+            AwsccProvider::classify_progress_event(&crate::test_support::diagnostics(), &progress)
+                .expect("classification should not fail")
+                .expect("terminal cancelled progress must produce an outcome");
 
         assert_eq!(
             outcome,
@@ -2706,12 +2849,20 @@ mod tests {
             Some("operation cancelled before identifier"),
         );
 
-        let err = AwsccProvider::classify_progress_event(&progress)
-            .expect_err("cancel without identifier must remain an error");
+        let err =
+            AwsccProvider::classify_progress_event(&crate::test_support::diagnostics(), &progress)
+                .expect_err("cancel without identifier must remain an error");
 
-        assert_eq!(err.detail().context(), "Operation failed");
         assert_eq!(
-            err.to_string(),
+            err.clone()
+                .into_host_for_test()
+                .detail()
+                .context()
+                .to_string(),
+            "Operation failed"
+        );
+        assert_eq!(
+            err.clone().into_host_for_test().to_string(),
             "Operation failed: operation cancelled before identifier"
         );
     }

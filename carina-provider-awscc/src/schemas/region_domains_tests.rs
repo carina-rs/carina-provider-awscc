@@ -53,6 +53,7 @@ fn vpc_region_has_exact_documented_enum_and_round_trips_all_45_values() {
         assert_eq!(spellings.api_for(&dsl), wire);
         region.validate(&enum_identifier(&dsl)).unwrap();
         let read = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "vpc_region",
             &json!(wire),
             region.as_type(),
@@ -63,6 +64,7 @@ fn vpc_region_has_exact_documented_enum_and_round_trips_all_45_values() {
         let canonical = region.canonicalize_state(read).into_present().unwrap();
         assert_eq!(
             dsl_value_to_aws_with_defs(
+                &crate::test_support::diagnostics(),
                 &canonical,
                 region.as_type(),
                 "route53.HostedZone",

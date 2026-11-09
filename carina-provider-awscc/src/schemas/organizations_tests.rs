@@ -220,6 +220,7 @@ fn live_account_reads_from_the_approved_plan_still_validate() {
     ] {
         let attr = field(&schema, path);
         let read = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             path,
             &value,
             attr.as_type(),

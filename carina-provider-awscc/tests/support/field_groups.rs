@@ -67,10 +67,27 @@ pub fn validate_resource(
     let custom_types = provider_custom_types_from_factories(factories);
     let mut registry = SchemaRegistry::new();
     registry.insert("awscc", schema.clone());
-    registry
+    let schema = registry
         .get("awscc", schema.parts().resource_type, SchemaKind::Resource)
-        .unwrap()
-        .validate_with_resolver(&attributes, &|_value| false, &custom_types)
+        .unwrap();
+    let classified = attributes
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.clone(),
+                value
+                    .knowledge(&carina_core::resource::knowledge::KnowledgeContext::validation())
+                    .unwrap()
+                    .into_classification(),
+            )
+        })
+        .collect();
+    carina_core::test_utils::admit_resource_attributes(
+        schema,
+        &classified,
+        &|_value| false,
+        &custom_types,
+    )
 }
 
 pub fn assert_cached_group(schema: &ValidatedResourceSchema) {

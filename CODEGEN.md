@@ -53,7 +53,11 @@ Enable service features on the normal `carina-aws-types` dependency. Its workspa
 dependency disables default features; the dev-dependency adds only `test-utils`.
 Use its `sdk::<service>::{error, operation, primitives, types}` re-exports in both
 provider code and tests. Direct `aws-sdk-*` and `aws-config` dependencies are not
-needed; shared configuration comes from `aws-types`. The upstream facade has
+needed; shared configuration comes from `carina_aws_types::AwsSdkConfig`.
+The provider loads it with its session diagnostics and an optional
+`AwsCredentialsSource`; native offline fixtures use `AwsSdkConfig::for_test` with
+a synthetic `aws_types::SdkConfig`. Enable `guest` for the guest reference
+authoring API. The upstream facade has
 compile-fail doctests for inaccessible raw client and configuration types.
 
 ## Prerequisites
@@ -293,9 +297,9 @@ The DSL name `tags` is carina-core's contract for merging `default_tags` and exe
 
 ### String patterns
 
-Every emitted AWSCC string pattern must match the whole value, except for an exact registered substring exception. The shared `schemas::pattern::ApprovedPattern` has a private field: `whole(source)` preserves an already whole-anchored source and otherwise emits `^(?:source)\z`. A whole-anchored source starts with `^`, ends with `$` or `\z`, and anchors every alternative: `^A$|^B$` qualifies; `^A|B$` does not. The predicate parses the regex so escaped anchors, character classes and multiline flags cannot bypass the rule. Rust's `$` without multiline mode means end of text. Invalid syntax is retained for diagnostics, never dropped.
+Every emitted AWSCC string pattern uses `PatternMatch::Full`, except for an exact registered substring exception. `ApprovedPattern::whole` preserves the source verbatim; core compiles Full with absolute boundaries around the entire regex. Authored anchors and alternations do not substitute for the typed mode. `is_whole_anchored` remains a syntax-inspection utility for tests, not the approval rule. Invalid syntax is retained for diagnostics, never dropped.
 
-CFN string refinements share `string_constraints()` between Rust and Markdown. Override expressions use typed string refinements, and runtime constructors in `catalog.rs` and `awscc_types.rs` use adapters accepting `ApprovedPattern`. Codegen compiles normalized patterns in Carina's schema dialect and rejects an invalid or unapproved pattern with its resource type, full JSON source pointer and regex. The recursive `all_registered_provider_schema_patterns_are_whole_anchored_or_registered_exceptions` test audits the actual provider schemas, including definitions and collection, struct and union members.
+CFN string refinements share `string_constraints()` between Rust and Markdown. Override expressions use typed string refinements, and runtime constructors in `catalog.rs` use adapters accepting `ApprovedPattern`. Approved patterns carry `PatternSpec` with `PatternMatch::Full`, preserving the regex source while core applies absolute boundaries. The reviewed Scheduler substring exception carries `PatternMatch::Substring` with its existing non-empty `PatternReason`. Codegen emits these typed specifications for every pattern-taking constructor, including references; it adds no textual anchoring wrapper. Codegen compiles normalized patterns in Carina's schema dialect and rejects an invalid or unapproved pattern with its resource type, full JSON source pointer and regex. The recursive `all_registered_provider_schema_patterns_have_full_or_registered_substring_modes` test audits the actual provider schemas, including definitions and collection, struct and union members.
 
 `STRING_PATTERN_REWRITES` pins resource types, full source pointers and exact source regexes. Preserve constraints when removing unsupported look-around, including ECR `RepositoryName`'s length intersection. Logs maps `\Z` to strict `\z`; that is the intended reading, not ECMAScript equivalence (`\Z` means literal `Z` there). WAFv2's 17 `.*\S.*` sites use `^[\s\S]*\S[\s\S]*\z`: both languages accept exactly values containing a `\S` character, including newlines around it. Generic wrapping would change that newline behavior. Use ASCII `[0-9]` and `[0-9A-Za-z_]` when expanding ECMAScript `\d` and `\w` in rewrites. Add accept and reject cases when changing a rewrite.
 

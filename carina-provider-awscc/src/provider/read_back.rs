@@ -1,12 +1,9 @@
 //! Identifier-only post-mutation continuations and schema-declared read requirements.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use carina_aws_types::Transience;
-use carina_core::provider::{
-    AppliedIdentifier, Observation, PartialReadDiagnostic, ProviderError, ProviderResult,
-};
+use carina_core::provider::{AppliedIdentifier, Observation, ProviderError, ProviderResult};
 use carina_core::resource::{ResourceId, Value};
 use serde::{Deserialize, Serialize};
 
@@ -15,11 +12,9 @@ use super::operations::CreateCompletion;
 use crate::schemas::config::{AwsccSchemaConfig, ReadBackAttribute};
 
 /// A read failure retains both retry policy and its original error chain.
-#[derive(Debug, thiserror::Error)]
-#[error("{error}")]
+#[derive(Debug)]
 pub struct ReadFailure {
     pub(crate) transience: Transience,
-    #[source]
     error: ProviderError,
     pub(crate) attributes: Option<HashMap<String, Value>>,
 }
@@ -102,14 +97,6 @@ impl NonEmptyAttributeNames {
         self.0.dedup();
         Ok(self)
     }
-
-    pub(crate) fn diagnostic(
-        self,
-        reason: &ProviderError,
-    ) -> ProviderResult<PartialReadDiagnostic> {
-        PartialReadDiagnostic::new(reason.to_string(), self.0)
-            .ok_or_else(|| ProviderError::internal("partial read requires missing attributes"))
-    }
 }
 
 impl TryFrom<Vec<String>> for NonEmptyAttributeNames {
@@ -128,6 +115,14 @@ impl TryFrom<Vec<String>> for NonEmptyAttributeNames {
         names.sort();
         names.dedup();
         Ok(Self(names))
+    }
+}
+
+impl From<NonEmptyAttributeNames> for carina_core::provider::NonEmptyMissingAttributes {
+    fn from(names: NonEmptyAttributeNames) -> Self {
+        carina_plugin_sdk::expect_diagnostic(
+            Self::try_from(names.0).map_err(carina_core::provider_text::ProviderDiagnostic::new),
+        )
     }
 }
 
@@ -241,7 +236,7 @@ pub(crate) fn validate_declarations(
 
 /// Share a source when both the observation and the verdict need to own it.
 pub(crate) fn failed_read(error: ProviderError) -> (Observation, ProviderError) {
-    let source = Arc::new(error);
+    let source = carina_core::provider_text::ProviderDiagnostic::new(error);
     (
         Observation::ReadFailed(ProviderError::internal_caused_by(
             "read-back failed",

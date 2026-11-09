@@ -29,20 +29,40 @@ cargo fmt --check
 
 WASM providers use base credentials resolved by the Carina host's standard AWS
 credential chain. Named profiles and SSO work through the host; select a profile
-with `AWS_PROFILE`. The host supplies credentials and expiry through the typed
-`aws-credentials` import and refreshes them when needed. The provider uses these
-base credentials for any provider-level `assume_role` call.
+with `AWS_PROFILE`. `HostCredentialsSource` requests current credentials and expiry
+on each lookup. `carina_aws_types::load_sdk_config(region, timeout, retry,
+diagnostics, Option<AwsCredentialsSource>)` returns an `AwsSdkConfig` carrying the
+provider session's `ProviderDiagnostics`. Native factories obtain diagnostics from
+their `ProviderSession`; WASM exports obtain the guest runtime's handle. Never use
+a global diagnostics handle.
+
+On WASM, `AwsSdkParts` pairs the registering credentials provider with its HTTP
+transport. Registration must succeed before each credential generation can reach
+the signer, including explicit overrides and `GuardedAssumeRoleProvider` results.
+`AwsCredentialsSource` accepts complete `Credentials`, `HostCredentialsSource`,
+`GuardedAssumeRoleProvider`, or a refreshing async callback. Complete credentials
+retain expiry, account ID, provider name and feature metadata. Never install a
+raw signing credentials provider in production code. `AwsSdkConfig::with_source`,
+`in_region` and `with_policy` preserve the registration policy and diagnostics;
+guarded service clients and AssumeRole require this shared configuration.
 
 Carina never starts an interactive login. When an SSO session has expired, run
 `aws sso login --profile <profile>` and retry. Service regions remain explicit
 provider configuration, defaulting to `ap-northeast-1`.
 
-Native builds keep the AWS SDK's default credential chain. For native tests that
-require AWS credentials:
+Native production uses the AWS SDK's default credential chain. Offline tests
+inject synthetic credentials and emulator transports with
+`BoundedSdkConfig::for_test`, backed by the native-only `AwsSdkConfig::for_test`.
+The `test-utils` features belong only in dev-dependencies.
 
-```bash
-aws-vault exec <profile> -- cargo test
-```
+### Provider diagnostics
+
+Protocol 25 diagnostics use `ProviderDiagnostics::emit` with typed failures,
+diagnostics or candidate values. Preserve error types and causes through the
+SDK boundary. `ResendGuard::new` requires the idempotency lookup and the session
+diagnostics handle. Guest stdout/stderr are discarded by the host; do not use
+print macros or logging as guest diagnostic exits. Use `panic_diagnostic` /
+`expect_diagnostic` for typed panic payloads.
 
 ## Crate Structure
 

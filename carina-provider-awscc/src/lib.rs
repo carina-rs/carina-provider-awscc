@@ -2,6 +2,11 @@
 //!
 //! AWS Cloud Control API Provider implementation.
 //!
+//! Credentials and diagnostics are session-bound through
+//! `carina_aws_types::AwsSdkConfig`. Credential sources, including assumed roles,
+//! are registered before signing in WASM. Emit typed diagnostics through the
+//! session's `ProviderDiagnostics`; guest stdout/stderr are discarded.
+//!
 //! ## Module Structure
 //!
 //! - `resources` - Schema configuration tests
@@ -36,11 +41,11 @@ use indexmap::IndexMap;
 use carina_core::effect::PlanOp;
 use carina_core::provider::{
     AppliedIdentifier, BoxFuture, CanonicalProviderConfigAttributes, CreateAttempt, CreateFailure,
-    CreateOutcome, CreateRequest, DeleteRequest, InitializeOutcome, InitializeOutcomeMint,
+    CreateOutcome, CreateRequest, DeleteAttempt, InitializeOutcome, InitializeOutcomeMint,
     Provider, ProviderError, ProviderFactory, ProviderInitialization, ProviderNormalizer,
-    ProviderReadyConfig, ProviderReadyDataSource, ProviderResult, ReadOutcome, ReadRequest,
-    ResumeCreateRequest, ResumeFailure, ResumeOutcome, SavedAttrs, StateTransformMap,
-    UpdateOutcome, UpdateRequest, ready_noop,
+    ProviderReadyDataSource, ProviderResult, ProviderSession, ProviderValidationInputs,
+    ReadOutcome, ReadRequest, ResumeCreateRequest, ResumeFailure, ResumeOutcome, SavedAttrs,
+    StateTransformMap, UpdateAttempt, UpdateOutcome, UpdateRequest, ready_noop,
 };
 use carina_core::resource::{ConcreteValue, ProviderResource, ResourceId, State, Value};
 use carina_core::schema::{
@@ -49,10 +54,10 @@ use carina_core::schema::{
 
 use crate::provider::AwsccProviderConfig;
 
-#[cfg(debug_assertions)]
+#[cfg(all(not(target_arch = "wasm32"), any(test, feature = "test-utils")))]
 struct ComparisonOnlyProvider;
 
-#[cfg(debug_assertions)]
+#[cfg(all(not(target_arch = "wasm32"), any(test, feature = "test-utils")))]
 impl Provider for ComparisonOnlyProvider {
     fn name(&self) -> &str {
         "awscc-comparison-only"
@@ -95,16 +100,12 @@ impl Provider for ComparisonOnlyProvider {
         _id: &ResourceId,
         _identifier: &AppliedIdentifier,
         _request: UpdateRequest,
+        _attempt: UpdateAttempt,
     ) -> BoxFuture<'_, ProviderResult<UpdateOutcome>> {
         panic!("comparison-only provider must not dispatch update")
     }
 
-    fn delete(
-        &self,
-        _id: &ResourceId,
-        _identifier: &AppliedIdentifier,
-        _request: DeleteRequest,
-    ) -> BoxFuture<'_, ProviderResult<()>> {
+    fn delete(&self, _attempt: DeleteAttempt) -> BoxFuture<'_, ProviderResult<()>> {
         panic!("comparison-only provider must not dispatch delete")
     }
 
@@ -117,12 +118,12 @@ impl Provider for ComparisonOnlyProvider {
 /// forms and initialization reports scope unavailable,
 /// so tests resolve the same pair through core's initialized-provider route.
 #[doc(hidden)]
-#[cfg(debug_assertions)]
+#[cfg(all(not(target_arch = "wasm32"), any(test, feature = "test-utils")))]
 pub fn test_comparison_router() -> carina_core::provider::ProviderRouter {
     let mut router = carina_core::provider::ProviderRouter::new();
     router.add_provider(
         "awscc".to_string(),
-        carina_core::provider::InitializedProvider::unavailable(Box::new(ComparisonOnlyProvider)),
+        carina_core::test_utils::provider_text::initialized(Box::new(ComparisonOnlyProvider)),
     );
     router
 }
@@ -195,14 +196,14 @@ impl ProviderFactory for OwnerOnlyAwsccFactory {
     fn validate_config(
         &self,
         _attributes: &CanonicalProviderConfigAttributes,
+        _inputs: &ProviderValidationInputs,
     ) -> ProviderResult<()> {
         Ok(())
     }
 
     fn create_provider(
         &self,
-        _binding: Option<&str>,
-        _config: &ProviderReadyConfig,
+        _session: &ProviderSession,
         _initialize_outcome: InitializeOutcomeMint,
     ) -> BoxFuture<'_, ProviderResult<ProviderInitialization>> {
         Box::pin(async {
@@ -256,6 +257,7 @@ impl ProviderFactory for AwsccProviderFactory {
     fn validate_config(
         &self,
         attributes: &CanonicalProviderConfigAttributes,
+        _inputs: &ProviderValidationInputs,
     ) -> ProviderResult<()> {
         // Cross-account guardrail: when `assume_role.role_arn` parses to
         // an account id that is not in `allowed_account_ids` (when that
@@ -274,8 +276,7 @@ impl ProviderFactory for AwsccProviderFactory {
 
     fn create_provider(
         &self,
-        _binding: Option<&str>,
-        config: &ProviderReadyConfig,
+        session: &ProviderSession,
         _initialize_outcome: InitializeOutcomeMint,
     ) -> BoxFuture<'_, ProviderResult<ProviderInitialization>> {
         // `_binding` is intentionally unused: the AWS Cloud Control
@@ -283,19 +284,29 @@ impl ProviderFactory for AwsccProviderFactory {
         // produces an independent `AwsccProvider`. The host uses the
         // binding name as a cache key in `WasmProviderFactory`; for
         // in-process factories the constructed-fresh shape is enough.
+        let Some(config) = session.configuration() else {
+            return Box::pin(async {
+                Err(ProviderError::invalid_input(
+                    "AWSCC provider configuration is required",
+                ))
+            });
+        };
         let region =
             carina_core::utils::extract_region_from_attrs(config.attributes(), "ap-northeast-1");
         let cfg = extract_provider_config(config.attributes());
+        #[cfg(not(target_arch = "wasm32"))]
+        let diagnostics = carina_plugin_sdk::ProviderDiagnostics::from_session(session);
+        #[cfg(target_arch = "wasm32")]
+        let diagnostics = carina_plugin_sdk::ProviderDiagnostics::guest();
         Box::pin(async move {
-            let provider = AwsccProvider::new_with_config(&region, &cfg).await;
+            let provider = AwsccProvider::new_with_config(&region, &cfg, diagnostics).await;
             Ok(InitializeOutcome::unavailable().with_provider(Box::new(provider)))
         })
     }
 
     fn create_normalizer(
         &self,
-        _binding: Option<&str>,
-        _config: &ProviderReadyConfig,
+        _session: &ProviderSession,
     ) -> BoxFuture<'_, ProviderResult<Box<dyn ProviderNormalizer>>> {
         Box::pin(async { Ok(Box::new(AwsccNormalizer) as Box<dyn ProviderNormalizer>) })
     }
@@ -424,9 +435,7 @@ impl Provider for AwsccProvider {
                     .iter()
                     .map(|_| {
                         Err(carina_core::references::ReferenceError::InvalidReference(
-                            ProviderError::invalid_input(reason.to_owned())
-                                .for_provider("awscc")
-                                .into(),
+                            reason.clone().for_provider("awscc").into(),
                         ))
                     })
                     .collect(),
@@ -494,6 +503,7 @@ impl Provider for AwsccProvider {
         id: &ResourceId,
         identifier: &AppliedIdentifier,
         request: UpdateRequest,
+        _attempt: UpdateAttempt,
     ) -> BoxFuture<'_, ProviderResult<UpdateOutcome>> {
         let id = id.clone();
         let identifier = identifier.clone();
@@ -503,15 +513,15 @@ impl Provider for AwsccProvider {
         })
     }
 
-    fn delete(
-        &self,
-        id: &ResourceId,
-        identifier: &AppliedIdentifier,
-        request: DeleteRequest,
-    ) -> BoxFuture<'_, ProviderResult<()>> {
-        let id = id.clone();
-        let identifier = identifier.clone();
-        Box::pin(async move { self.delete_resource(&id, &identifier, request).await })
+    fn delete(&self, attempt: DeleteAttempt) -> BoxFuture<'_, ProviderResult<()>> {
+        Box::pin(async move {
+            self.delete_resource(
+                attempt.id(),
+                attempt.identifier(),
+                attempt.request().clone(),
+            )
+            .await
+        })
     }
 }
 

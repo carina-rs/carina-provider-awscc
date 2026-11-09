@@ -1,5 +1,9 @@
+#[cfg(any(target_arch = "wasm32", test))]
 use std::collections::{BTreeMap, HashMap};
 
+#[cfg(any(target_arch = "wasm32", test))]
+use carina_plugin_sdk::types as proto;
+#[cfg(any(target_arch = "wasm32", test))]
 use carina_plugin_sdk::{
     CarinaProvider, CreateAttempt as SdkCreateAttempt, CreateStep as SdkCreateStep,
     CreateVerdict as SdkCreateVerdict, DeleteOutcome as SdkDeleteOutcome, FoundRead,
@@ -9,11 +13,14 @@ use carina_plugin_sdk::{
     ResumeVerdict as SdkResumeVerdict, ResumedCreate as SdkResumedCreate,
     UpdateOutcome as SdkUpdateOutcome,
 };
-use carina_provider_protocol::types as proto;
+#[cfg(any(target_arch = "wasm32", test))]
 use carina_provider_protocol::{OperationStep, PendingPhase};
 
+#[cfg(any(target_arch = "wasm32", test))]
 use carina_core::executor::normalized::NormalizedResource as CoreNormalizedResource;
+#[cfg(any(target_arch = "wasm32", test))]
 use carina_core::protocol_convert;
+#[cfg(any(target_arch = "wasm32", test))]
 use carina_core::provider::{
     AppliedIdentifier as CoreAppliedIdentifier, AppliedState as CoreAppliedState,
     DeleteRequest as CoreDeleteRequest, LiftedSavedAttrs, Observation as CoreObservation,
@@ -21,25 +28,32 @@ use carina_core::provider::{
     ProviderError as CoreProviderError, ProviderFactory, RawSavedAttrs,
     ReadOutcome as CoreReadOutcome, ReadRequest as CoreReadRequest, Sent as CoreSent,
 };
+#[cfg(any(target_arch = "wasm32", test))]
 use carina_core::resource::{
     ConcreteValue, DataSource as CoreDataSource, Directives as CoreDirectives,
     Resource as CoreResource, ResourceId as CoreResourceId, Value as CoreValue,
 };
+#[cfg(any(target_arch = "wasm32", test))]
 use carina_core::schema::{
     AssignabilityEdge, ReferenceForms, SchemaKind, SchemaRegistry, ValidatedConfigSchema,
     ValidatedResourceSchema,
 };
 
+#[cfg(any(target_arch = "wasm32", test))]
 use carina_provider_awscc::provider::{
     AwsccProvider, AwsccProviderConfig, CcCreateAttempt, CcCreateOperation, CcCreatePoll,
     CcCreateResume, CcCreateToken, CcDeleteToken, CcIssuedCreate, CcPollAttempt, CcResumeAttempt,
     CcResumedCreate, CcUpdateToken, InFlightCreate, NotAppliedCreate,
 };
+#[cfg(any(target_arch = "wasm32", test))]
 use carina_provider_awscc::schemas;
+#[cfg(any(target_arch = "wasm32", test))]
 use carina_provider_awscc::{AwsccNormalizer, AwsccProviderFactory};
 
+#[cfg(any(target_arch = "wasm32", test))]
 mod saved_state;
 
+#[cfg(any(target_arch = "wasm32", test))]
 fn protocol_input_error(
     context: &'static str,
     error: protocol_convert::ProtocolConvertError,
@@ -47,6 +61,7 @@ fn protocol_input_error(
     CoreProviderError::invalid_input_caused_by(context, error)
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 fn protocol_output_error(
     context: &'static str,
     error: protocol_convert::ProtocolConvertError,
@@ -54,6 +69,7 @@ fn protocol_output_error(
     CoreProviderError::internal_caused_by(context, error)
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 fn wire_directives_to_core(directives: &proto::Directives) -> CoreDirectives {
     CoreDirectives::default()
         .with_force_delete(directives.force_delete)
@@ -61,6 +77,7 @@ fn wire_directives_to_core(directives: &proto::Directives) -> CoreDirectives {
         .with_prevent_destroy(directives.prevent_destroy)
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 fn protocol_resource_to_core(
     resource: &proto::Resource,
 ) -> Result<CoreResource, protocol_convert::ProtocolConvertError> {
@@ -72,6 +89,7 @@ fn protocol_resource_to_core(
     Ok(core)
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 fn protocol_data_source_to_core(
     resource: &proto::Resource,
 ) -> Result<CoreDataSource, protocol_convert::ProtocolConvertError> {
@@ -89,13 +107,14 @@ fn protocol_data_source_to_core(
     Ok(core)
 }
 
-fn provider_config_decode_error(error: protocol_convert::ProtocolConvertError) -> String {
-    // The `CarinaProvider` config methods return errors as strings, so
-    // their ABI cannot retain a typed source. `CoreProviderError`'s Display
-    // includes the conversion cause, preserving the complete chain in text.
-    protocol_input_error("failed to decode provider configuration", error).to_string()
+#[cfg(any(target_arch = "wasm32", test))]
+fn provider_config_decode_error(
+    error: protocol_convert::ProtocolConvertError,
+) -> CoreProviderError {
+    protocol_input_error("failed to decode provider configuration", error)
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 fn read_outcome_to_proto(
     outcome: &CoreReadOutcome,
 ) -> Result<proto::ReadOutcome, CoreProviderError> {
@@ -108,20 +127,49 @@ fn read_outcome_to_proto(
     })
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 fn issued_create_attributes_to_proto(
     attributes: &HashMap<String, CoreValue>,
 ) -> Result<BTreeMap<String, proto::Value>, CoreProviderError> {
-    protocol_convert::try_core_to_protocol_value_map(attributes)
+    let attributes = attributes
+        .iter()
+        .map(|(name, value)| {
+            let known = value
+                .knowledge(&carina_core::resource::knowledge::KnowledgeContext::validation())?
+                .into_classification()
+                .into_known()?;
+            Ok((name.clone(), known))
+        })
+        .collect::<Result<HashMap<_, _>, carina_core::resource::knowledge::KnowledgeError>>()
+        .map_err(|error| {
+            CoreProviderError::internal_caused_by("failed to encode create result", error)
+        })?;
+    protocol_convert::try_core_to_protocol_value_map(&attributes)
         .map_err(|error| protocol_output_error("failed to encode create result", error))
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 fn partial_create_attributes_to_proto(
     attributes: &HashMap<String, CoreValue>,
 ) -> Result<BTreeMap<String, proto::Value>, CoreProviderError> {
-    protocol_convert::try_core_to_protocol_value_map(attributes)
+    let attributes = attributes
+        .iter()
+        .map(|(name, value)| {
+            let known = value
+                .knowledge(&carina_core::resource::knowledge::KnowledgeContext::validation())?
+                .into_classification()
+                .into_known()?;
+            Ok((name.clone(), known))
+        })
+        .collect::<Result<HashMap<_, _>, carina_core::resource::knowledge::KnowledgeError>>()
+        .map_err(|error| {
+            CoreProviderError::internal_caused_by("failed to encode partial create result", error)
+        })?;
+    protocol_convert::try_core_to_protocol_value_map(&attributes)
         .map_err(|error| protocol_output_error("failed to encode partial create result", error))
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 fn resumed_state_to_proto(
     state: &CoreAppliedState,
 ) -> Result<proto::AppliedState, CoreProviderError> {
@@ -129,37 +177,72 @@ fn resumed_state_to_proto(
         .map_err(|error| protocol_output_error("failed to encode resumed create result", error))
 }
 
-fn update_outcome_to_proto(
+#[cfg(any(target_arch = "wasm32", test))]
+fn update_outcome_to_sdk(
     outcome: &carina_core::provider::UpdateOutcome,
     state_after_patch: proto::PersistedState,
-    id: &CoreResourceId,
+    id: &carina_core::resource::ResourceId,
 ) -> Result<proto::UpdateOutcome, CoreProviderError> {
-    protocol_convert::try_update_outcome_to_protocol(outcome, state_after_patch).map_err(|error| {
+    use carina_core::provider::UpdateOutcomeKind;
+
+    let (state, diagnostic) = match outcome.kind() {
+        UpdateOutcomeKind::Success { state } => (state, None),
+        UpdateOutcomeKind::PartialSuccess { state, diagnostic } => (state, Some(diagnostic)),
+    };
+    let mut attributes = protocol_convert::try_core_to_protocol_persisted_value_map(
+        state.attributes(),
+    )
+    .map_err(|error| {
         protocol_output_error("failed to encode update result", error).for_resource(id.clone())
+    })?;
+    for (key, value) in state_after_patch.attributes {
+        attributes.entry(key).or_insert(value);
+    }
+    let state = proto::AppliedPersistedState {
+        id: protocol_convert::resource_id_to_protocol(state.id()),
+        identifier: state.identifier().clone(),
+        attributes,
+    };
+    Ok(match diagnostic {
+        Some(diagnostic) => proto::UpdateOutcome::PartialSuccess {
+            state,
+            diagnostic: diagnostic.clone(),
+        },
+        None => proto::UpdateOutcome::Success { state },
     })
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 struct GuestCreateAttempt(SdkCreateAttempt);
+#[cfg(any(target_arch = "wasm32", test))]
 struct GuestPollAttempt(SdkPollAttempt);
+#[cfg(any(target_arch = "wasm32", test))]
 struct GuestIssuedCreate(SdkIssuedCreate);
+#[cfg(any(target_arch = "wasm32", test))]
 struct GuestPolledIssuedCreate(SdkIssuedCreate);
+#[cfg(any(target_arch = "wasm32", test))]
 struct GuestResumeAttempt(SdkResumeAttempt);
+#[cfg(any(target_arch = "wasm32", test))]
 struct GuestResumedCreate(SdkResumedCreate);
+#[cfg(any(target_arch = "wasm32", test))]
 struct GuestResentCreateAttempt(SdkCreateAttempt);
+#[cfg(any(target_arch = "wasm32", test))]
 struct GuestResentIssuedCreate(SdkIssuedCreate);
 
-fn observation_to_proto(
+#[cfg(any(target_arch = "wasm32", test))]
+fn observation_to_sdk(
     observation: CoreObservation,
 ) -> proto::Observation<proto::ReadOutcome, proto::ProviderError> {
     match observation {
         CoreObservation::Read(outcome) => match read_outcome_to_proto(&outcome) {
             Ok(outcome) => proto::Observation::Read(outcome),
-            Err(error) => proto::Observation::ReadFailed(error.to_wire()),
+            Err(error) => proto::Observation::ReadFailed(error),
         },
-        CoreObservation::ReadFailed(error) => proto::Observation::ReadFailed(error.to_wire()),
+        CoreObservation::ReadFailed(error) => proto::Observation::ReadFailed(error),
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 fn finish_encoded<Finishing, Encoded, Step, Verdict>(
     finishing: Finishing,
     encoded: Result<Encoded, CoreProviderError>,
@@ -172,24 +255,22 @@ fn finish_encoded<Finishing, Encoded, Step, Verdict>(
 ) -> Result<Step, Verdict> {
     match encoded {
         Ok(encoded) => Ok(succeeded(finishing, encoded)),
-        Err(error) => {
-            let error = error.to_wire();
-            Err(failed(
-                finishing,
-                proto::Observation::ReadFailed(error.clone()),
-                error,
-            ))
-        }
+        Err(error) => Err(failed(
+            finishing,
+            proto::Observation::ReadFailed(error.clone()),
+            error,
+        )),
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 impl CcCreateAttempt for GuestCreateAttempt {
     type Step = SdkCreateStep<CcCreateToken>;
     type Verdict = SdkCreateVerdict<CcCreateToken>;
     type Issued = GuestIssuedCreate;
 
     fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
-        self.0.not_created(failure.into_error().to_wire())
+        self.0.not_created(failure.into_error())
     }
 
     fn preserve(self, token: CcCreateOperation, error: CoreProviderError) -> Self::Verdict {
@@ -198,7 +279,7 @@ impl CcCreateAttempt for GuestCreateAttempt {
             token,
             CoreSent::AllRequestAttributes,
             poll_after_secs,
-            error.to_wire(),
+            error,
         )
     }
 
@@ -217,19 +298,20 @@ impl CcCreateAttempt for GuestCreateAttempt {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 impl CcPollAttempt for GuestPollAttempt {
     type Step = SdkCreateStep<CcCreateToken>;
     type Verdict = SdkPollVerdict<CcCreateToken>;
     type Issued = GuestPolledIssuedCreate;
 
     fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
-        self.0.not_created(failure.into_error().to_wire())
+        self.0.not_created(failure.into_error())
     }
 
     fn preserve(self, token: CcCreateOperation, failure: InFlightCreate) -> Self::Verdict {
         let error = failure.into_error();
         let poll_after_secs = token.poll_after_secs();
-        self.0.preserve(token, poll_after_secs, error.to_wire())
+        self.0.preserve(token, poll_after_secs, error)
     }
 
     fn issued(self, identifier: CoreAppliedIdentifier) -> Self::Issued {
@@ -246,6 +328,7 @@ impl CcPollAttempt for GuestPollAttempt {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 impl CcIssuedCreate for GuestIssuedCreate {
     type Step = SdkCreateStep<CcCreateToken>;
     type Verdict = SdkCreateVerdict<CcCreateToken>;
@@ -282,10 +365,10 @@ impl CcIssuedCreate for GuestIssuedCreate {
             |finishing, attributes| {
                 finishing.partial(
                     attributes,
-                    proto::PartialReadDiagnostic {
-                        reason: reason.to_string(),
-                        missing_attributes: missing_attributes.into(),
-                    },
+                    carina_core::provider::PartialReadDiagnostic::new(
+                        carina_core::provider_text::ProviderDiagnostic::new(reason),
+                        missing_attributes.into(),
+                    ),
                 )
             },
             |finishing, observation, error| finishing.identifier_reported(observation, error),
@@ -300,16 +383,16 @@ impl CcIssuedCreate for GuestIssuedCreate {
     ) -> Self::Verdict {
         self.0
             .canonicalize(identifier)
-            .identifier_reported(observation_to_proto(observation), error.to_wire())
+            .identifier_reported(observation_to_sdk(observation), error)
     }
 
     fn no_resource(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.no_resource(error.to_wire())
+        self.0.no_resource(error)
     }
 
     fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
         let poll_after_secs = token.poll_after_secs();
-        self.0.preserve(token, poll_after_secs, error.to_wire())
+        self.0.preserve(token, poll_after_secs, error)
     }
 
     fn pending(
@@ -322,6 +405,7 @@ impl CcIssuedCreate for GuestIssuedCreate {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 impl CcIssuedCreate for GuestPolledIssuedCreate {
     type Step = SdkCreateStep<CcCreateToken>;
     type Verdict = SdkPollVerdict<CcCreateToken>;
@@ -360,10 +444,10 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
             |finishing, attributes| {
                 finishing.partial(
                     attributes,
-                    proto::PartialReadDiagnostic {
-                        reason: reason.to_string(),
-                        missing_attributes: missing_attributes.into(),
-                    },
+                    carina_core::provider::PartialReadDiagnostic::new(
+                        carina_core::provider_text::ProviderDiagnostic::new(reason),
+                        missing_attributes.into(),
+                    ),
                 )
             },
             |finishing, observation, error| {
@@ -380,19 +464,17 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
     ) -> Self::Verdict {
         self.0
             .canonicalize(identifier)
-            .identifier_reported(observation_to_proto(observation), error.to_wire())
+            .identifier_reported(observation_to_sdk(observation), error)
             .into()
     }
 
     fn no_resource(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.no_resource(error.to_wire()).into()
+        self.0.no_resource(error).into()
     }
 
     fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
         let poll_after_secs = token.poll_after_secs();
-        self.0
-            .preserve(token, poll_after_secs, error.to_wire())
-            .into()
+        self.0.preserve(token, poll_after_secs, error).into()
     }
 
     fn pending(
@@ -405,6 +487,7 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 impl CcResumeAttempt for GuestResumeAttempt {
     type Step = SdkResumeStep<CcCreateToken>;
     type Verdict = SdkResumeVerdict<CcCreateToken>;
@@ -412,12 +495,12 @@ impl CcResumeAttempt for GuestResumeAttempt {
     type Resent = GuestResentCreateAttempt;
 
     fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
-        self.0.not_created(failure.into_error().to_wire())
+        self.0.not_created(failure.into_error())
     }
 
     fn preserve(self, token: CcCreateOperation, error: CoreProviderError) -> Self::Verdict {
         let poll_after_secs = token.poll_after_secs();
-        self.0.preserve(token, poll_after_secs, error.to_wire())
+        self.0.preserve(token, poll_after_secs, error)
     }
 
     fn issued(self, identifier: CoreAppliedIdentifier) -> Self::Resumed {
@@ -438,6 +521,7 @@ impl CcResumeAttempt for GuestResumeAttempt {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 impl CcResumedCreate for GuestResumedCreate {
     type Step = SdkResumeStep<CcCreateToken>;
     type Verdict = SdkResumeVerdict<CcCreateToken>;
@@ -474,10 +558,10 @@ impl CcResumedCreate for GuestResumedCreate {
             |finishing, attributes| {
                 finishing.partial(
                     attributes,
-                    proto::PartialReadDiagnostic {
-                        reason: reason.to_string(),
-                        missing_attributes: missing_attributes.into(),
-                    },
+                    carina_core::provider::PartialReadDiagnostic::new(
+                        carina_core::provider_text::ProviderDiagnostic::new(reason),
+                        missing_attributes.into(),
+                    ),
                 )
             },
             |finishing, observation, error| finishing.identifier_reported(observation, error),
@@ -492,16 +576,16 @@ impl CcResumedCreate for GuestResumedCreate {
     ) -> Self::Verdict {
         self.0
             .canonicalize(identifier)
-            .identifier_reported(observation_to_proto(observation), error.to_wire())
+            .identifier_reported(observation_to_sdk(observation), error)
     }
 
     fn no_resource(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.no_resource(error.to_wire())
+        self.0.no_resource(error)
     }
 
     fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
         let poll_after_secs = token.poll_after_secs();
-        self.0.preserve(token, poll_after_secs, error.to_wire())
+        self.0.preserve(token, poll_after_secs, error)
     }
 
     fn pending(
@@ -514,13 +598,14 @@ impl CcResumedCreate for GuestResumedCreate {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 impl CcCreateAttempt for GuestResentCreateAttempt {
     type Step = SdkResumeStep<CcCreateToken>;
     type Verdict = SdkResumeVerdict<CcCreateToken>;
     type Issued = GuestResentIssuedCreate;
 
     fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
-        self.0.not_created(failure.into_error().to_wire()).into()
+        self.0.not_created(failure.into_error()).into()
     }
 
     fn preserve(self, token: CcCreateOperation, error: CoreProviderError) -> Self::Verdict {
@@ -530,7 +615,7 @@ impl CcCreateAttempt for GuestResentCreateAttempt {
                 token,
                 CoreSent::AllRequestAttributes,
                 poll_after_secs,
-                error.to_wire(),
+                error,
             )
             .into()
     }
@@ -550,6 +635,7 @@ impl CcCreateAttempt for GuestResentCreateAttempt {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 impl CcIssuedCreate for GuestResentIssuedCreate {
     type Step = SdkResumeStep<CcCreateToken>;
     type Verdict = SdkResumeVerdict<CcCreateToken>;
@@ -589,10 +675,10 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
                 finishing
                     .partial(
                         attributes,
-                        proto::PartialReadDiagnostic {
-                            reason: reason.to_string(),
-                            missing_attributes: missing_attributes.into(),
-                        },
+                        carina_core::provider::PartialReadDiagnostic::new(
+                            carina_core::provider_text::ProviderDiagnostic::new(reason),
+                            missing_attributes.into(),
+                        ),
                     )
                     .into()
             },
@@ -610,19 +696,17 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
     ) -> Self::Verdict {
         self.0
             .canonicalize(identifier)
-            .identifier_reported(observation_to_proto(observation), error.to_wire())
+            .identifier_reported(observation_to_sdk(observation), error)
             .into()
     }
 
     fn no_resource(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.no_resource(error.to_wire()).into()
+        self.0.no_resource(error).into()
     }
 
     fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
         let poll_after_secs = token.poll_after_secs();
-        self.0
-            .preserve(token, poll_after_secs, error.to_wire())
-            .into()
+        self.0.preserve(token, poll_after_secs, error).into()
     }
 
     fn pending(
@@ -635,36 +719,45 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 struct AwsccProcessProvider {
     runtime: tokio::runtime::Runtime,
     provider: Option<AwsccProvider>,
     normalizer: AwsccNormalizer,
+    #[cfg(not(target_arch = "wasm32"))]
+    diagnostic_session: carina_core::provider::ProviderSession,
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 impl Default for AwsccProcessProvider {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 impl AwsccProcessProvider {
     fn new() -> Self {
         #[cfg(not(target_arch = "wasm32"))]
-        let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        let runtime = carina_plugin_sdk::expect_diagnostic(
+            tokio::runtime::Runtime::new()
+                .map_err(carina_core::provider_text::ProviderDiagnostic::new),
+        );
         #[cfg(target_arch = "wasm32")]
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .expect("Failed to create tokio runtime");
+        let runtime = carina_plugin_sdk::expect_diagnostic(
+            tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .map_err(carina_core::provider_text::ProviderDiagnostic::new),
+        );
         Self {
             runtime,
             provider: None,
             normalizer: AwsccNormalizer,
+            #[cfg(not(target_arch = "wasm32"))]
+            diagnostic_session: carina_core::provider::ProviderPlan::state_only()
+                .session("awscc", None, None),
         }
-    }
-
-    fn convert_error(e: CoreProviderError) -> proto::ProviderError {
-        e.to_wire()
     }
 
     fn provider(&self) -> &AwsccProvider {
@@ -738,6 +831,7 @@ impl AwsccProcessProvider {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 impl CarinaProvider for AwsccProcessProvider {
     type CreateToken = CcCreateToken;
     type UpdateToken = CcUpdateToken;
@@ -778,7 +872,10 @@ impl CarinaProvider for AwsccProcessProvider {
         AwsccProviderFactory.provider_config_attribute_types()
     }
 
-    fn validate_config(&self, attrs: &BTreeMap<String, proto::Value>) -> Result<(), String> {
+    fn validate_config(
+        &self,
+        attrs: &BTreeMap<String, proto::Value>,
+    ) -> Result<(), proto::ProviderError> {
         // Cross-account guardrail: when `assume_role.role_arn` parses to
         // an account id that is not in `allowed_account_ids` (when that
         // list is configured), refuse the configuration. Avoids the
@@ -789,10 +886,12 @@ impl CarinaProvider for AwsccProcessProvider {
         };
         let core_attrs = protocol_convert::protocol_to_core_value_map(attrs)
             .map_err(provider_config_decode_error)?;
-        let assume_role = extract_assume_role(core_attrs.get("assume_role"))?;
+        let assume_role = extract_assume_role(core_attrs.get("assume_role"))
+            .map_err(CoreProviderError::invalid_input)?;
         if let Some(ar) = &assume_role {
             let allowed = extract_string_list(&core_attrs, "allowed_account_ids");
-            check_cross_account(&ar.role_arn, &allowed)?;
+            check_cross_account(&ar.role_arn, &allowed)
+                .map_err(CoreProviderError::invalid_input)?;
         }
         Ok(())
     }
@@ -800,22 +899,28 @@ impl CarinaProvider for AwsccProcessProvider {
     fn initialize(
         &mut self,
         attrs: &BTreeMap<String, proto::Value>,
-    ) -> Result<proto::ReferenceScope, String> {
+    ) -> Result<proto::ReferenceScope, proto::ProviderError> {
         let core_attrs = protocol_convert::protocol_to_core_value_map(attrs)
             .map_err(provider_config_decode_error)?;
-        let cfg = extract_account_guard_config(&core_attrs)?;
+        let cfg =
+            extract_account_guard_config(&core_attrs).map_err(CoreProviderError::invalid_input)?;
         let ordered_attrs: indexmap::IndexMap<_, _> = core_attrs.into_iter().collect();
         let region =
             carina_core::utils::extract_region_from_attrs(&ordered_attrs, "ap-northeast-1");
-        let provider = self
-            .runtime
-            .block_on(AwsccProvider::new_with_config(&region, &cfg));
+        #[cfg(target_arch = "wasm32")]
+        let diagnostics = carina_plugin_sdk::ProviderDiagnostics::guest();
+        #[cfg(not(target_arch = "wasm32"))]
+        let diagnostics =
+            carina_plugin_sdk::ProviderDiagnostics::from_session(&self.diagnostic_session);
+        let provider =
+            self.runtime
+                .block_on(AwsccProvider::new_with_config(&region, &cfg, diagnostics));
         // Surface the account-guard rejection eagerly: if the caller's
         // AWS account violates allowed_account_ids / forbidden_account_ids,
         // initialize() must fail so the host aborts before any plan,
         // refresh, or apply step.
         if let Some(err) = provider.init_error() {
-            return Err(err.to_string());
+            return Err(err.clone());
         }
         self.provider = Some(provider);
         // This change declares no ReferenceForm table. Returning an available
@@ -855,8 +960,8 @@ impl CarinaProvider for AwsccProcessProvider {
             self.runtime
                 .block_on(self.provider().read(&core_id, identifier, CoreReadRequest));
         match result {
-            Ok(outcome) => read_outcome_to_proto(&outcome).map_err(Self::convert_error),
-            Err(e) => Err(Self::convert_error(e)),
+            Ok(outcome) => read_outcome_to_proto(&outcome),
+            Err(e) => Err(e),
         }
     }
 
@@ -865,10 +970,8 @@ impl CarinaProvider for AwsccProcessProvider {
         resource: &proto::Resource,
     ) -> Result<proto::State, proto::ProviderError> {
         let core_data_source = protocol_data_source_to_core(resource).map_err(|error| {
-            Self::convert_error(
-                protocol_input_error("failed to decode data source", error)
-                    .for_resource(protocol_convert::protocol_to_resource_id(&resource.id)),
-            )
+            protocol_input_error("failed to decode data source", error)
+                .for_resource(protocol_convert::protocol_to_resource_id(&resource.id))
         })?;
         let result = self.runtime.block_on(
             self.provider()
@@ -876,12 +979,10 @@ impl CarinaProvider for AwsccProcessProvider {
         );
         match result {
             Ok(state) => protocol_convert::try_state_to_protocol(&state).map_err(|error| {
-                Self::convert_error(
-                    protocol_output_error("failed to encode data-source read result", error)
-                        .for_resource(core_data_source.id.clone()),
-                )
+                protocol_output_error("failed to encode data-source read result", error)
+                    .for_resource(core_data_source.id.clone())
             }),
-            Err(e) => Err(Self::convert_error(e)),
+            Err(e) => Err(e),
         }
     }
 
@@ -893,7 +994,7 @@ impl CarinaProvider for AwsccProcessProvider {
     ) -> Result<SdkCreateStep<Self::CreateToken>, SdkCreateVerdict<Self::CreateToken>> {
         let normalized_resource = match self.normalize_create_resource(&request.resource) {
             Ok(resource) => resource,
-            Err(error) => return Err(attempt.not_created(Self::convert_error(error))),
+            Err(error) => return Err(attempt.not_created(error)),
         };
         self.runtime.block_on(self.provider().create_step(
             normalized_resource.as_resource(),
@@ -911,7 +1012,6 @@ impl CarinaProvider for AwsccProcessProvider {
         let normalized_resource = match self.normalize_create_resource(&request.resource) {
             Ok(resource) => resource,
             Err(error) => {
-                let error = Self::convert_error(error);
                 return match poll {
                     SdkPoll::Unissued(attempt, token) => {
                         let poll_after_secs = token.poll_after_secs();
@@ -949,7 +1049,6 @@ impl CarinaProvider for AwsccProcessProvider {
         let normalized_resource = match self.normalize_create_resource(&request.resource) {
             Ok(resource) => resource,
             Err(error) => {
-                let error = Self::convert_error(error);
                 return match resume {
                     SdkResume::Unissued(attempt, token) => {
                         let poll_after_secs = token.poll_after_secs();
@@ -987,17 +1086,13 @@ impl CarinaProvider for AwsccProcessProvider {
         let state_after_patch = request.state_after_patch();
         let core_from =
             protocol_convert::protocol_persisted_state_to_core(&request.from).map_err(|error| {
-                Self::convert_error(
-                    protocol_input_error("failed to decode persisted update state", error)
-                        .for_resource(core_id.clone()),
-                )
+                protocol_input_error("failed to decode persisted update state", error)
+                    .for_resource(core_id.clone())
             })?;
         let core_patch =
             protocol_convert::protocol_update_patch_to_core(&request.patch).map_err(|error| {
-                Self::convert_error(
-                    protocol_input_error("failed to decode update patch", error)
-                        .for_resource(core_id.clone()),
-                )
+                protocol_input_error("failed to decode update patch", error)
+                    .for_resource(core_id.clone())
             })?;
         let result = self.runtime.block_on(self.provider().update_step(
             &core_id,
@@ -1007,11 +1102,10 @@ impl CarinaProvider for AwsccProcessProvider {
         ));
         match result {
             Ok(OperationStep::Done(outcome)) => {
-                update_outcome_to_proto(&outcome, state_after_patch, &core_id)
+                update_outcome_to_sdk(&outcome, state_after_patch, &core_id)
                     .map(SdkUpdateOutcome::Done)
-                    .map_err(Self::convert_error)
             }
-            Ok(OperationStep::Verdict(error)) | Err(error) => Err(Self::convert_error(error)),
+            Ok(OperationStep::Verdict(error)) | Err(error) => Err(error),
             Ok(OperationStep::Pending {
                 pending: token,
                 poll_after_secs,
@@ -1035,17 +1129,13 @@ impl CarinaProvider for AwsccProcessProvider {
         let state_after_patch = request.state_after_patch();
         let core_from =
             protocol_convert::protocol_persisted_state_to_core(&request.from).map_err(|error| {
-                Self::convert_error(
-                    protocol_input_error("failed to decode persisted update state", error)
-                        .for_resource(core_id.clone()),
-                )
+                protocol_input_error("failed to decode persisted update state", error)
+                    .for_resource(core_id.clone())
             })?;
         let core_patch =
             protocol_convert::protocol_update_patch_to_core(&request.patch).map_err(|error| {
-                Self::convert_error(
-                    protocol_input_error("failed to decode update patch", error)
-                        .for_resource(core_id.clone()),
-                )
+                protocol_input_error("failed to decode update patch", error)
+                    .for_resource(core_id.clone())
             })?;
         let result = self.runtime.block_on(self.provider().poll_update_step(
             &core_id,
@@ -1057,11 +1147,10 @@ impl CarinaProvider for AwsccProcessProvider {
         ));
         match result {
             Ok(OperationStep::Done(outcome)) => {
-                update_outcome_to_proto(&outcome, state_after_patch, &core_id)
+                update_outcome_to_sdk(&outcome, state_after_patch, &core_id)
                     .map(SdkUpdateOutcome::Done)
-                    .map_err(Self::convert_error)
             }
-            Ok(OperationStep::Verdict(error)) | Err(error) => Err(Self::convert_error(error)),
+            Ok(OperationStep::Verdict(error)) | Err(error) => Err(error),
             Ok(OperationStep::Pending {
                 pending: token,
                 poll_after_secs,
@@ -1080,8 +1169,7 @@ impl CarinaProvider for AwsccProcessProvider {
         request: proto::DeleteRequest,
     ) -> Result<SdkDeleteOutcome<Self::DeleteToken>, proto::ProviderError> {
         let core_id = protocol_convert::protocol_to_resource_id(id);
-        let core_request =
-            Self::core_delete_request(&core_id, request).map_err(Self::convert_error)?;
+        let core_request = Self::core_delete_request(&core_id, request)?;
         let result = self.runtime.block_on(self.provider().delete_step(
             &core_id,
             identifier,
@@ -1092,7 +1180,6 @@ impl CarinaProvider for AwsccProcessProvider {
             |()| SdkDeleteOutcome::Deleted,
             SdkDeleteOutcome::Pending,
         )
-        .map_err(Self::convert_error)
     }
 
     fn poll_delete(
@@ -1103,8 +1190,7 @@ impl CarinaProvider for AwsccProcessProvider {
         pending: PendingDelete<Self::DeleteToken>,
     ) -> Result<SdkDeleteOutcome<Self::DeleteToken>, proto::ProviderError> {
         let core_id = protocol_convert::protocol_to_resource_id(id);
-        let core_request =
-            Self::core_delete_request(&core_id, request).map_err(Self::convert_error)?;
+        let core_request = Self::core_delete_request(&core_id, request)?;
         let result = self.runtime.block_on(self.provider().poll_delete_step(
             &core_id,
             identifier,
@@ -1116,7 +1202,6 @@ impl CarinaProvider for AwsccProcessProvider {
             |()| SdkDeleteOutcome::Deleted,
             SdkDeleteOutcome::Pending,
         )
-        .map_err(Self::convert_error)
     }
 
     fn required_permissions(
@@ -1146,13 +1231,8 @@ impl CarinaProvider for AwsccProcessProvider {
         for state in states.values() {
             let core_state =
                 protocol_convert::protocol_persisted_state_to_core(state).map_err(|error| {
-                    Self::convert_error(
-                        protocol_input_error(
-                            "normalize_state could not decode persisted state",
-                            error,
-                        )
-                        .for_resource(protocol_convert::protocol_to_resource_id(&state.id)),
-                    )
+                    protocol_input_error("normalize_state could not decode persisted state", error)
+                        .for_resource(protocol_convert::protocol_to_resource_id(&state.id))
                 })?;
             core_states.insert(core_state.id.clone(), core_state);
         }
@@ -1160,16 +1240,13 @@ impl CarinaProvider for AwsccProcessProvider {
             .block_on(carina_core::provider::normalize_provider_states(
                 &self.normalizer,
                 &mut core_states,
-            ))
-            .map_err(Self::convert_error)?;
+            ))?;
         let mut normalized = HashMap::with_capacity(core_states.len());
         for (id, state) in &core_states {
             let state =
                 protocol_convert::try_state_to_persisted_protocol(state).map_err(|error| {
-                    Self::convert_error(
-                        protocol_output_error("failed to encode normalized state", error)
-                            .for_resource(id.clone()),
-                    )
+                    protocol_output_error("failed to encode normalized state", error)
+                        .for_resource(id.clone())
                 })?;
             normalized.insert(id.to_string(), state);
         }
@@ -1191,34 +1268,28 @@ impl CarinaProvider for AwsccProcessProvider {
         for state in states.values() {
             let core_state =
                 protocol_convert::protocol_persisted_state_to_core(state).map_err(|error| {
-                    Self::convert_error(
-                        protocol_input_error(
-                            "hydrate_read_state could not decode persisted state",
-                            error,
-                        )
-                        .for_resource(protocol_convert::protocol_to_resource_id(&state.id)),
+                    protocol_input_error(
+                        "hydrate_read_state could not decode persisted state",
+                        error,
                     )
+                    .for_resource(protocol_convert::protocol_to_resource_id(&state.id))
                 })?;
             core_states.insert(core_state.id.clone(), core_state);
         }
         let schemas = Self::schema_registry();
-        let core_saved = decode_persisted_saved_attrs(saved_attrs, &key_to_id, &schemas)
-            .map_err(Self::convert_error)?;
+        let core_saved = decode_persisted_saved_attrs(saved_attrs, &key_to_id, &schemas)?;
         self.runtime
             .block_on(carina_core::provider::hydrate_provider_states(
                 &self.normalizer,
                 &mut core_states,
                 core_saved.as_provider_saved_attrs(),
-            ))
-            .map_err(Self::convert_error)?;
+            ))?;
         let mut hydrated = HashMap::with_capacity(core_states.len());
         for (id, state) in &core_states {
             let state =
                 protocol_convert::try_state_to_persisted_protocol(state).map_err(|error| {
-                    Self::convert_error(
-                        protocol_output_error("failed to encode hydrated state", error)
-                            .for_resource(id.clone()),
-                    )
+                    protocol_output_error("failed to encode hydrated state", error)
+                        .for_resource(id.clone())
                 })?;
             hydrated.insert(id.to_string(), state);
         }
@@ -1227,6 +1298,7 @@ impl CarinaProvider for AwsccProcessProvider {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
 fn decode_persisted_saved_attrs(
     saved_attrs: &HashMap<String, BTreeMap<String, proto::PersistedValue>>,
     key_to_id: &HashMap<&str, CoreResourceId>,
@@ -1270,6 +1342,7 @@ fn decode_persisted_saved_attrs(
 /// means "no account check"; `assume_role` absent means "do not chain
 /// sts:AssumeRole". Mirrors the in-process Provider wiring in
 /// `lib.rs::extract_provider_config`.
+#[cfg(any(target_arch = "wasm32", test))]
 fn extract_account_guard_config(
     core_attrs: &HashMap<String, CoreValue>,
 ) -> Result<AwsccProviderConfig, String> {
@@ -1287,6 +1360,7 @@ fn extract_account_guard_config(
 /// `extract_account_guard_config`. Drops non-string elements silently —
 /// the host enforces the declared `list(string)` shape before we see
 /// the value.
+#[cfg(any(target_arch = "wasm32", test))]
 fn extract_string_list(attrs: &HashMap<String, CoreValue>, key: &str) -> Vec<String> {
     match attrs.get(key) {
         Some(CoreValue::Concrete(ConcreteValue::List(items))) => items
@@ -1304,7 +1378,9 @@ fn extract_string_list(attrs: &HashMap<String, CoreValue>, key: &str) -> Vec<Str
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
+    #[cfg(test)]
     fn assert_component_provider<P: CarinaProvider>() {}
+    #[cfg(test)]
     assert_component_provider::<AwsccProcessProvider>();
     eprintln!(
         "carina-provider-awscc no longer has a native provider transport; build the wasm32-wasip2 component"
@@ -1329,6 +1405,7 @@ mod tests {
         CompiledAttributeType, CustomValidator, RawShape, ResourceValidation,
         TypeIdentity as CoreTypeIdentity,
     };
+    use carina_core::test_utils::provider_text::{BindProviderText as _, NativeWireFixture as _};
     use carina_plugin_sdk::types::{TypeIdentity as WireTypeIdentity, ValidatorType};
     use carina_plugin_sdk::{
         ProviderSchemaCache, dispatch_custom_type_validation, provider_schema_to_json,
@@ -1348,7 +1425,13 @@ mod tests {
         .expect_err("read-back is an internal phase error for delete");
 
         assert_eq!(error.variant_name(), "internal");
-        assert!(error.to_string().contains("ReadBack"));
+        assert!(
+            error
+                .clone()
+                .into_host_for_test()
+                .to_string()
+                .contains("ReadBack")
+        );
     }
 
     #[test]
@@ -1383,9 +1466,12 @@ mod tests {
             assert!(matches!(error.kind, NormalizationErrorKind::Conversion));
             assert_eq!(*error.resource_id, id);
             assert_eq!(error.attribute, "values");
-            let error: proto::ProviderError = error.into();
+            let error: carina_provider_protocol::types::ProviderError = error.into();
             assert_eq!(error.resource_id.as_ref(), Some(&id));
-            assert_eq!(error.operation.as_deref(), Some("normalize_desired"));
+            assert_eq!(
+                error.operation.as_ref().map(ToString::to_string).as_deref(),
+                Some("normalize_desired")
+            );
             assert!(error.cause.is_some());
         }
     }
@@ -1593,13 +1679,18 @@ mod tests {
     fn assert_typed_conversion_error(error: CoreProviderError, message: &str) {
         assert!(
             error
+                .clone()
+                .into_host_for_test()
                 .detail()
                 .cause()
                 .is_some_and(|cause| cause.is::<protocol_convert::ProtocolConvertError>()),
             "typed protocol-conversion cause must be retained: {error:?}"
         );
         let error = error.to_wire();
-        assert_eq!(error.kind, proto::ProviderErrorKind::Internal);
+        assert_eq!(
+            error.kind,
+            carina_provider_protocol::types::ProviderErrorKind::Internal
+        );
         assert_eq!(error.message, message);
         assert!(
             error.cause.as_deref().is_some_and(|cause| cause
@@ -1653,7 +1744,7 @@ mod tests {
             attributes: BTreeMap::new(),
             exists: true,
         };
-        let error = update_outcome_to_proto(&outcome, state_after_patch, &id)
+        let error = update_outcome_to_sdk(&outcome, state_after_patch, &id)
             .expect_err("out-of-range duration in update output must be rejected");
         assert_typed_conversion_error(error, "failed to encode update result");
     }
@@ -1703,13 +1794,13 @@ mod tests {
             carina_core::provider::UpdateOutcome::success(state.clone()),
             carina_core::provider::UpdateOutcome::partial_success(
                 state,
-                "arn omitted".into(),
-                vec!["arn".into()],
+                carina_core::provider_text::ProviderDiagnostic::message("arn omitted".into()),
+                vec!["arn".into()].try_into().unwrap(),
             ),
         ];
         for outcome in outcomes {
             let encoded =
-                update_outcome_to_proto(&outcome, request.state_after_patch(), &id).unwrap();
+                update_outcome_to_sdk(&outcome, request.state_after_patch(), &id).unwrap();
             let is_partial = matches!(
                 outcome.kind(),
                 carina_core::provider::UpdateOutcomeKind::PartialSuccess { .. }
@@ -2004,7 +2095,9 @@ mod tests {
         ]);
         let err = provider
             .validate_config(&attrs)
-            .expect_err("cross-account role outside allowed_account_ids must fail");
+            .expect_err("cross-account role outside allowed_account_ids must fail")
+            .into_host_for_test()
+            .to_string();
         assert!(err.contains("412038850359"), "must name target: {err}");
         assert!(err.contains("111111111111"), "must name allow list: {err}");
     }
@@ -2038,7 +2131,11 @@ mod tests {
             .hydrate_read_state(&mut states, &saved_attrs)
             .expect_err("an unknown saved-attribute key must not be silently discarded");
 
-        assert!(matches!(error.kind, proto::ProviderErrorKind::Internal));
+        let error = error.to_wire();
+        assert!(matches!(
+            error.kind,
+            carina_provider_protocol::types::ProviderErrorKind::Internal
+        ));
         assert!(
             error.message.contains("unknown state key"),
             "unexpected error: {}",

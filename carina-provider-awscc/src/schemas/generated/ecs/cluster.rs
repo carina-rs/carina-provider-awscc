@@ -48,7 +48,7 @@ pub fn ecs_cluster_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_capacity_providers_attribute());
     #[inline(never)]
     fn build_cluster_name_attribute() -> AttributeSchema {
-        AttributeSchema::optional("cluster_name", AttributeType::refined_string(None, Some("^[a-zA-Z0-9_-]+\\z".to_string()), Some((Some(1), Some(255))), None))
+        AttributeSchema::optional("cluster_name", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[a-zA-Z0-9_-]+\\z", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(255))), None))
                 .create_only()
                 .with_description("A user-generated string that you use to identify your cluster. If you don't specify a name, CFNlong generates a unique physical ID for the name.")
                 .with_provider_name("ClusterName")

@@ -473,11 +473,11 @@ impl StringIdentity {
         match declaration.raw_shape() {
             RawShape::String {
                 pattern, length, ..
-            } => Some((pattern.map(str::to_string), length)),
+            } => Some((pattern.map(|pattern| pattern.as_str().to_string()), length)),
             RawShape::Enum { base, .. } => match base.raw_shape() {
                 RawShape::String {
                     pattern, length, ..
-                } => Some((pattern.map(str::to_string), length)),
+                } => Some((pattern.map(|pattern| pattern.as_str().to_string()), length)),
                 _ => None,
             },
             _ => None,

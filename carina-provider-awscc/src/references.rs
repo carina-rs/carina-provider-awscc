@@ -4,11 +4,14 @@ use crate::provider::{AwsccProviderConfig, account_guard};
 use crate::resend_safety::kms_idempotency;
 use crate::{AwsccProvider, BoundedSdkConfig};
 use carina_aws_types::kms_reference::{
-    DescribeKeyClient, DescribeKeyFailure, describe_key_failure, resolve_reference_batch,
+    DescribeKeyClient, DescribeKeyFailure, describe_key_failure, resolve_guest_reference_batch,
 };
 use carina_aws_types::sdk::{kms, sts::StsClient};
 use carina_core::provider::BoxFuture;
-use carina_provider_protocol::types::{ReferenceError, ReferenceOutcome, ReferenceRequest};
+#[cfg(test)]
+use carina_core::test_utils::provider_text::BindProviderText as _;
+use carina_plugin_sdk::types::{ReferenceError, ReferenceOutcome};
+use carina_provider_protocol::types::ReferenceRequest;
 use std::sync::OnceLock;
 
 /// Only this module can create the witness, after the account policy succeeds.
@@ -24,7 +27,10 @@ impl InitializedState {
     pub(crate) async fn initialize(
         config: BoundedSdkConfig,
         cfg: &AwsccProviderConfig,
-    ) -> (crate::sdk_config::SdkClients, Result<Self, String>) {
+    ) -> (
+        crate::sdk_config::SdkClients,
+        Result<Self, carina_core::provider::ProviderError>,
+    ) {
         let clients = config.clients();
         let guard = if cfg.allowed_account_ids.is_empty() && cfg.forbidden_account_ids.is_empty() {
             Ok(())
@@ -47,29 +53,32 @@ impl InitializedState {
     ///
     /// Returns `Ok(())` if the account is allowed; otherwise an error
     /// message naming both the offending list and the actual account ID.
-    async fn check_account_guard(sts: &StsClient, cfg: &AwsccProviderConfig) -> Result<(), String> {
+    async fn check_account_guard(
+        sts: &StsClient,
+        cfg: &AwsccProviderConfig,
+    ) -> Result<(), carina_core::provider::ProviderError> {
         let identity = sts
             .inner()
             .get_caller_identity()
             .send()
             .await
-            .map_err(|e| {
-                format!(
-                    "Failed to call sts:GetCallerIdentity to check \
-                 allowed_account_ids / forbidden_account_ids: {e}"
-                )
-            })?;
-        let account_id = identity.account().ok_or_else(|| {
-            "sts:GetCallerIdentity returned no account ID; \
-             cannot evaluate allowed_account_ids / forbidden_account_ids"
-                .to_string()
-        })?;
+            .map_err(|error| carina_core::provider::ProviderError::from_diagnostic(
+                carina_core::provider::ProviderErrorKind::InvalidInput,
+                carina_core::provider_text::ProviderDiagnostic::new(super::provider::error_helpers::api_error_with_meta(
+                    "Failed to call sts:GetCallerIdentity to check allowed_account_ids / forbidden_account_ids",
+                    "sts.GetCallerIdentity", error,
+                )),
+            ))?;
+        let account_id = identity.account().ok_or_else(|| carina_core::provider::ProviderError::invalid_input(
+            "sts:GetCallerIdentity returned no account ID; cannot evaluate allowed_account_ids / forbidden_account_ids"
+        ))?;
 
         account_guard::validate_account_against_lists(
             account_id,
             &cfg.allowed_account_ids,
             &cfg.forbidden_account_ids,
         )
+        .map_err(carina_core::provider::ProviderError::invalid_input)
     }
 }
 
@@ -87,13 +96,15 @@ impl KmsClient {
         Self { config, client }
     }
 
-    pub(crate) fn instance_region(&self) -> Result<&str, &str> {
+    pub(crate) fn instance_region(&self) -> Result<&str, carina_core::provider::ProviderError> {
         self.client
             .inner()
             .config()
             .region()
             .map(|region| region.as_ref())
-            .ok_or("AWS region is not configured")
+            .ok_or_else(|| {
+                carina_core::provider::ProviderError::invalid_input("AWS region is not configured")
+            })
     }
 
     fn client_in_region(&self, region: &str) -> kms::KmsClient {
@@ -150,15 +161,13 @@ impl AwsccProvider {
             .and_then(|client| client.instance_region().map(|region| (client, region)));
         match scope {
             Ok((client, region)) => {
-                resolve_reference_batch(client, "awscc", region, requests).await
+                resolve_guest_reference_batch(client, "awscc", region, requests).await
             }
             Err(reason) => requests
                 .into_iter()
                 .map(|_| {
                     Err(ReferenceError::InvalidReference(Box::new(
-                        carina_core::provider::ProviderError::invalid_input(reason.to_owned())
-                            .for_provider("awscc")
-                            .to_wire(),
+                        reason.clone().for_provider("awscc"),
                     )))
                 })
                 .collect(),
@@ -265,9 +274,13 @@ mod tests {
         };
         assert!(
             error
+                .as_ref()
+                .clone()
+                .into_host_for_test()
                 .to_string()
                 .contains("reference identity has no provider"),
-            "{error}"
+            "{}",
+            error.as_ref().clone().into_host_for_test()
         );
         assert!(results[2].is_ok());
         assert_eq!(calls.load(Ordering::SeqCst), 2);
@@ -347,7 +360,15 @@ mod tests {
                 .build();
             let provider =
                 AwsccProvider::from_sdk_config(BoundedSdkConfig::for_test(config), &cfg).await;
-            assert!(provider.init_error().unwrap().contains(list));
+            assert!(
+                provider
+                    .init_error()
+                    .unwrap()
+                    .clone()
+                    .into_host_for_test()
+                    .to_string()
+                    .contains(list)
+            );
             let results = provider
                 .resolve_references(vec![request("alias/customer"), request("alias/other")])
                 .await;
@@ -356,7 +377,15 @@ mod tests {
                 let Err(ReferenceError::InvalidReference(error)) = result else {
                     panic!("rejected account must return its initialization error")
                 };
-                assert!(error.message.contains(list));
+                assert!(
+                    error
+                        .as_ref()
+                        .clone()
+                        .into_host_for_test()
+                        .to_wire()
+                        .message
+                        .contains(list)
+                );
             }
             // The native Provider trait and WASM Guest delegate to the same method.
             use carina_core::provider::Provider;
@@ -368,7 +397,7 @@ mod tests {
                 .await
                 .unwrap();
             assert!(
-                matches!(&results[0], Err(carina_core::references::ReferenceError::InvalidReference(error)) if error.to_string().contains(list))
+                matches!(&results[0], Err(carina_core::references::ReferenceError::InvalidReference(error)) if error.as_ref().clone().into_host_for_test().to_string().contains(list))
             );
             assert_eq!(
                 calls.load(Ordering::SeqCst),
@@ -401,7 +430,16 @@ mod tests {
             let Err(ReferenceError::InvalidReference(error)) = result else {
                 panic!("a missing instance region must fail instead of selecting a default")
             };
-            assert!(error.message.to_ascii_lowercase().contains("region"));
+            assert!(
+                error
+                    .as_ref()
+                    .clone()
+                    .into_host_for_test()
+                    .to_wire()
+                    .message
+                    .to_ascii_lowercase()
+                    .contains("region")
+            );
         }
         assert_eq!(calls.load(Ordering::SeqCst), 0);
     }

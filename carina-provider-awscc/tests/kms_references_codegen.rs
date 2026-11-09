@@ -90,7 +90,7 @@ fn scheduler_generates_cfn_patterned_reference() {
     );
     let pattern = serde_json::to_string(&schema["properties"]["KmsKeyArn"]["pattern"]).unwrap();
     let expected = format!(
-        "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some({pattern}.to_string()), Some((Some(1), Some(2048))))"
+        "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some(carina_core::schema::PatternSpec::new({pattern}, carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(2048))))"
     );
     assert!(
         String::from_utf8(output.stdout)
@@ -116,7 +116,7 @@ fn final_scheduler_leaf_is_a_reference_accepting_alias_arns() {
     };
     assert_eq!(identity.to_string(), "aws.kms.Key.Reference");
     assert_eq!(length, Some((Some(1), Some(2048))));
-    let pattern = regex::Regex::new(pattern).unwrap();
+    let pattern = carina_core::schema::CompiledPattern::try_new(pattern).unwrap();
     assert!(pattern.is_match("arn:aws:kms:us-east-1:123456789012:alias/customer"));
     assert!(
         pattern.is_match(

@@ -28,7 +28,7 @@ pub fn scheduler_schedule_group_config() -> AwsccSchemaConfig {
         .with_description("Definition of AWS::Scheduler::ScheduleGroup Resource Type");
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), Some("^arn:aws[a-z-]*:scheduler:[a-z0-9\\-]+:\\d{12}:schedule-group\\/[0-9a-zA-Z-_.]+$".to_string()), Some((Some(1), Some(1224))), crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), Some(carina_core::schema::PatternSpec::new("^arn:aws[a-z-]*:scheduler:[a-z0-9\\-]+:\\d{12}:schedule-group\\/[0-9a-zA-Z-_.]+$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(1224))), crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
                 .with_description("The Amazon Resource Name (ARN) of the schedule group. (read-only)")
                 .with_provider_name("Arn")
             .build()
@@ -36,7 +36,7 @@ pub fn scheduler_schedule_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_arn_attribute());
     #[inline(never)]
     fn build_creation_date_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("creation_date", AttributeType::refined_string(None, Some("^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:(?:[0-5][0-9]|60)(?:\\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\\z".to_string()), None, None))
+        AttributeSchema::provider_populated("creation_date", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:(?:[0-5][0-9]|60)(?:\\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\\z", carina_core::schema::PatternMatch::Full)), None, None))
                 .with_description("The time at which the schedule group was created. (read-only)")
                 .with_provider_name("CreationDate")
             .build()
@@ -44,7 +44,7 @@ pub fn scheduler_schedule_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_creation_date_attribute());
     #[inline(never)]
     fn build_last_modification_date_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("last_modification_date", AttributeType::refined_string(None, Some("^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:(?:[0-5][0-9]|60)(?:\\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\\z".to_string()), None, None))
+        AttributeSchema::provider_populated("last_modification_date", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:(?:[0-5][0-9]|60)(?:\\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\\z", carina_core::schema::PatternMatch::Full)), None, None))
                 .with_description("The time at which the schedule group was last modified. (read-only)")
                 .with_provider_name("LastModificationDate")
             .build()
@@ -52,7 +52,7 @@ pub fn scheduler_schedule_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_last_modification_date_attribute());
     #[inline(never)]
     fn build_name_attribute() -> AttributeSchema {
-        AttributeSchema::optional("name", AttributeType::refined_string(None, Some("^[0-9a-zA-Z-_.]+$".to_string()), Some((Some(1), Some(64))), None))
+        AttributeSchema::optional("name", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[0-9a-zA-Z-_.]+$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(64))), None))
                 .create_only()
                 .with_provider_name("Name")
             .build()

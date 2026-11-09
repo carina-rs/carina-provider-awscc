@@ -22,6 +22,7 @@ fn iam_single_and_list_statements_keep_typed_conditions_and_wire_names() {
     ] {
         let wire = json!({"Version":"2012-10-17", "Statement":statement});
         let value = aws_value_to_dsl_with_defs(
+            &crate::test_support::diagnostics(),
             "policy_document",
             &wire,
             policy.as_type(),
@@ -33,6 +34,7 @@ fn iam_single_and_list_statements_keep_typed_conditions_and_wire_names() {
         policy.validate(&value).unwrap();
         assert_eq!(
             dsl_value_to_aws_with_defs(
+                &crate::test_support::diagnostics(),
                 &value,
                 policy.as_type(),
                 "iam.RolePolicy",

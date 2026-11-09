@@ -14,7 +14,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
         .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership");
     #[inline(never)]
     fn build_group_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("group_id", AttributeType::refined_string(Some(crate::schemas::string_identity::StringIdentity::SsoPrincipalId.identity()), Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None))
+        AttributeSchema::required("group_id", AttributeType::refined_string(Some(crate::schemas::string_identity::StringIdentity::SsoPrincipalId.identity()), Some(carina_core::schema::PatternSpec::new("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(47))), None))
                 .create_only()
                 .with_description("The unique identifier for a group in the identity store.")
                 .with_provider_name("GroupId")
@@ -23,7 +23,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_group_id_attribute());
     #[inline(never)]
     fn build_identity_store_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("identity_store_id", AttributeType::refined_string(Some(crate::schemas::string_identity::StringIdentity::IdentitystoreStoreId.identity()), Some("^d-[0-9a-f]{10}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$".to_string()), Some((Some(1), Some(36))), None))
+        AttributeSchema::required("identity_store_id", AttributeType::refined_string(Some(crate::schemas::string_identity::StringIdentity::IdentitystoreStoreId.identity()), Some(carina_core::schema::PatternSpec::new("^d-[0-9a-f]{10}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(36))), None))
                 .create_only()
                 .with_description("The globally unique identifier for the identity store.")
                 .with_provider_name("IdentityStoreId")
@@ -32,7 +32,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_identity_store_id_attribute());
     #[inline(never)]
     fn build_member_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("member_id", AttributeType::struct_("MemberId".to_string(), vec![StructField::required("user_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None)).with_description("The identifier for a user in the identity store.").with_provider_name("UserId").build()]))
+        AttributeSchema::required("member_id", AttributeType::struct_("MemberId".to_string(), vec![StructField::required("user_id", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(47))), None)).with_description("The identifier for a user in the identity store.").with_provider_name("UserId").build()]))
                 .create_only()
                 .with_description("An object containing the identifier of a group member.")
                 .with_provider_name("MemberId")
@@ -41,7 +41,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_member_id_attribute());
     #[inline(never)]
     fn build_membership_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("membership_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None))
+        AttributeSchema::provider_populated("membership_id", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(47))), None))
                 .with_description("The identifier for a GroupMembership in the identity store. (read-only)")
                 .with_provider_name("MembershipId")
             .build()
@@ -50,7 +50,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
     schema = schema
         .with_coexisting_replacement();
     #[inline(never)]
-    fn build_schema_def_0() -> AttributeType { AttributeType::struct_("MemberId".to_string(), vec![StructField::required("user_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None)).with_description("The identifier for a user in the identity store.").with_provider_name("UserId").build()]) }
+    fn build_schema_def_0() -> AttributeType { AttributeType::struct_("MemberId".to_string(), vec![StructField::required("user_id", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(47))), None)).with_description("The identifier for a user in the identity store.").with_provider_name("UserId").build()]) }
     schema = schema.with_def("MemberId", build_schema_def_0());
     AwsccSchemaConfig {
         aws_type_name: "AWS::IdentityStore::GroupMembership",

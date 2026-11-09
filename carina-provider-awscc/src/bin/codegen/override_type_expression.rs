@@ -147,19 +147,10 @@ impl ConstraintSpec {
         length: Option<(Option<u64>, Option<u64>)>,
         literal: PatternLiteral,
     ) -> Self {
-        let emitted = match (literal, pattern.as_ref()) {
-            (PatternLiteral::Raw, Some(pattern)) => {
-                let mut hashes = String::new();
-                while pattern.as_str().contains(&format!("\"{hashes}")) {
-                    hashes.push('#');
-                }
-                format!(
-                    "Some(r{hashes}\"{}\"{hashes}.to_string())",
-                    pattern.as_str()
-                )
-            }
-            _ => emit_pattern_option(pattern.as_ref()),
-        };
+        let emitted = pattern.as_ref().map_or_else(
+            || "None".to_string(),
+            |pattern| format!("Some({})", emit_pattern_spec(pattern, literal)),
+        );
         let (min, max) = length.unwrap_or((None, None));
         let code_length = emit_length_option(min, max);
         Self {
@@ -279,7 +270,7 @@ impl ConstraintSpec {
         };
         let pattern = pattern
             .as_ref()
-            .map(|pattern| carina_core::schema::CompiledPattern::try_new(pattern.as_str()))
+            .map(|pattern| carina_core::schema::CompiledPattern::try_new(pattern.as_spec()))
             .transpose()?;
         let (min, max) = length.unwrap_or((None, None));
         Ok(values
@@ -616,7 +607,7 @@ fn validate_document_field(
             }
             if let Some(source) = &constraints.pattern
                 && !pattern.is_some_and(|pattern| {
-                    pattern_subset(pattern, source.as_str()).unwrap_or(false)
+                    pattern_subset(pattern.as_str(), source.as_str()).unwrap_or(false)
                 })
             {
                 return Err(fail("CFN pattern is not retained").into());
@@ -719,7 +710,10 @@ fn proof_dfa(source: &str) -> Result<regex_automata::dfa::dense::DFA<Vec<u32>>> 
         dfa::{StartKind, dense},
     };
     let translate = |source: &str| -> Result<String> {
-        carina_core::schema::CompiledPattern::try_new(source)?;
+        carina_core::schema::CompiledPattern::try_new(&carina_core::schema::PatternSpec::new(
+            source,
+            PatternMatch::Full,
+        ))?;
         let mut result = String::new();
         let mut chars = source.chars();
         while let Some(ch) = chars.next() {
@@ -942,6 +936,25 @@ impl ConstraintSpec {
                 Ok(displays.map(|displays| displays.join(" | ")))
             }
             _ => Ok(None),
+        }
+    }
+}
+
+#[cfg(test)]
+mod pattern_mode_tests {
+    #[test]
+    fn containment_proofs_use_full_value_languages() {
+        for (narrow, wide, contained) in [
+            ("a|b", "^a$|^b$", true),
+            ("ab", "a", false),
+            ("a", "ab", false),
+            ("(?m)^a$", r"^a\z", true),
+        ] {
+            assert_eq!(
+                super::pattern_subset(narrow, wide).unwrap(),
+                contained,
+                "{narrow:?} within {wide:?}"
+            );
         }
     }
 }

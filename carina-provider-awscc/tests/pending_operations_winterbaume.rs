@@ -2,6 +2,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
+use carina_core::test_utils::provider_text::BindProviderText as _;
 mod common;
 
 use std::collections::HashMap;
@@ -10,7 +11,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use carina_core::provider::{CreateOutcomeKind, DeleteRequest, Provider, ProviderDirectiveSchema};
+use carina_core::provider::{CreateOutcomeKind, DeleteRequest, ProviderDirectiveSchema};
 use carina_core::resource::{ConcreteValue, Directives, Resource, Value};
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use carina_provider_awscc::{
@@ -305,7 +306,7 @@ async fn create_dispatch_and_delete_steps_make_one_issue_and_one_status_call_eac
             pending
         }
         OperationStep::Done(()) => panic!("delete must defer"),
-        OperationStep::Verdict(error) => panic!("delete failed: {error}"),
+        OperationStep::Verdict(error) => panic!("delete failed: {}", error.into_host_for_test()),
     };
     assert_eq!(created.identifier().as_str(), REPOSITORY_NAME);
     assert_eq!(cloudcontrol.calls("DeleteResource"), 1);
@@ -335,7 +336,8 @@ async fn native_provider_drives_create_and_delete_to_completion() {
         let created = carina_core::executor::complete_create_for_writeback(
             common::dispatch_create(&provider, &id, request)
                 .await
-                .expect("native create should drive pending steps"),
+                .expect("native create should drive pending steps")
+                .into_host_for_test(),
             accepted,
         )
         .0;
@@ -345,9 +347,19 @@ async fn native_provider_drives_create_and_delete_to_completion() {
         assert_eq!(cloudcontrol.calls("GetResource"), 1);
 
         let stored_identifier = common::applied_identifier(cloudcontrol.stored_identifier().await);
-        Provider::delete(&provider, &id, &stored_identifier, delete_request())
-            .await
-            .expect("native delete should drive pending steps");
+        let provider = carina_core::test_utils::provider_text::initialized(Box::new(provider));
+        let permit = carina_core::executor::delete_permit_for_test(
+            id,
+            stored_identifier,
+            Default::default(),
+        );
+        carina_core::executor::dispatch_delete(
+            provider.provider(),
+            permit,
+            &carina_provider_awscc::schemas::schema_registry(),
+        )
+        .await
+        .expect("native delete should drive pending steps");
         assert_eq!(cloudcontrol.calls("DeleteResource"), 1);
         assert_eq!(cloudcontrol.calls("GetResourceRequestStatus"), 2);
     })

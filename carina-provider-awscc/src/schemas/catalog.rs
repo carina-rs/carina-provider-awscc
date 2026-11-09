@@ -31,9 +31,11 @@ pub fn arn() -> AttributeType {
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(value)) = value {
-                arn_parts(value.expose_plaintext()).map(|_| ())
+                arn_parts(value.expose_plaintext())
+                    .map(|_| ())
+                    .map_err(Into::into)
             } else {
-                Err("Expected string".to_string())
+                Err("Expected string".to_string().into())
             }
         }),
         None,
@@ -61,9 +63,9 @@ fn iam_arn(resource: &str, prefix: &'static str) -> AttributeType {
             if let Value::Concrete(ConcreteValue::String(value)) = value {
                 // Preserve the shared IAM type's bare diagnostic, including
                 // the IAM resource label supplied by validate_iam_arn.
-                validate_iam_arn(value.expose_plaintext(), prefix)
+                validate_iam_arn(value.expose_plaintext(), prefix).map_err(Into::into)
             } else {
-                Err("Expected string".to_string())
+                Err("Expected string".to_string().into())
             }
         }),
         None,
@@ -85,9 +87,9 @@ pub fn kms_key_id() -> AttributeType {
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(value)) = value {
-                validate_kms_key_id(value.expose_plaintext())
+                validate_kms_key_id(value.expose_plaintext()).map_err(Into::into)
             } else {
-                Err("Expected string".to_string())
+                Err("Expected string".to_string().into())
             }
         }),
         None,
@@ -141,10 +143,12 @@ pub fn kms_key_arn() -> AttributeType {
                 if PATTERN.is_match(value.expose_plaintext()) {
                     Ok(())
                 } else {
-                    Err("expected a KMS key ARN with a UUID or multi-region key ID".to_string())
+                    Err("expected a KMS key ARN with a UUID or multi-region key ID"
+                        .to_string()
+                        .into())
                 }
             } else {
-                Err("Expected string".to_string())
+                Err("Expected string".to_string().into())
             }
         }),
         None,
@@ -287,9 +291,9 @@ fn validated_service_arn(
             if let Value::Concrete(ConcreteValue::String(value)) = value {
                 let value = value.expose_plaintext();
                 validate_service_arn(value, service, resource_prefix)
-                    .map_err(|reason| format!("Invalid {label} ARN '{value}': {reason}"))
+                    .map_err(|reason| format!("Invalid {label} ARN '{value}': {reason}").into())
             } else {
-                Err("Expected string".to_string())
+                Err("Expected string".to_string().into())
             }
         }),
         None,
@@ -312,9 +316,9 @@ fn validated_iam_arn(
             if let Value::Concrete(ConcreteValue::String(value)) = value {
                 let value = value.expose_plaintext();
                 validate_iam_arn(value, resource_prefix)
-                    .map_err(|reason| format!("Invalid {label} ARN '{value}': {reason}"))
+                    .map_err(|reason| format!("Invalid {label} ARN '{value}': {reason}").into())
             } else {
-                Err("Expected string".to_string())
+                Err("Expected string".to_string().into())
             }
         }),
         None,
@@ -330,10 +334,10 @@ fn validated_int_enum(identity: TypeIdentity, valid_values: &'static [i64]) -> A
                 if valid_values.contains(value) {
                     Ok(())
                 } else {
-                    Err(format!("Value {value} is not a valid value"))
+                    Err(format!("Value {value} is not a valid value").into())
                 }
             } else {
-                Err("Expected integer".to_string())
+                Err("Expected integer".to_string().into())
             }
         }),
     )
@@ -343,7 +347,7 @@ fn validated_identitystore_group_display_name(identity: TypeIdentity) -> Attribu
     // Preserve CFN's exact pattern and character bounds; reserved names are case-sensitive.
     // https://docs.aws.amazon.com/singlesignon/latest/IdentityStoreAPIReference/API_CreateGroup.html#IdentityStore-CreateGroup-request-DisplayName
     let pattern = ApprovedPattern::whole(r"^[\p{L}\p{M}\p{S}\p{N}\p{P}\t\n\r  ]+$");
-    let compiled_pattern = CompiledPattern::try_new(pattern.as_str())
+    let compiled_pattern = CompiledPattern::try_new(pattern.as_spec())
         .expect("IdentityStore Group.DisplayName pattern must compile");
     refined_string_with_validator(
         identity,
@@ -351,25 +355,28 @@ fn validated_identitystore_group_display_name(identity: TypeIdentity) -> Attribu
         Some((Some(1), Some(1024))),
         legacy_validator(move |value| {
             let Value::Concrete(ConcreteValue::String(value)) = value else {
-                return Err("Expected string".to_string());
+                return Err("Expected string".to_string().into());
             };
             let value = value.expose_plaintext();
             // SDK custom-type dispatch invokes the callback directly.
             if !(1..=1024).contains(&value.chars().count()) {
                 return Err(
                     "IdentityStore group display name must be between 1 and 1024 characters"
-                        .to_string(),
+                        .to_string()
+                        .into(),
                 );
             }
             if !compiled_pattern.is_match(value) {
                 return Err(
-                    "IdentityStore group display name contains unsupported characters".to_string(),
+                    "IdentityStore group display name contains unsupported characters"
+                        .to_string()
+                        .into(),
                 );
             }
             if matches!(value, "Administrator" | "AWSAdministrators") {
                 return Err(
                     "IdentityStore group display name must not be the reserved name Administrator or AWSAdministrators"
-                        .to_string(),
+                        .to_string().into(),
                 );
             }
             Ok(())
@@ -389,7 +396,7 @@ fn validated_logs_log_group_name(identity: TypeIdentity) -> AttributeType {
         Some((Some(1), Some(512))),
         legacy_validator(|value| {
             let Value::Concrete(ConcreteValue::String(value)) = value else {
-                return Err("Expected string".to_string());
+                return Err("Expected string".to_string().into());
             };
             let value = value.expose_plaintext();
             // SDK custom-type dispatch invokes the callback directly.
@@ -400,7 +407,7 @@ fn validated_logs_log_group_name(identity: TypeIdentity) -> AttributeType {
             {
                 return Err(
                     "CloudWatch Logs log group name must contain 1 to 512 ASCII letters, digits, or .-_/#"
-                        .to_string(),
+                        .to_string().into(),
                 );
             }
             if value
@@ -410,7 +417,8 @@ fn validated_logs_log_group_name(identity: TypeIdentity) -> AttributeType {
             {
                 return Err(
                     "CloudWatch Logs log group name must not start with the reserved prefix aws/"
-                        .to_string(),
+                        .to_string()
+                        .into(),
                 );
             }
             Ok(())
@@ -429,14 +437,16 @@ fn validated_organizations_account_email(identity: TypeIdentity) -> AttributeTyp
         Some((Some(6), Some(64))),
         legacy_validator(|value| {
             let Value::Concrete(ConcreteValue::String(value)) = value else {
-                return Err("Expected string".to_string());
+                return Err("Expected string".to_string().into());
             };
             let value = value.expose_plaintext();
             carina_core::schema::validate_email(value)?;
             // SDK custom-type dispatch invokes the callback directly.
             if !(6..=64).contains(&value.chars().count()) {
                 return Err(
-                    "Organizations account email must be between 6 and 64 characters".to_string(),
+                    "Organizations account email must be between 6 and 64 characters"
+                        .to_string()
+                        .into(),
                 );
             }
             Ok(())
@@ -455,7 +465,7 @@ fn validated_organizations_account_role_name(identity: TypeIdentity) -> Attribut
         Some((Some(1), Some(64))),
         legacy_validator(|value| {
             let Value::Concrete(ConcreteValue::String(value)) = value else {
-                return Err("Expected string".to_string());
+                return Err("Expected string".to_string().into());
             };
             let value = value.expose_plaintext();
             // Keep the bounds and ASCII grammar in direct callback dispatch too.
@@ -466,13 +476,13 @@ fn validated_organizations_account_role_name(identity: TypeIdentity) -> Attribut
             {
                 return Err(
                     "Organizations account role name must contain 1 to 64 ASCII letters, digits, or _+=,.@-"
-                        .to_string(),
+                        .to_string().into(),
                 );
             }
             if value.starts_with("AWSServiceRoleFor") {
                 return Err(
                     "Organizations account role name must not start with the reserved prefix AWSServiceRoleFor"
-                        .to_string(),
+                        .to_string().into(),
                 );
             }
             Ok(())
@@ -496,7 +506,7 @@ fn validated_s3_lifecycle_date(identity: TypeIdentity) -> AttributeType {
         None,
         legacy_validator(|value| {
             let Value::Concrete(ConcreteValue::String(value)) = value else {
-                return Err("Expected string".to_string());
+                return Err("Expected string".to_string().into());
             };
             let value = value.expose_plaintext();
             let invalid = || {
@@ -517,7 +527,7 @@ fn validated_s3_lifecycle_date(identity: TypeIdentity) -> AttributeType {
                     }
                 })
             {
-                return Err(invalid());
+                return Err(invalid().into());
             }
             // The spelling checks above guarantee ASCII and these boundaries.
             let year = date[..4].parse::<u32>().map_err(|_| invalid())?;
@@ -528,12 +538,12 @@ fn validated_s3_lifecycle_date(identity: TypeIdentity) -> AttributeType {
                 2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
                 2 => 28,
                 1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-                _ => return Err(invalid()),
+                _ => return Err(invalid().into()),
             };
             if (1..=days_in_month).contains(&day) {
                 Ok(())
             } else {
-                Err(invalid())
+                Err(invalid().into())
             }
         }),
         None,
@@ -549,7 +559,7 @@ fn validated_sso_permission_set_session_duration(identity: TypeIdentity) -> Attr
         r"(?:T(?:[0-9]+H)?(?:[0-9]+M)?(?:[0-9]+(?:\.[0-9]+)?S)?)?",
         r"|T(?:[0-9]+H(?:[0-9]+M)?(?:[0-9]+(?:\.[0-9]+)?S)?|[0-9]+M(?:[0-9]+(?:\.[0-9]+)?S)?|[0-9]+(?:\.[0-9]+)?S))$",
     ));
-    let compiled_pattern = CompiledPattern::try_new(pattern.as_str())
+    let compiled_pattern = CompiledPattern::try_new(pattern.as_spec())
         .expect("SSO PermissionSet.SessionDuration pattern must compile");
     refined_string_with_validator(
         identity,
@@ -557,7 +567,7 @@ fn validated_sso_permission_set_session_duration(identity: TypeIdentity) -> Attr
         Some((Some(1), Some(100))),
         legacy_validator(move |value| {
             let Value::Concrete(ConcreteValue::String(value)) = value else {
-                return Err("Expected string".to_string());
+                return Err("Expected string".to_string().into());
             };
             let value = value.expose_plaintext();
             let invalid = || {
@@ -569,13 +579,13 @@ fn validated_sso_permission_set_session_duration(identity: TypeIdentity) -> Attr
                 || !compiled_pattern.is_match(value)
                 || value.starts_with('-')
             {
-                return Err(invalid());
+                return Err(invalid().into());
             }
             // The grammar and sign check guarantee the leading ASCII P.
             let (date, time) = value[1..].split_once('T').unwrap_or((&value[1..], ""));
             // Any nonzero year, month, week, or day exceeds 12 hours.
             if date.bytes().any(|byte| matches!(byte, b'1'..=b'9')) {
-                return Err(invalid());
+                return Err(invalid().into());
             }
             let mut seconds = 0_u32;
             let mut fractional_seconds = "";
@@ -585,7 +595,7 @@ fn validated_sso_permission_set_session_duration(identity: TypeIdentity) -> Attr
                     "H" => 3600,
                     "M" => 60,
                     "S" => 1,
-                    _ => return Err(invalid()),
+                    _ => return Err(invalid().into()),
                 };
                 let (whole, fraction) = number.split_once('.').unwrap_or((number, ""));
                 let whole = whole.parse::<u32>().map_err(|_| invalid())?;
@@ -604,7 +614,7 @@ fn validated_sso_permission_set_session_duration(identity: TypeIdentity) -> Attr
             {
                 Ok(())
             } else {
-                Err(invalid())
+                Err(invalid().into())
             }
         }),
         None,
@@ -618,9 +628,10 @@ fn validated_scheduler_schedule_expression(identity: TypeIdentity) -> AttributeT
         Some((Some(1), Some(256))),
         legacy_validator(|value| {
             let Value::Concrete(ConcreteValue::String(value)) = value else {
-                return Err("Expected string".to_string());
+                return Err("Expected string".to_string().into());
             };
             super::scheduler::validate_schedule_expression(value.expose_plaintext())
+                .map_err(Into::into)
         }),
         None,
     )
@@ -640,12 +651,14 @@ fn validated_wafv2_byte_match_search_string(identity: TypeIdentity) -> Attribute
         None,
         legacy_validator(|value| {
             let Value::Concrete(ConcreteValue::String(value)) = value else {
-                return Err("Expected string".to_string());
+                return Err("Expected string".to_string().into());
             };
             if (1..=200).contains(&value.expose_plaintext().len()) {
                 Ok(())
             } else {
-                Err("ByteMatch search string must contain 1 to 200 UTF-8 bytes".to_string())
+                Err("ByteMatch search string must contain 1 to 200 UTF-8 bytes"
+                    .to_string()
+                    .into())
             }
         }),
         None,
@@ -667,7 +680,7 @@ fn validated_wafv2_byte_match_search_string_base64(identity: TypeIdentity) -> At
         None,
         legacy_validator(|value| {
             let Value::Concrete(ConcreteValue::String(value)) = value else {
-                return Err("Expected string".to_string());
+                return Err("Expected string".to_string().into());
             };
             let value = value.expose_plaintext();
             let decoded = STANDARD
@@ -677,7 +690,11 @@ fn validated_wafv2_byte_match_search_string_base64(identity: TypeIdentity) -> At
             if (1..=200).contains(&decoded.len()) {
                 Ok(())
             } else {
-                Err("ByteMatch base64 search string must decode to 1 to 200 bytes".to_string())
+                Err(
+                    "ByteMatch base64 search string must decode to 1 to 200 bytes"
+                        .to_string()
+                        .into(),
+                )
             }
         }),
         None,
@@ -714,11 +731,14 @@ fn validated_scheduler_schedule_group_name(identity: TypeIdentity) -> AttributeT
                          default group; group_name must be omitted or the literal 'default', \
                          because a schedule in another group can be created but never read or \
                          tracked"
-                            .to_string(),
+                            .to_string()
+                            .into(),
                     )
                 }
             } else {
-                Err("group_name must be omitted or the literal 'default'".to_string())
+                Err("group_name must be omitted or the literal 'default'"
+                    .to_string()
+                    .into())
             }
         }),
         None,
@@ -1024,7 +1044,7 @@ mod tests {
                 RawShape::String {
                     pattern: Some(pattern),
                     ..
-                } if pattern.starts_with(&prefix) => Some(format!("{row:?}")),
+                } if pattern.as_str().starts_with(&prefix) => Some(format!("{row:?}")),
                 _ => None,
             })
             .collect::<BTreeSet<_>>();
@@ -1049,7 +1069,10 @@ mod tests {
             };
             assert_eq!(
                 pattern,
-                arn_regex(rest),
+                &carina_core::schema::PatternSpec::new(
+                    arn_regex(rest),
+                    carina_core::schema::PatternMatch::Full
+                ),
                 "{row:?} service/resource grammar and anchors"
             );
             let pattern = CompiledPattern::try_new(pattern).expect("ARN pattern must compile");

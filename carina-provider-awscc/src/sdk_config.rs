@@ -2,7 +2,6 @@
 
 use std::time::Duration;
 
-use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_smithy_types::retry::RetryConfig;
 use aws_smithy_types::timeout::TimeoutConfig;
 use aws_types::region::Region;
@@ -13,7 +12,7 @@ use crate::resend_safety::{cloudcontrol_idempotency, s3_idempotency, sts_idempot
 
 /// An AWS SDK configuration with the provider's timeout and retry policy applied.
 #[derive(Clone)]
-pub struct BoundedSdkConfig(aws_types::SdkConfig);
+pub struct BoundedSdkConfig(carina_aws_types::AwsSdkConfig);
 
 pub(crate) struct SdkClients {
     pub(crate) cloudcontrol: CloudControlClient,
@@ -22,60 +21,47 @@ pub(crate) struct SdkClients {
 }
 
 impl BoundedSdkConfig {
-    pub(crate) fn sdk_config(&self) -> &aws_types::SdkConfig {
+    pub(crate) fn sdk_config(&self) -> &carina_aws_types::AwsSdkConfig {
         &self.0
     }
 
-    /// Retain effective credentials and bounds when routing a qualified reference.
-    pub(crate) fn in_region(&self, region: &str) -> Self {
-        Self(
-            self.0
-                .to_builder()
-                .region(Region::new(region.to_owned()))
-                .build(),
-        )
+    pub(crate) fn diagnostics(&self) -> &carina_plugin_sdk::ProviderDiagnostics {
+        self.0.diagnostics()
     }
 
-    /// Apply the provider's timeout and retry policy to an SDK configuration.
-    fn new(config: aws_types::SdkConfig) -> Self {
-        Self(
-            config
-                .into_builder()
-                .timeout_config(timeout_config())
-                .retry_config(retry_config())
-                .build(),
-        )
+    /// Retain effective credentials, diagnostics and bounds for regional routes.
+    pub(crate) fn in_region(&self, region: &str) -> Self {
+        Self(self.0.clone().in_region(Region::new(region.to_owned())))
+    }
+
+    /// Apply the provider's timeout and retry policy to a session-bound config.
+    fn new(config: carina_aws_types::AwsSdkConfig) -> Self {
+        Self(config.with_policy(timeout_config(), retry_config()))
     }
 
     /// Build a bounded configuration for native tests with explicit credentials.
     #[cfg(any(test, feature = "test-utils"))]
     #[cfg(not(target_arch = "wasm32"))]
     pub fn for_test(config: aws_types::SdkConfig) -> Self {
-        Self::new(config)
+        Self::new(carina_aws_types::AwsSdkConfig::for_test(config))
     }
 
-    /// Load a bounded SDK configuration for the region and optional assumed role.
-    pub(crate) async fn load(region: &str, assume_role: Option<&AssumeRoleConfig>) -> Self {
-        Self::load_with_overrides(region, assume_role, None, None).await
-    }
-
-    async fn load_with_overrides(
+    /// Load through the shared credential-registration and diagnostics path.
+    pub(crate) async fn load(
         region: &str,
         assume_role: Option<&AssumeRoleConfig>,
-        http_client: Option<aws_smithy_runtime_api::client::http::SharedHttpClient>,
-        credentials_provider: Option<SharedCredentialsProvider>,
+        diagnostics: carina_plugin_sdk::ProviderDiagnostics,
     ) -> Self {
         let base = Self::new(
             carina_aws_types::load_sdk_config(
-                Region::new(region.to_string()),
+                Region::new(region.to_owned()),
                 timeout_config(),
                 retry_config(),
-                http_client,
-                credentials_provider,
+                diagnostics,
+                None,
             )
             .await,
         );
-
         match assume_role {
             None => base,
             Some(assume_role) => base.with_assume_role(assume_role),
@@ -90,8 +76,7 @@ impl BoundedSdkConfig {
             assume_role.external_id.clone(),
             assume_role.duration,
         );
-        let shared = SharedCredentialsProvider::new(provider);
-        Self::new(self.0.into_builder().credentials_provider(shared).build())
+        Self::new(self.0.with_source(provider))
     }
 
     // Service clients share the bounded config, including host credentials on wasm32.
@@ -152,6 +137,7 @@ pub(crate) fn assert_bounded_policy(timeout: Option<&TimeoutConfig>, retry: Opti
 mod tests {
     use aws_smithy_types::retry::RetryConfig;
     use aws_smithy_types::timeout::TimeoutConfig;
+    use carina_core::test_utils::provider_text::BindProviderText as _;
 
     use super::{BoundedSdkConfig, assert_bounded_policy};
 
@@ -162,8 +148,11 @@ mod tests {
             .retry_config(RetryConfig::standard().with_max_attempts(10))
             .build();
 
-        let bounded = BoundedSdkConfig::new(input);
-        assert_bounded_policy(bounded.0.timeout_config(), bounded.0.retry_config());
+        let bounded = BoundedSdkConfig::for_test(input);
+        assert_bounded_policy(
+            bounded.0.sdk_config().timeout_config(),
+            bounded.0.sdk_config().retry_config(),
+        );
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -172,22 +161,34 @@ mod tests {
         use aws_credential_types::provider::ProvideCredentials;
 
         let mock = winterbaume_core::MockAws::builder().build();
-        let bounded = BoundedSdkConfig::load_with_overrides(
-            "us-east-1",
-            None,
-            Some(mock.http_client()),
-            Some(mock.credentials_provider()),
-        )
-        .await;
-        assert_bounded_policy(bounded.0.timeout_config(), bounded.0.retry_config());
-        assert_eq!(bounded.0.region().unwrap().as_ref(), "us-east-1");
+        let session =
+            carina_core::provider::ProviderPlan::state_only().session("awscc", None, None);
         let expected = mock
             .credentials_provider()
             .provide_credentials()
             .await
             .unwrap();
+        let bounded = BoundedSdkConfig::new(
+            carina_aws_types::load_sdk_config(
+                aws_types::region::Region::new("us-east-1"),
+                super::timeout_config(),
+                super::retry_config(),
+                carina_plugin_sdk::ProviderDiagnostics::from_session(&session),
+                Some(expected.clone().into()),
+            )
+            .await,
+        );
+        assert_bounded_policy(
+            bounded.0.sdk_config().timeout_config(),
+            bounded.0.sdk_config().retry_config(),
+        );
+        assert_eq!(
+            bounded.0.sdk_config().region().unwrap().as_ref(),
+            "us-east-1"
+        );
         let actual = bounded
             .0
+            .sdk_config()
             .credentials_provider()
             .unwrap()
             .provide_credentials()
@@ -236,22 +237,29 @@ mod tests {
             external_id: Some("test-external-id".into()),
             duration: Some(std::time::Duration::from_secs(900)),
         };
-        let config = BoundedSdkConfig::load_with_overrides(
-            "us-east-1",
-            Some(&role),
-            Some(http_client),
-            Some(super::SharedCredentialsProvider::new(Credentials::new(
-                "test-access-key",
-                "test-secret-key",
-                None,
-                None,
-                "assume-role-guard-test",
-            ))),
+        let config = BoundedSdkConfig::for_test(
+            aws_types::SdkConfig::builder()
+                .region(aws_types::region::Region::new("us-east-1"))
+                .http_client(http_client)
+                .sleep_impl(aws_smithy_async::rt::sleep::TokioSleep::new())
+                .credentials_provider(
+                    aws_credential_types::provider::SharedCredentialsProvider::new(
+                        Credentials::new(
+                            "test-access-key",
+                            "test-secret-key",
+                            None,
+                            None,
+                            "assume-role-guard-test",
+                        ),
+                    ),
+                )
+                .build(),
         )
-        .await;
+        .with_assume_role(&role);
 
         let error = config
             .0
+            .sdk_config()
             .credentials_provider()
             .unwrap()
             .provide_credentials()
@@ -273,9 +281,8 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[tokio::test]
     async fn kms_routes_use_assumed_credentials_and_instance_or_arn_region() {
-        use carina_provider_protocol::types::{
-            ReferenceError, ReferenceOutcome, ReferenceRequest, TypeIdentity,
-        };
+        use carina_plugin_sdk::types::{ReferenceError, ReferenceOutcome};
+        use carina_provider_protocol::types::{ReferenceRequest, TypeIdentity};
         use std::sync::{Arc, Mutex};
         use winterbaume_core::{MockAws, MockRequest, MockResponse, MockService};
 
@@ -366,13 +373,8 @@ mod tests {
             external_id: None,
             duration: None,
         };
-        let config = BoundedSdkConfig::load_with_overrides(
-            "us-east-1",
-            Some(&role),
-            Some(mock.http_client()),
-            Some(mock.credentials_provider()),
-        )
-        .await;
+        let config =
+            BoundedSdkConfig::for_test(mock.sdk_config("us-east-1").await).with_assume_role(&role);
         let provider = crate::AwsccProvider::from_sdk_config(config, &Default::default()).await;
         let client = provider.kms_client().unwrap().guarded_client("eu-west-1");
         let client_config = client.inner().config();
@@ -409,7 +411,15 @@ mod tests {
         let Err(ReferenceError::AccessDenied(error)) = &results[4] else {
             panic!("expected typed access denial");
         };
-        assert_eq!(error.provider_name.as_deref(), Some("awscc"));
+        let error = error.as_ref().clone().into_host_for_test().to_wire();
+        assert_eq!(
+            error
+                .provider_name
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("awscc")
+        );
         assert_eq!(error.code.as_deref(), Some("AccessDeniedException"));
         assert_eq!(error.status, Some(400));
         let rendered = format!("{error:?}");
@@ -444,14 +454,13 @@ mod tests {
         )
         .await
         .unwrap();
-        let canonical = |value: &str| match carina_core::references::ReferenceOutcome::from_guest(
-            ReferenceOutcome::Resolved(value.into()),
-        )
-        .unwrap()
-        {
-            carina_core::references::ReferenceOutcome::Resolved(value) => value,
-            carina_core::references::ReferenceOutcome::NotFound(_) => unreachable!(),
-        };
+        let canonical =
+            |value: &str| match carina_core::references::ReferenceOutcome::from_guest(value.into())
+                .unwrap()
+            {
+                carina_core::references::ReferenceOutcome::Resolved(value) => value,
+                carina_core::references::ReferenceOutcome::NotFound(_) => unreachable!(),
+            };
         assert!(
             matches!(&native[0], Ok(carina_core::references::ReferenceOutcome::Resolved(arn)) if arn == &canonical(INSTANCE_KEY))
         );
@@ -468,5 +477,82 @@ mod tests {
             calls.sts, 1,
             "all regional clients must reuse the effective assumed-role session"
         );
+    }
+    #[tokio::test]
+    async fn terminal_retry_emits_a_typed_redacted_failure_on_the_config_session() {
+        use carina_core::provider_text::present_event;
+        use carina_core::test_utils::provider_text::{captured_session, context};
+        use carina_plugin_sdk::{EventLevel, ProviderDiagnostics};
+        use winterbaume_core::{MockAws, MockRequest, MockResponse, MockService};
+
+        struct RetryableStatus;
+        impl MockService for RetryableStatus {
+            fn service_name(&self) -> &str {
+                "retry-diagnostics"
+            }
+            fn url_patterns(&self) -> Vec<&str> {
+                vec![r"^https://cloudcontrolapi\."]
+            }
+            fn handle(
+                &self,
+                _: MockRequest,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = MockResponse> + Send + '_>>
+            {
+                Box::pin(async {
+                    MockResponse::json(
+                        200,
+                        r#"{"ProgressEvent":{"OperationStatus":"FAILED","StatusMessage":"Throttling session-retry-canary DIAGNOSTICKEY","RequestToken":"diagnostic-request"}}"#,
+                    )
+                })
+            }
+        }
+        let mock = MockAws::builder().with_service(RetryableStatus).build();
+        let fixture = context(&["session-retry-canary"]);
+        let (session, events) = captured_session(fixture.session_builder());
+        let source = aws_credential_types::Credentials::new(
+            "DIAGNOSTICKEY",
+            "diagnostic-secret",
+            Some("diagnostic-token".into()),
+            None,
+            "retry-diagnostics-test",
+        );
+        let config = BoundedSdkConfig::new(carina_aws_types::AwsSdkConfig::from_source(
+            mock.sdk_config("us-east-1").await,
+            source,
+            ProviderDiagnostics::from_session(&session),
+        ));
+        let provider = crate::AwsccProvider::from_sdk_config(config, &Default::default()).await;
+        let token = serde_json::from_value(
+            serde_json::json!({"phase":"in_flight", "request":"diagnostic-request", "attempt":0}),
+        )
+        .unwrap();
+        let step = provider
+            .cc_poll_update_step("AWS::Test::Resource", "diagnostic-id", vec![], None, token)
+            .await
+            .unwrap();
+        assert!(matches!(
+            step,
+            carina_provider_protocol::OperationStep::Pending { .. }
+        ));
+        let events = events.lock().unwrap();
+        let failures: Vec<_> = events
+            .iter()
+            .filter(|event| event.failure().is_some())
+            .collect();
+        assert_eq!(failures.len(), 1);
+        let event = failures[0];
+        assert_eq!(event.severity(), EventLevel::Warn);
+        let failure = event.failure().unwrap();
+        assert!(
+            failure
+                .detail()
+                .cause()
+                .unwrap()
+                .is::<crate::provider::error_helpers::CloudControlOperationFailure>()
+        );
+        let rendered = present_event(event).to_string();
+        assert!(rendered.contains("Throttling"));
+        assert!(!rendered.contains("session-retry-canary"));
+        assert!(!rendered.contains("DIAGNOSTICKEY"));
     }
 }

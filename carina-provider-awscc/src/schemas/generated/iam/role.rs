@@ -45,7 +45,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_assume_role_policy_document_attribute());
     #[inline(never)]
     fn build_description_attribute() -> AttributeSchema {
-        AttributeSchema::optional("description", AttributeType::refined_string(None, Some("^[\\x09\\x0A\\x0D -~¡-ÿ]*\\z".to_string()), Some((None, Some(1000))), None))
+        AttributeSchema::optional("description", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[\\x09\\x0A\\x0D -~¡-ÿ]*\\z", carina_core::schema::PatternMatch::Full)), Some((None, Some(1000))), None))
                 .with_description("A description of the role that you provide.")
                 .with_provider_name("Description")
             .build()
@@ -69,7 +69,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_max_session_duration_attribute());
     #[inline(never)]
     fn build_path_attribute() -> AttributeSchema {
-        AttributeSchema::optional("path", AttributeType::refined_string(None, Some("^(?:/|/[\\x21-\\x7E]+/)\\z".to_string()), Some((Some(1), Some(512))), None))
+        AttributeSchema::optional("path", AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^(?:/|/[\\x21-\\x7E]+/)\\z", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(512))), None))
                 .create_only()
                 .with_description("The path to the role. For more information about paths, see [IAM Identifiers](https://docs.aws.amazon.com/IAM/latest/UserGuide/Using_Identifiers.html) in the *IAM User Guide*. This parameter is optional. If it is not included, it defaults to a slash (/). This parameter allows (through its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of either a forward slash (/) by itself or a string that must begin and end with forward slashes. In addition, it can contain any ASCII character from the ! (``\\u0021``) through the DEL character (``\\u007F``), including most punctuation characters, digits, and upper and lowercased letters.")
                 .with_provider_name("Path")

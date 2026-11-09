@@ -48,10 +48,10 @@ fn repository_exclusion_filter_values_remain_anonymous_refined_strings() {
         filter.as_type().raw_shape(),
         RawShape::String {
             identity: None,
-            pattern: Some(r"^[0-9a-zA-Z._*-]{1,128}\z"),
+            pattern: Some(pattern),
             length: Some((Some(1), Some(128))),
             validate: None,
             ..
-        }
+        } if pattern == &carina_core::schema::PatternSpec::new(r"^[0-9a-zA-Z._*-]{1,128}\z", carina_core::schema::PatternMatch::Full)
     ));
 }
