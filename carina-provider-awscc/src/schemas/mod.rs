@@ -131,7 +131,8 @@ mod tests {
         ConcreteValue, Current, ResolvedResource, Resource, ResourceId, State, Value,
     };
     use carina_core::schema::{
-        CompiledAttributeType, CompiledResourceSchema, RawShape, Shape, ShapeWalkBudget,
+        CompiledAttributeType, CompiledResourceSchema, IntIdentityParts, RawShape, Shape,
+        ShapeWalkBudget,
     };
     use carina_core::schema::{SchemaKind, SchemaRegistry, ValidatedResourceSchema};
     use indexmap::IndexMap;
@@ -259,7 +260,10 @@ mod tests {
         assert!(matches!(
             subscription_schema.shape_of(min_delay),
             Shape::Int {
-                range: Some((Some(1), Some(3600))),
+                identity_layer: IntIdentityParts {
+                    range: Some((Some(1), Some(3600))),
+                    ..
+                },
                 ..
             }
         ));
@@ -273,7 +277,10 @@ mod tests {
         assert!(matches!(
             subscription_schema.shape_of(num_retries),
             Shape::Int {
-                range: Some((Some(0), Some(100))),
+                identity_layer: IntIdentityParts {
+                    range: Some((Some(0), Some(100))),
+                    ..
+                },
                 ..
             }
         ));
@@ -363,7 +370,10 @@ mod tests {
         assert!(matches!(
             topic.schema.as_schema().shape_of(retention),
             Shape::Int {
-                range: Some((Some(1), Some(365))),
+                identity_layer: IntIdentityParts {
+                    range: Some((Some(1), Some(365))),
+                    ..
+                },
                 ..
             }
         ));
@@ -791,7 +801,11 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing generated attribute {attribute_name}"));
             match attribute.field_type().raw_shape() {
                 RawShape::Int {
-                    identity: Some(identity),
+                    identity_layer:
+                        IntIdentityParts {
+                            identity: Some(identity),
+                            ..
+                        },
                     ..
                 } => assert_eq!(identity.to_string(), expected_identity),
                 other => panic!("{attribute_name} must be an identity-bound Int, was {other:?}"),

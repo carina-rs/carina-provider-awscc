@@ -1395,8 +1395,8 @@ fn main() {}
 mod tests {
     use super::*;
     use carina_core::schema::{
-        CompiledAttributeType, CustomValidator, RawShape, ResourceValidation,
-        TypeIdentity as CoreTypeIdentity,
+        CompiledAttributeType, CustomValidator, IntIdentityParts, RawShape, ResourceValidation,
+        StringIdentityParts, TypeIdentity as CoreTypeIdentity,
     };
     use carina_core::test_utils::provider_text::{BindProviderText as _, NativeWireFixture as _};
     use carina_plugin_sdk::types::{TypeIdentity as WireTypeIdentity, ValidatorType};
@@ -1524,10 +1524,18 @@ mod tests {
     ) {
         match attribute_type.raw_shape() {
             RawShape::String {
-                identity, validate, ..
+                identity_layer:
+                    StringIdentityParts {
+                        identity, validate, ..
+                    },
+                ..
             }
             | RawShape::Int {
-                identity, validate, ..
+                identity_layer:
+                    IntIdentityParts {
+                        identity, validate, ..
+                    },
+                ..
             }
             | RawShape::Float {
                 identity, validate, ..

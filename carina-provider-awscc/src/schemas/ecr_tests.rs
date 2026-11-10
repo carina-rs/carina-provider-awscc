@@ -1,4 +1,4 @@
-use carina_core::schema::{RawShape, ValidatedResourceSchema};
+use carina_core::schema::{RawShape, StringIdentityParts, ValidatedResourceSchema};
 
 use crate::test_support::{field, string};
 
@@ -46,12 +46,10 @@ fn repository_exclusion_filter_values_remain_anonymous_refined_strings() {
     let filter = field(&schema, FILTER_VALUE_PATH);
     assert!(matches!(
         filter.as_type().raw_shape(),
-        RawShape::String {
-            identity: None,
+        RawShape::String { identity_layer: StringIdentityParts { identity: None,
             pattern: Some(pattern),
             length: Some((Some(1), Some(128))),
             validate: None,
-            ..
-        } if pattern == &carina_core::schema::PatternSpec::new(r"^[0-9a-zA-Z._*-]{1,128}\z", carina_core::schema::PatternMatch::Full)
+            .. }, .. } if pattern == &carina_core::schema::PatternSpec::new(r"^[0-9a-zA-Z._*-]{1,128}\z", carina_core::schema::PatternMatch::Full)
     ));
 }

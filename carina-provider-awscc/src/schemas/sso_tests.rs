@@ -6,6 +6,7 @@
 //! the existing CFN grammar and check duration length without canonicalizing.
 
 use carina_core::schema::RawShape;
+use carina_core::schema::StringIdentityParts;
 
 use crate::test_support::{field, int, string, try_validate_fixtures};
 
@@ -100,10 +101,14 @@ fn sso_permission_set_session_duration_catalog_identity_bounds_and_callback() {
     assert_eq!(row.valid_sample(), "PT8H");
     let attribute_type = row.attribute_type();
     let RawShape::String {
-        identity: Some(identity),
-        pattern: Some(_),
-        length,
-        validate: Some(callback),
+        identity_layer:
+            StringIdentityParts {
+                identity: Some(identity),
+                pattern: Some(_),
+                length,
+                validate: Some(callback),
+                ..
+            },
         ..
     } = attribute_type.raw_shape()
     else {
@@ -124,10 +129,8 @@ fn sso_permission_set_session_duration_catalog_identity_bounds_and_callback() {
     let schema = super::generated::sso::permission_set::sso_permission_set_config().schema;
     assert!(matches!(
         field(&schema, "session_duration").as_type().raw_shape(),
-        RawShape::String {
-            identity: Some(schema_identity),
-            ..
-        } if schema_identity == identity
+        RawShape::String { identity_layer: StringIdentityParts { identity: Some(schema_identity),
+            .. }, .. } if schema_identity == identity
     ));
 }
 
@@ -156,7 +159,11 @@ fn sso_permission_set_session_duration_large_components_and_cfn_length_bound() {
         );
         let attribute_type = duration.as_type();
         let RawShape::String {
-            validate: Some(callback),
+            identity_layer:
+                StringIdentityParts {
+                    validate: Some(callback),
+                    ..
+                },
             ..
         } = attribute_type.raw_shape()
         else {

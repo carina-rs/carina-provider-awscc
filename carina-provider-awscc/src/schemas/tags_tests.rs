@@ -1,7 +1,7 @@
 use carina_core::executor::prepare_provider_ready_resource;
 use carina_core::parser::ProviderConfig;
 use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::{RawShape, TypeError};
+use carina_core::schema::{RawShape, StringIdentityParts, TypeError};
 use indexmap::IndexMap;
 
 use crate::test_support::{
@@ -65,10 +65,14 @@ fn every_registered_tag_map_preserves_its_cfn_constraints() {
         for (name, source, generated) in [("Key", key_source, key), ("Value", value_source, value)]
         {
             let RawShape::String {
-                identity,
-                pattern,
-                length,
-                validate,
+                identity_layer:
+                    StringIdentityParts {
+                        identity,
+                        pattern,
+                        length,
+                        validate,
+                        ..
+                    },
                 ..
             } = generated.raw_shape()
             else {
@@ -322,10 +326,13 @@ fn unconstrained_tags_keep_plain_strings_and_no_entry_count_limit_is_added() {
         assert!(matches!(
             entry.raw_shape(),
             RawShape::String {
-                identity: None,
-                pattern: None,
-                length: None,
-                validate: None,
+                identity_layer: StringIdentityParts {
+                    identity: None,
+                    pattern: None,
+                    length: None,
+                    validate: None,
+                    ..
+                },
                 ..
             }
         ));

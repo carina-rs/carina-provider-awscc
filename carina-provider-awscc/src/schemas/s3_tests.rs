@@ -2,7 +2,9 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{RawShape, ShapeWalkBudget, ValidatedResourceSchema};
+use carina_core::schema::{
+    RawShape, ShapeWalkBudget, StringIdentityParts, ValidatedResourceSchema,
+};
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
@@ -177,8 +179,11 @@ fn lifecycle_dates_validate_the_calendar_and_preserve_both_midnight_wire_forms()
         assert!(matches!(
             attr.as_type().raw_shape(),
             RawShape::String {
-                identity: Some(_),
-                validate: Some(_),
+                identity_layer: StringIdentityParts {
+                    identity: Some(_),
+                    validate: Some(_),
+                    ..
+                },
                 ..
             }
         ));
@@ -755,9 +760,12 @@ fn deferred_fields_and_legacy_bucket_outputs_keep_their_existing_types() {
             matches!(
                 output.as_type().raw_shape(),
                 RawShape::String {
-                    identity: None,
-                    pattern: None,
-                    length: None,
+                    identity_layer: StringIdentityParts {
+                        identity: None,
+                        pattern: None,
+                        length: None,
+                        ..
+                    },
                     ..
                 }
             ),

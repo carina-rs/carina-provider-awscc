@@ -34,9 +34,10 @@ where
         for (key, value) in &state.attributes {
             if let Some(attr_schema) = config.schema.as_schema().attributes().get(key.as_str())
                 && let RawShape::String {
-                    to_dsl: Some(transform),
-                    ..
+                    identity_layer,
+                    member_layer: _,
                 } = attr_schema.attr_type().raw_shape()
+                && let Some(transform) = identity_layer.to_dsl
                 && let Value::Concrete(ConcreteValue::String(s)) = value
             {
                 let s = s.expose_plaintext();

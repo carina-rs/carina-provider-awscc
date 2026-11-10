@@ -2,7 +2,9 @@ use std::path::Path;
 
 use carina_core::executor::prepare_provider_ready_resource;
 use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::{CompiledAttributeType, RawShape, ValidatedResourceSchema};
+use carina_core::schema::{
+    CompiledAttributeType, IntIdentityParts, RawShape, StringIdentityParts, ValidatedResourceSchema,
+};
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
@@ -84,10 +86,13 @@ fn target_group_health_check_port_is_anonymous_and_requires_canonical_decimal_st
     assert!(matches!(
         port.as_type().raw_shape(),
         RawShape::String {
-            identity: None,
-            pattern: Some(_),
-            length: None,
-            validate: None,
+            identity_layer: StringIdentityParts {
+                identity: None,
+                pattern: Some(_),
+                length: None,
+                validate: None,
+                ..
+            },
             ..
         }
     ));
@@ -210,10 +215,14 @@ fn target_group_matcher_codes_validate_every_inline_and_registered_definition() 
             ("definitions.Matcher", definition),
         ] {
             let RawShape::String {
-                identity: Some(actual),
-                pattern: None,
-                length: None,
-                validate: Some(validate),
+                identity_layer:
+                    StringIdentityParts {
+                        identity: Some(actual),
+                        pattern: None,
+                        length: None,
+                        validate: Some(validate),
+                        ..
+                    },
                 ..
             } = attr_type.raw_shape()
             else {
@@ -847,9 +856,7 @@ fn oidc_urls_and_jwks_endpoint_reuse_https_url_without_redefining_the_builtin() 
     ] {
         let endpoint = field(&schema, path);
         assert!(
-            matches!(endpoint.as_type().raw_shape(), RawShape::String {
-            identity: Some(identity), pattern: None, length: None, ..
-        } if identity.to_string() == "HttpsUrl"),
+            matches!(endpoint.as_type().raw_shape(), RawShape::String { identity_layer: StringIdentityParts { identity: Some(identity), pattern: None, length: None, .. }, .. } if identity.to_string() == "HttpsUrl"),
             "{path}"
         );
         for value in [
@@ -905,9 +912,7 @@ fn load_balancer_dns_and_subnet_addresses_reuse_core_builtins_unchanged() {
     ] {
         let attr_type = field(&schema, path);
         assert!(
-            matches!(attr_type.as_type().raw_shape(), RawShape::String {
-            identity: Some(actual), pattern: None, length: None, ..
-        } if actual.to_string() == identity),
+            matches!(attr_type.as_type().raw_shape(), RawShape::String { identity_layer: StringIdentityParts { identity: Some(actual), pattern: None, length: None, .. }, .. } if actual.to_string() == identity),
             "{path}"
         );
         for value in accepted {
@@ -1139,24 +1144,44 @@ fn assert_same_constraints(left: &CompiledAttributeType, right: &CompiledAttribu
     match (left.raw_shape(), right.raw_shape()) {
         (
             RawShape::String {
-                identity: li,
-                pattern: lp,
-                length: ll,
-                ..
+                identity_layer:
+                    StringIdentityParts {
+                        identity: li,
+                        pattern: lp,
+                        length: ll,
+                        ..
+                    },
+                member_layer: lm,
             },
             RawShape::String {
-                identity: ri,
-                pattern: rp,
-                length: rl,
-                ..
+                identity_layer:
+                    StringIdentityParts {
+                        identity: ri,
+                        pattern: rp,
+                        length: rl,
+                        ..
+                    },
+                member_layer: rm,
             },
         ) => {
             assert_eq!(li, ri);
             assert_eq!(lp, rp);
             assert_eq!(ll, rl);
+            assert_eq!(lm.pattern, rm.pattern);
+            assert_eq!(lm.length, rm.length);
         }
-        (RawShape::Int { range: left, .. }, RawShape::Int { range: right, .. }) => {
-            assert_eq!(left, right)
+        (
+            RawShape::Int {
+                identity_layer: IntIdentityParts { range: left, .. },
+                member_layer: lm,
+            },
+            RawShape::Int {
+                identity_layer: IntIdentityParts { range: right, .. },
+                member_layer: rm,
+            },
+        ) => {
+            assert_eq!(left, right);
+            assert_eq!(lm.range, rm.range);
         }
         (
             RawShape::Enum {

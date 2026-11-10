@@ -1,4 +1,4 @@
-use carina_core::schema::{RawShape, ValidatedResourceSchema};
+use carina_core::schema::{RawShape, StringIdentityParts, ValidatedResourceSchema};
 
 use crate::test_support::{field, int, string};
 
@@ -40,10 +40,14 @@ fn group_display_name_preserves_pattern_and_bounds_in_direct_callback_dispatch()
     assert!(attr.is_required());
     assert!(!attr.is_create_only());
     let RawShape::String {
-        identity: Some(identity),
-        pattern,
-        length,
-        validate: Some(callback),
+        identity_layer:
+            StringIdentityParts {
+                identity: Some(identity),
+                pattern,
+                length,
+                validate: Some(callback),
+                ..
+            },
         ..
     } = name.as_type().raw_shape()
     else {
