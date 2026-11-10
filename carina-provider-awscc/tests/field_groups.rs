@@ -48,11 +48,12 @@ async fn step6_cached_field_groups_survive_loaded_wasm() {
     use carina_plugin_host::WasmProviderFactory;
     use carina_provider_resolver::{ProviderLoadIdentity, ProviderTrustClass, VerifiedLoad};
 
+    // Cargo keeps its rustc info cache at the root, above any target triple.
     let wasm = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
         .ancestors()
-        .map(|dir| dir.join("wasm32-wasip2/release/carina-provider-awscc.wasm"))
-        .find(|path| path.exists())
-        .expect("build the release wasm32-wasip2 provider before this test");
+        .find(|dir| dir.join(".rustc_info.json").is_file())
+        .expect("build the release wasm32-wasip2 provider before this test")
+        .join("wasm32-wasip2/release/carina-provider-awscc.wasm");
     // This regression must exercise a real guest; a missing build is a failure.
     let bytes =
         std::fs::read(wasm).expect("build the release wasm32-wasip2 provider before this test");
