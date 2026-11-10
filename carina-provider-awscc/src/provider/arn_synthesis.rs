@@ -220,21 +220,26 @@ mod tests {
 
     #[test]
     fn synthesized_iam_roles_validate_in_every_partition() {
-        use carina_core::schema::{CompiledPattern, RawShape};
+        use carina_core::schema::RawShape;
         let ty = crate::schemas::generated::iam::role::arn();
         let RawShape::String {
             identity_layer:
                 StringIdentityParts {
-                    pattern: Some(pattern),
+                    pattern: Some(_),
                     validate: Some(validate),
                     ..
                 },
-            ..
+            member_layer:
+                carina_core::schema::StringMemberParts {
+                    pattern: None,
+                    length: None,
+                },
         } = ty.raw_shape()
         else {
-            panic!("IAM role ARN must have a pattern and callback");
+            panic!(
+                "IAM role ARN helper must retain its catalog definition without member constraints"
+            );
         };
-        let pattern = CompiledPattern::try_new(pattern).unwrap();
         let mut seen = std::collections::BTreeSet::new();
         let mut failures = Vec::new();
         for region in [
@@ -250,9 +255,6 @@ mod tests {
             let partition = partition_for_region(Some(region));
             seen.insert(partition);
             let arn = iam_role_arn(partition, "123456789012", "/service-role/", "example");
-            if !pattern.is_match(&arn) {
-                failures.push(format!("{region}: pattern rejected {arn}"));
-            }
             if let Err(error) = validate(&Value::Concrete(ConcreteValue::String(arn.into()))) {
                 failures.push(format!("{region}: {error}"));
             }

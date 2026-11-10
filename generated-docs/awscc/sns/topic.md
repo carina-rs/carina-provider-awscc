@@ -41,7 +41,7 @@ The ``ArchivePolicy`` determines the number of days SNS retains messages in FIFO
 
 ### `delivery_status_logging`
 
-- **Type:** List\<[Struct(LoggingConfig)](#delivery_status_logging-1)\>
+- **Type:** List\<[Struct(LoggingConfig)](#delivery_status_logging-1)\> (unique items)
 - **Required:** No
 
 The ``DeliveryStatusLogging`` configuration enables you to log the delivery status of messages sent from your Amazon SNS topic to subscribed endpoints with the following supported delivery protocols: + HTTP + Amazon Kinesis Data Firehose + AWS Lambda + Platform application endpoint + Amazon Simple Queue Service Once configured, log entries are sent to Amazon CloudWatch Logs.
@@ -98,7 +98,7 @@ The list of tags to add to a new topic. To be able to tag a topic on creation, y
 
 ### `topic_name`
 
-- **Type:** `String (length: 1..=256, pattern: ^[A-Za-z0-9_-]+(?:\.fifo)?$)`
+- **Type:** `String(pattern, len: 1..=256)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -165,16 +165,30 @@ Shorthand formats: `pass_through` or `TracingConfig.pass_through`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `failure_feedback_role_arn` | Arn | No | The IAM role ARN to be used when logging failed message deliveries in Amazon CloudWatch. |
+| `failure_feedback_role_arn` | aws.Arn — identity: String(pattern); member: String | No | The IAM role ARN to be used when logging failed message deliveries in Amazon CloudWatch. |
 | `protocol` | [Enum (Protocol)](#delivery_status_loggingprotocol-protocol) | Yes | Indicates one of the supported protocols for the Amazon SNS topic. At least one of the other three ``LoggingConfig`` properties is recommend along with ``Protocol``. |
-| `success_feedback_role_arn` | Arn | No | The IAM role ARN to be used when logging successful message deliveries in Amazon CloudWatch. |
-| `success_feedback_sample_rate` | `String (pattern: ^0*(?:100\|[0-9]{1,2})$)` | No | The percentage of successful message deliveries to be logged in Amazon CloudWatch. Valid percentage values range from 0 to 100. |
+| `success_feedback_role_arn` | aws.Arn — identity: String(pattern); member: String | No | The IAM role ARN to be used when logging successful message deliveries in Amazon CloudWatch. |
+| `success_feedback_sample_rate` | `String(pattern)` | No | The percentage of successful message deliveries to be logged in Amazon CloudWatch. Valid percentage values range from 0 to 100. |
 
 ## Attribute Reference
 
 ### `topic_arn`
 
-- **Type:** Arn
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/LoggingConfig/properties/SuccessFeedbackSampleRate` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/sns/latest/api/API_SetTopicAttributes.html) | ` The <ENDPOINT>SuccessFeedbackRoleArn and <ENDPOINT>FailureFeedbackRoleArn attributes are used to give Amazon SNS write access to use CloudWatch Logs on your behalf. The <ENDPOINT>SuccessFeedbackSampleRate attribute is for specifying the sample rate percentage (0-100) of successfully delivered messages. After you configure the <ENDPOINT>FailureFeedbackRoleArn attribute, then all failed message deliveries generate CloudWatch Logs. ` | 2026-11-07 |
+| `/definitions/Subscription/properties/Protocol` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/sns/latest/api/API_Subscribe.html) | ` The protocol that you want to use. Supported protocols include: `<br>` http – delivery of JSON-encoded message via HTTP POST `<br>` https – delivery of JSON-encoded message via HTTPS POST `<br>` email – delivery of message via SMTP `<br>` email-json – delivery of JSON-encoded message via SMTP `<br>` sms – delivery of message via SMS `<br>` sqs – delivery of JSON-encoded message to an Amazon SQS queue `<br>` application – delivery of JSON-encoded message to an EndpointArn for a mobile app and device `<br>` lambda – delivery of JSON-encoded message to an AWS Lambda function `<br>` firehose – delivery of JSON-encoded message to an Amazon Data Firehose delivery stream. ` | 2026-11-07 |
+| `/properties/ArchivePolicy` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/sns/latest/dg/message-archiving-and-replay-topic-owner.html) | ` Message archiving lets you archive a single copy of all messages published to your topic. You can store published messages within your topic by enabling the message archive policy on the topic, which enables message archiving for all subscriptions linked to that topic. Messages can be archived for a minimum of one day to a maximum of 365 days. `<br>` On the Topic details page, the Retention policy displays the status of the archive policy, including the number of days for which it is set. Select the Archive policy tab to view the following message archive details: Status – The archive and replay status appears as active when an archive policy is applied. The archive and replay status appears as inactive when the archive policy is set to an empty JSON object.Message retention period – The specified number of days for message retention.Archive start date – The date from which subscribers can replay messages.JSON preview – The JSON preview of the archive policy. `<br>` Status – The archive and replay status appears as active when an archive policy is applied. The archive and replay status appears as inactive when the archive policy is set to an empty JSON object. `<br>` To create a message archive policy using the API, you need to add the attribute ArchivePolicy to your topic. You can set an ArchivePolicy using the API actions CreateTopic and SetTopicAttributes. ArchivePolicy has a single value, MessageRetentionPeriod, which represents the number of days Amazon SNS retains messages. To activate message archiving for your topic, set the MessageRetentionPeriod to an integer value greater than zero. For example, to retain messages in your archive for 30 days, set the ArchivePolicy to: ` | 2026-11-07 |
+| `/properties/FifoThroughputScope` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/sns/latest/api/API_SetTopicAttributes.html) | ` FifoThroughputScope – Enables higher throughput for your FIFO topic by adjusting the scope of deduplication. This attribute has two possible values: Topic – The scope of message deduplication is across the entire topic. This is the default value and maintains existing behavior, with a maximum throughput of 3000 messages per second or 20MB per second, whichever comes first.MessageGroup – The scope of deduplication is within each individual message group, which enables higher throughput per topic subject to regional quotas. For more information on quotas or to request an increase, see Amazon SNS service quotas in the Amazon Web Services General Reference. `<br>` FifoThroughputScope – Enables higher throughput for your FIFO topic by adjusting the scope of deduplication. This attribute has two possible values: `<br>` Topic – The scope of message deduplication is across the entire topic. This is the default value and maintains existing behavior, with a maximum throughput of 3000 messages per second or 20MB per second, whichever comes first. `<br>` MessageGroup – The scope of deduplication is within each individual message group, which enables higher throughput per topic subject to regional quotas. For more information on quotas or to request an increase, see Amazon SNS service quotas in the Amazon Web Services General Reference. ` | 2026-11-07 |
+| `/properties/SignatureVersion` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/sns/latest/dg/sns-verify-signature-of-message-configure-message-signature.html) | ` Select between SignatureVersion1 (SHA1) and SignatureVersion2 (SHA256) to control the hashing algorithm used for signing messages. Amazon SNS topics default to SignatureVersion1. You can configure this setting using the SetTopicAttributes API action. `<br>` SignatureVersion `<br>` Use the following example to set the topic attribute SignatureVersion using the AWS CLI: `<br>` aws sns set-topic-attributes \ --topic-arn arn:aws:sns:us-east-2:123456789012:MyTopic \ --attribute-name SignatureVersion \ --attribute-value 2 ` | 2026-11-07 |
+| `/properties/TopicName` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/sns/latest/api/API_CreateTopic.html) | ` The name of the topic you want to create. `<br>` Constraints: Topic names must be made up of only uppercase and lowercase ASCII letters, numbers, underscores, and hyphens, and must be between 1 and 256 characters long. `<br>` For a FIFO (first-in-first-out) topic, the name must end with the .fifo suffix. ` | 2026-11-07 |
+| `/properties/TracingConfig` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/sns/latest/api/API_SetTopicAttributes.html) | ` TracingConfig – Tracing mode of an Amazon SNS topic. By default TracingConfig is set to PassThrough, and the topic passes through the tracing header it receives from an Amazon SNS publisher to its subscriptions. If set to Active, Amazon SNS will vend X-Ray segment data to topic owner account if the sampled flag in the tracing header is true. This is only supported on standard topics. ` | 2026-11-07 |
 

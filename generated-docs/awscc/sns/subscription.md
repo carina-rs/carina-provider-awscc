@@ -77,7 +77,7 @@ When specified, sends undeliverable messages to the specified Amazon SQS dead-le
 
 ### `region`
 
-- **Type:** Region
+- **Type:** aws.Region — identity: String; member: String
 - **Required:** No
 - **Write-only:** Yes
 
@@ -92,14 +92,14 @@ Specifies whether Amazon SNS resends the notification to the subscription when a
 
 ### `subscription_role_arn`
 
-- **Type:** Arn
+- **Type:** aws.Arn — identity: String(pattern); member: String
 - **Required:** No
 
 This property applies only to Amazon Data Firehose delivery stream subscriptions.
 
 ### `topic_arn`
 
-- **Type:** Arn
+- **Type:** aws.Arn — identity: String(pattern); member: String
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -142,7 +142,20 @@ Shorthand formats: `http` or `Protocol.http`
 
 ### `arn`
 
-- **Type:** Arn
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 Arn of the subscription
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/properties/DeliveryPolicy` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/sns/latest/dg/sns-message-delivery-retries.html) | ` numRetries The total number of retries, including immediate, pre-backoff, backoff, and post-backoff retries. 0 to 100Default: 3 ` | 2026-11-07 |
+| `/properties/DeliveryPolicy` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/sns/latest/dg/sns-message-delivery-retries.html#creating-delivery-policy) | ` maxReceivesPerSecond The maximum average number of message deliveries per second, per subscription. 1 or greaterDefault: No throttling (no limit on delivery rate) ` | 2026-11-07 |
+| `/properties/FilterPolicyScope` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/sns/latest/api/API_Subscribe.html) | ` FilterPolicyScope – This attribute lets you choose the filtering scope by using one of the following string value types: MessageAttributes (default) – The filter is applied on the message attributes.MessageBody – The filter is applied on the message body. `<br>` FilterPolicyScope – This attribute lets you choose the filtering scope by using one of the following string value types: `<br>` MessageAttributes (default) – The filter is applied on the message attributes. `<br>` MessageBody – The filter is applied on the message body. ` | 2026-11-07 |
+| `/properties/Protocol` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/sns/latest/api/API_Subscribe.html) | ` The protocol that you want to use. Supported protocols include: `<br>` http – delivery of JSON-encoded message via HTTP POST `<br>` https – delivery of JSON-encoded message via HTTPS POST `<br>` email – delivery of message via SMTP `<br>` email-json – delivery of JSON-encoded message via SMTP `<br>` sms – delivery of message via SMS `<br>` sqs – delivery of JSON-encoded message to an Amazon SQS queue `<br>` application – delivery of JSON-encoded message to an EndpointArn for a mobile app and device `<br>` lambda – delivery of JSON-encoded message to an AWS Lambda function `<br>` firehose – delivery of JSON-encoded message to an Amazon Data Firehose delivery stream. ` | 2026-11-07 |
+| `/properties/RedrivePolicy` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/sns/latest/dg/sns-dead-letter-queues.html) | ` Your messages are moved into a dead-letter queue using a redrive policy. A redrive policy is a JSON object that refers to the ARN of the dead-letter queue. The deadLetterTargetArn attribute specifies the ARN. The ARN must point to an Amazon SQS queue in the same AWS account and Region as your Amazon SNS subscription. For more information, see Configuring an Amazon SNS dead-letter queue for a subscription. `<br>` The following JSON object is a sample redrive policy, attached to an SNS subscription. `<br>` { "deadLetterTargetArn": "arn:aws:sqs:us-east-2:123456789012:MyDeadLetterQueue" } ` | 2026-11-07 |
+| `/properties/ReplayPolicy` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/sns/latest/dg/message-archiving-and-replay-subscriber.html) | ` StartingPoint (Required) – Signals where to start replaying messages from. `<br>` EndingPoint (Optional) – Signals when to stop replaying messages. If EndingPoint is omitted, then the replay will continue until caught up to the current time. `<br>` PointType (Required) – Sets the type of starting and ending points. Currently, the supported value for PointType is Timestamp. ` | 2026-11-07 |
 

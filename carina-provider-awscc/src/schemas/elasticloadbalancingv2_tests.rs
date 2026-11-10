@@ -600,8 +600,12 @@ async fn authored_listener_identifiers_serialize_to_exact_wire_strings() {
                     string("https://idp.example.com/userinfo"),
                 ),
                 ("client_id", string("client")),
+                (
+                    "use_existing_client_secret",
+                    Value::Concrete(ConcreteValue::Bool(false)),
+                ),
             ],
-            json!({"AuthorizationEndpoint": "https://idp.example.com/authorize", "Issuer": "https://idp.example.com/issuer", "TokenEndpoint": "https://idp.example.com/token", "UserInfoEndpoint": "https://idp.example.com/userinfo", "ClientId": "client"}),
+            json!({"AuthorizationEndpoint": "https://idp.example.com/authorize", "Issuer": "https://idp.example.com/issuer", "TokenEndpoint": "https://idp.example.com/token", "UserInfoEndpoint": "https://idp.example.com/userinfo", "ClientId": "client", "UseExistingClientSecret": false}),
         ),
     ] {
         for wire in ["deny", "allow", "authenticate"] {
@@ -1098,18 +1102,25 @@ fn quic_server_ids_require_lowercase_hex_and_exact_length() {
 }
 
 #[test]
-fn target_availability_zone_accepts_all_and_preserves_the_shared_zone_type() {
+fn target_availability_zone_keeps_the_zone_identity_and_all_literal() {
     let schema = target_group_schema();
     let zone = field(&schema, "targets.availability_zone");
     let RawShape::Union(members) = zone.as_type().raw_shape() else {
         panic!("target AvailabilityZone must be a union");
     };
     assert_eq!(members.len(), 2);
-    assert!(
-        matches!(members[0].raw_shape(), RawShape::Enum { identity, values: None, .. }
-        if identity.to_string() == "aws.AvailabilityZone.ZoneName")
-    );
-    zone.validate(&enum_identifier("ap_northeast_1a")).unwrap();
+    assert!(matches!(
+        members[0].raw_shape(),
+        RawShape::String {
+            identity_layer: StringIdentityParts {
+                identity: Some(_),
+                validate: Some(_),
+                ..
+            },
+            ..
+        }
+    ));
+    zone.validate(&string("ap-northeast-1a")).unwrap();
     zone.validate(&string("all")).unwrap();
     for value in ["", "ALL", "all\n", "all-zones", "not-a-zone"] {
         assert!(zone.validate(&string(value)).is_err(), "{value:?}");
@@ -1343,7 +1354,7 @@ awscc.elasticloadbalancingv2.Listener {
 }
 
 #[test]
-fn every_example_and_acceptance_fixture_declaring_elbv2_resources_validates() {
+fn every_example_and_acceptance_fixture_declaring_elbv2_resources_keep_cfn_reference_limits() {
     fn collect(directory: &Path, root: &Path, fixtures: &mut Vec<(String, String)>) {
         let mut entries = std::fs::read_dir(directory)
             .unwrap()
@@ -1387,5 +1398,5 @@ fn every_example_and_acceptance_fixture_declaring_elbv2_resources_validates() {
         .iter()
         .map(|(path, source)| (path.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    validate_fixtures(&cases);
+    crate::test_support::validate_fixtures(&cases);
 }

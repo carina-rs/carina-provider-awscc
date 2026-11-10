@@ -18,7 +18,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for SSO assignmet");
     #[inline(never)]
     fn build_instance_arn_attribute() -> AttributeSchema {
-        AttributeSchema::required("instance_arn", crate::schemas::catalog::sso_instance_arn())
+        AttributeSchema::required("instance_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::SsoInstanceArn.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("^arn:aws(-[a-z]{1,5}){0,3}:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}\\z", carina_core::schema::PatternMatch::Full)), Some((Some(10), Some(1224))))))
                 .create_only()
                 .with_description("The sso instance that the permission set is owned.")
                 .with_provider_name("InstanceArn")
@@ -27,7 +27,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_instance_arn_attribute());
     #[inline(never)]
     fn build_permission_set_arn_attribute() -> AttributeSchema {
-        AttributeSchema::required("permission_set_arn", crate::schemas::catalog::sso_permission_set_arn())
+        AttributeSchema::required("permission_set_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::SsoPermissionSetArn.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("^arn:aws(-[a-z]{1,5}){0,3}:sso:::permissionSet/(sso)?ins-[a-zA-Z0-9-.]{16}/ps-[a-zA-Z0-9-./]{16}\\z", carina_core::schema::PatternMatch::Full)), Some((Some(10), Some(1224))))))
                 .create_only()
                 .with_description("The permission set that the assignment will be assigned")
                 .with_provider_name("PermissionSetArn")
@@ -36,7 +36,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_permission_set_arn_attribute());
     #[inline(never)]
     fn build_principal_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("principal_id", carina_aws_types::sso_principal_id())
+        AttributeSchema::required("principal_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::SsoPrincipalId.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(47))))))
                 .create_only()
                 .with_description("The assignee's identifier, user id/group id")
                 .with_provider_name("PrincipalId")
@@ -54,7 +54,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_principal_type_attribute());
     #[inline(never)]
     fn build_target_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("target_id", carina_aws_types::aws_account_id())
+        AttributeSchema::required("target_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::AccountId.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("\\d{12}", carina_core::schema::PatternMatch::Full)), None)))
                 .create_only()
                 .with_description("The account id to be provisioned.")
                 .with_provider_name("TargetId")

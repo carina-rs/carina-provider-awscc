@@ -28,7 +28,7 @@ awscc.ec2.Vpc {
 
 ### `cidr_block`
 
-- **Type:** Ipv4Cidr
+- **Type:** Ipv4Cidr — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -57,7 +57,7 @@ The allowed tenancy of instances launched into the VPC. + ``default``: An instan
 
 ### `ipv4_ipam_pool_id`
 
-- **Type:** IpamPoolId
+- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -66,7 +66,7 @@ The ID of an IPv4 IPAM pool you want to use for allocating this VPC's CIDR. For 
 
 ### `ipv4_netmask_length`
 
-- **Type:** Int(0..=32)
+- **Type:** Int(16..=28)
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -95,31 +95,42 @@ Shorthand formats: `default` or `InstanceTenancy.default`
 
 ### `cidr_block_associations`
 
-- **Type:** `List<VpcCidrBlockAssociationId>`
+- **Type:** `List<aws.ec2.VpcCidrBlockAssociation.Id — identity: String(pattern); member: String>`
 
 
 
 ### `default_network_acl`
 
-- **Type:** NetworkAclId
+- **Type:** aws.ec2.NetworkAcl.Id — identity: String(pattern); member: String
 
 
 
 ### `default_security_group`
 
-- **Type:** SecurityGroupId
+- **Type:** aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String
 
 
 
 ### `ipv6_cidr_blocks`
 
-- **Type:** `List<Ipv6Cidr>`
+- **Type:** `List<Ipv6Cidr — identity: String; member: String>`
 
 
 
 ### `vpc_id`
 
-- **Type:** VpcId
+- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/Tag/properties/Key` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html) | ` Maximum key length – 128 Unicode characters in UTF-8 ` | 2026-11-07 |
+| `/definitions/Tag/properties/Value` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Tag.html) | ` The value of the tag. `<br>` Constraints: Tag values are case-sensitive and accept a maximum of 256 Unicode characters. ` | 2026-11-07 |
+| `/properties/InstanceTenancy` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateVpc.html) | ` The tenancy options for instances launched into the VPC. For default, instances are launched with shared tenancy by default. You can launch instances with any tenancy into a shared tenancy VPC. For dedicated, instances are launched as dedicated tenancy instances by default. You can only launch instances with a tenancy of dedicated or host into a dedicated tenancy VPC. `<br>` Important: The host value cannot be used with this parameter. Use the default or dedicated values only. `<br>` Default: default `<br>` Valid Values: default \| dedicated \| host ` | 2026-11-07 |
+| `/properties/Ipv4NetmaskLength` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-cidr-blocks.html) | ` When you create a VPC, you must specify an IPv4 CIDR block for the VPC. ` | 2026-11-07 |
 

@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, ExclusiveGroup};
-use carina_core::schema::{AttributeSchema, ResourceSchema, types};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 /// Returns the schema config for ec2_route (AWS::EC2::Route)
 #[rustfmt::skip]
@@ -14,7 +14,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
         .with_description("Specifies a route in a route table. For more information, see [Routes](https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Route_Tables.html#route-table-routes) in the *Amazon VPC User Guide*.  You must specify either a destination CIDR block or prefix list ID. You must also specify exactly one of the resources as the target.  If you create a route that references a transit gateway in the same template where you create the transit gateway, you must declare a dependency on the transit gateway attachment. The route table cannot use the transit gateway until it has successfully attached to the VPC. Add a [DependsOn Attribute](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-attribute-dependson.html) in the ``AWS::EC2::Route`` resource to explicitly declare a dependency on the ``AWS::EC2::TransitGatewayAttachment`` resource.");
     #[inline(never)]
     fn build_carrier_gateway_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("carrier_gateway_id", carina_aws_types::carrier_gateway_id())
+        AttributeSchema::optional("carrier_gateway_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2CarrierGatewayId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The ID of the carrier gateway. You can only use this option when the VPC contains a subnet which is associated with a Wavelength Zone.")
                 .with_provider_name("CarrierGatewayId")
             .build()
@@ -22,7 +22,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_carrier_gateway_id_attribute());
     #[inline(never)]
     fn build_cidr_block_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("cidr_block", types::ipv4_cidr())
+        AttributeSchema::provider_populated("cidr_block", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("CidrBlock")
             .build()
@@ -30,7 +30,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_cidr_block_attribute());
     #[inline(never)]
     fn build_core_network_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("core_network_arn", crate::schemas::catalog::arn())
+        AttributeSchema::optional("core_network_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The Amazon Resource Name (ARN) of the core network.")
                 .with_provider_name("CoreNetworkArn")
             .build()
@@ -38,7 +38,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_core_network_arn_attribute());
     #[inline(never)]
     fn build_destination_cidr_block_attribute() -> AttributeSchema {
-        AttributeSchema::optional("destination_cidr_block", types::ipv4_cidr())
+        AttributeSchema::optional("destination_cidr_block", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The IPv4 CIDR address block used for the destination match. Routing decisions are based on the most specific match. We modify the specified CIDR block to its canonical form; for example, if you specify ``100.68.0.18/18``, we modify it to ``100.68.0.0/18``.")
                 .with_provider_name("DestinationCidrBlock")
@@ -47,7 +47,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_destination_cidr_block_attribute());
     #[inline(never)]
     fn build_destination_ipv6_cidr_block_attribute() -> AttributeSchema {
-        AttributeSchema::optional("destination_ipv6_cidr_block", types::ipv6_cidr())
+        AttributeSchema::optional("destination_ipv6_cidr_block", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv6Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The IPv6 CIDR block used for the destination match. Routing decisions are based on the most specific match.")
                 .with_provider_name("DestinationIpv6CidrBlock")
@@ -56,7 +56,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_destination_ipv6_cidr_block_attribute());
     #[inline(never)]
     fn build_destination_prefix_list_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("destination_prefix_list_id", carina_aws_types::prefix_list_id())
+        AttributeSchema::optional("destination_prefix_list_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2PrefixListId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ID of a prefix list used for the destination match.")
                 .with_provider_name("DestinationPrefixListId")
@@ -65,7 +65,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_destination_prefix_list_id_attribute());
     #[inline(never)]
     fn build_egress_only_internet_gateway_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("egress_only_internet_gateway_id", carina_aws_types::egress_only_internet_gateway_id())
+        AttributeSchema::optional("egress_only_internet_gateway_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2EgressOnlyInternetGatewayId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("[IPv6 traffic only] The ID of an egress-only internet gateway.")
                 .with_provider_name("EgressOnlyInternetGatewayId")
             .build()
@@ -73,7 +73,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_egress_only_internet_gateway_id_attribute());
     #[inline(never)]
     fn build_gateway_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("gateway_id", carina_aws_types::gateway_id())
+        AttributeSchema::optional("gateway_id", AttributeType::string())
                 .with_description("The ID of an internet gateway or virtual private gateway attached to your VPC.")
                 .with_provider_name("GatewayId")
             .build()
@@ -81,7 +81,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_gateway_id_attribute());
     #[inline(never)]
     fn build_instance_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("instance_id", carina_aws_types::instance_id())
+        AttributeSchema::optional("instance_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2InstanceId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The ID of a NAT instance in your VPC. The operation fails if you specify an instance ID unless exactly one network interface is attached.")
                 .with_provider_name("InstanceId")
             .build()
@@ -89,7 +89,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_instance_id_attribute());
     #[inline(never)]
     fn build_local_gateway_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("local_gateway_id", carina_aws_types::local_gateway_id())
+        AttributeSchema::optional("local_gateway_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2LocalGatewayId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The ID of the local gateway.")
                 .with_provider_name("LocalGatewayId")
             .build()
@@ -97,7 +97,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_local_gateway_id_attribute());
     #[inline(never)]
     fn build_nat_gateway_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("nat_gateway_id", carina_aws_types::nat_gateway_id())
+        AttributeSchema::optional("nat_gateway_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2NatGatewayId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("[IPv4 traffic only] The ID of a NAT gateway.")
                 .with_provider_name("NatGatewayId")
             .build()
@@ -105,7 +105,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_nat_gateway_id_attribute());
     #[inline(never)]
     fn build_network_interface_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("network_interface_id", carina_aws_types::network_interface_id())
+        AttributeSchema::optional("network_interface_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2NetworkInterfaceId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The ID of a network interface.")
                 .with_provider_name("NetworkInterfaceId")
             .build()
@@ -113,7 +113,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_network_interface_id_attribute());
     #[inline(never)]
     fn build_route_table_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("route_table_id", carina_aws_types::route_table_id())
+        AttributeSchema::required("route_table_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2RouteTableId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ID of the route table for the route.")
                 .with_provider_name("RouteTableId")
@@ -122,7 +122,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_route_table_id_attribute());
     #[inline(never)]
     fn build_transit_gateway_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("transit_gateway_id", carina_aws_types::transit_gateway_id())
+        AttributeSchema::optional("transit_gateway_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The ID of a transit gateway.")
                 .with_provider_name("TransitGatewayId")
             .build()
@@ -130,7 +130,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_transit_gateway_id_attribute());
     #[inline(never)]
     fn build_vpc_endpoint_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("vpc_endpoint_id", carina_aws_types::vpc_endpoint_id())
+        AttributeSchema::optional("vpc_endpoint_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcEndpointId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The ID of a VPC endpoint. Supported for Gateway Load Balancer endpoints only.")
                 .with_provider_name("VpcEndpointId")
             .build()
@@ -138,7 +138,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_vpc_endpoint_id_attribute());
     #[inline(never)]
     fn build_vpc_peering_connection_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("vpc_peering_connection_id", carina_aws_types::vpc_peering_connection_id())
+        AttributeSchema::optional("vpc_peering_connection_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcPeeringConnectionId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The ID of a VPC peering connection.")
                 .with_provider_name("VpcPeeringConnectionId")
             .build()

@@ -31,7 +31,7 @@ awscc.ec2.FlowLog {
 
 ### `deliver_cross_account_role`
 
-- **Type:** IamRoleArn
+- **Type:** aws.iam.Role.Arn — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -39,7 +39,7 @@ The ARN of the IAM role that allows Amazon EC2 to publish flow logs across accou
 
 ### `deliver_logs_permission_arn`
 
-- **Type:** IamRoleArn
+- **Type:** aws.iam.Role.Arn — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -53,7 +53,7 @@ The ARN for the IAM role that permits Amazon EC2 to publish flow logs to a Cloud
 
 ### `log_destination`
 
-- **Type:** Arn
+- **Type:** aws.Arn — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -180,7 +180,17 @@ Shorthand formats: `accept` or `TrafficType.accept`
 
 ### `id`
 
-- **Type:** FlowLogId
+- **Type:** aws.ec2.FlowLog.Id — identity: String(pattern); member: String
 
 The Flow Log ID
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/Tag/properties/Key` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html) | ` Maximum key length – 128 Unicode characters in UTF-8 ` | 2026-11-07 |
+| `/definitions/Tag/properties/Value` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Tag.html) | ` The value of the tag. `<br>` Constraints: Tag values are case-sensitive and accept a maximum of 256 Unicode characters. ` | 2026-11-07 |
+| `/properties/MaxAggregationInterval` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-flowlog.html#cfn-ec2-flowlog-maxaggregationinterval) | ` The maximum interval of time during which a flow of packets is captured and aggregated into a flow log record. The possible values are 60 seconds (1 minute) or 600 seconds (10 minutes). This parameter must be 60 seconds for transit gateway resource types. `<br>` When a network interface is attached to a Nitro-based instance, the aggregation interval is always 60 seconds or less, regardless of the value that you specify. `<br>` Default: 600 ` | 2026-11-07 |
 

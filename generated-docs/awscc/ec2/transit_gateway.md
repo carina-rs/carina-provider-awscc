@@ -29,7 +29,7 @@ awscc.ec2.TransitGateway {
 
 ### `association_default_route_table_id`
 
-- **Type:** TgwRouteTableId
+- **Type:** aws.ec2.TransitGatewayRouteTable.Id — identity: String(pattern); member: String
 - **Required:** No
 
 ### `auto_accept_shared_attachments`
@@ -71,7 +71,7 @@ awscc.ec2.TransitGateway {
 
 ### `propagation_default_route_table_id`
 
-- **Type:** TgwRouteTableId
+- **Type:** aws.ec2.TransitGatewayRouteTable.Id — identity: String(pattern); member: String
 - **Required:** No
 
 ### `security_group_referencing_support`
@@ -86,7 +86,7 @@ awscc.ec2.TransitGateway {
 
 ### `transit_gateway_cidr_blocks`
 
-- **Type:** `List<Cidr>`
+- **Type:** `List<String>`
 - **Required:** No
 
 ### `vpn_ecmp_support`
@@ -145,10 +145,12 @@ Shorthand formats: `disable` or `EncryptionSupport.disable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `disable` | `aws.ec2.TransitGateway.EncryptionSupportState.disable` |
-| `enable` | `aws.ec2.TransitGateway.EncryptionSupportState.enable` |
+| `enabling` | `aws.ec2.TransitGateway.EncryptionSupportState.enabling` |
+| `enabled` | `aws.ec2.TransitGateway.EncryptionSupportState.enabled` |
+| `disabling` | `aws.ec2.TransitGateway.EncryptionSupportState.disabling` |
+| `disabled` | `aws.ec2.TransitGateway.EncryptionSupportState.disabled` |
 
-Shorthand formats: `disable` or `EncryptionSupportState.disable`
+Shorthand formats: `enabling` or `EncryptionSupportState.enabling`
 
 ### multicast_support (MulticastSupport)
 
@@ -185,9 +187,27 @@ Shorthand formats: `enable` or `VpnEcmpSupport.enable`
 
 ### `id`
 
-- **Type:** TransitGatewayId
+- **Type:** aws.ec2.TransitGateway.Id — identity: String(pattern); member: String
 
 ### `transit_gateway_arn`
 
-- **Type:** Arn
+- **Type:** aws.Arn — identity: String(pattern); member: String
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/Tag/properties/Key` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html) | ` Maximum key length – 128 Unicode characters in UTF-8 ` | 2026-11-07 |
+| `/definitions/Tag/properties/Value` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Tag.html) | ` The value of the tag. `<br>` Constraints: Tag values are case-sensitive and accept a maximum of 256 Unicode characters. ` | 2026-11-07 |
+| `/properties/AmazonSideAsn` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ModifyTransitGatewayOptions.html) | ` A private Autonomous System Number (ASN) for the Amazon side of a BGP session. The range is 64512 to 65534 for 16-bit ASNs and 4200000000 to 4294967294 for 32-bit ASNs. `<br>` The modify ASN operation is not allowed on a transit gateway if it has the following attachments: `<br>` Dynamic VPN `<br>` Static VPN `<br>` Direct Connect Gateway `<br>` Connect `<br>` VPN Concentrator `<br>` Client VPN `<br>` You must first delete all transit gateway attachments configured prior to modifying the ASN on the transit gateway. ` | 2026-11-07 |
+| `/properties/AutoAcceptSharedAttachments` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-transitgateway.html#cfn-ec2-transitgateway-autoacceptsharedattachments) | ` Enable or disable automatic acceptance of attachment requests. Disabled by default. `<br>` Allowed values: enable \| disable ` | 2026-11-07 |
+| `/properties/DefaultRouteTableAssociation` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-transitgateway.html#cfn-ec2-transitgateway-defaultroutetableassociation) | ` Enable or disable automatic association with the default association route table. Enabled by default. If DefaultRouteTableAssociation is set to enable, AWS Transit Gateway will create the default transit gateway route table. `<br>` Allowed values: enable \| disable ` | 2026-11-07 |
+| `/properties/DefaultRouteTablePropagation` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-transitgateway.html#cfn-ec2-transitgateway-defaultroutetablepropagation) | ` Enable or disable automatic propagation of routes to the default propagation route table. Enabled by default. If DefaultRouteTablePropagation is set to enable, AWS Transit Gateway will create the default transit gateway route table. `<br>` Allowed values: enable \| disable ` | 2026-11-07 |
+| `/properties/DnsSupport` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-transitgateway.html#cfn-ec2-transitgateway-dnssupport) | ` Enable or disable DNS support. Enabled by default. `<br>` Allowed values: enable \| disable ` | 2026-11-07 |
+| `/properties/EncryptionSupportState` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_EncryptionSupport.html) | ` Valid Values: enabling \| enabled \| disabling \| disabled ` | 2026-11-07 |
+| `/properties/MulticastSupport` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-transitgateway.html#cfn-ec2-transitgateway-multicastsupport) | ` Indicates whether multicast is enabled on the transit gateway `<br>` Allowed values: enable \| disable ` | 2026-11-07 |
+| `/properties/SecurityGroupReferencingSupport` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-transitgateway.html#cfn-ec2-transitgateway-securitygroupreferencingsupport) | ` Enables you to reference a security group across VPCs attached to a transit gateway (TGW). Use this option to simplify security group management and control of instance-to-instance traffic across VPCs that are connected by transit gateway. You can also use this option to migrate from VPC peering (which was the only option that supported security group referencing) to transit gateways (which now also support security group referencing). This option is disabled by default and there are no additional costs to use this feature. `<br>` For important information about this feature, see Create a transit gateway in the AWS Transit Gateway Guide. `<br>` Allowed values: enable \| disable ` | 2026-11-07 |
+| `/properties/VpnEcmpSupport` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ec2-transitgateway.html#cfn-ec2-transitgateway-vpnecmpsupport) | ` Enable or disable Equal Cost Multipath Protocol support. Enabled by default. `<br>` Allowed values: enable \| disable ` | 2026-11-07 |
 

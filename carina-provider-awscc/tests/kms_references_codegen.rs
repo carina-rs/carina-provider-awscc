@@ -318,13 +318,13 @@ fn explicitly_classified_non_reference_scalars_and_key_outputs_keep_their_types(
             assert!(
                 output.contains("AttributeSchema::optional(\"enabled\", AttributeType::bool())")
             );
-            assert!(output.contains("AttributeSchema::provider_populated(\"arn\", self::arn())"));
+            assert!(output.contains("AttributeSchema::provider_populated(\"arn\", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::KmsKeyArn.identity_layer(), carina_core::schema::StringMemberConstraints::new("));
             assert!(output.contains(
                 "AttributeSchema::provider_populated(\"key_id\", AttributeType::string())"
             ));
         } else {
             assert!(output.contains("### `enabled`\n\n- **Type:** Bool"));
-            assert!(output.contains("### `arn`\n\n- **Type:** Arn"));
+            assert!(output.contains("### `arn`\n\n- **Type:** aws.kms.Key.Arn — identity: String(pattern); member: String"));
         }
     }
 }
@@ -359,8 +359,8 @@ fn inferred_string_leaves_cannot_skip_classification() {
         json!({"enum": [42]}),
         json!({"const": "value"}),
         json!({"const": 42}),
-        json!({}),
-        json!({"description": "A key identifier"}),
+        json!({"type": "string"}),
+        json!({"type": "string", "description": "A key identifier"}),
         json!({"anyOf": [{"enum": ["value"]}]}),
         json!({"oneOf": [{"const": "value"}]}),
     ] {
@@ -373,6 +373,22 @@ fn inferred_string_leaves_cannot_skip_classification() {
             assert!(
                 error.contains("unclassified KMS string ec2.Vpc.kms_foo"),
                 "{property}: {error}"
+            );
+        }
+    }
+
+    // Without a type or literal, these original mutations fail projection first.
+    for property in [json!({}), json!({"description": "A key identifier"})] {
+        let mut schema = vpc_schema();
+        schema["properties"]["KmsFoo"] = property.clone();
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(!output.status.success(), "{property} passed {format}");
+            assert!(
+                error.contains("unsupported schema projection at #/properties/KmsFoo:")
+                    && error.contains("value has no supported type or literal projection"),
+                "{property}/{format}: {error}"
             );
         }
     }
@@ -446,7 +462,14 @@ fn key_only_constraint_in_any_schema_branch_requires_reclassification() {
                     !output.status.success(),
                     "{keyword}, typed={typed} passed {format}"
                 );
-                assert!(String::from_utf8_lossy(&output.stderr).contains("KMS pattern changed"));
+                let error = String::from_utf8_lossy(&output.stderr);
+                assert!(
+                    error.contains("KMS pattern changed")
+                        || (error
+                            .contains("unsupported schema projection at #/properties/KmsKeyArn:")
+                            && error.contains("incompatible pattern")),
+                    "{keyword}/{typed}/{format}: {error}"
+                );
             }
         }
     }
@@ -517,16 +540,21 @@ fn overridden_objects_classify_their_own_evidence_and_hidden_children() {
         for format in ["rust", "markdown"] {
             let output = generate(&schema, format);
             assert!(!output.status.success(), "{source} passed {format}");
+            let error = String::from_utf8_lossy(&output.stderr);
             assert!(
-                String::from_utf8_lossy(&output.stderr)
-                    .contains("unaccounted KMS node sns.Subscription#/properties/DeliveryPolicy")
+                error.contains("unaccounted KMS node sns.Subscription#/properties/DeliveryPolicy")
+                    || (source.get("anyOf").is_some()
+                        && error.contains(
+                            "unclassified KMS string sns.Subscription.delivery_policy.value"
+                        )),
+                "{source}/{format}: {error}"
             );
         }
     }
 }
 
 #[test]
-fn resource_combinators_contribute_property_constraints_and_candidates() {
+fn resource_combinators_reject_unsupported_property_contributions() {
     for keyword in ["oneOf", "anyOf", "allOf"] {
         let mut schema: Value =
             serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__SNS__Topic.json"))
@@ -537,7 +565,14 @@ fn resource_combinators_contribute_property_constraints_and_candidates() {
         for format in ["rust", "markdown"] {
             let output = generate(&schema, format);
             assert!(!output.status.success(), "root {keyword} passed {format}");
-            assert!(String::from_utf8_lossy(&output.stderr).contains("KMS pattern changed"));
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                error.contains("unsupported schema projection at #:")
+                    && error
+                        .contains("resource composition contributes to property KmsMasterKeyId"),
+                "{error}"
+            );
+            assert!(output.stdout.is_empty());
         }
 
         let mut schema = vpc_schema();
@@ -551,39 +586,47 @@ fn resource_combinators_contribute_property_constraints_and_candidates() {
                 !output.status.success(),
                 "root {keyword} candidate passed {format}"
             );
+            let error = String::from_utf8_lossy(&output.stderr);
             assert!(
-                String::from_utf8_lossy(&output.stderr)
-                    .contains("unclassified KMS string ec2.Vpc.encryption_key")
+                error.contains("unsupported schema projection at #:")
+                    && error.contains("resource composition contributes to property EncryptionKey"),
+                "{error}"
             );
+            assert!(output.stdout.is_empty());
         }
     }
 }
 
 #[test]
 fn reference_enum_and_const_constraints_require_reclassification() {
+    fn constrained_schema(constraint: &Value, location: &str) -> Value {
+        let mut schema: Value =
+            serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__SNS__Topic.json"))
+                .unwrap();
+        match location {
+            "direct" => schema["properties"]["KmsMasterKeyId"]
+                .as_object_mut()
+                .unwrap()
+                .extend(constraint.as_object().unwrap().clone()),
+            "$ref" => {
+                schema["properties"]["KmsMasterKeyId"] = json!({"$ref": "#/definitions/Key"});
+                schema["definitions"]["Key"] = constraint.clone();
+            }
+            "root" => schema["allOf"] = json!([{"properties": {"KmsMasterKeyId": constraint}}]),
+            keyword => schema["properties"]["KmsMasterKeyId"][keyword] = json!([constraint]),
+        }
+        schema
+    }
+
     for constraint in [
         json!({"enum": ["alias/only"]}),
-        json!({"enum": [42]}),
-        json!({"enum": []}),
+        json!({"enum": ["42"]}),
+        json!({"enum": ["value"]}),
         json!({"const": "alias/only"}),
-        json!({"const": null}),
+        json!({"const": "null"}),
     ] {
         for location in ["direct", "$ref", "oneOf", "anyOf", "allOf", "root"] {
-            let mut schema: Value =
-                serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__SNS__Topic.json"))
-                    .unwrap();
-            match location {
-                "direct" => schema["properties"]["KmsMasterKeyId"]
-                    .as_object_mut()
-                    .unwrap()
-                    .extend(constraint.as_object().unwrap().clone()),
-                "$ref" => {
-                    schema["properties"]["KmsMasterKeyId"] = json!({"$ref": "#/definitions/Key"});
-                    schema["definitions"]["Key"] = constraint.clone();
-                }
-                "root" => schema["allOf"] = json!([{"properties": {"KmsMasterKeyId": constraint}}]),
-                keyword => schema["properties"]["KmsMasterKeyId"][keyword] = json!([constraint]),
-            }
+            let schema = constrained_schema(&constraint, location);
             for format in ["rust", "markdown"] {
                 let output = generate(&schema, format);
                 assert!(
@@ -591,11 +634,54 @@ fn reference_enum_and_const_constraints_require_reclassification() {
                     "{location} constraint passed {format}"
                 );
                 let error = String::from_utf8_lossy(&output.stderr);
+                if location == "root" {
+                    assert!(
+                        error.contains("unsupported schema projection at #:")
+                            && error.contains(
+                                "resource composition contributes to property KmsMasterKeyId"
+                            ),
+                        "{error}"
+                    );
+                    assert!(output.stdout.is_empty());
+                    continue;
+                }
                 assert!(
-                    error.contains("KMS enum/const constraint") && error.contains("revisit"),
-                    "{error}"
+                    error.contains("sns.Topic.kms_master_key_id: KMS enum/const constraint")
+                        && error.contains("revisit"),
+                    "{constraint}/{location}/{format}: {error}"
                 );
             }
+        }
+    }
+
+    // Keep projection rejection for the original invalid string constraints too.
+    for (constraint, location, reason) in [
+        (
+            json!({"enum": [42]}),
+            "direct",
+            "literal conflicts with the projected value type",
+        ),
+        (
+            json!({"enum": []}),
+            "$ref",
+            "value has no supported type or literal projection",
+        ),
+        (
+            json!({"const": null}),
+            "direct",
+            "null const requires a typed literal projection",
+        ),
+    ] {
+        let schema = constrained_schema(&constraint, location);
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(!output.status.success(), "{constraint} passed {format}");
+            assert!(
+                error.contains("unsupported schema projection at #/properties/KmsMasterKeyId:")
+                    && error.contains(reason),
+                "{constraint}/{location}/{format}: {error}"
+            );
         }
     }
 }

@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::schema::{AttributeSchema, AttributeType, FieldGroup, ResourceSchema, types};
+use carina_core::schema::{AttributeSchema, AttributeType, FieldGroup, ResourceSchema};
 
 const VALID_INSTANCE_TENANCY: &[&str] = &["default", "dedicated"];
 
@@ -16,7 +16,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
         .with_description("Specifies a virtual private cloud (VPC).  To add an IPv6 CIDR block to the VPC, see [AWS::EC2::VPCCidrBlock](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpccidrblock.html).  For more information, see [Virtual private clouds (VPC)](https://docs.aws.amazon.com/vpc/latest/userguide/configure-your-vpc.html) in the *Amazon VPC User Guide*.");
     #[inline(never)]
     fn build_cidr_block_attribute() -> AttributeSchema {
-        AttributeSchema::optional("cidr_block", types::ipv4_cidr())
+        AttributeSchema::optional("cidr_block", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The IPv4 network range for the VPC, in CIDR notation. For example, ``10.0.0.0/16``. We modify the specified CIDR block to its canonical form; for example, if you specify ``100.68.0.18/18``, we modify it to ``100.68.0.0/18``. You must specify either``CidrBlock`` or ``Ipv4IpamPoolId``.")
                 .with_provider_name("CidrBlock")
@@ -25,7 +25,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_cidr_block_attribute());
     #[inline(never)]
     fn build_cidr_block_associations_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("cidr_block_associations", AttributeType::unordered_list(carina_aws_types::vpc_cidr_block_association_id()))
+        AttributeSchema::provider_populated("cidr_block_associations", AttributeType::unordered_list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcCidrBlockAssociationId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))))
                 .with_description(" (read-only)")
                 .with_provider_name("CidrBlockAssociations")
             .build()
@@ -33,7 +33,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_cidr_block_associations_attribute());
     #[inline(never)]
     fn build_default_network_acl_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("default_network_acl", carina_aws_types::network_acl_id())
+        AttributeSchema::provider_populated("default_network_acl", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2NetworkAclId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("DefaultNetworkAcl")
             .build()
@@ -41,7 +41,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_default_network_acl_attribute());
     #[inline(never)]
     fn build_default_security_group_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("default_security_group", carina_aws_types::security_group_id())
+        AttributeSchema::provider_populated("default_security_group", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2SecurityGroupId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("DefaultSecurityGroup")
             .build()
@@ -73,7 +73,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_instance_tenancy_attribute());
     #[inline(never)]
     fn build_ipv4_ipam_pool_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipv4_ipam_pool_id", carina_aws_types::ipam_pool_id())
+        AttributeSchema::optional("ipv4_ipam_pool_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .write_only()
                 .with_description("The ID of an IPv4 IPAM pool you want to use for allocating this VPC's CIDR. For more information, see [What is IPAM?](https://docs.aws.amazon.com//vpc/latest/ipam/what-is-it-ipam.html) in the *Amazon VPC IPAM User Guide*. You must specify either``CidrBlock`` or ``Ipv4IpamPoolId``.")
@@ -83,7 +83,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipv4_ipam_pool_id_attribute());
     #[inline(never)]
     fn build_ipv4_netmask_length_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipv4_netmask_length", AttributeType::refined_int(None, Some((Some(0), Some(32)))))
+        AttributeSchema::optional("ipv4_netmask_length", AttributeType::refined_int(None, Some((Some(16), Some(28)))))
                 .create_only()
                 .write_only()
                 .with_description("The netmask length of the IPv4 CIDR you want to allocate to this VPC from an Amazon VPC IP Address Manager (IPAM) pool. For more information about IPAM, see [What is IPAM?](https://docs.aws.amazon.com//vpc/latest/ipam/what-is-it-ipam.html) in the *Amazon VPC IPAM User Guide*.")
@@ -93,7 +93,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipv4_netmask_length_attribute());
     #[inline(never)]
     fn build_ipv6_cidr_blocks_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("ipv6_cidr_blocks", AttributeType::unordered_list(types::ipv6_cidr()))
+        AttributeSchema::provider_populated("ipv6_cidr_blocks", AttributeType::unordered_list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv6Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))))
                 .with_description(" (read-only)")
                 .with_provider_name("Ipv6CidrBlocks")
             .build()
@@ -110,7 +110,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_vpc_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("vpc_id", carina_aws_types::vpc_id())
+        AttributeSchema::provider_populated("vpc_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("VpcId")
             .build()

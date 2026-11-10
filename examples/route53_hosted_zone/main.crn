@@ -13,8 +13,7 @@ awscc.route53.HostedZone {
     comment = 'Public hosted zone for example-carina.com.'
   }
 
-  hosted_zone_tag {
-    key   = 'Environment'
-    value = 'example'
+  tags = {
+    Environment = 'example'
   }
 }

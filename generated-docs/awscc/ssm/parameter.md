@@ -68,7 +68,7 @@ Information about the policies assigned to a parameter. [Assigning parameter pol
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** `Map<String(pattern), String>`
 - **Required:** No
 
 Optional metadata that you assign to a resource in the form of an arbitrary set of tags (key-value pairs). Tags enable you to categorize a resource in different ways, such as by purpose, owner, or environment. For example, you might want to tag a SYS parameter to identify the type of resource to which it applies, the environment, or the type of configuration data referenced by the parameter.
@@ -129,7 +129,16 @@ Shorthand formats: `string` or `Type.string`
 
 ### `arn`
 
-- **Type:** Arn
+- **Type:** aws.Arn — identity: String(pattern); member: String(pattern)
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/properties/AllowedPattern` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ssm-parameter.html#cfn-ssm-parameter-allowedpattern) | ` A regular expression used to validate the parameter value. For example, for String types with values restricted to numbers, you can specify the following: AllowedPattern=^\d+$ `<br>` Minimum: 0 `<br>` Maximum: 1024 ` | 2026-11-07 |
+| `/properties/Policies` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_PutParameter.html#systemsmanager-PutParameter-request-Policies) | ` One or more policies to apply to a parameter. This operation takes a JSON array. Parameter Store, a tool in AWS Systems Manager supports the following policy types: `<br>` Expiration: This policy deletes the parameter after it expires. When you create the policy, you specify the expiration date. You can update the expiration date and time by updating the policy. Updating the parameter doesn't affect the expiration date and time. When the expiration time is reached, Parameter Store deletes the parameter. `<br>` ExpirationNotification: This policy initiates an event in Amazon CloudWatch Events that notifies you about the expiration. By using this policy, you can receive notification before or after the expiration time is reached, in units of days or hours. `<br>` NoChangeNotification: This policy initiates a CloudWatch Events event if a parameter hasn't been modified for a specified period of time. This policy type is useful when, for example, a secret needs to be changed within a period of time, but it hasn't been changed. `<br>` All existing policies are preserved until you send new policies or an empty policy. For more information about parameter policies, see Assigning parameter policies. `<br>` Length Constraints: Minimum length of 1. Maximum length of 4096. ` | 2026-11-07 |
 

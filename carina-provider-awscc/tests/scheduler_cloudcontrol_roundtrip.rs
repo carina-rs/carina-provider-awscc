@@ -150,7 +150,7 @@ async fn create(provider: &AwsccProvider, resource: Resource) -> AppliedState {
 }
 
 #[test]
-fn maximum_window_in_minutes_uses_the_integer_dsl_shape() {
+fn maximum_window_in_minutes_retains_the_cfn_number_kind() {
     let schedule = scheduler_schedule_config();
     let flexible_time_window = &schedule
         .schema
@@ -162,8 +162,8 @@ fn maximum_window_in_minutes_uses_the_integer_dsl_shape() {
     let maximum_window = find_field(flexible_time_window, "maximum_window_in_minutes").field_type();
 
     assert!(
-        matches!(maximum_window.raw_shape(), RawShape::Int { .. }),
-        "MaximumWindowInMinutes must accept an integer DSL value, got {:?}",
+        matches!(maximum_window.raw_shape(), RawShape::Float { .. }),
+        "MaximumWindowInMinutes must retain the CFN number kind, got {:?}",
         maximum_window.raw_shape()
     );
 }

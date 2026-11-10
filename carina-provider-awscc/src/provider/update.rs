@@ -1162,6 +1162,50 @@ mod tests {
     }
 
     #[test]
+    fn issue_521_nonstandard_tag_properties_use_tag_update_conversion() {
+        for (resource_type, provider_name) in [
+            ("budgets.Budget", "ResourceTags"),
+            ("route53.HostedZone", "HostedZoneTags"),
+        ] {
+            let config = crate::schemas::generated::get_config_by_type(resource_type).unwrap();
+            let tags = Value::Concrete(ConcreteValue::Map(IndexMap::from([(
+                "team".to_string(),
+                Value::Concrete(ConcreteValue::String("carina".into())),
+            )])));
+            let plan = build_update_patches(
+                &crate::test_support::diagnostics(),
+                config,
+                resource_type,
+                &UpdatePatch {
+                    ops: vec![replace("tags", tags)],
+                },
+            );
+            assert_eq!(
+                plan.ops,
+                [json!({
+                    "op": "add", "path": format!("/{provider_name}"),
+                    "value": [{"Key": "team", "Value": "carina"}]
+                })]
+            );
+            let plan = build_update_patches(
+                &crate::test_support::diagnostics(),
+                config,
+                resource_type,
+                &UpdatePatch {
+                    ops: vec![replace(
+                        "tags",
+                        Value::Concrete(ConcreteValue::Map(IndexMap::new())),
+                    )],
+                },
+            );
+            assert_eq!(
+                plan.ops,
+                [json!({"op": "remove", "path": format!("/{provider_name}")})]
+            );
+        }
+    }
+
+    #[test]
     fn test_unknown_attribute_is_dropped() {
         let config = get_vpc_config();
         let patch = UpdatePatch {

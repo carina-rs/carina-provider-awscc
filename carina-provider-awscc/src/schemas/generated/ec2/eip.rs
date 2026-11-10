@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 const VALID_DOMAIN: &[&str] = &["vpc", "standard"];
 
@@ -16,7 +16,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
         .with_description("Specifies an Elastic IP (EIP) address and can, optionally, associate it with an Amazon EC2 instance.  You can allocate an Elastic IP address from an address pool owned by AWS or from an address pool created from a public IPv4 address range that you have brought to AWS for use with your AWS resources using bring your own IP addresses (BYOIP). For more information, see [Bring Your Own IP Addresses (BYOIP)](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-byoip.html) in the *Amazon EC2 User Guide*.  For more information, see [Elastic IP Addresses](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/elastic-ip-addresses-eip.html) in the *Amazon EC2 User Guide*.");
     #[inline(never)]
     fn build_address_attribute() -> AttributeSchema {
-        AttributeSchema::optional("address", types::ipv4_address())
+        AttributeSchema::optional("address", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Address.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .write_only()
                 .with_description("")
@@ -26,7 +26,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_address_attribute());
     #[inline(never)]
     fn build_allocation_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("allocation_id", carina_aws_types::allocation_id())
+        AttributeSchema::provider_populated("allocation_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2EipAllocationId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("AllocationId")
             .build()
@@ -42,7 +42,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_domain_attribute());
     #[inline(never)]
     fn build_instance_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("instance_id", carina_aws_types::instance_id())
+        AttributeSchema::optional("instance_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2InstanceId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The ID of the instance. Updates to the ``InstanceId`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.")
                 .with_provider_name("InstanceId")
             .build()
@@ -50,7 +50,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_instance_id_attribute());
     #[inline(never)]
     fn build_ipam_pool_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipam_pool_id", carina_aws_types::ipam_pool_id())
+        AttributeSchema::optional("ipam_pool_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .write_only()
                 .with_description("")
@@ -69,7 +69,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_network_border_group_attribute());
     #[inline(never)]
     fn build_public_ip_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("public_ip", types::ipv4_address())
+        AttributeSchema::provider_populated("public_ip", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Address.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("PublicIp")
             .build()
@@ -94,7 +94,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_transfer_address_attribute() -> AttributeSchema {
-        AttributeSchema::optional("transfer_address", types::ipv4_address())
+        AttributeSchema::optional("transfer_address", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Address.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .write_only()
                 .with_description("The Elastic IP address you are accepting for transfer. You can only accept one transferred address. For more information on Elastic IP address transfers, see [Transfer Elastic IP addresses](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-eips.html#transfer-EIPs-intro) in the *Amazon Virtual Private Cloud User Guide*.")

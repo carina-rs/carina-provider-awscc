@@ -140,13 +140,12 @@ fn other_region_fields_and_provider_configuration_keep_the_shared_region_domain(
             .unwrap()
             .schema;
         let region = field(schema, path);
-        assert_eq!(
-            region.as_type().enum_parts().unwrap().0.to_string(),
-            "aws.Region"
-        );
-        region.validate(&enum_identifier("ap_northeast_1")).unwrap();
         assert!(
-            region.validate(&enum_identifier("us_isob_east_1")).is_err(),
+            matches!(region.as_type().raw_shape(),RawShape::String {identity_layer: StringIdentityParts {identity:Some(identity),..},..} if identity.to_string()=="aws.Region")
+        );
+        region.validate(&string("ap-northeast-1")).unwrap();
+        assert!(
+            region.validate(&string("us-isob-east-1")).is_err(),
             "{path}"
         );
     }

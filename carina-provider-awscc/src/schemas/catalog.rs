@@ -1,14 +1,60 @@
-//! AWSCC-only schema identities and AWSCC refinements of shared AWS identities.
+//! Canonical schema identities used by AWSCC.
 //!
 //! `carina-aws-types` owns identities shared by the AWS and AWSCC providers.
-//! This catalog contains only identities introduced by AWSCC schemas and
-//! refinements that add AWSCC-specific validation. Its rows use the exported
+//! This catalog reuses those definitions and adds AWSCC identities and
+//! refinements. It supplies identity layers independently of CFN member
+//! constraints. Its rows use the exported
 //! `carina_aws_types::define_aws_type_catalog` grammar shared with `AwsType`.
 
 use super::pattern::{ApprovedPattern, refined_string, refined_string_with_validator};
+use super::string_identity::StringIdentity;
 use crate::partition::{Partition, arn_regex};
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, CompiledPattern, TypeIdentity, legacy_validator};
+use carina_core::schema::{
+    AttributeType, CompiledPattern, RawShape, StringIdentityLayer, TypeIdentity, legacy_validator,
+};
+
+/// One reusable definition per String identity. CFN fields can only combine
+/// this layer with `StringMemberConstraints` through `AttributeType::string_member`.
+pub fn string_identity_layer(identity: StringIdentity) -> StringIdentityLayer {
+    use std::collections::BTreeMap;
+    use std::sync::LazyLock;
+
+    static LAYERS: LazyLock<BTreeMap<StringIdentity, StringIdentityLayer>> = LazyLock::new(|| {
+        StringIdentity::ALL
+            .iter()
+            .map(|&identity| {
+                let declaration = identity.declaration();
+                let layer = if let Some(layer) = declaration.string_identity_layer() {
+                    let RawShape::String { member_layer, .. } = declaration.raw_shape() else {
+                        unreachable!("String identity layer requires a String declaration")
+                    };
+                    assert!(
+                        member_layer.pattern.is_none() && member_layer.length.is_none(),
+                        "catalog definitions must not contain member constraints: {identity:?}"
+                    );
+                    layer.clone()
+                } else if let RawShape::Enum { validate, .. } = declaration.raw_shape() {
+                    // Region and AZ spellings also have an enum surface. Their
+                    // raw String definition retains the shared check; enum DSL
+                    // aliases/transforms belong to the enum, not its String base.
+                    StringIdentityLayer::with_validator(
+                        identity.identity(),
+                        None,
+                        None,
+                        validate.cloned().expect("catalog string enum has a check"),
+                        None,
+                    )
+                } else {
+                    unreachable!("String identity must have a scalar catalog declaration")
+                };
+                assert_eq!(layer.parts().identity, Some(&identity.identity()));
+                (identity, layer)
+            })
+            .collect()
+    });
+    LAYERS[&identity].clone()
+}
 
 fn overlay_identity(segments: &[&str], kind: &str) -> TypeIdentity {
     TypeIdentity {

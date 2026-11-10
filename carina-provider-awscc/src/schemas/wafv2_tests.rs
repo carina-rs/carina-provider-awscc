@@ -582,7 +582,7 @@ fn rate_limit_label_namespace_requires_the_live_trailing_colon() {
 }
 
 #[test]
-fn size_constraint_is_an_integer_in_the_live_range() {
+fn size_constraint_retains_the_cfn_number_kind_and_range() {
     let attr = statement("size_constraint_statement.size");
     for (value, accepted) in [
         (0, true),
@@ -592,8 +592,8 @@ fn size_constraint_is_an_integer_in_the_live_range() {
     ] {
         assert_eq!(attr.validate(&int(value)).is_ok(), accepted, "{value}");
     }
-    // Cloud Control silently truncates 1.5 to 1; reject that drifting input.
-    assert!(attr.validate(&float(1.5)).is_err());
+    // The observed API coercion cannot justify replacing the CFN number kind.
+    assert!(attr.validate(&float(1.5)).is_ok());
 }
 
 #[test]

@@ -6,6 +6,10 @@ pub mod config;
 pub mod generated;
 pub mod pattern;
 mod scheduler;
+pub mod string_identity;
+
+#[cfg(test)]
+mod documented_narrowings_tests;
 
 #[cfg(test)]
 mod arn_tests;
@@ -365,7 +369,7 @@ mod tests {
             archive,
             "message_retention_period",
             "MessageRetentionPeriod",
-            true,
+            false,
         );
         assert!(matches!(
             topic.schema.as_schema().shape_of(retention),
@@ -399,7 +403,7 @@ mod tests {
             list_element(logs.schema.as_schema(), field_policies),
             "fields",
             "Fields",
-            true,
+            false,
         );
 
         let data_policy = logs

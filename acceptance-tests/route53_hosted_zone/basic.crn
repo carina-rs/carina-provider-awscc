@@ -13,8 +13,7 @@ awscc.route53.HostedZone {
     comment = 'Carina acceptance test hosted zone'
   }
 
-  hosted_zone_tag {
-    key   = 'Environment'
-    value = 'acceptance-test'
+  tags = {
+    Environment = 'acceptance-test'
   }
 }

@@ -51,6 +51,9 @@ use carina_provider_awscc::schemas;
 use carina_provider_awscc::{AwsccNormalizer, AwsccProviderFactory};
 
 #[cfg(any(target_arch = "wasm32", test))]
+mod saved_state;
+
+#[cfg(any(target_arch = "wasm32", test))]
 fn protocol_input_error(
     context: &'static str,
     error: protocol_convert::ProtocolConvertError,
@@ -1327,7 +1330,11 @@ fn decode_persisted_saved_attrs(
             Ok((id, attrs))
         })
         .collect::<Result<_, CoreProviderError>>()?;
-    Ok(RawSavedAttrs::from_persisted(persisted_saved, HashMap::new()).lift(registry))
+    let schemas = saved_state::SavedStateSchemas::from_input_schemas(registry);
+    Ok(schemas.lift(RawSavedAttrs::from_persisted(
+        persisted_saved,
+        HashMap::new(),
+    )))
 }
 
 /// Pull `allowed_account_ids` / `forbidden_account_ids` / `assume_role`

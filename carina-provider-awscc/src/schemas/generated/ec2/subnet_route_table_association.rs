@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::AwsccSchemaConfig;
-use carina_core::schema::{AttributeSchema, ResourceSchema};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 /// Returns the schema config for ec2_subnet_route_table_association (AWS::EC2::SubnetRouteTableAssociation)
 #[rustfmt::skip]
@@ -14,7 +14,7 @@ pub fn ec2_subnet_route_table_association_config() -> AwsccSchemaConfig {
         .with_description("Associates a subnet with a route table. The subnet and route table must be in the same VPC. This association causes traffic originating from the subnet to be routed according to the routes in the route table. A route table can be associated with multiple subnets. To create a route table, see [AWS::EC2::RouteTable](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-routetable.html).");
     #[inline(never)]
     fn build_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("id", carina_aws_types::subnet_route_table_association_id())
+        AttributeSchema::provider_populated("id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2SubnetRouteTableAssociationId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("Id")
             .build()
@@ -22,7 +22,7 @@ pub fn ec2_subnet_route_table_association_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_id_attribute());
     #[inline(never)]
     fn build_route_table_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("route_table_id", carina_aws_types::route_table_id())
+        AttributeSchema::required("route_table_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2RouteTableId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ID of the route table. The physical ID changes when the route table ID is changed.")
                 .with_provider_name("RouteTableId")
@@ -31,7 +31,7 @@ pub fn ec2_subnet_route_table_association_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_route_table_id_attribute());
     #[inline(never)]
     fn build_subnet_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("subnet_id", carina_aws_types::subnet_id())
+        AttributeSchema::required("subnet_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2SubnetId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ID of the subnet.")
                 .with_provider_name("SubnetId")

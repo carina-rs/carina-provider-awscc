@@ -4,7 +4,230 @@
 //! provider needs the same Cloud Control document shapes.
 
 use super::pattern::{ApprovedPattern, refined_string};
-use carina_core::schema::{AttributeType, StructField, enum_identity};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, FieldGroup, ListElements, OptionalAttributeSchemaBuilder,
+    OptionalStructFieldBuilder, ProviderPopulatedAttributeSchemaBuilder,
+    ProviderPopulatedStructFieldBuilder, RawShape, RequiredAttributeSchemaBuilder,
+    RequiredStructFieldBuilder, StructField, enum_identity,
+};
+
+/// The emitter applies the documented grammar to a freshly constructed builder,
+/// before emitting any CFN annotations. The shared seed retains the established
+/// constructor spelling and supplies the existing enum identities. There is no
+/// dependency alias or hidden shared-type import.
+pub(crate) trait DocumentedIamGrammar: Sized {
+    fn with_documented_iam_grammar(self) -> Self;
+}
+
+macro_rules! documented_iam_builder {
+    ($builder:ty, $owner:ident, $constructor:ident, $type_getter:ident) => {
+        impl DocumentedIamGrammar for $builder {
+            fn with_documented_iam_grammar(self) -> Self {
+                let seed = self.build();
+                $owner::$constructor(
+                    seed.name(),
+                    iam_policy_document_from_seed(seed.$type_getter()),
+                )
+            }
+        }
+    };
+}
+
+documented_iam_builder!(
+    OptionalAttributeSchemaBuilder,
+    AttributeSchema,
+    optional,
+    attr_type
+);
+documented_iam_builder!(
+    RequiredAttributeSchemaBuilder,
+    AttributeSchema,
+    required,
+    attr_type
+);
+documented_iam_builder!(
+    ProviderPopulatedAttributeSchemaBuilder,
+    AttributeSchema,
+    provider_populated,
+    attr_type
+);
+documented_iam_builder!(
+    OptionalStructFieldBuilder,
+    StructField,
+    optional,
+    field_type
+);
+documented_iam_builder!(
+    RequiredStructFieldBuilder,
+    StructField,
+    required,
+    field_type
+);
+documented_iam_builder!(
+    ProviderPopulatedStructFieldBuilder,
+    StructField,
+    provider_populated,
+    field_type
+);
+
+/// IAM JSON grammar, retaining the established DSL field and enum identities.
+/// Checked 2026-11-07:
+/// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_grammar.html
+/// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html
+/// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html
+pub fn iam_policy_document() -> AttributeType {
+    iam_policy_document_from_seed(&carina_aws_types::iam_policy_document())
+}
+
+fn iam_policy_document_from_seed(legacy: &AttributeType) -> AttributeType {
+    // Reuse the public declaration's nominal enums; changing their namespaces
+    // would break existing aws.iam.PolicyDocument.Version/Statement expressions.
+    let RawShape::Struct { fields, .. } = legacy.raw_shape() else {
+        unreachable!("IAM policy declaration is a struct")
+    };
+    let version = fields
+        .iter()
+        .find(|f| f.name() == "version")
+        .unwrap()
+        .clone();
+    let id = fields.iter().find(|f| f.name() == "id").unwrap().clone();
+    let statement = fields.iter().find(|f| f.name() == "statement").unwrap();
+    let RawShape::List { element_type, .. } = statement.field_type().raw_shape() else {
+        unreachable!("legacy Statement is a list")
+    };
+    let RawShape::Struct { fields, .. } = element_type.raw_shape() else {
+        unreachable!("IAM statement is a struct")
+    };
+    let condition = fields.iter().find(|f| f.name() == "condition").unwrap();
+    let RawShape::Map { key, .. } = condition.field_type().raw_shape() else {
+        unreachable!("IAM condition is an operator map")
+    };
+    let scalar = AttributeType::union(vec![
+        AttributeType::string(),
+        AttributeType::int(),
+        AttributeType::float(),
+        AttributeType::bool(),
+    ]);
+    let strings = || {
+        AttributeType::union(vec![
+            AttributeType::string(),
+            AttributeType::refined_list(
+                AttributeType::string(),
+                false,
+                Some((Some(1), None)),
+                ListElements::AllowDuplicates,
+            ),
+        ])
+    };
+    let condition = AttributeType::map_with_key(
+        key.clone(),
+        AttributeType::map(AttributeType::union(vec![
+            // Keep the established String-or-StringList branch intact so
+            // scalar string conditions still canonicalize like Action and
+            // Resource. Native numeric/Boolean values are separate branches.
+            strings(),
+            AttributeType::int(),
+            AttributeType::float(),
+            AttributeType::bool(),
+            AttributeType::refined_list(
+                scalar,
+                false,
+                Some((Some(1), None)),
+                ListElements::AllowDuplicates,
+            ),
+        ])),
+    );
+    let principal = AttributeType::union(vec![
+        AttributeType::struct_with_field_groups(
+            "Principal",
+            vec![
+                StructField::optional("service", strings())
+                    .with_provider_name("Service")
+                    .build(),
+                StructField::optional("aws", strings())
+                    .with_provider_name("AWS")
+                    .build(),
+                StructField::optional("federated", strings())
+                    .with_provider_name("Federated")
+                    .build(),
+                StructField::optional("canonical_user", strings())
+                    .with_provider_name("CanonicalUser")
+                    .build(),
+            ],
+            vec![
+                FieldGroup::at_least_one(["service", "aws", "federated", "canonical_user"])
+                    .unwrap(),
+            ],
+        ),
+        refined_string(None, Some(ApprovedPattern::whole(r"^\*\z")), None, None),
+    ]);
+    let effect = fields
+        .iter()
+        .find(|f| f.name() == "effect")
+        .unwrap()
+        .field_type()
+        .clone();
+    let statement = AttributeType::struct_with_field_groups(
+        "Statement",
+        vec![
+            StructField::optional("sid", AttributeType::string())
+                .with_provider_name("Sid")
+                .build(),
+            StructField::required("effect", effect)
+                .with_provider_name("Effect")
+                .build(),
+            StructField::optional("action", strings())
+                .with_provider_name("Action")
+                .build(),
+            StructField::optional("not_action", strings())
+                .with_provider_name("NotAction")
+                .build(),
+            // Trust policies obtain their resource from the attached role.
+            StructField::optional("resource", strings())
+                .with_provider_name("Resource")
+                .build(),
+            StructField::optional("not_resource", strings())
+                .with_provider_name("NotResource")
+                .build(),
+            StructField::optional("principal", principal.clone())
+                .with_provider_name("Principal")
+                .build(),
+            StructField::optional("not_principal", principal)
+                .with_provider_name("NotPrincipal")
+                .build(),
+            StructField::optional("condition", condition)
+                .with_provider_name("Condition")
+                .build(),
+        ],
+        vec![
+            FieldGroup::exactly_one(["action", "not_action"]).unwrap(),
+            FieldGroup::at_most_one(["resource", "not_resource"]).unwrap(),
+            FieldGroup::at_most_one(["principal", "not_principal"]).unwrap(),
+        ],
+    );
+    AttributeType::struct_(
+        "PolicyDocument",
+        vec![
+            version,
+            id,
+            StructField::required(
+                "statement",
+                AttributeType::union(vec![
+                    AttributeType::refined_list(
+                        statement.clone(),
+                        true,
+                        Some((Some(1), None)),
+                        ListElements::AllowDuplicates,
+                    ),
+                    statement,
+                ]),
+            )
+            .with_provider_name("Statement")
+            .with_block_name("statement")
+            .build(),
+        ],
+    )
+}
 
 fn string_enum(name: &str, namespace: &str, values_and_aliases: &[(&str, &str)]) -> AttributeType {
     AttributeType::enum_(
@@ -20,35 +243,6 @@ fn string_enum(name: &str, namespace: &str, values_and_aliases: &[(&str, &str)])
             .map(|(value, alias)| ((*value).to_string(), (*alias).to_string()))
             .collect(),
         None,
-        None,
-    )
-}
-
-/// Organizations parent IDs remain anonymous until identity work in #422.
-pub fn organizations_account_parent_id() -> AttributeType {
-    // Group the alternatives so both anchors apply to root and OU IDs alike.
-    // The 100-character cap is an item limit, not a list count.
-    // https://docs.aws.amazon.com/organizations/latest/APIReference/API_Parent.html#organizations-Type-Parent-Id
-    refined_string(
-        None,
-        Some(ApprovedPattern::whole(
-            r"^(?:r-[0-9a-z]{4,32}|ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})\z",
-        )),
-        Some((None, Some(100))),
-        None,
-    )
-}
-
-/// S3 lifecycle size thresholds retain CloudFormation's decimal-string wire type.
-pub fn s3_object_size() -> AttributeType {
-    // The API Long is represented as a string by CFN, with a 20-character cap.
-    // Cloud Control GetResource, carina-test-001, ap-northeast-1, 2026-11-04,
-    // returned ObjectSizeGreaterThan/LessThan as "128" / "1048576".
-    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_LifecycleRuleFilter.html
-    refined_string(
-        None,
-        Some(ApprovedPattern::whole(r"^(?:0|[1-9][0-9]*)\z")),
-        Some((None, Some(20))),
         None,
     )
 }
@@ -136,11 +330,11 @@ pub fn s3_analytics_destination() -> AttributeType {
     AttributeType::struct_(
         "AnalyticsDestination".to_string(),
         vec![
-            StructField::required("bucket_arn", super::catalog::arn())
+            StructField::required("bucket_arn", AttributeType::string())
                 .with_description("ARN of the bucket to which analytics data is exported.")
                 .with_provider_name("BucketArn")
                 .build(),
-            StructField::optional("bucket_account_id", carina_aws_types::aws_account_id())
+            StructField::optional("bucket_account_id", AttributeType::string())
                 .with_description("Account ID that owns the destination bucket.")
                 .with_provider_name("BucketAccountId")
                 .build(),
@@ -311,10 +505,10 @@ pub fn sns_subscription_delivery_policy() -> AttributeType {
             .with_description("HTTP/S request settings for notification delivery.")
             .with_provider_name("requestPolicy")
             .build(),
+            // A measured Cloud Control output also participates in comparison.
+            // This field is not an AWS input constraint.
             StructField::optional("guaranteed", AttributeType::bool())
-                .with_description(
-                    "Whether delivery uses guaranteed retries; Cloud Control may return false when omitted.",
-                )
+                .with_description("Whether delivery uses guaranteed retries; Cloud Control may return false when omitted.")
                 .with_provider_name("guaranteed")
                 .build(),
         ],
@@ -351,13 +545,15 @@ pub fn sns_subscription_replay_policy() -> AttributeType {
 
 /// Amazon SNS FIFO topic message archive policy.
 pub fn sns_topic_archive_policy() -> AttributeType {
+    // AWS documents an empty JSON object for deactivating archiving:
+    // https://docs.aws.amazon.com/sns/latest/dg/message-archiving-and-replay-topic-owner.html
     // Cloud Control create/get in both directions with carina-test-008 in
     // ap-northeast-1 on 2026-10-31 round-tripped MessageRetentionPeriod 1 as
     // the JSON number 1, not a string.
     AttributeType::struct_(
         "TopicArchivePolicy".to_string(),
         vec![
-            StructField::required(
+            StructField::optional(
                 "message_retention_period",
                 AttributeType::refined_int(None, Some((Some(1), Some(365)))),
             )
@@ -370,14 +566,37 @@ pub fn sns_topic_archive_policy() -> AttributeType {
 
 /// One CloudWatch Logs field index policy; codegen supplies the CFN list constraints.
 pub fn logs_field_index_policy() -> AttributeType {
-    AttributeType::struct_(
+    AttributeType::struct_with_field_groups(
         "FieldIndexPolicy".to_string(),
         vec![
-            StructField::required("fields", AttributeType::list(AttributeType::string()))
+            StructField::optional("fields", AttributeType::list(AttributeType::string()))
                 .with_description("Log-event fields for which CloudWatch Logs creates indexes.")
                 .with_provider_name("Fields")
                 .build(),
+            StructField::optional(
+                "fields_v2",
+                AttributeType::map(AttributeType::struct_(
+                    "FieldIndexConfiguration",
+                    vec![
+                        StructField::required(
+                            "type",
+                            string_enum(
+                                "Type",
+                                "aws.logs.LogGroup.FieldIndexPolicy.FieldIndexConfiguration",
+                                &[("FIELD_INDEX", "field_index"), ("FACET", "facet")],
+                            ),
+                        )
+                        .with_description("Whether this field is an index or a facet.")
+                        .with_provider_name("type")
+                        .build(),
+                    ],
+                )),
+            )
+            .with_description("Log-event fields and their index or facet types.")
+            .with_provider_name("FieldsV2")
+            .build(),
         ],
+        vec![FieldGroup::at_least_one(["fields", "fields_v2"]).unwrap()],
     )
 }
 
@@ -442,7 +661,7 @@ pub fn logs_data_protection_policy() -> AttributeType {
         ],
     );
 
-    let operation = AttributeType::struct_(
+    let operation = AttributeType::struct_with_field_groups(
         "DataProtectionOperation".to_string(),
         vec![
             StructField::optional(
@@ -479,6 +698,7 @@ pub fn logs_data_protection_policy() -> AttributeType {
             .with_provider_name("Deidentify")
             .build(),
         ],
+        vec![FieldGroup::at_least_one(["audit", "deidentify"]).unwrap()],
     );
 
     AttributeType::struct_(
@@ -510,21 +730,21 @@ pub fn logs_data_protection_policy() -> AttributeType {
                     vec![
                         StructField::optional(
                             "custom_data_identifier",
-                            AttributeType::list(AttributeType::struct_(
+                            AttributeType::refined_list(AttributeType::struct_(
                                 "CustomDataIdentifier".to_string(),
                                 vec![
                                     StructField::required("name", AttributeType::string())
                                         .with_description("Name of the custom data identifier.")
                                         .with_provider_name("Name")
                                         .build(),
-                                    StructField::required("regex", AttributeType::string())
+                                    StructField::required("regex", AttributeType::refined_string(None, None, Some((None, Some(200))), None))
                                         .with_description(
                                             "Regular expression matched by the custom data identifier.",
                                         )
                                         .with_provider_name("Regex")
                                         .build(),
                                 ],
-                            )),
+                            ), true, Some((None, Some(10))), ListElements::AllowDuplicates),
                         )
                         .with_description("Custom patterns recognized as sensitive data.")
                         .with_provider_name("CustomDataIdentifier")
@@ -538,7 +758,7 @@ pub fn logs_data_protection_policy() -> AttributeType {
             .build(),
             StructField::required(
                 "statement",
-                AttributeType::list(AttributeType::struct_(
+                AttributeType::refined_list(AttributeType::struct_(
                     "DataProtectionStatement".to_string(),
                     vec![
                         StructField::optional("sid", AttributeType::string())
@@ -559,7 +779,7 @@ pub fn logs_data_protection_policy() -> AttributeType {
                             .with_provider_name("Operation")
                             .build(),
                     ],
-                )),
+                ), true, Some((Some(2), Some(2))), ListElements::AllowDuplicates),
             )
             .with_description("Data protection policy statements.")
             .with_provider_name("Statement")

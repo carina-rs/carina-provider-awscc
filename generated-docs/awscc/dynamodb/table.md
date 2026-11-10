@@ -48,7 +48,7 @@ awscc.dynamodb.Table {
 
 ### `attribute_definitions`
 
-- **Type:** List\<[Struct(AttributeDefinition)](#attribute_definitions-1)\>
+- **Type:** List\<[Struct(AttributeDefinition)](#attribute_definitions-1)\> (unique items)
 - **Required:** No
 
 A list of attributes that describe the key schema for the table and indexes. This property is required to create a DDB table. Update requires: [Some interruptions](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-updating-stacks-update-behaviors.html#update-some-interrupt). Replacement if you edit an existing AttributeDefinition.
@@ -92,7 +92,7 @@ Specifies the properties of data being imported from the S3 bucket source to the
 
 ### `key_schema`
 
-- **Type:** List\<[Struct(KeySchema)](#key_schema-1)\> (items: 1..=2)
+- **Type:** List\<[Struct(KeySchema)](#key_schema-1)\> (items: 1..=2) (unique items)
 - **Required:** Yes
 
 Specifies the attributes that make up the primary key for the table. The attributes in the ``KeySchema`` property must also be defined in the ``AttributeDefinitions`` property.
@@ -302,7 +302,7 @@ Shorthand formats: `standard` or `TableClass.standard`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `attribute_name` | `String (length: 1..=255)` | Yes | A name for the attribute. |
+| `attribute_name` | `String(len: 1..=255)` | Yes | A name for the attribute. |
 | `attribute_type` | [Enum (AttributeType)](#attribute_definitionsattribute_type-attributetype) | Yes | The data type for the attribute, where: + ``S`` - the attribute is of type String + ``N`` - the attribute is of type Number + ``B`` - the attribute is of type Binary |
 
 ### contributor_insights_specification
@@ -320,7 +320,7 @@ Used by: `contributor_insights_specification`, `global_secondary_indexes.contrib
 |-------|------|----------|-------------|
 | `contributor_insights_specification` | [Struct(ContributorInsightsSpecification)](#contributor_insights_specification-1) | No | The settings used to specify whether to enable CloudWatch Contributor Insights for the global table and define which events to monitor. |
 | `index_name` | `String(pattern, len: 3..=255)` | Yes | The name of the global secondary index. The name must be unique among all other indexes on this table. |
-| `key_schema` | List\<[Struct(KeySchema)](#key_schema-1)\> (items: 1..) | Yes | The complete key schema for a global secondary index, which consists of one or more pairs of attribute names and key types: + ``HASH`` - partition key + ``RANGE`` - sort key The partition key of an item is also known as its *hash attribute*. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. The sort key of an item is also known as its *range attribute*. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. |
+| `key_schema` | List\<[Struct(KeySchema)](#key_schema-1)\> (items: 1..) (unique items) | Yes | The complete key schema for a global secondary index, which consists of one or more pairs of attribute names and key types: + ``HASH`` - partition key + ``RANGE`` - sort key The partition key of an item is also known as its *hash attribute*. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. The sort key of an item is also known as its *range attribute*. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. |
 | `on_demand_throughput` | [Struct(OnDemandThroughput)](#on_demand_throughput-1) | No | The maximum number of read and write units for the specified global secondary index. If you use this parameter, you must specify ``MaxReadRequestUnits``, ``MaxWriteRequestUnits``, or both. You must use either ``OnDemandThroughput`` or ``ProvisionedThroughput`` based on your table's capacity mode. |
 | `projection` | [Struct(Projection)](#projection) | Yes | Represents attributes that are copied (projected) from the table into the global secondary index. These are in addition to the primary key attributes and index key attributes, which are automatically projected. |
 | `provisioned_throughput` | [Struct(ProvisionedThroughput)](#provisioned_throughput-1) | No | Represents the provisioned throughput settings for the specified global secondary index. You must use either ``OnDemandThroughput`` or ``ProvisionedThroughput`` based on your table's capacity mode. For current minimum and maximum provisioned throughput values, see [Service, Account, and Table Quotas](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html) in the *Amazon DynamoDB Developer Guide*. |
@@ -345,16 +345,16 @@ Used by: `contributor_insights_specification`, `global_secondary_indexes.contrib
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `delimiter` | `String(pattern, len: 1)` | No | The delimiter used for separating items in the CSV file being imported. |
-| `header_list` | `List<String(pattern, len: 1..=65536)> (items: 1..=255)` | No | List of the headers used to specify a common header for all source CSV files being imported. If this field is specified then the first line of each CSV file is treated as data instead of the header. If this field is not specified the the first line of each CSV file is treated as the header. |
+| `delimiter` | `String(pattern, len: 1..=1)` | No | The delimiter used for separating items in the CSV file being imported. |
+| `header_list` | `List<String(pattern, len: 1..=65536)>` (items: 1..=255) (unique items) | No | List of the headers used to specify a common header for all source CSV files being imported. If this field is specified then the first line of each CSV file is treated as data instead of the header. If this field is not specified the the first line of each CSV file is treated as the header. |
 
 ### import_source_specification.s3_bucket_source
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `s3_bucket` | `String(pattern, len: ..=255)` | Yes | The S3 bucket that is being imported from. |
-| `s3_bucket_owner` | String | No | The account number of the S3 bucket that is being imported from. If the bucket is owned by the requester this is optional. |
-| `s3_key_prefix` | `String (length: 0..=1024)` | No | The key prefix shared by all S3 Objects that are being imported. |
+| `s3_bucket_owner` | aws.AccountId — identity: String(pattern, len: 12..=12); member: String | No | The account number of the S3 bucket that is being imported from. If the bucket is owned by the requester this is optional. |
+| `s3_key_prefix` | `String(len: ..=1024)` | No | The key prefix shared by all S3 Objects that are being imported. |
 
 ### key_schema
 
@@ -362,7 +362,7 @@ Used by: `global_secondary_indexes.key_schema`, `key_schema`, `local_secondary_i
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `attribute_name` | `String (length: 1..=255)` | Yes | The name of a key attribute. |
+| `attribute_name` | `String(len: 1..=255)` | Yes | The name of a key attribute. |
 | `key_type` | [Enum (KeyType)](#key_schemakey_type-keytype) | Yes | The role that this key attribute will assume: + ``HASH`` - partition key + ``RANGE`` - sort key The partition key of an item is also known as its *hash attribute*. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. The sort key of an item is also known as its *range attribute*. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. |
 
 ### kinesis_stream_specification
@@ -370,14 +370,14 @@ Used by: `global_secondary_indexes.key_schema`, `key_schema`, `local_secondary_i
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `approximate_creation_date_time_precision` | [Enum (ApproximateCreationDateTimePrecision)](#kinesis_stream_specificationapproximate_creation_date_time_precision-approximatecreationdatetimeprecision) | No | The precision for the time and date that the stream was created. |
-| `stream_arn` | Arn | Yes | The ARN for a specific Kinesis data stream. Length Constraints: Minimum length of 37. Maximum length of 1024. |
+| `stream_arn` | aws.Arn — identity: String(pattern); member: String | Yes | The ARN for a specific Kinesis data stream. Length Constraints: Minimum length of 37. Maximum length of 1024. |
 
 ### local_secondary_indexes
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `index_name` | `String(pattern, len: 3..=255)` | Yes | The name of the local secondary index. The name must be unique among all other indexes on this table. |
-| `key_schema` | List\<[Struct(KeySchema)](#key_schema-1)\> (items: 1..) | Yes | The complete key schema for the local secondary index, consisting of one or more pairs of attribute names and key types: + ``HASH`` - partition key + ``RANGE`` - sort key The partition key of an item is also known as its *hash attribute*. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. The sort key of an item is also known as its *range attribute*. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. |
+| `key_schema` | List\<[Struct(KeySchema)](#key_schema-1)\> (items: 1..) (unique items) | Yes | The complete key schema for the local secondary index, consisting of one or more pairs of attribute names and key types: + ``HASH`` - partition key + ``RANGE`` - sort key The partition key of an item is also known as its *hash attribute*. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. The sort key of an item is also known as its *range attribute*. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. |
 | `projection` | [Struct(Projection)](#projection) | Yes | Represents attributes that are copied (projected) from the table into the local secondary index. These are in addition to the primary key attributes and index key attributes, which are automatically projected. |
 
 ### on_demand_throughput
@@ -396,13 +396,15 @@ Used by: `global_secondary_indexes.on_demand_throughput`, `on_demand_throughput`
 | `point_in_time_recovery_enabled` | Bool | No | Indicates whether point in time recovery is enabled (true) or disabled (false) on the table. |
 | `recovery_period_in_days` | Int(1..=35) | No | The number of preceding days for which continuous backups are taken and maintained. Your table data is only recoverable to any point-in-time from within the configured recovery period. This parameter is optional. If no value is provided, the value will default to 35. |
 
+`recovery_period_in_days` requires `point_in_time_recovery_enabled`.
+
 ### projection
 
 Used by: `global_secondary_indexes.projection`, `local_secondary_indexes.projection`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `non_key_attributes` | `List<String (length: 1..=255)> (items: 1..=20)` | No | Represents the non-key attribute names which will be projected into the index. For global and local secondary indexes, the total count of ``NonKeyAttributes`` summed across all of the secondary indexes, must not exceed 100. If you project the same attribute into two different indexes, this counts as two distinct attributes when determining the total. This limit only applies when you specify the ProjectionType of ``INCLUDE``. You still can specify the ProjectionType of ``ALL`` to project all attributes from the source table, even if the table has more than 100 attributes. |
+| `non_key_attributes` | `List<String(len: 1..=255)>` (items: 1..=20) | No | Represents the non-key attribute names which will be projected into the index. For global and local secondary indexes, the total count of ``NonKeyAttributes`` summed across all of the secondary indexes, must not exceed 100. If you project the same attribute into two different indexes, this counts as two distinct attributes when determining the total. This limit only applies when you specify the ProjectionType of ``INCLUDE``. You still can specify the ProjectionType of ``ALL`` to project all attributes from the source table, even if the table has more than 100 attributes. |
 | `projection_type` | [Enum (ProjectionType)](#projectionprojection_type-projectiontype) | No | The set of attributes that are projected into the index: + ``KEYS_ONLY`` - Only the index and primary keys are projected into the index. + ``INCLUDE`` - In addition to the attributes described in ``KEYS_ONLY``, the secondary index will include other non-key attributes that you specify. + ``ALL`` - All of the table attributes are projected into the index. When using the DynamoDB console, ``ALL`` is selected by default. |
 
 ### provisioned_throughput
@@ -441,7 +443,7 @@ Used by: `resource_policy`, `stream_specification.resource_policy`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `attribute_name` | `String (length: 1..=255)` | No | The name of the TTL attribute used to store the expiration time for items in the table. + The ``AttributeName`` property is required when enabling the TTL, or when TTL is already enabled. + To update this property, you must first disable TTL and then enable TTL with the new attribute name. |
+| `attribute_name` | `String(len: 1..=255)` | No | The name of the TTL attribute used to store the expiration time for items in the table. + The ``AttributeName`` property is required when enabling the TTL, or when TTL is already enabled. + To update this property, you must first disable TTL and then enable TTL with the new attribute name. |
 | `enabled` | Bool | Yes | Indicates whether TTL is to be enabled (true) or disabled (false) on the table. |
 
 ### warm_throughput
@@ -453,17 +455,50 @@ Used by: `global_secondary_indexes.warm_throughput`, `warm_throughput`
 | `read_units_per_second` | Int(1..) | No | Represents the number of read operations your base table can instantaneously support. |
 | `write_units_per_second` | Int(1..) | No | Represents the number of write operations your base table can instantaneously support. |
 
+At least one of `read_units_per_second`, `write_units_per_second` must be specified.
+
 ## Attribute Reference
 
 ### `arn`
 
-- **Type:** `aws.dynamodb.Table.Arn`
+- **Type:** aws.dynamodb.Table.Arn — identity: String(pattern); member: String
 
 
 
 ### `stream_arn`
 
-- **Type:** Arn
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/AttributeDefinition/properties/AttributeName` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeDefinition.html#DDB-Type-AttributeDefinition-AttributeName) | ` A name for the attribute. `<br>` Length Constraints: Minimum length of 1. Maximum length of 255. ` | 2026-11-07 |
+| `/definitions/Csv/properties/Delimiter` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CsvOptions.html#DDB-Type-CsvOptions-Delimiter) | ` The delimiter used for separating items in the CSV file being imported. `<br>` Length Constraints: Fixed length of 1. `<br>` Pattern: [,;:\|\t ] ` | 2026-11-07 |
+| `/definitions/Csv/properties/HeaderList` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CsvOptions.html#DDB-Type-CsvOptions-HeaderList) | ` List of the headers used to specify a common header for all source CSV files being imported. If this field is specified then the first line of each CSV file is treated as data instead of the header. If this field is not specified the the first line of each CSV file is treated as the header. `<br>` Array Members: Minimum number of 1 item. Maximum number of 255 items. `<br>` Length Constraints: Minimum length of 1. Maximum length of 65536. `<br>` Pattern: [\x20-\x21\x23-\x2B\x2D-\x7E]* ` | 2026-11-07 |
+| `/definitions/GlobalSecondaryIndex/properties/IndexName` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GlobalSecondaryIndex.html#DDB-Type-GlobalSecondaryIndex-IndexName) | ` The name of the global secondary index. The name must be unique among all other indexes on this table. `<br>` Length Constraints: Minimum length of 3. Maximum length of 255. `<br>` Pattern: [a-zA-Z0-9_.-]+ ` | 2026-11-07 |
+| `/definitions/GlobalSecondaryIndex/properties/KeySchema` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GlobalSecondaryIndex.html#DDB-Type-GlobalSecondaryIndex-KeySchema) | ` The complete key schema for a global secondary index, which consists of one or more pairs of attribute names and key types: `<br>` HASH - partition key `<br>` RANGE - sort key `<br>` The partition key of an item is also known as its hash attribute. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. `<br>` The sort key of an item is also known as its range attribute. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. `<br>` Array Members: Minimum number of 1 item. ` | 2026-11-07 |
+| `/definitions/ImportSourceSpecification/properties/InputCompressionType` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_ImportTable.html#DDB-ImportTable-request-InputCompressionType) | ` Type of compression to be used on the input coming from the imported table. `<br>` Valid Values: GZIP \| ZSTD \| NONE ` | 2026-11-07 |
+| `/definitions/KeySchema/properties/AttributeName` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_KeySchemaElement.html#DDB-Type-KeySchemaElement-AttributeName) | ` The name of a key attribute. `<br>` Length Constraints: Minimum length of 1. Maximum length of 255. ` | 2026-11-07 |
+| `/definitions/LocalSecondaryIndex/properties/IndexName` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_LocalSecondaryIndex.html#DDB-Type-LocalSecondaryIndex-IndexName) | ` The name of the local secondary index. The name must be unique among all other indexes on this table. `<br>` Length Constraints: Minimum length of 3. Maximum length of 255. `<br>` Pattern: [a-zA-Z0-9_.-]+ ` | 2026-11-07 |
+| `/definitions/LocalSecondaryIndex/properties/KeySchema` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_LocalSecondaryIndex.html#DDB-Type-LocalSecondaryIndex-KeySchema) | ` The complete key schema for the local secondary index, consisting of one or more pairs of attribute names and key types: `<br>` HASH - partition key `<br>` RANGE - sort key `<br>` The partition key of an item is also known as its hash attribute. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. `<br>` The sort key of an item is also known as its range attribute. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. `<br>` Array Members: Minimum number of 1 item. ` | 2026-11-07 |
+| `/definitions/Projection/properties/NonKeyAttributes` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Projection.html#DDB-Type-Projection-NonKeyAttributes) | ` Represents the non-key attribute names which will be projected into the index. `<br>` For global and local secondary indexes, the total count of NonKeyAttributes summed across all of the secondary indexes, must not exceed 100. If you project the same attribute into two different indexes, this counts as two distinct attributes when determining the total. This limit only applies when you specify the ProjectionType of INCLUDE. You still can specify the ProjectionType of ALL to project all attributes from the source table, even if the table has more than 100 attributes. `<br>` Array Members: Minimum number of 1 item. Maximum number of 20 items. `<br>` Length Constraints: Minimum length of 1. Maximum length of 255. ` | 2026-11-07 |
+| `/definitions/ProvisionedThroughput/properties/ReadCapacityUnits` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_ProvisionedThroughput.html#DDB-Type-ProvisionedThroughput-ReadCapacityUnits) | ` Valid Range: Minimum value of 1. ` | 2026-11-07 |
+| `/definitions/ProvisionedThroughput/properties/ReadCapacityUnits` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-dynamodb-table.html#cfn-dynamodb-table-provisionedthroughput) | ` If you set BillingMode as PROVISIONED, you must specify this property. If you set BillingMode as PAY_PER_REQUEST, you cannot specify this property. ` | 2026-11-07 |
+| `/definitions/ProvisionedThroughput/properties/WriteCapacityUnits` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_ProvisionedThroughput.html#DDB-Type-ProvisionedThroughput-WriteCapacityUnits) | ` Valid Range: Minimum value of 1. ` | 2026-11-07 |
+| `/definitions/ProvisionedThroughput/properties/WriteCapacityUnits` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-dynamodb-table.html#cfn-dynamodb-table-provisionedthroughput) | ` If you set BillingMode as PROVISIONED, you must specify this property. If you set BillingMode as PAY_PER_REQUEST, you cannot specify this property. ` | 2026-11-07 |
+| `/definitions/ResourcePolicy/properties/PolicyDocument` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_grammar.html) | ` <version_block> = "Version" : ("2008-10-17" \| "2012-10-17") `<br>` <effect_block> = "Effect" : ("Allow" \| "Deny") ` | 2026-11-07 |
+| `/definitions/ResourcePolicy/properties/PolicyDocument` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html) | ` The Statement element can contain a single statement or an array of individual statements. ` | 2026-11-07 |
+| `/definitions/ResourcePolicy/properties/PolicyDocument` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html) | ` You can create conditions that compare strings, dates, numbers, and more using typical Boolean comparisons such as equals, greater than, and less than. ` | 2026-11-07 |
+| `/definitions/S3BucketSource/properties/S3Bucket` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_S3BucketSource.html#DDB-Type-S3BucketSource-S3Bucket) | ` The S3 bucket that is being imported from. `<br>` Length Constraints: Maximum length of 255. `<br>` Pattern: ^[a-z0-9A-Z]+[\.\-\w]*[a-z0-9A-Z]+$ ` | 2026-11-07 |
+| `/definitions/S3BucketSource/properties/S3KeyPrefix` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_S3BucketSource.html#DDB-Type-S3BucketSource-S3KeyPrefix) | ` The key prefix shared by all S3 Objects that are being imported. `<br>` Length Constraints: Maximum length of 1024. ` | 2026-11-07 |
+| `/definitions/SSESpecification/properties/SSEType` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_SSESpecification.html#DDB-Type-SSESpecification-SSEType) | ` Server-side encryption type. The only supported value is: `<br>` KMS - Server-side encryption that uses AWS Key Management Service. The key is stored in your account and is managed by AWS KMS (AWS KMS charges apply). `<br>` Valid Values: AES256 \| KMS ` | 2026-11-07 |
+| `/definitions/TimeToLiveSpecification/properties/AttributeName` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TimeToLiveSpecification.html#DDB-Type-TimeToLiveSpecification-AttributeName) | ` The name of the TTL attribute used to store the expiration time for items in the table. `<br>` Length Constraints: Minimum length of 1. Maximum length of 255. ` | 2026-11-07 |
+| `/properties/KeySchema` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CreateTable.html#DDB-CreateTable-request-KeySchema) | ` Specifies the attributes that make up the primary key for a table or an index. The attributes in KeySchema must also be defined in the AttributeDefinitions array. For more information, see Data Model in the Amazon DynamoDB Developer Guide. `<br>` Each KeySchemaElement in the array is composed of: `<br>` AttributeName - The name of this key attribute. `<br>` KeyType - The role that the key attribute will assume: HASH - partition keyRANGE - sort key `<br>` KeyType - The role that the key attribute will assume: `<br>` HASH - partition key `<br>` RANGE - sort key `<br>` The partition key of an item is also known as its hash attribute. The term "hash attribute" derives from the DynamoDB usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. `<br>` The sort key of an item is also known as its range attribute. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. `<br>` For a simple primary key (partition key), you must provide exactly one element with a KeyType of HASH. `<br>` For a composite primary key (partition key and sort key), you must provide exactly two elements, in this order: The first element must have a KeyType of HASH, and the second element must have a KeyType of RANGE. `<br>` For more information, see Working with Tables in the Amazon DynamoDB Developer Guide. `<br>` Array Members: Minimum number of 1 item. ` | 2026-11-07 |
+| `/properties/LocalSecondaryIndexes` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CreateTable.html#DDB-CreateTable-request-LocalSecondaryIndexes) | ` One or more local secondary indexes (the maximum is 5) to be created on the table. Each index is scoped to a given partition key value. There is a 10 GB size limit per partition key value; otherwise, the size of a local secondary index is unconstrained. `<br>` Each local secondary index in the array includes the following: `<br>` IndexName - The name of the local secondary index. Must be unique only for this table. `<br>` KeySchema - Specifies the key schema for the local secondary index. The key schema must begin with the same partition key as the table. `<br>` Projection - Specifies attributes that are copied (projected) from the table into the index. These are in addition to the primary key attributes and index key attributes, which are automatically projected. Each attribute specification is composed of: ProjectionType - One of the following: KEYS_ONLY - Only the index and primary keys are projected into the index.INCLUDE - Only the specified table attributes are projected into the index. The list of projected attributes is in NonKeyAttributes.ALL - All of the table attributes are projected into the index.NonKeyAttributes - A list of one or more non-key attribute names that are projected into the secondary index. The total count of attributes provided in NonKeyAttributes, summed across all of the secondary indexes, must not exceed 100. If you project the same attribute into two different indexes, this counts as two distinct attributes when determining the total. This limit only applies when you specify the ProjectionType of INCLUDE. You still can specify the ProjectionType of ALL to project all attributes from the source table, even if the table has more than 100 attributes. `<br>` Projection - Specifies attributes that are copied (projected) from the table into the index. These are in addition to the primary key attributes and index key attributes, which are automatically projected. Each attribute specification is composed of: `<br>` ProjectionType - One of the following: KEYS_ONLY - Only the index and primary keys are projected into the index.INCLUDE - Only the specified table attributes are projected into the index. The list of projected attributes is in NonKeyAttributes.ALL - All of the table attributes are projected into the index. `<br>` ProjectionType - One of the following: `<br>` KEYS_ONLY - Only the index and primary keys are projected into the index. `<br>` INCLUDE - Only the specified table attributes are projected into the index. The list of projected attributes is in NonKeyAttributes. `<br>` ALL - All of the table attributes are projected into the index. `<br>` NonKeyAttributes - A list of one or more non-key attribute names that are projected into the secondary index. The total count of attributes provided in NonKeyAttributes, summed across all of the secondary indexes, must not exceed 100. If you project the same attribute into two different indexes, this counts as two distinct attributes when determining the total. This limit only applies when you specify the ProjectionType of INCLUDE. You still can specify the ProjectionType of ALL to project all attributes from the source table, even if the table has more than 100 attributes. ` | 2026-11-07 |
+| `/properties/TableName` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TableCreationParameters.html#DDB-Type-TableCreationParameters-TableName) | ` The name of the table created as part of the import operation. `<br>` Length Constraints: Minimum length of 3. Maximum length of 255. `<br>` Pattern: [a-zA-Z0-9_.-]+ ` | 2026-11-07 |
 

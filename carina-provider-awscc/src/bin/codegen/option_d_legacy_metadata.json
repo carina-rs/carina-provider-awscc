@@ -1,0 +1,87 @@
+{
+  "aws.iam.OidcProvider.Arn": [
+    "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:oidc-provider/.+$",
+    null
+  ],
+  "HttpsUrl": [
+    null,
+    null
+  ],
+  "aws.sso.Principal.Id": [
+    "^.{1,64}$",
+    null
+  ],
+  "aws.identitystore.Store.Id": [
+    "^(d-[0-9a-fA-F]{10}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+    null
+  ],
+  "aws.kms.Key.Arn": [
+    "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})$",
+    null
+  ],
+  "aws.logs.LogGroup.LogGroupName": [
+    "^[.\\-_/#A-Za-z0-9]{1,512}\\z",
+    [
+      1,
+      512
+    ]
+  ],
+  "aws.Arn": [
+    "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$",
+    null
+  ],
+  "aws.organizations.Account.Email": [
+    null,
+    [
+      6,
+      64
+    ]
+  ],
+  "aws.organizations.Account.RoleName": [
+    "^[\\w+=,.@-]+\\z",
+    [
+      1,
+      64
+    ]
+  ],
+  "aws.s3.Bucket.LifecycleDate": [
+    "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T00:00:00(?:\\.000)?Z\\z",
+    null
+  ],
+  "aws.sso.Instance.Arn": [
+    "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::instance/.+$",
+    null
+  ],
+  "aws.sso.PermissionSet.Arn": [
+    "^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::permissionSet/.+$",
+    null
+  ],
+  "aws.AccountId": [
+    "^\\d{12}$",
+    [
+      12,
+      12
+    ]
+  ],
+  "aws.sso.PermissionSet.SessionDuration": [
+    "^-?P(?:(?:[0-9]+Y(?:[0-9]+M)?(?:[0-9]+[DW])?|[0-9]+M(?:[0-9]+[DW])?|[0-9]+[DW])(?:T(?:[0-9]+H)?(?:[0-9]+M)?(?:[0-9]+(?:\\.[0-9]+)?S)?)?|T(?:[0-9]+H(?:[0-9]+M)?(?:[0-9]+(?:\\.[0-9]+)?S)?|[0-9]+M(?:[0-9]+(?:\\.[0-9]+)?S)?|[0-9]+(?:\\.[0-9]+)?S))$",
+    [
+      1,
+      100
+    ]
+  ],
+  "aws.scheduler.Schedule.GroupName": [
+    null,
+    [
+      1,
+      64
+    ]
+  ],
+  "aws.route53.HostedZone.Id": [
+    "^Z[A-Z0-9]+$",
+    [
+      null,
+      32
+    ]
+  ]
+}

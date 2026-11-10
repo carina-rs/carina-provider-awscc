@@ -1222,6 +1222,7 @@ dependencies = [
  "http 1.4.2",
  "indexmap 2.14.0",
  "regex",
+ "regex-automata",
  "regex-syntax",
  "serde",
  "serde_json",

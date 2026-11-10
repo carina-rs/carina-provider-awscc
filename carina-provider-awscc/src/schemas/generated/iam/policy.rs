@@ -5,5 +5,8 @@
 use carina_core::schema::AttributeType;
 
 pub fn arn() -> AttributeType {
-    crate::schemas::catalog::iam_policy_arn()
+    AttributeType::string_member(
+        crate::schemas::string_identity::StringIdentity::IamPolicyArn.identity_layer(),
+        carina_core::schema::StringMemberConstraints::new(None, None),
+    )
 }

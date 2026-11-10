@@ -20,7 +20,9 @@ fn every_registered_tag_map_preserves_its_cfn_constraints() {
         ));
         let source: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        let mut tag = &source["properties"]["Tags"];
+        let tags_property = config.tags.as_ref().unwrap();
+        let mut tag = &source["properties"][tags_property.provider_name];
+        let min_items = tag["minItems"].as_u64().filter(|min| *min > 0);
         let max_items = tag["maxItems"].as_u64();
         if let Some(items) = tag.get("items") {
             tag = items;
@@ -47,7 +49,7 @@ fn every_registered_tag_map_preserves_its_cfn_constraints() {
         };
         assert_eq!(
             constraints.length(),
-            max_entries.map(|max| (None, Some(max))),
+            (min_items.is_some() || max_entries.is_some()).then_some((min_items, max_entries)),
             "{}",
             config.aws_type_name
         );

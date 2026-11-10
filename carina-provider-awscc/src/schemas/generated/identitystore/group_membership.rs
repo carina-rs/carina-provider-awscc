@@ -14,7 +14,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
         .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership");
     #[inline(never)]
     fn build_group_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("group_id", carina_aws_types::sso_principal_id())
+        AttributeSchema::required("group_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::SsoPrincipalId.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(47))))))
                 .create_only()
                 .with_description("The unique identifier for a group in the identity store.")
                 .with_provider_name("GroupId")
@@ -23,7 +23,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_group_id_attribute());
     #[inline(never)]
     fn build_identity_store_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("identity_store_id", carina_aws_types::identity_store_id())
+        AttributeSchema::required("identity_store_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IdentitystoreStoreId.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("^d-[0-9a-f]{10}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(36))))))
                 .create_only()
                 .with_description("The globally unique identifier for the identity store.")
                 .with_provider_name("IdentityStoreId")

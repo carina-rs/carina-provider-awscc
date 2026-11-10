@@ -165,7 +165,7 @@ fn refined_strings_enforce_each_documented_length_boundary() {
             matches!(
                 attr_type.as_type().raw_shape(),
                 RawShape::String { identity_layer: StringIdentityParts { identity: None, length: Some(bounds), .. }, .. }
-                    if bounds == (Some(min), max)
+                    if bounds == ((min > 0).then_some(min), max)
             ),
             "{path}"
         );

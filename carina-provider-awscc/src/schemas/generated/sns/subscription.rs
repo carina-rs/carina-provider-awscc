@@ -8,7 +8,10 @@ use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    crate::schemas::catalog::arn()
+    AttributeType::string_member(
+        crate::schemas::string_identity::StringIdentity::Arn.identity_layer(),
+        carina_core::schema::StringMemberConstraints::new(None, None),
+    )
 }
 
 const VALID_FILTER_POLICY_SCOPE: &[&str] = &["MessageAttributes", "MessageBody"];
@@ -32,7 +35,7 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for AWS::SNS::Subscription");
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", self::arn())
+        AttributeSchema::provider_populated("arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("Arn of the subscription (read-only)")
                 .with_provider_name("Arn")
             .build()
@@ -90,7 +93,7 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_redrive_policy_attribute());
     #[inline(never)]
     fn build_region_attribute() -> AttributeSchema {
-        AttributeSchema::optional("region", carina_aws_types::aws_region())
+        AttributeSchema::optional("region", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Region.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .write_only()
                 .with_description("For cross-region subscriptions, the region in which the topic resides.If no region is specified, AWS CloudFormation uses the region of the caller as the default.")
                 .with_provider_name("Region")
@@ -107,7 +110,7 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_replay_policy_attribute());
     #[inline(never)]
     fn build_subscription_role_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("subscription_role_arn", crate::schemas::catalog::arn())
+        AttributeSchema::optional("subscription_role_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("This property applies only to Amazon Data Firehose delivery stream subscriptions.")
                 .with_provider_name("SubscriptionRoleArn")
             .build()
@@ -115,7 +118,7 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_subscription_role_arn_attribute());
     #[inline(never)]
     fn build_topic_arn_attribute() -> AttributeSchema {
-        AttributeSchema::required("topic_arn", crate::schemas::catalog::arn())
+        AttributeSchema::required("topic_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ARN of the topic to subscribe to.")
                 .with_provider_name("TopicArn")

@@ -32,9 +32,8 @@ awscc.route53.HostedZone {
     comment = 'Public hosted zone for example-carina.com.'
   }
 
-  hosted_zone_tag {
-    key   = 'Environment'
-    value = 'example'
+  tags = {
+    Environment = 'example'
   }
 }
 ```
@@ -55,9 +54,9 @@ A complex type that contains an optional comment. If you don't want to specify a
 
 The features configuration for the hosted zone, including accelerated recovery settings and status information.
 
-### `hosted_zone_tags`
+### `tags`
 
-- **Type:** List\<[Struct(HostedZoneTag)](#hosted_zone_tags-1)\>
+- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
 - **Required:** No
 
 Adds, edits, or deletes tags for a health check or a hosted zone. For information about using tags for cost allocation, see [Using Cost Allocation Tags](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-alloc-tags.html) in the *User Guide*.
@@ -79,7 +78,7 @@ Creates a configuration for DNS query logging. After you create a query logging 
 
 ### `vp_cs`
 
-- **Type:** List\<[Struct(VPC)](#vp_cs-1)\> (items: 1..)
+- **Type:** List\<[Struct(VPC)](#vp_cs-1)\> (items: 1..) (unique items)
 - **Required:** No
 
 *Private hosted zones:* A complex type that contains information about the VPCs that are associated with the specified hosted zone. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``.
@@ -152,31 +151,24 @@ Shorthand formats: `us_east_1` or `VPCRegion.us_east_1`
 |-------|------|----------|-------------|
 | `enable_accelerated_recovery` | Bool | No |  |
 
-### hosted_zone_tags
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `key` | String(len: ..=128) | Yes | The value of ``Key`` depends on the operation that you want to perform: + *Add a tag to a health check or hosted zone*: ``Key`` is the name that you want to give the new tag. + *Edit a tag*: ``Key`` is the name of the tag that you want to change the ``Value`` for. + *Delete a key*: ``Key`` is the name of the tag you want to remove. + *Give a name to a health check*: Edit the default ``Name`` tag. In the Amazon Route 53 console, the list of your health checks includes a *Name* column that lets you see the name that you've given to each health check. |
-| `value` | String(len: ..=256) | Yes | The value of ``Value`` depends on the operation that you want to perform: + *Add a tag to a health check or hosted zone*: ``Value`` is the value that you want to give the new tag. + *Edit a tag*: ``Value`` is the new value that you want to assign the tag. |
-
 ### query_logging_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cloud_watch_logs_log_group_arn` | Arn | Yes | The Amazon Resource Name (ARN) of the CloudWatch Logs log group that Amazon Route 53 is publishing logs to. |
+| `cloud_watch_logs_log_group_arn` | aws.Arn — identity: String(pattern); member: String | Yes | The Amazon Resource Name (ARN) of the CloudWatch Logs log group that Amazon Route 53 is publishing logs to. |
 
 ### vp_cs
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `vpc_id` | VpcId | Yes | *Private hosted zones only:* The ID of an Amazon VPC. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
+| `vpc_id` | aws.ec2.Vpc.Id — identity: String(pattern); member: String | Yes | *Private hosted zones only:* The ID of an Amazon VPC. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
 | `vpc_region` | [Enum (VPCRegion)](#vp_csvpc_region-vpcregion) | Yes | *Private hosted zones only:* The region that an Amazon VPC was created in. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
 
 ## Attribute Reference
 
 ### `id`
 
-- **Type:** Route53HostedZoneId
+- **Type:** aws.route53.HostedZone.Id — identity: String(pattern, len: ..=32); member: String(len: ..=32)
 
 
 
@@ -185,4 +177,14 @@ Shorthand formats: `us_east_1` or `VPCRegion.us_east_1`
 - **Type:** `List<String>`
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/VPC/properties/VPCRegion` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/Route53/latest/APIReference/API_VPC.html#Route53-Type-VPC-VPCRegion) | ` (Private hosted zones only) The region that an Amazon VPC was created in. `<br>` Length Constraints: Minimum length of 1. Maximum length of 64. `<br>` Valid Values: us-east-1 \| us-east-2 \| us-west-1 \| us-west-2 \| eu-west-1 \| eu-west-2 \| eu-west-3 \| eu-central-1 \| eu-central-2 \| ap-east-1 \| me-south-1 \| us-gov-west-1 \| us-gov-east-1 \| us-iso-east-1 \| us-iso-west-1 \| us-isob-east-1 \| me-central-1 \| ap-southeast-1 \| ap-southeast-2 \| ap-southeast-3 \| ap-south-1 \| ap-south-2 \| ap-northeast-1 \| ap-northeast-2 \| ap-northeast-3 \| eu-north-1 \| sa-east-1 \| ca-central-1 \| cn-north-1 \| cn-northwest-1 \| af-south-1 \| eu-south-1 \| eu-south-2 \| ap-southeast-4 \| il-central-1 \| ca-west-1 \| ap-southeast-5 \| mx-central-1 \| us-isof-south-1 \| us-isof-east-1 \| ap-southeast-7 \| ap-east-2 \| eu-isoe-west-1 \| ap-southeast-6 \| us-isob-west-1 ` | 2026-11-07 |
+| `/properties/Id` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/Route53/latest/APIReference/API_HostedZone.html#Route53-Type-HostedZone-Id) | ` The ID that Amazon Route 53 assigned to the hosted zone when you created it. `<br>` Length Constraints: Maximum length of 32. ` | 2026-11-07 |
+| `/properties/VPCs` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-route53-hostedzone.html#cfn-route53-hostedzone-vpcs) | ` Private hosted zones: A complex type that contains information about the VPCs that are associated with the specified hosted zone. `<br>` For public hosted zones, omit VPCs, VPCId, and VPCRegion. `<br>` Minimum: 1 ` | 2026-11-07 |
 

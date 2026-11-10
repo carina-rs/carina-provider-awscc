@@ -6,7 +6,7 @@
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{
-    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, types,
+    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField,
 };
 
 const VALID_AVAILABILITY_MODE: &[&str] = &["zonal", "regional"];
@@ -20,7 +20,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
         .with_description("Specifies a network address translation (NAT) gateway in the specified subnet. You can create either a public NAT gateway or a private NAT gateway. The default is a public NAT gateway. If you create a public NAT gateway, you must specify an elastic IP address.  With a NAT gateway, instances in a private subnet can connect to the internet, other AWS services, or an on-premises network using the IP address of the NAT gateway. For more information, see [NAT gateways](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html) in the *Amazon VPC User Guide*.  If you add a default route (``AWS::EC2::Route`` resource) that points to a NAT gateway, specify the NAT gateway ID for the route's ``NatGatewayId`` property.   When you associate an Elastic IP address or secondary Elastic IP address with a public NAT gateway, the network border group of the Elastic IP address must match the network border group of the Availability Zone (AZ) that the public NAT gateway is in. Otherwise, the NAT gateway fails to launch. You can see the network border group for the AZ by viewing the details of the subnet. Similarly, you can view the network border group for the Elastic IP address by viewing its details. For more information, see [Allocate an Elastic IP address](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-eips.html#allocate-eip) in the *Amazon VPC User Guide*.");
     #[inline(never)]
     fn build_allocation_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("allocation_id", carina_aws_types::allocation_id())
+        AttributeSchema::optional("allocation_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2EipAllocationId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("[Public NAT gateway only] The allocation ID of the Elastic IP address that's associated with the NAT gateway. This property is required for a public NAT gateway and cannot be specified with a private NAT gateway.")
                 .with_provider_name("AllocationId")
@@ -54,9 +54,9 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_availability_mode_attribute());
     #[inline(never)]
     fn build_availability_zone_addresses_attribute() -> AttributeSchema {
-        AttributeSchema::optional("availability_zone_addresses", AttributeType::refined_list(AttributeType::struct_("AvailabilityZoneAddress".to_string(), vec![StructField::required("allocation_ids", AttributeType::refined_list(carina_aws_types::allocation_id(), false, None, carina_core::schema::ListElements::Unique)).with_description("The allocation IDs of the Elastic IP addresses (EIPs) to be used for handling outbound NAT traffic in this specific Availability Zone.").with_provider_name("AllocationIds").build(),
-                    StructField::optional("availability_zone", carina_aws_types::availability_zone()).with_description("For regional NAT gateways only: The Availability Zone where this specific NAT gateway configuration will be active. Each AZ in a regional NAT gateway has its own configuration to handle outbound NAT traffic from that AZ. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region.").with_provider_name("AvailabilityZone").build(),
-                    StructField::optional("availability_zone_id", carina_aws_types::availability_zone_id()).with_description("For regional NAT gateways only: The ID of the Availability Zone where this specific NAT gateway configuration will be active. Each AZ in a regional NAT gateway has its own configuration to handle outbound NAT traffic from that AZ. Use this instead of AvailabilityZone for consistent identification of AZs across AWS Regions. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region.").with_provider_name("AvailabilityZoneId").build()]), false, None, carina_core::schema::ListElements::Unique))
+        AttributeSchema::optional("availability_zone_addresses", AttributeType::refined_list(AttributeType::struct_("AvailabilityZoneAddress".to_string(), vec![StructField::required("allocation_ids", AttributeType::refined_list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2EipAllocationId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)), false, None, carina_core::schema::ListElements::Unique)).with_description("The allocation IDs of the Elastic IP addresses (EIPs) to be used for handling outbound NAT traffic in this specific Availability Zone.").with_provider_name("AllocationIds").build(),
+                    StructField::optional("availability_zone", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneName.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))).with_description("For regional NAT gateways only: The Availability Zone where this specific NAT gateway configuration will be active. Each AZ in a regional NAT gateway has its own configuration to handle outbound NAT traffic from that AZ. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region.").with_provider_name("AvailabilityZone").build(),
+                    StructField::optional("availability_zone_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))).with_description("For regional NAT gateways only: The ID of the Availability Zone where this specific NAT gateway configuration will be active. Each AZ in a regional NAT gateway has its own configuration to handle outbound NAT traffic from that AZ. Use this instead of AvailabilityZone for consistent identification of AZs across AWS Regions. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region.").with_provider_name("AvailabilityZoneId").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("For regional NAT gateways only: Specifies which Availability Zones you want the NAT gateway to support and the Elastic IP addresses (EIPs) to use in each AZ. The regional NAT gateway uses these EIPs to handle outbound NAT traffic from their respective AZs. If not specified, the NAT gateway will automatically expand to new AZs and associate EIPs upon detection of an elastic network interface. If you specify this parameter, auto-expansion is disabled and you must manually manage AZ coverage. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region. For more information, see [Regional NAT gateways for automatic multi-AZ expansion](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateways-regional.html) in the *Amazon VPC User Guide*.")
                 .with_provider_name("AvailabilityZoneAddresses")
                 .with_block_name("availability_zone_address")
@@ -74,7 +74,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_connectivity_type_attribute());
     #[inline(never)]
     fn build_eni_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("eni_id", carina_aws_types::network_interface_id())
+        AttributeSchema::provider_populated("eni_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2NetworkInterfaceId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("EniId")
             .build()
@@ -91,7 +91,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_max_drain_duration_seconds_attribute());
     #[inline(never)]
     fn build_nat_gateway_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("nat_gateway_id", carina_aws_types::nat_gateway_id())
+        AttributeSchema::provider_populated("nat_gateway_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2NatGatewayId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("NatGatewayId")
             .build()
@@ -99,7 +99,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_nat_gateway_id_attribute());
     #[inline(never)]
     fn build_private_ip_address_attribute() -> AttributeSchema {
-        AttributeSchema::optional("private_ip_address", types::ipv4_address())
+        AttributeSchema::optional("private_ip_address", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Address.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The private IPv4 address to assign to the NAT gateway. If you don't provide an address, a private IPv4 address will be automatically assigned.")
                 .with_provider_name("PrivateIpAddress")
@@ -108,7 +108,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_private_ip_address_attribute());
     #[inline(never)]
     fn build_route_table_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("route_table_id", carina_aws_types::route_table_id())
+        AttributeSchema::provider_populated("route_table_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2RouteTableId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("RouteTableId")
             .build()
@@ -116,7 +116,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_route_table_id_attribute());
     #[inline(never)]
     fn build_secondary_allocation_ids_attribute() -> AttributeSchema {
-        AttributeSchema::optional("secondary_allocation_ids", AttributeType::refined_list(carina_aws_types::allocation_id(), true, None, carina_core::schema::ListElements::Unique))
+        AttributeSchema::optional("secondary_allocation_ids", AttributeType::refined_list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2EipAllocationId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)), true, None, carina_core::schema::ListElements::Unique))
                 .with_description("Secondary EIP allocation IDs. For more information, see [Create a NAT gateway](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-working-with.html) in the *Amazon VPC User Guide*.")
                 .with_provider_name("SecondaryAllocationIds")
             .build()
@@ -132,7 +132,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_secondary_private_ip_address_count_attribute());
     #[inline(never)]
     fn build_secondary_private_ip_addresses_attribute() -> AttributeSchema {
-        AttributeSchema::optional("secondary_private_ip_addresses", AttributeType::refined_list(types::ipv4_address(), true, None, carina_core::schema::ListElements::Unique))
+        AttributeSchema::optional("secondary_private_ip_addresses", AttributeType::refined_list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Address.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)), true, None, carina_core::schema::ListElements::Unique))
                 .with_description("Secondary private IPv4 addresses. For more information about secondary addresses, see [Create a NAT gateway](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html#nat-gateway-creating) in the *Amazon Virtual Private Cloud User Guide*. ``SecondaryPrivateIpAddressCount`` and ``SecondaryPrivateIpAddresses`` cannot be set at the same time.")
                 .with_provider_name("SecondaryPrivateIpAddresses")
             .build()
@@ -140,7 +140,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_secondary_private_ip_addresses_attribute());
     #[inline(never)]
     fn build_subnet_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("subnet_id", carina_aws_types::subnet_id())
+        AttributeSchema::optional("subnet_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2SubnetId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ID of the subnet in which the NAT gateway is located.")
                 .with_provider_name("SubnetId")
@@ -158,7 +158,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_vpc_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("vpc_id", carina_aws_types::vpc_id())
+        AttributeSchema::optional("vpc_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ID of the VPC in which the NAT gateway is located.")
                 .with_provider_name("VpcId")

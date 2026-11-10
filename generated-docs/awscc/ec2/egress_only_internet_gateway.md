@@ -34,7 +34,7 @@ Any tags assigned to the egress only internet gateway.
 
 ### `vpc_id`
 
-- **Type:** VpcId
+- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -44,7 +44,7 @@ The ID of the VPC for which to create the egress-only internet gateway.
 
 ### `id`
 
-- **Type:** EgressOnlyInternetGatewayId
+- **Type:** aws.ec2.EgressOnlyInternetGateway.Id — identity: String(pattern); member: String
 
 Service Generated ID of the EgressOnlyInternetGateway
 

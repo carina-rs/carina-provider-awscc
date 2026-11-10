@@ -41,7 +41,7 @@ Indicates whether a network interface created in this subnet receives an IPv6 ad
 
 ### `availability_zone`
 
-- **Type:** AvailabilityZone
+- **Type:** aws.AvailabilityZone.ZoneName — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -49,7 +49,7 @@ The Availability Zone of the subnet. If you update this property, you must also 
 
 ### `availability_zone_id`
 
-- **Type:** AvailabilityZoneId
+- **Type:** aws.AvailabilityZone.ZoneId — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -57,7 +57,7 @@ The AZ ID of the subnet.
 
 ### `cidr_block`
 
-- **Type:** Ipv4Cidr
+- **Type:** Ipv4Cidr — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -80,7 +80,7 @@ Indicates the device position for local network interfaces in this subnet. For e
 
 ### `ipv4_ipam_pool_id`
 
-- **Type:** IpamPoolId
+- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -98,14 +98,14 @@ An IPv4 netmask length for the subnet.
 
 ### `ipv6_cidr_block`
 
-- **Type:** Ipv6Cidr
+- **Type:** Ipv6Cidr — identity: String; member: String
 - **Required:** No
 
 The IPv6 CIDR block. If you specify ``AssignIpv6AddressOnCreation``, you must also specify an IPv6 CIDR block.
 
 ### `ipv6_ipam_pool_id`
 
-- **Type:** IpamPoolId
+- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -122,7 +122,7 @@ Indicates whether this is an IPv6 only subnet. For more information, see [Subnet
 
 ### `ipv6_netmask_length`
 
-- **Type:** Int(0..=128)
+- **Type:** IntEnum([44, 48, 52, 56, 60, 64])
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -138,7 +138,7 @@ Indicates whether instances launched in this subnet receive a public IPv4 addres
 
 ### `outpost_arn`
 
-- **Type:** Arn
+- **Type:** aws.Arn — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -160,7 +160,7 @@ Any tags assigned to the subnet.
 
 ### `vpc_id`
 
-- **Type:** VpcId
+- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -213,7 +213,7 @@ Shorthand formats: `ip_name` or `HostnameType.ip_name`
 
 ### `ipv6_cidr_blocks`
 
-- **Type:** `List<Ipv6Cidr>`
+- **Type:** `List<Ipv6Cidr — identity: String; member: String>`
 
 
 
@@ -225,7 +225,19 @@ Shorthand formats: `ip_name` or `HostnameType.ip_name`
 
 ### `subnet_id`
 
-- **Type:** SubnetId
+- **Type:** aws.ec2.Subnet.Id — identity: String(pattern); member: String
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/Tag/properties/Key` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html) | ` Maximum key length – 128 Unicode characters in UTF-8 ` | 2026-11-07 |
+| `/definitions/Tag/properties/Value` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Tag.html) | ` The value of the tag. `<br>` Constraints: Tag values are case-sensitive and accept a maximum of 256 Unicode characters. ` | 2026-11-07 |
+| `/properties/Ipv4NetmaskLength` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/vpc/latest/userguide/subnet-sizing.html) | ` The allowed IPv4 CIDR block size for a subnet is between a /28 netmask and /16 netmask. ` | 2026-11-07 |
+| `/properties/Ipv6NetmaskLength` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/vpc/latest/userguide/subnet-sizing.html) | ` If you've associated an IPv6 CIDR block with your VPC, you can associate an IPv6 CIDR block with an existing subnet in your VPC, or when you create a new subnet. Possible IPv6 netmask lengths are between /44 and /64 in increments of /4. ` | 2026-11-07 |
+| `/properties/PrivateDnsNameOptionsOnLaunch/properties/HostnameType` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-ec2-subnet-privatednsnameoptionsonlaunch.html#cfn-ec2-subnet-privatednsnameoptionsonlaunch-hostnametype) | ` The type of hostname for EC2 instances. For IPv4 only subnets, an instance DNS name must be based on the instance IPv4 address. For IPv6 only subnets, an instance DNS name must be based on the instance ID. For dual-stack subnets, you can specify whether DNS names use the instance IPv4 address or the instance ID. `<br>` Allowed values: ip-name \| resource-name ` | 2026-11-07 |
 

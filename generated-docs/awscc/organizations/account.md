@@ -29,28 +29,28 @@ awscc.organizations.Account {
 
 ### `account_name`
 
-- **Type:** `String (length: 1..=50, pattern: ^[ -~]+\z)`
+- **Type:** `String(pattern, len: 1..=50)`
 - **Required:** Yes
 
 The friendly name of the member account.
 
 ### `email`
 
-- **Type:** `aws.organizations.Account.Email`
+- **Type:** aws.organizations.Account.Email — identity: String(len: 6..=64); member: String(pattern, len: 6..=64)
 - **Required:** Yes
 
 The email address of the owner to assign to the new member account.
 
 ### `parent_ids`
 
-- **Type:** `List<String (length: ..=100, pattern: ^(?:r-[0-9a-z]{4,32}|ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})\z)> (items: ..=1)`
+- **Type:** `List<String(pattern, len: ..=100)>` (items: ..=1) (unique items)
 - **Required:** No
 
 List of parent nodes for the member account. Currently only one parent at a time is supported. Default is root.
 
 ### `role_name`
 
-- **Type:** `aws.organizations.Account.RoleName`
+- **Type:** aws.organizations.Account.RoleName — identity: String(pattern, len: 1..=64); member: String(pattern, len: 1..=64)
 - **Required:** No
 - **Write-only:** Yes
 - **Default:** `"OrganizationAccountAccessRole"`
@@ -101,13 +101,13 @@ Shorthand formats: `active` or `Status.active`
 
 ### `account_id`
 
-- **Type:** AwsAccountId
+- **Type:** aws.AccountId — identity: String(pattern, len: 12..=12); member: String(pattern, len: ..=12)
 
 If the account was created successfully, the unique identifier (ID) of the new account.
 
 ### `arn`
 
-- **Type:** `aws.organizations.Account.Arn`
+- **Type:** aws.organizations.Account.Arn — identity: String(pattern); member: String(pattern)
 
 The Amazon Resource Name (ARN) of the account.
 
@@ -125,7 +125,7 @@ The date the account became a part of the organization.
 
 ### `paths`
 
-- **Type:** `List<String>`
+- **Type:** `List<String(pattern)>`
 
 The paths in the organization where the account exists.
 
@@ -140,4 +140,16 @@ The state of the account in the organization.
 - **Type:** [Enum (Status)](#status-status)
 
 The status of the account in the organization.
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/properties/AccountName` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-AccountName) | ` The friendly name of the member account. `<br>` Length Constraints: Minimum length of 1. Maximum length of 50. `<br>` Pattern: [\u0020-\u007E]+ ` | 2026-11-07 |
+| `/properties/Email` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-Email) | ` The email address of the owner to assign to the new member account. This email address must not already be associated with another AWS account. You must use a valid email address to complete account creation. `<br>` The rules for a valid email address: `<br>` The address must be a minimum of 6 and a maximum of 64 characters long. `<br>` All characters must be 7-bit ASCII characters. `<br>` There must be one and only one @ symbol, which separates the local name from the domain name. `<br>` The local name can't contain any of the following characters: whitespace, " ' ( ) < > [ ] : ; , \ \| % & `<br>` The local name can't contain any of the following characters: `<br>` whitespace, " ' ( ) < > [ ] : ; , \ \| % & `<br>` The local name can't begin with a dot (.) `<br>` The domain name can consist of only the characters [a-z],[A-Z],[0-9], hyphen (-), or dot (.) `<br>` The domain name can't begin or end with a hyphen (-) or dot (.) `<br>` The domain name must contain at least one dot `<br>` You can't access the root user of the account or remove an account that was created with an invalid email address. `<br>` Length Constraints: Minimum length of 6. Maximum length of 64. `<br>` Pattern: See rules in parameter description ` | 2026-11-07 |
+| `/properties/ParentIds` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/organizations/latest/APIReference/API_Parent.html#organizations-Type-Parent-Id) | ` The unique identifier (ID) of the parent entity. `<br>` The regex pattern for a parent ID string requires one of the following: `<br>` Root - A string that begins with "r-" followed by from 4 to 32 lowercase letters or digits. `<br>` Organizational unit (OU) - A string that begins with "ou-" followed by from 4 to 32 lowercase letters or digits (the ID of the root that the OU is in). This string is followed by a second "-" dash and from 8 to 32 additional lowercase letters or digits. `<br>` Length Constraints: Maximum length of 100. `<br>` Pattern: ^(r-[0-9a-z]{4,32})\|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$ ` | 2026-11-07 |
+| `/properties/ParentIds` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-organizations-account.html#cfn-organizations-account-parentids) | ` The unique identifier (ID) of the root or organizational unit (OU) that you want to create the new account in. If you don't specify this parameter, the ParentId defaults to the root ID. `<br>` This parameter only accepts a string array with one string value. `<br>` The regex pattern for a parent ID string requires one of the following: `<br>` Root - A string that begins with "r-" followed by from 4 to 32 lowercase letters or digits. `<br>` Organizational unit (OU) - A string that begins with "ou-" followed by from 4 to 32 lowercase letters or digits (the ID of the root that the OU is in). This string is followed by a second "-" dash and from 8 to 32 additional lowercase letters or digits. `<br>` Pattern: ^(r-[0-9a-z]{4,32})\|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$ `<br>` Maximum: 100 ` | 2026-11-07 |
+| `/properties/RoleName` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-RoleName) | ` The name of an IAM role that AWS Organizations automatically preconfigures in the new member account. This role trusts the management account, allowing users in the management account to assume the role, as permitted by the management account administrator. The role has administrator permissions in the new member account. `<br>` If you don't specify this parameter, the role name defaults to OrganizationAccountAccessRole. `<br>` For more information about how to use this role to access the member account, see the following links: `<br>` Creating the OrganizationAccountAccessRole in an invited member account in the AWS Organizations User Guide `<br>` Steps 2 and 3 in IAM Tutorial: Delegate access across AWS accounts using IAM roles in the IAM User Guide `<br>` The regex pattern that is used to validate this parameter. The pattern can include uppercase letters, lowercase letters, digits with no spaces, and any of the following characters: =,.@- `<br>` Length Constraints: Maximum length of 64. `<br>` Pattern: [\w+=,.@-]{1,64} ` | 2026-11-07 |
 

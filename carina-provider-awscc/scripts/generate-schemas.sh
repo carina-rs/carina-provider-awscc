@@ -106,7 +106,7 @@ echo ""
 cargo build -p carina-provider-awscc --bin codegen --quiet 2>/dev/null || true
 
 # Find the built binary
-CODEGEN_BIN="target/debug/codegen"
+CODEGEN_BIN="${CARGO_TARGET_DIR:-target}/debug/codegen"
 if [ ! -f "$CODEGEN_BIN" ]; then
     echo "ERROR: codegen binary not found at $CODEGEN_BIN"
     echo "Trying to build with cargo..."

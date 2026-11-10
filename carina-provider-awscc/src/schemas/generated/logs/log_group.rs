@@ -4,12 +4,16 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
+use crate::schemas::awscc_types::DocumentedIamGrammar;
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    crate::schemas::catalog::logs_log_group_arn()
+    AttributeType::string_member(
+        crate::schemas::string_identity::StringIdentity::LogsLogGroupArn.identity_layer(),
+        carina_core::schema::StringMemberConstraints::new(None, None),
+    )
 }
 
 const VALID_LOG_GROUP_CLASS: &[&str] = &["STANDARD", "INFREQUENT_ACCESS", "DELIVERY"];
@@ -21,7 +25,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
         .with_description("The ``AWS::Logs::LogGroup`` resource specifies a log group. A log group defines common properties for log streams, such as their retention and access control rules. Each log stream must belong to one log group.  You can create up to 1,000,000 log groups per Region per account. You must use the following guidelines when naming a log group:   +  Log group names must be unique within a Region for an AWS account.   +  Log group names can be between 1 and 512 characters long.   +  Log group names consist of the following characters: a-z, A-Z, 0-9, '_' (underscore), '-' (hyphen), '/' (forward slash), and '.' (period).");
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", self::arn())
+        AttributeSchema::provider_populated("arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::LogsLogGroupArn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("Arn")
             .build()
@@ -73,7 +77,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_log_group_class_attribute());
     #[inline(never)]
     fn build_log_group_name_attribute() -> AttributeSchema {
-        AttributeSchema::optional("log_group_name", crate::schemas::catalog::logs_log_group_name())
+        AttributeSchema::optional("log_group_name", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::LogsLogGroupLogGroupName.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("^[.\\-_/#A-Za-z0-9]{1,512}\\z", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(512))))))
                 .create_only()
                 .with_description("The name of the log group. If you don't specify a name, CFNlong generates a unique ID for the log group.")
                 .with_provider_name("LogGroupName")
@@ -83,6 +87,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_resource_policy_document_attribute() -> AttributeSchema {
         AttributeSchema::optional("resource_policy_document", carina_aws_types::iam_policy_document())
+                .with_documented_iam_grammar()
                 .with_description("Creates or updates a resource policy for the specified log group that allows other services to put log events to this account. A LogGroup can have 1 resource policy.")
                 .with_provider_name("ResourcePolicyDocument")
             .build()

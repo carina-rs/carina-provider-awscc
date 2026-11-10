@@ -156,7 +156,7 @@ fn role_description_accepts_only_the_create_role_character_set_and_length() {
         RawShape::String {
             identity_layer: StringIdentityParts {
                 identity: None,
-                length: Some((Some(0), Some(1000))),
+                length: Some((None, Some(1000))),
                 ..
             },
             ..
@@ -203,10 +203,14 @@ fn oidc_url_reuses_core_https_url_through_the_provider_registry() {
                 validate: Some(validate),
                 ..
             },
-        ..
+        member_layer:
+            carina_core::schema::StringMemberParts {
+                pattern: None,
+                length: Some((Some(1), Some(255))),
+            },
     } = url.as_type().raw_shape()
     else {
-        panic!("OIDC URL must use the unchanged core HttpsUrl declaration");
+        panic!("OIDC URL must preserve core HttpsUrl with CFN member length");
     };
     assert_eq!(identity, &TypeIdentity::bare("HttpsUrl"));
     let builtin = builtin_type_registry().get(identity).unwrap();
@@ -231,15 +235,17 @@ fn oidc_url_reuses_core_https_url_through_the_provider_registry() {
         // The API says ports "should not" be used; no mandatory port ban.
         "https://example.com:8443/issuer".to_string(),
         format!("{prefix}{}", "a".repeat(255 - prefix.len())),
-        // Core cannot layer IAM's query/length constraints onto a built-in;
-        // these remain AWS-side checks, not part of HttpsUrl validation.
+        // Preserve HttpsUrl's grammar, including query components. Only the
+        // CFN length is a member restriction on this slot.
         "https://example.com/?aud=client".to_string(),
         "https://example.com/?aud=client#fragment".to_string(),
-        format!("{prefix}{}", "a".repeat(256 - prefix.len())),
     ] {
         assert!(url.validate(&string(&value)).is_ok(), "{value:?}");
     }
+    let too_long = format!("{prefix}{}", "a".repeat(256 - prefix.len()));
+    assert!(builtin_validate(&string(&too_long)).is_ok());
     for value in [
+        too_long,
         "".to_string(),
         "x".to_string(),
         "http://example.com".to_string(),
@@ -673,7 +679,7 @@ fn let_bound_deferred_string_constructions_validate_at_each_name_sink() {
 }
 
 #[test]
-fn every_example_and_acceptance_fixture_declaring_iam_resources_validates() {
+fn every_example_and_acceptance_fixture_declaring_iam_resources_keep_cfn_reference_limits() {
     fn collect(directory: &Path, root: &Path, fixtures: &mut Vec<(String, String)>) {
         let mut entries = std::fs::read_dir(directory)
             .unwrap()
@@ -710,5 +716,5 @@ fn every_example_and_acceptance_fixture_declaring_iam_resources_validates() {
         .iter()
         .map(|(path, source)| (path.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    validate_fixtures(&cases);
+    crate::test_support::validate_fixtures(&cases);
 }

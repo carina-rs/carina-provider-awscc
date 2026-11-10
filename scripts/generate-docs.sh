@@ -43,7 +43,7 @@ cd "$PROJECT_ROOT"
 # deliberate NON_PROVISIONABLE skip below.
 cargo build -p carina-provider-awscc --bin codegen --quiet
 
-CODEGEN_BIN="target/debug/codegen"
+CODEGEN_BIN="${CARGO_TARGET_DIR:-target}/debug/codegen"
 if [ ! -x "$CODEGEN_BIN" ]; then
     echo "ERROR: codegen binary not found at $CODEGEN_BIN" >&2
     exit 1

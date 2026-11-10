@@ -113,7 +113,7 @@ Contains configuration information about a CloudFront function.
 
 ### `name`
 
-- **Type:** `String (length: 1..=64, pattern: ^[a-zA-Z0-9_-]{1,64}\z)`
+- **Type:** `String(pattern, len: 1..=64)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -153,26 +153,26 @@ Shorthand formats: `development` or `Stage.development`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `comment` | String | Yes | A comment to describe the function. The comment cannot be longer than 128 characters. |
-| `key_value_store_associations` | List\<[Struct(KeyValueStoreAssociation)](#function_configkey_value_store_associations)\> (items: ..=1) | No | The configuration for the key value store associations. |
+| `key_value_store_associations` | List\<[Struct(KeyValueStoreAssociation)](#function_configkey_value_store_associations)\> (items: ..=1) (unique items) | No | The configuration for the key value store associations. |
 | `runtime` | [Enum (Runtime)](#function_configruntime-runtime) | Yes | The function's runtime environment version. |
 
 ### function_config.key_value_store_associations
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key_value_store_arn` | Arn | Yes | The Amazon Resource Name (ARN) of the key value store association. |
+| `key_value_store_arn` | aws.Arn — identity: String(pattern); member: String | Yes | The Amazon Resource Name (ARN) of the key value store association. |
 
 ### function_metadata
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `function_arn` | Arn | No | The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function. Provider-populated; cannot be set. |
+| `function_arn` | aws.Arn — identity: String(pattern); member: String | No | The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function. Provider-populated; cannot be set. |
 
 ## Attribute Reference
 
 ### `function_arn`
 
-- **Type:** Arn
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 
 
@@ -187,4 +187,15 @@ Contains metadata about a CloudFront function.
 - **Type:** [Enum (Stage)](#stage-stage)
 
 
+
+## AWS API narrowings
+
+These fields are narrower than or equal to CFN. Input rules combine documented AWS domains, recorded live observations, and Carina canonical spellings for stable state comparison. A canonical DSL spelling does not claim AWS rejects other spellings. Attaching a type name adds no structural constraints. Field names below use CFN spelling.
+
+| CFN field | Relation to CFN | Evidence URL | Verbatim quote / exact observation | Checked / observed |
+| --- | --- | --- | --- | --- |
+| `/definitions/FunctionConfig/properties/KeyValueStoreAssociations` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cloudfront-limits.html) | ` Maximum number of key value stores per function 1 ` | 2026-11-07 |
+| `/definitions/FunctionConfig/properties/Runtime` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_FunctionConfig.html#cloudfront-Type-FunctionConfig-Runtime) | ` The function's runtime environment version. `<br>` Valid Values: cloudfront-js-1.0 \| cloudfront-js-2.0 ` | 2026-11-07 |
+| `/properties/Name` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CreateFunction.html#cloudfront-CreateFunction-response-Name) | ` The name of the CloudFront function. `<br>` Length Constraints: Minimum length of 1. Maximum length of 64. `<br>` Pattern: [a-zA-Z0-9-_]{1,64} ` | 2026-11-07 |
+| `/properties/Stage` | Subset: CFN ∩ reviewed input domain | [Source record](https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_FunctionMetadata.html#cloudfront-Type-FunctionMetadata-Stage) | ` The stage that the function is in, either DEVELOPMENT or LIVE. `<br>` When a function is in the DEVELOPMENT stage, you can test the function with TestFunction, and update it with UpdateFunction. `<br>` When a function is in the LIVE stage, you can attach the function to a distribution's cache behavior, using the function's ARN. `<br>` Valid Values: DEVELOPMENT \| LIVE ` | 2026-11-07 |
 
