@@ -1,5 +1,5 @@
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{RawShape, ValidatedResourceSchema};
+use carina_core::schema::{RawShape, StringIdentityParts, ValidatedResourceSchema};
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
@@ -33,7 +33,10 @@ fn issue_521_budget_tags_is_a_tag_map_with_metadata() {
     for leaf in [key, value] {
         assert!(matches!(
             leaf.raw_shape(),
-            RawShape::String { identity: None, .. }
+            RawShape::String {
+                identity_layer: StringIdentityParts { identity: None, .. },
+                ..
+            }
         ));
     }
     let attribute = &config.schema.as_schema().attributes()["tags"];
@@ -329,10 +332,13 @@ fn identity_typed_outputs_are_assignable_to_every_refined_budget_string() {
             matches!(
                 sink.as_type().raw_shape(),
                 RawShape::String {
-                    identity: None,
-                    length: Some(_),
-                    validate: None,
-                    to_dsl: None,
+                    identity_layer: StringIdentityParts {
+                        identity: None,
+                        length: Some(_),
+                        validate: None,
+                        to_dsl: None,
+                        ..
+                    },
                     ..
                 }
             ),
@@ -343,7 +349,10 @@ fn identity_typed_outputs_are_assignable_to_every_refined_budget_string() {
             assert!(matches!(
                 source.as_type().raw_shape(),
                 RawShape::String {
-                    identity: Some(_),
+                    identity_layer: StringIdentityParts {
+                        identity: Some(_),
+                        ..
+                    },
                     ..
                 }
             ));

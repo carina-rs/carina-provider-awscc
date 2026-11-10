@@ -1,5 +1,6 @@
 use carina_core::provider::ProviderFactory;
 use carina_core::schema::RawShape;
+use carina_core::schema::StringIdentityParts;
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
@@ -140,7 +141,7 @@ fn other_region_fields_and_provider_configuration_keep_the_shared_region_domain(
             .schema;
         let region = field(schema, path);
         assert!(
-            matches!(region.as_type().raw_shape(),RawShape::String {identity:Some(identity),..} if identity.to_string()=="aws.Region")
+            matches!(region.as_type().raw_shape(),RawShape::String {identity_layer: StringIdentityParts {identity:Some(identity),..},..} if identity.to_string()=="aws.Region")
         );
         region.validate(&string("ap-northeast-1")).unwrap();
         assert!(
@@ -172,11 +173,14 @@ fn ipam_pool_locale_is_plain_string_accepting_regions_and_local_zone_border_grou
     assert!(matches!(
         locale.as_type().raw_shape(),
         RawShape::String {
-            identity: None,
-            pattern: None,
-            length: None,
-            validate: None,
-            to_dsl: None
+            identity_layer: StringIdentityParts {
+                identity: None,
+                pattern: None,
+                length: None,
+                validate: None,
+                to_dsl: None
+            },
+            ..
         }
     ));
     for value in ["us-west-2-lax-1", "ap-northeast-1"] {

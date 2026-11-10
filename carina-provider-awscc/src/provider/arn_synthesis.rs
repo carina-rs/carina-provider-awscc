@@ -153,6 +153,7 @@ impl AwsccProvider {
 mod tests {
     use super::*;
     use crate::schemas::generated::get_config_by_type;
+    use carina_core::schema::StringIdentityParts;
 
     #[test]
     fn cloudfront_distribution_arn_uses_empty_region_segment() {
@@ -222,8 +223,12 @@ mod tests {
         use carina_core::schema::RawShape;
         let ty = crate::schemas::generated::iam::role::arn();
         let RawShape::String {
-            pattern: None,
-            validate: Some(validate),
+            identity_layer:
+                StringIdentityParts {
+                    pattern: None,
+                    validate: Some(validate),
+                    ..
+                },
             ..
         } = ty.raw_shape()
         else {

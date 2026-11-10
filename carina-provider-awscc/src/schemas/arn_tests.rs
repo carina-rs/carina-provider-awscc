@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
-    AttributeType, CompiledPattern, CustomValidator, RawShape, TypeIdentity, legacy_validator,
+    AttributeType, CompiledPattern, CustomValidator, IntIdentityParts, RawShape,
+    StringIdentityParts, TypeIdentity, legacy_validator,
 };
 
 use super::catalog::{self, arn};
@@ -12,8 +13,12 @@ use crate::partition::Partition;
 fn generic_arn_accepts_every_awscc_partition() {
     let attribute_type = arn();
     let RawShape::String {
-        pattern: Some(pattern),
-        validate: Some(validate),
+        identity_layer:
+            StringIdentityParts {
+                pattern: Some(pattern),
+                validate: Some(validate),
+                ..
+            },
         ..
     } = attribute_type.raw_shape()
     else {
@@ -40,10 +45,14 @@ fn generic_arn_accepts_every_awscc_partition() {
 fn generic_arn_preserves_identity_and_validation_semantics() {
     let attribute_type = arn();
     let RawShape::String {
-        identity,
-        pattern: Some(pattern),
-        length,
-        validate: Some(validate),
+        identity_layer:
+            StringIdentityParts {
+                identity,
+                pattern: Some(pattern),
+                length,
+                validate: Some(validate),
+                ..
+            },
         ..
     } = attribute_type.raw_shape()
     else {
@@ -503,11 +512,19 @@ fn assert_callback_has_no_partition_decision(name: &str, validate: &CustomValida
 fn assert_shared_type_has_no_partition_decision(name: &str, ty: &AttributeType) {
     match ty.raw_shape() {
         RawShape::String {
-            validate: Some(validate),
+            identity_layer:
+                StringIdentityParts {
+                    validate: Some(validate),
+                    ..
+                },
             ..
         }
         | RawShape::Int {
-            validate: Some(validate),
+            identity_layer:
+                IntIdentityParts {
+                    validate: Some(validate),
+                    ..
+                },
             ..
         }
         | RawShape::Float {
@@ -523,7 +540,22 @@ fn assert_shared_type_has_no_partition_decision(name: &str, ty: &AttributeType) 
         _ => {}
     }
     match ty.raw_shape() {
-        RawShape::String { pattern, .. } | RawShape::Reference { pattern, .. } => {
+        RawShape::String {
+            identity_layer,
+            member_layer,
+        } => {
+            for pattern in identity_layer
+                .pattern
+                .into_iter()
+                .chain(member_layer.pattern)
+            {
+                assert!(
+                    !pattern.as_str().contains("arn:"),
+                    "{name} carries an ARN pattern: {pattern:?}"
+                );
+            }
+        }
+        RawShape::Reference { pattern, .. } => {
             if let Some(pattern) = pattern {
                 assert!(
                     !pattern.as_str().contains("arn:"),
@@ -942,10 +974,14 @@ fn source_scan_covers_every_crate_rust_source_root() {
 fn kms_key_id_accepts_every_awscc_partition() {
     let ty = catalog::kms_key_id();
     let RawShape::String {
-        identity,
-        pattern: Some(pattern),
-        length,
-        validate: Some(validate),
+        identity_layer:
+            StringIdentityParts {
+                identity,
+                pattern: Some(pattern),
+                length,
+                validate: Some(validate),
+                ..
+            },
         ..
     } = ty.raw_shape()
     else {
@@ -986,8 +1022,12 @@ fn kms_key_id_accepts_every_awscc_partition() {
 fn kms_key_id_keeps_alias_uuid_grammar_and_validation_diagnostics() {
     let ty = catalog::kms_key_id();
     let RawShape::String {
-        pattern: Some(pattern),
-        validate: Some(validate),
+        identity_layer:
+            StringIdentityParts {
+                pattern: Some(pattern),
+                validate: Some(validate),
+                ..
+            },
         ..
     } = ty.raw_shape()
     else {
@@ -1120,10 +1160,14 @@ fn specialized_arn_rows_accept_every_awscc_partition() {
     {
         let ty = constructor();
         let RawShape::String {
-            identity,
-            pattern: Some(pattern),
-            length,
-            validate,
+            identity_layer:
+                StringIdentityParts {
+                    identity,
+                    pattern: Some(pattern),
+                    length,
+                    validate,
+                    ..
+                },
             ..
         } = ty.raw_shape()
         else {
@@ -1191,7 +1235,11 @@ fn specialized_iam_and_kms_arns_keep_validation_diagnostics() {
     ] {
         let ty = constructor();
         let RawShape::String {
-            validate: Some(validate),
+            identity_layer:
+                StringIdentityParts {
+                    validate: Some(validate),
+                    ..
+                },
             ..
         } = ty.raw_shape()
         else {
@@ -1244,8 +1292,12 @@ fn specialized_iam_and_kms_arns_keep_validation_diagnostics() {
     }
     let ty = catalog::kms_key_arn();
     let RawShape::String {
-        pattern: Some(pattern),
-        validate: Some(validate),
+        identity_layer:
+            StringIdentityParts {
+                pattern: Some(pattern),
+                validate: Some(validate),
+                ..
+            },
         ..
     } = ty.raw_shape()
     else {
@@ -1298,8 +1350,12 @@ fn sso_arns_keep_pattern_only_metadata_and_resource_language() {
     ] {
         let ty = constructor();
         let RawShape::String {
-            pattern: Some(pattern),
-            validate,
+            identity_layer:
+                StringIdentityParts {
+                    pattern: Some(pattern),
+                    validate,
+                    ..
+                },
             ..
         } = ty.raw_shape()
         else {

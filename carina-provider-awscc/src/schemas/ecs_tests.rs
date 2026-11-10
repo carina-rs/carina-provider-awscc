@@ -1,6 +1,6 @@
 use carina_core::executor::prepare_provider_ready_resource;
 use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::{RawShape, ValidatedResourceSchema};
+use carina_core::schema::{RawShape, StringIdentityParts, ValidatedResourceSchema};
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
@@ -149,9 +149,12 @@ fn refined_cluster_name_accepts_arn_and_identity_typed_references() {
     assert!(matches!(
         name.as_type().raw_shape(),
         RawShape::String {
-            identity: None,
-            pattern: Some(_),
-            length: Some(_),
+            identity_layer: StringIdentityParts {
+                identity: None,
+                pattern: Some(_),
+                length: Some(_),
+                ..
+            },
             ..
         }
     ));
@@ -163,7 +166,10 @@ fn refined_cluster_name_accepts_arn_and_identity_typed_references() {
         assert!(matches!(
             source.as_type().raw_shape(),
             RawShape::String {
-                identity: Some(_),
+                identity_layer: StringIdentityParts {
+                    identity: Some(_),
+                    ..
+                },
                 ..
             }
         ));

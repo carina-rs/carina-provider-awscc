@@ -1,6 +1,6 @@
 //! Typed API refinements. There is deliberately no raw-expression constructor.
 use super::*;
-use carina_core::schema::{AttributeType, RawShape};
+use carina_core::schema::{AttributeType, IntIdentityParts, RawShape, StringIdentityParts};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PatternLiteral {
@@ -583,7 +583,10 @@ fn validate_document_field(
     match declaration.raw_shape() {
         RawShape::Struct { .. } => validate_document(p, declaration, schema),
         RawShape::String {
-            pattern, length, ..
+            identity_layer: StringIdentityParts {
+                pattern, length, ..
+            },
+            ..
         } => {
             let plan = emission_plan::lower(p)?;
             let string = plan.string()?;
@@ -623,7 +626,10 @@ fn validate_document_field(
             )?;
             Ok(())
         }
-        RawShape::Int { range, .. } => {
+        RawShape::Int {
+            identity_layer: IntIdentityParts { range, .. },
+            ..
+        } => {
             let plan = emission_plan::lower(p)?;
             if plan.value_type()? != EmissionType::Integer {
                 return Err(fail("integer kind differs from CFN").into());

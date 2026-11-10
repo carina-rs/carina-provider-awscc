@@ -1,5 +1,5 @@
 //! Identity bindings carry no field structure or local constraints.
-use carina_core::schema::{CustomValidator, RawShape, TypeIdentity};
+use carina_core::schema::{CustomValidator, RawShape, StringIdentityParts, TypeIdentity};
 
 #[cfg(any(test, feature = "test-utils"))]
 pub type StructuralStringMetadata = (Option<String>, Option<(Option<u64>, Option<u64>)>);
@@ -472,11 +472,19 @@ impl StringIdentity {
         let declaration = self.validation_declaration()?;
         match declaration.raw_shape() {
             RawShape::String {
-                pattern, length, ..
+                identity_layer:
+                    StringIdentityParts {
+                        pattern, length, ..
+                    },
+                ..
             } => Some((pattern.map(|pattern| pattern.as_str().to_string()), length)),
             RawShape::Enum { base, .. } => match base.raw_shape() {
                 RawShape::String {
-                    pattern, length, ..
+                    identity_layer:
+                        StringIdentityParts {
+                            pattern, length, ..
+                        },
+                    ..
                 } => Some((pattern.map(|pattern| pattern.as_str().to_string()), length)),
                 _ => None,
             },
@@ -494,7 +502,10 @@ impl StringIdentity {
                     .map(|identity| {
                         let check = identity.validation_declaration().and_then(|declaration| {
                             match declaration.raw_shape() {
-                                RawShape::String { validate, .. }
+                                RawShape::String {
+                                    identity_layer: StringIdentityParts { validate, .. },
+                                    ..
+                                }
                                 | RawShape::Enum { validate, .. } => validate.cloned(),
                                 _ => unreachable!("string identity check"),
                             }

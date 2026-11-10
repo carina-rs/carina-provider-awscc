@@ -135,6 +135,14 @@ jobs:
       # pinned rev is consistent and >= .carina-core-min-rev.
       - run: ./scripts/check-carina-pin.sh
 
+  provider-release-pin:
+    name: Check provider-release Pin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check-provider-release-pin.sh
+      - run: bash scripts/test-check-provider-release-pin.sh
+
   test-utils-dev-only:
     name: Check test-utils dev-only features
     runs-on: ubuntu-latest
@@ -210,7 +218,7 @@ jobs:
 
   wasm-build:
     name: WASM Build
-    uses: carina-rs/provider-release/.github/workflows/build.yml@25d0c075c00be49a703b532c91739cc5dc163fb4
+    uses: carina-rs/provider-release/.github/workflows/build.yml@23f693069e0481ce3d49a6d55d1a0658ea113917
     with:
       provider: carina-provider-awscc
       name: awscc
@@ -221,7 +229,7 @@ jobs:
 
   publish-dev:
     name: Publish to Carina Registry (dev)
-    needs: [check, test, validate-examples, clippy, fmt, acceptance-shell, docs-drift, carina-pin, test-utils-dev-only, codegen-check, docs-check, docs-bundle, wasm-build]
+    needs: [check, test, validate-examples, clippy, fmt, acceptance-shell, docs-drift, carina-pin, provider-release-pin, test-utils-dev-only, codegen-check, docs-check, docs-bundle, wasm-build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

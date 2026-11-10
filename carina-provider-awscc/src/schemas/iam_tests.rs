@@ -12,8 +12,8 @@ use carina_core::provider::{ProviderFactory, provider_custom_types_from_factorie
 use carina_core::resolver::resolve_ref_value_with_config;
 use carina_core::resource::{AuthoredConcreteValue, AuthoredResource, AuthoredValue};
 use carina_core::schema::{
-    RawShape, SchemaKind, TypeAssignability, TypeIdentity, ValidatedResourceSchema,
-    builtin_type_registry,
+    RawShape, SchemaKind, StringIdentityParts, TypeAssignability, TypeIdentity,
+    ValidatedResourceSchema, builtin_type_registry,
 };
 use carina_core::validation::{
     deferred_types::with_session_for_test, typecheck::check_type_expr_value,
@@ -68,7 +68,7 @@ fn role_and_policy_names_use_shared_identities_and_documented_boundaries() {
         let name = field(schema, path);
         assert!(matches!(
             name.as_type().raw_shape(),
-            RawShape::String { identity: Some(identity), length: Some((Some(1), Some(max))), .. }
+            RawShape::String { identity_layer: StringIdentityParts { identity: Some(identity), length: Some((Some(1), Some(max))), .. }, .. }
                 if identity == &shared.identity() && max == maximum
         ));
         for value in [
@@ -98,17 +98,25 @@ fn role_path_uses_shared_anonymous_path_type_and_keeps_the_root_path() {
     let path = field(&schema, "path");
     let shared = carina_aws_types::iam_path();
     let RawShape::String {
-        identity,
-        pattern,
-        length,
+        identity_layer:
+            StringIdentityParts {
+                identity,
+                pattern,
+                length,
+                ..
+            },
         ..
     } = path.as_type().raw_shape()
     else {
         panic!("IAM path must remain String");
     };
     let RawShape::String {
-        pattern: shared_pattern,
-        length: shared_length,
+        identity_layer:
+            StringIdentityParts {
+                pattern: shared_pattern,
+                length: shared_length,
+                ..
+            },
         ..
     } = shared.raw_shape()
     else {
@@ -146,8 +154,11 @@ fn role_description_accepts_only_the_create_role_character_set_and_length() {
     assert!(matches!(
         description.as_type().raw_shape(),
         RawShape::String {
-            identity: None,
-            length: Some((None, Some(1000))),
+            identity_layer: StringIdentityParts {
+                identity: None,
+                length: Some((None, Some(1000))),
+                ..
+            },
             ..
         }
     ));
@@ -184,10 +195,14 @@ fn oidc_url_reuses_core_https_url_through_the_provider_registry() {
         .expect("OIDC provider must be present in the aggregate registry");
     let url = field(schema.schema(), "url");
     let RawShape::String {
-        identity: Some(identity),
-        pattern: None,
-        length: None,
-        validate: Some(validate),
+        identity_layer:
+            StringIdentityParts {
+                identity: Some(identity),
+                pattern: None,
+                length: None,
+                validate: Some(validate),
+                ..
+            },
         ..
     } = url.as_type().raw_shape()
     else {
@@ -196,7 +211,11 @@ fn oidc_url_reuses_core_https_url_through_the_provider_registry() {
     assert_eq!(identity, &TypeIdentity::bare("HttpsUrl"));
     let builtin = builtin_type_registry().get(identity).unwrap();
     let RawShape::String {
-        validate: Some(builtin_validate),
+        identity_layer:
+            StringIdentityParts {
+                validate: Some(builtin_validate),
+                ..
+            },
         ..
     } = builtin.raw_shape()
     else {
@@ -429,9 +448,12 @@ fn named_iam_names_reject_plain_string_references_even_with_valid_literal_defaul
     assert!(matches!(
         field(&parameter, "value").as_type().raw_shape(),
         RawShape::String {
-            identity: None,
-            pattern: None,
-            length: None,
+            identity_layer: StringIdentityParts {
+                identity: None,
+                pattern: None,
+                length: None,
+                ..
+            },
             ..
         }
     ));

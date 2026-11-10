@@ -1,4 +1,4 @@
-use carina_core::schema::{RawShape, ValidatedResourceSchema};
+use carina_core::schema::{RawShape, StringIdentityParts, ValidatedResourceSchema};
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
@@ -164,7 +164,7 @@ fn refined_strings_enforce_each_documented_length_boundary() {
         assert!(
             matches!(
                 attr_type.as_type().raw_shape(),
-                RawShape::String { identity: None, length: Some(bounds), .. }
+                RawShape::String { identity_layer: StringIdentityParts { identity: None, length: Some(bounds), .. }, .. }
                     if bounds == ((min > 0).then_some(min), max)
             ),
             "{path}"
@@ -306,8 +306,11 @@ fn statistic_constraints_enforce_nonempty_without_guessing_a_complete_grammar() 
         assert!(matches!(
             stat.as_type().raw_shape(),
             RawShape::String {
-                pattern: None,
-                length: Some((Some(1), None)),
+                identity_layer: StringIdentityParts {
+                    pattern: None,
+                    length: Some((Some(1), None)),
+                    ..
+                },
                 ..
             }
         ));
@@ -350,7 +353,10 @@ fn timezone_is_length_only_because_iana_names_are_an_open_list() {
     let timezone = field(&schema, "evaluation_window.wall_clock_window.timezone");
     assert!(matches!(
         timezone.as_type().raw_shape(),
-        RawShape::String { pattern: None, .. }
+        RawShape::String {
+            identity_layer: StringIdentityParts { pattern: None, .. },
+            ..
+        }
     ));
     for value in [
         "UTC",
@@ -379,10 +385,13 @@ fn refined_strings_accept_identity_typed_references_at_every_tightened_sink() {
             matches!(
                 sink.as_type().raw_shape(),
                 RawShape::String {
-                    identity: None,
-                    length: Some(_),
-                    validate: None,
-                    to_dsl: None,
+                    identity_layer: StringIdentityParts {
+                        identity: None,
+                        length: Some(_),
+                        validate: None,
+                        to_dsl: None,
+                        ..
+                    },
                     ..
                 }
             ),
@@ -393,7 +402,10 @@ fn refined_strings_accept_identity_typed_references_at_every_tightened_sink() {
             assert!(matches!(
                 source.as_type().raw_shape(),
                 RawShape::String {
-                    identity: Some(_),
+                    identity_layer: StringIdentityParts {
+                        identity: Some(_),
+                        ..
+                    },
                     ..
                 }
             ));

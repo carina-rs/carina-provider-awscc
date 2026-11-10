@@ -17,6 +17,7 @@ use carina_core::provider::{
     ResumeCreateRequest, ResumeFailure, ResumeOutcome, ResumedCreate, Sent, UpdateOutcome,
     UpdatePatch,
 };
+use carina_core::provider_text::Retryability;
 use carina_core::resource::{
     AbsoluteBindingAddress, ConcreteValue, NoPlaceholder, Resource, ResourceId, SnapshotValue,
     State, StateValueLeaf, Value,
@@ -33,6 +34,7 @@ use carina_provider_protocol::{
 use indexmap::IndexMap;
 
 use super::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
+use super::error_helpers::cloudcontrol_failure_retryability;
 use super::read_back::{
     NonEmptyAttributeNames, ReadBackCompletion, ReadBackContinuation, ReadBackRequirements,
     ReadFailure, failed_read, finish_final_read_back, validate_declarations,
@@ -1441,11 +1443,14 @@ impl AwsccProvider {
             status_message,
         } = failure;
         let status = failure.status().clone();
+        let already_applied =
+            status_identifier.is_some() || matches!(&poll, CcOperationPoll::Issued(_));
         let error = cloudcontrol_create_failure(
             &resource.id,
             &status,
             error_code.as_ref(),
             &status_message,
+            already_applied,
         );
         let status_identifier = status_identifier
             .and_then(|identifier| applied_identifier(&resource.id, "create", identifier).ok());
@@ -1997,11 +2002,14 @@ impl AwsccProvider {
             status_message,
         } = failure;
         let status = failure.status().clone();
+        let already_applied =
+            status_identifier.is_some() || matches!(&resume, CcOperationResume::Issued(_));
         let error = cloudcontrol_create_failure(
             &resource.id,
             &status,
             error_code.as_ref(),
             &status_message,
+            already_applied,
         );
         let status_identifier = status_identifier
             .and_then(|identifier| applied_identifier(&resource.id, "create", identifier).ok());
@@ -2744,13 +2752,20 @@ fn cloudcontrol_create_failure(
     status: &OperationStatus,
     error_code: Option<&HandlerErrorCode>,
     status_message: &str,
+    already_applied: bool,
 ) -> ProviderError {
+    let retryability = if already_applied {
+        Retryability::Unclassified
+    } else {
+        cloudcontrol_failure_retryability(OperationKind::Create, error_code, status_message)
+    };
     let mut error = ProviderError::api_error(format!(
         "Cloud Control create ended with {}: {status_message}",
         status.as_str()
     ))
     .for_resource(id.clone())
-    .with_operation("cloudcontrol.CreateResource");
+    .with_operation("cloudcontrol.CreateResource")
+    .with_retryability(retryability);
     if let Some(error_code) = error_code {
         error = error.with_code(error_code.as_str());
     }
@@ -3281,6 +3296,55 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use winterbaume_core::{MockAws, MockRequest, MockResponse, MockService};
+
+    #[test]
+    fn typed_retryability_detach_context_inherits_only_its_cause() {
+        let id = ResourceId::with_provider_identity("awscc", "ec2.InternetGateway", "test", None);
+        for retryability in [
+            Retryability::Unclassified,
+            Retryability::Transient,
+            Retryability::DependencyBlocked,
+        ] {
+            let inner = ProviderError::api_error("DependencyViolation Throttling")
+                .with_retryability(Retryability::DependencyBlocked);
+            let cause = ProviderError::api_error_caused_by("detach failed", inner)
+                .with_retryability(retryability);
+            let error = detach_igw_error(&id, cause).into_host_for_test();
+            assert_eq!(error.retryability(), retryability);
+            assert_eq!(
+                error.is_delete_dependency(),
+                retryability == Retryability::DependencyBlocked
+            );
+        }
+    }
+
+    #[test]
+    fn typed_retryability_create_handler_failure_respects_applied_outcome() {
+        let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "test", None);
+        for (code, message) in [
+            (
+                Some(HandlerErrorCode::Throttling),
+                "downstream rejected request",
+            ),
+            (None, "Rate exceeded"),
+        ] {
+            for already_applied in [false, true] {
+                let error = cloudcontrol_create_failure(
+                    &id,
+                    &OperationStatus::Failed,
+                    code.as_ref(),
+                    message,
+                    already_applied,
+                )
+                .into_host_for_test();
+                assert_eq!(error.is_transient(), !already_applied);
+                assert!(!error.is_delete_dependency());
+                if already_applied {
+                    assert_eq!(error.retryability(), Retryability::Unclassified);
+                }
+            }
+        }
+    }
 
     const WEB_ACL_ASSOCIATION_RESOURCE_ARN: &str = "arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:loadbalancer/app/publish-api/abc123";
     const WEB_ACL_ASSOCIATION_WEB_ACL_ARN: &str =

@@ -51,7 +51,7 @@ fn hosted_zone_id_producers_keep_identity_and_only_documented_bounds() {
             .attr_type();
 
         assert!(
-            matches!(source.raw_shape(),carina_core::schema::RawShape::String {identity:Some(id),pattern:None,validate:None,..} if id.to_string()=="aws.route53.HostedZone.Id")
+            matches!(source.raw_shape(),carina_core::schema::RawShape::String {identity_layer: carina_core::schema::StringIdentityParts {identity:Some(id),pattern:None,validate:None,..},..} if id.to_string()=="aws.route53.HostedZone.Id")
         );
         assert!(
             config

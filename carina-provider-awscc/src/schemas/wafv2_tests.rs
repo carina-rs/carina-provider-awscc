@@ -4,11 +4,12 @@
 //! Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
 //! accepted a 128-character MetricName; rejected 129 at CFN model validation.
 //! Semantic limits encountered by the probes are deliberately not type bounds.
-
 use std::sync::LazyLock;
 
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{EffectiveType, RawShape, Shape, ValidatedResourceSchema};
+use carina_core::schema::{
+    EffectiveType, RawShape, Shape, StringIdentityParts, ValidatedResourceSchema,
+};
 
 use crate::test_support::{enum_identifier, field, float, int, list, string};
 
@@ -454,9 +455,13 @@ fn byte_match_catalog_types_have_the_exact_local_identities_and_callbacks() {
     ] {
         let attr = statement(&format!("byte_match_statement.{field_name}"));
         let RawShape::String {
-            identity: Some(actual),
-            length: None,
-            validate: Some(callback),
+            identity_layer:
+                StringIdentityParts {
+                    identity: Some(actual),
+                    length: None,
+                    validate: Some(callback),
+                    ..
+                },
             ..
         } = attr.as_type().raw_shape()
         else {

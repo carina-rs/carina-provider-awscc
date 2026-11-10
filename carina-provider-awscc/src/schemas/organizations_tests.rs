@@ -1,4 +1,4 @@
-use carina_core::schema::{ListElements, RawShape, ValidatedResourceSchema};
+use carina_core::schema::{ListElements, RawShape, StringIdentityParts, ValidatedResourceSchema};
 use serde_json::json;
 
 use crate::provider::conversion::aws_value_to_dsl_with_defs;
@@ -16,7 +16,11 @@ fn account_email_keeps_core_validation_and_adds_documented_length_bounds() {
     let schema = schema();
     let email = field(&schema, "email");
     let RawShape::String {
-        validate: Some(callback),
+        identity_layer:
+            StringIdentityParts {
+                validate: Some(callback),
+                ..
+            },
         ..
     } = email.as_type().raw_shape()
     else {
@@ -44,16 +48,17 @@ fn account_email_keeps_core_validation_and_adds_documented_length_bounds() {
     assert!(email.validate(&int(1)).is_err());
     assert!(matches!(
         email.as_type().raw_shape(),
-        RawShape::String {
-            identity: Some(identity),
+        RawShape::String { identity_layer: StringIdentityParts { identity: Some(identity),
             length: Some((Some(6), Some(64))),
             validate: Some(_),
-            ..
-        } if identity.to_string() == "aws.organizations.Account.Email"
+            .. }, .. } if identity.to_string() == "aws.organizations.Account.Email"
     ));
     assert!(matches!(
         carina_core::schema::types::email().raw_shape(),
-        RawShape::String { length: None, .. }
+        RawShape::String {
+            identity_layer: StringIdentityParts { length: None, .. },
+            ..
+        }
     ));
 }
 
@@ -93,7 +98,11 @@ fn role_name_checks_the_whole_value_length_and_reserved_prefix() {
         .map(|(_, value)| value.clone());
     assert_eq!(default, Some(string("OrganizationAccountAccessRole")));
     let RawShape::String {
-        validate: Some(callback),
+        identity_layer:
+            StringIdentityParts {
+                validate: Some(callback),
+                ..
+            },
         ..
     } = role.as_type().raw_shape()
     else {
@@ -125,7 +134,7 @@ fn role_name_checks_the_whole_value_length_and_reserved_prefix() {
     assert!(role.validate(&int(1)).is_err());
     assert!(matches!(
         role.as_type().raw_shape(),
-        RawShape::String { identity: Some(identity), validate: Some(_), .. }
+        RawShape::String { identity_layer: StringIdentityParts { identity: Some(identity), validate: Some(_), .. }, .. }
             if identity.to_string() == "aws.organizations.Account.RoleName"
     ));
 }
@@ -166,8 +175,11 @@ fn parent_items_match_the_entire_root_or_ou_id_and_keep_the_documented_cap() {
     assert!(matches!(
         item.as_type().raw_shape(),
         RawShape::String {
-            identity: None,
-            length: Some((None, Some(100))),
+            identity_layer: StringIdentityParts {
+                identity: None,
+                length: Some((None, Some(100))),
+                ..
+            },
             ..
         }
     ));

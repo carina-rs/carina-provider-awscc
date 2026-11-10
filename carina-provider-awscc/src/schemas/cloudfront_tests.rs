@@ -2,7 +2,9 @@ use std::path::Path;
 
 use carina_core::executor::prepare_provider_ready_resource;
 use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::{RawShape, Shape, TypeIdentity, ValidatedResourceSchema};
+use carina_core::schema::{
+    IntIdentityParts, RawShape, Shape, StringIdentityParts, TypeIdentity, ValidatedResourceSchema,
+};
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
@@ -513,8 +515,11 @@ fn connection_attempts_timeouts_and_error_codes_enforce_integer_boundaries() {
             matches!(
                 timeout.as_type().raw_shape(),
                 RawShape::Int {
-                    identity: None,
-                    range: Some((Some(1), None)),
+                    identity_layer: IntIdentityParts {
+                        identity: None,
+                        range: Some((Some(1), None)),
+                        ..
+                    },
                     ..
                 }
             ),
@@ -719,7 +724,7 @@ fn distribution_domain_name_reuses_core_and_reference_sinks_remain_strings() {
     );
     let domain = field(schema, "domain_name");
     assert!(
-        matches!(domain.as_type().raw_shape(), RawShape::String { identity: Some(identity), .. } if identity == &TypeIdentity::bare("DomainName"))
+        matches!(domain.as_type().raw_shape(), RawShape::String { identity_layer: StringIdentityParts { identity: Some(identity), .. }, .. } if identity == &TypeIdentity::bare("DomainName"))
     );
     for value in ["d111111abcdef8.cloudfront.net", "example.com."] {
         domain.validate(&string(value)).unwrap();
@@ -748,9 +753,12 @@ fn distribution_domain_name_reuses_core_and_reference_sinks_remain_strings() {
             matches!(
                 sink.as_type().raw_shape(),
                 RawShape::String {
-                    identity: None,
-                    pattern: None,
-                    length: None,
+                    identity_layer: StringIdentityParts {
+                        identity: None,
+                        pattern: None,
+                        length: None,
+                        ..
+                    },
                     ..
                 }
             ),

@@ -166,6 +166,7 @@ pub fn assert_cached_group(schema: &ValidatedResourceSchema) {
         name: _name,
         fields,
         field_groups,
+        input_rules: _,
     } = resolved.as_attr().raw_shape()
     else {
         panic!("expected inline {resource}.{path}");
@@ -193,6 +194,7 @@ pub fn assert_cached_group(schema: &ValidatedResourceSchema) {
         name: _name,
         fields: _fields,
         field_groups: named_groups,
+        input_rules: _,
     } = named.raw_shape()
     else {
         panic!("expected named {definition}");
