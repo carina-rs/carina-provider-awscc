@@ -56,7 +56,7 @@ The inline policy to put in permission set.
 
 ### `instance_arn`
 
-- **Type:** aws.sso.Instance.Arn — String(pattern, len: 10..=1224)
+- **Type:** aws.sso.Instance.Arn — identity: String(pattern); member: String(pattern, len: 10..=1224)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -90,7 +90,7 @@ The relay state URL that redirect links to any service in the AWS Management Con
 
 ### `session_duration`
 
-- **Type:** aws.sso.PermissionSet.SessionDuration — String(pattern, len: 1..=100)
+- **Type:** aws.sso.PermissionSet.SessionDuration — identity: String(pattern, len: 1..=100); member: String(pattern, len: 1..=100)
 - **Required:** No
 
 The length of time that a user can be signed in to an AWS account.
@@ -116,13 +116,13 @@ Used by: `customer_managed_policy_references`, `permissions_boundary.customer_ma
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `customer_managed_policy_reference` | [Struct(CustomerManagedPolicyReference)](#customer_managed_policy_reference) | No |  |
-| `managed_policy_arn` | aws.Arn — String(len: 20..=2048) | No |  |
+| `managed_policy_arn` | aws.Arn — identity: String(pattern); member: String(len: 20..=2048) | No |  |
 
 ## Attribute Reference
 
 ### `permission_set_arn`
 
-- **Type:** aws.sso.PermissionSet.Arn — String(pattern, len: 10..=1224)
+- **Type:** aws.sso.PermissionSet.Arn — identity: String(pattern); member: String(pattern, len: 10..=1224)
 
 The permission set that the policy will be attached to
 

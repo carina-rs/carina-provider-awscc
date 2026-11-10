@@ -240,7 +240,7 @@ Shorthand formats: `sns` or `SubscriptionType.sns`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `auto_adjust_data` | [Struct(AutoAdjustData)](#budgetauto_adjust_data) | No |  |
-| `billing_view_arn` | `aws.Arn` | No |  |
+| `billing_view_arn` | aws.Arn — identity: String(pattern); member: String | No |  |
 | `budget_limit` | [Struct(Spend)](#budgetbudget_limit) | No |  |
 | `budget_name` | `String(pattern, len: 1..=100)` | No | Create-only. Anonymous identifiers hash only declared identity values. |
 | `budget_type` | [Enum (BudgetType)](#budgetbudget_type-budgettype) | Yes |  |

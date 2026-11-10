@@ -58,7 +58,7 @@ The IP address type. Internal load balancers must use ``ipv4``. [Application Loa
 
 ### `ipv4_ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id`
+- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
 - **Required:** No
 
 The ID of the IPv4 IPAM pool.
@@ -197,29 +197,29 @@ Shorthand formats: `application` or `Type.application`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `allocation_id` | `aws.ec2.Eip.AllocationId` | No | [Network Load Balancers] The allocation ID of the Elastic IP address for an internet-facing load balancer. |
-| `i_pv6_address` | `Ipv6Address` | No | [Network Load Balancers] The IPv6 address. |
-| `private_i_pv4_address` | `Ipv4Address` | No | [Network Load Balancers] The private IPv4 address for an internal load balancer. |
+| `allocation_id` | aws.ec2.Eip.AllocationId — identity: String(pattern); member: String | No | [Network Load Balancers] The allocation ID of the Elastic IP address for an internet-facing load balancer. |
+| `i_pv6_address` | Ipv6Address — identity: String; member: String | No | [Network Load Balancers] The IPv6 address. |
+| `private_i_pv4_address` | Ipv4Address — identity: String; member: String | No | [Network Load Balancers] The private IPv4 address for an internal load balancer. |
 | `source_nat_ipv6_prefix` | String | No | [Network Load Balancers with UDP listeners] The IPv6 prefix to use for source NAT. Specify an IPv6 prefix (/80 netmask) from the subnet CIDR block or ``auto_assigned`` to use an IPv6 prefix selected at random from the subnet CIDR block. |
-| `subnet_id` | `aws.ec2.Subnet.Id` | Yes | The ID of the subnet. |
+| `subnet_id` | aws.ec2.Subnet.Id — identity: String(pattern); member: String | Yes | The ID of the subnet. |
 
 ## Attribute Reference
 
 ### `canonical_hosted_zone_id`
 
-- **Type:** `aws.route53.HostedZone.Id`
+- **Type:** aws.route53.HostedZone.Id — identity: String(pattern, len: ..=32); member: String
 
 
 
 ### `dns_name`
 
-- **Type:** `DomainName`
+- **Type:** DomainName — identity: String; member: String
 
 
 
 ### `load_balancer_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 
 

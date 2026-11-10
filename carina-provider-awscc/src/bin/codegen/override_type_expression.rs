@@ -169,7 +169,7 @@ impl ConstraintSpec {
     }
     pub(super) fn int_range(min: Option<i64>, max: Option<i64>) -> Self {
         Self {
-            code: refined_int_type("None", &emit_int_range_option(min, max)),
+            code: refined_int_type(&emit_int_range_option(min, max)),
             patterns: vec![],
             constraint: Constraint::IntegerRange(min, max),
         }
@@ -402,7 +402,7 @@ impl ConstraintSpec {
                             "AttributeType::float()".into()
                         }
                     } else if expected == EmissionType::Integer {
-                        refined_int_type("None", &emit_int_range_option(min, max))
+                        refined_int_type(&emit_int_range_option(min, max))
                     } else {
                         refined_float_type("None", Some((min, max)))
                     },

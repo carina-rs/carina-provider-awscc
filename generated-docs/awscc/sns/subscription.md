@@ -77,7 +77,7 @@ When specified, sends undeliverable messages to the specified Amazon SQS dead-le
 
 ### `region`
 
-- **Type:** `aws.Region`
+- **Type:** aws.Region — identity: String; member: String
 - **Required:** No
 - **Write-only:** Yes
 
@@ -92,14 +92,14 @@ Specifies whether Amazon SNS resends the notification to the subscription when a
 
 ### `subscription_role_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 - **Required:** No
 
 This property applies only to Amazon Data Firehose delivery stream subscriptions.
 
 ### `topic_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -142,7 +142,7 @@ Shorthand formats: `http` or `Protocol.http`
 
 ### `arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 Arn of the subscription
 

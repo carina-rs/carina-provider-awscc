@@ -1176,8 +1176,8 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 |-------|------|----------|-------------|
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
 | `positional_constraint` | [Enum (PositionalConstraint)](#statementbyte_match_statementpositional_constraint-positionalconstraint) | Yes |  |
-| `search_string` | `aws.wafv2.WebACL.ByteMatchSearchString` | No |  |
-| `search_string_base64` | `aws.wafv2.WebACL.ByteMatchSearchStringBase64` | No |  |
+| `search_string` | aws.wafv2.WebACL.ByteMatchSearchString — identity: String; member: String | No |  |
+| `search_string_base64` | aws.wafv2.WebACL.ByteMatchSearchStringBase64 — identity: String; member: String | No |  |
 | `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
 
 ### statement.geo_match_statement
@@ -1191,7 +1191,7 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | aws.Arn — String(len: 20..=2048) | Yes |  |
+| `arn` | aws.Arn — identity: String(pattern); member: String(len: 20..=2048) | Yes |  |
 | `ip_set_forwarded_ip_config` | [Struct(IPSetForwardedIPConfiguration)](#statementip_set_reference_statementip_set_forwarded_ip_config) | No |  |
 
 ### statement.ip_set_reference_statement.ip_set_forwarded_ip_config
@@ -1409,7 +1409,7 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | aws.Arn — String(len: 20..=2048) | Yes |  |
+| `arn` | aws.Arn — identity: String(pattern); member: String(len: 20..=2048) | Yes |  |
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
 | `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
 
@@ -1417,7 +1417,7 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | aws.Arn — String(len: 20..=2048) | Yes |  |
+| `arn` | aws.Arn — identity: String(pattern); member: String(len: 20..=2048) | Yes |  |
 | `excluded_rules` | List\<[Struct(ExcludedRule)](#excluded_rule)\> (items: ..=100) | No |  |
 | `rule_action_overrides` | List\<[Struct(RuleActionOverride)](#rule_action_override)\> (items: ..=100) | No | Action overrides for rules in the rule group. |
 
@@ -1468,7 +1468,7 @@ Used by: `rules.visibility_config`, `visibility_config`
 
 ### `arn`
 
-- **Type:** aws.wafv2.WebAcl.Arn — String(len: 20..=2048)
+- **Type:** aws.wafv2.WebAcl.Arn — identity: String(pattern); member: String(len: 20..=2048)
 
 ### `capacity`
 

@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::AwsccSchemaConfig;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 const VALID_IP_PROTOCOL: &[&str] = &[
     "tcp", "udp", "icmp", "icmpv6", "-1", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
@@ -36,7 +36,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for AWS::EC2::SecurityGroupIngress");
     #[inline(never)]
     fn build_cidr_ip_attribute() -> AttributeSchema {
-        AttributeSchema::optional("cidr_ip", types::ipv4_cidr())
+        AttributeSchema::optional("cidr_ip", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The IPv4 ranges")
                 .with_provider_name("CidrIp")
@@ -45,7 +45,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_cidr_ip_attribute());
     #[inline(never)]
     fn build_cidr_ipv6_attribute() -> AttributeSchema {
-        AttributeSchema::optional("cidr_ipv6", types::ipv6_cidr())
+        AttributeSchema::optional("cidr_ipv6", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv6Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("[VPC only] The IPv6 ranges")
                 .with_provider_name("CidrIpv6")
@@ -71,7 +71,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_from_port_attribute());
     #[inline(never)]
     fn build_group_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("group_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2SecurityGroupId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2SecurityGroupId.check().expect("shared string check"), None))
+        AttributeSchema::optional("group_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2SecurityGroupId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ID of the security group. You must specify either the security group ID or the security group name in the request. For security groups in a nondefault VPC, you must specify the security group ID. You must specify the GroupName property or the GroupId property. For security groups that are in a VPC, you must use the GroupId property.")
                 .with_provider_name("GroupId")
@@ -106,7 +106,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ip_protocol_attribute());
     #[inline(never)]
     fn build_source_prefix_list_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("source_prefix_list_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2PrefixListId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2PrefixListId.check().expect("shared string check"), None))
+        AttributeSchema::optional("source_prefix_list_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2PrefixListId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("[EC2-VPC only] The ID of a prefix list. ")
                 .with_provider_name("SourcePrefixListId")
@@ -115,7 +115,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_source_prefix_list_id_attribute());
     #[inline(never)]
     fn build_source_security_group_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("source_security_group_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2SecurityGroupId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2SecurityGroupId.check().expect("shared string check"), None))
+        AttributeSchema::optional("source_security_group_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2SecurityGroupId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ID of the security group. You must specify either the security group ID or the security group name. For security groups in a nondefault VPC, you must specify the security group ID.")
                 .with_provider_name("SourceSecurityGroupId")
@@ -133,7 +133,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_source_security_group_name_attribute());
     #[inline(never)]
     fn build_source_security_group_owner_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("source_security_group_owner_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::AccountId.identity(), None, None, crate::schemas::string_identity::StringIdentity::AccountId.check().expect("shared string check"), None))
+        AttributeSchema::optional("source_security_group_owner_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::AccountId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("[nondefault VPC] The AWS account ID that owns the source security group. You can't specify this property with an IP address range. If you specify SourceSecurityGroupName or SourceSecurityGroupId and that security group is owned by a different account than the account creating the stack, you must specify the SourceSecurityGroupOwnerId; otherwise, this property is optional.")
                 .with_provider_name("SourceSecurityGroupOwnerId")

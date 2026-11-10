@@ -1,5 +1,5 @@
     fn build_cidr_block_associations_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("cidr_block_associations", AttributeType::unordered_list(AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcCidrBlockAssociationId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcCidrBlockAssociationId.check().expect("shared string check"), None)))
+        AttributeSchema::provider_populated("cidr_block_associations", AttributeType::unordered_list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcCidrBlockAssociationId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))))
                 .with_description(" (read-only)")
                 .with_provider_name("CidrBlockAssociations")
             .build()

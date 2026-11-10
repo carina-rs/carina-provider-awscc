@@ -31,7 +31,7 @@ awscc.ec2.FlowLog {
 
 ### `deliver_cross_account_role`
 
-- **Type:** `aws.iam.Role.Arn`
+- **Type:** aws.iam.Role.Arn — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -39,7 +39,7 @@ The ARN of the IAM role that allows Amazon EC2 to publish flow logs across accou
 
 ### `deliver_logs_permission_arn`
 
-- **Type:** `aws.iam.Role.Arn`
+- **Type:** aws.iam.Role.Arn — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -53,7 +53,7 @@ The ARN for the IAM role that permits Amazon EC2 to publish flow logs to a Cloud
 
 ### `log_destination`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -180,7 +180,7 @@ Shorthand formats: `accept` or `TrafficType.accept`
 
 ### `id`
 
-- **Type:** `aws.ec2.FlowLog.Id`
+- **Type:** aws.ec2.FlowLog.Id — identity: String(pattern); member: String
 
 The Flow Log ID
 

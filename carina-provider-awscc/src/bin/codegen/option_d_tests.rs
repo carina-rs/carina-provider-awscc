@@ -146,18 +146,20 @@ fn option_d_identity_keeps_each_fields_cfn_constraints() {
         }))
         .unwrap();
         let rust = generate_synthetic_schema_code(&schema).unwrap();
-        assert!(rust.contains("refined_string_with_validator("), "{rust}");
+        assert!(rust.contains("AttributeType::string_member("), "{rust}");
         assert!(rust.contains("Some((Some(2), Some(9)))"), "{rust}");
         assert!(rust.contains("[a-z]+"), "{rust}");
     });
 }
 
 #[test]
-fn option_d_core_builtin_loss_is_documented() {
+fn option_d_core_builtin_preserves_member_constraints_in_rust_and_docs() {
     let schema = cfn_schema_for_codegen_tests("AWS::IAM::OIDCProvider");
+    let rust = generate_schema_code(&schema, &schema.type_name).unwrap();
+    assert!(rust.contains("StringIdentity::HttpsUrl.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, Some((Some(1), Some(255))))"), "{rust}");
     let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-    assert!(markdown.contains("carina#4294"), "{markdown}");
-    assert!(markdown.contains("1..=255"), "{markdown}");
+    assert!(markdown.contains("HttpsUrl — identity: String; member: String(len: 1..=255)"), "{markdown}");
+    assert!(!markdown.contains("not enforced locally"), "{markdown}");
 }
 
 fn normalized(pattern: &str) -> StringConstraints {
@@ -303,7 +305,7 @@ fn option_d_identity_and_narrowing_are_independent() {
             .unwrap();
         let output = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
-            output.contains("refined_string_with_validator("),
+            output.contains("AttributeType::string_member("),
             "{output}"
         );
         assert!(output.contains("Some((Some(3), Some(5)))"), "{output}");
@@ -460,7 +462,7 @@ fn option_d_capture_actual_sites_and_evidence() {
             entry["field"].as_str().unwrap().to_string(),
         )
     });
-    let builtin_losses = SITES.with(|sites| {
+    let builtin_member_sites = SITES.with(|sites| {
         sites
             .borrow()
             .iter()
@@ -471,7 +473,7 @@ fn option_d_capture_actual_sites_and_evidence() {
             .collect::<Vec<_>>()
     });
     assert_eq!(
-        builtin_losses,
+        builtin_member_sites,
         vec![("AWS::IAM::OIDCProvider".into(), "Url".into())]
     );
     verify_loosening_examples(&sites);
@@ -672,8 +674,8 @@ fn option_d_named_enum_preserves_identity_callback_and_cfn_domain() {
             "Probe":{"type":"string","pattern":"^arn:aws:example:us-east-1:[0-9]{12}:resource/[abc]$","minLength":20,"maxLength":128,"enum":[a,b,c]}
         }})).unwrap();
         let output = generate_synthetic_schema_code(&schema).unwrap();
-        assert!(output.contains("StringIdentity::Arn.identity()"));
-        assert!(output.contains("StringIdentity::Arn.check()"));
+        assert!(output.contains("StringIdentity::Arn.identity_layer()"));
+        assert!(output.contains("StringMemberConstraints::new("));
         let property = &schema.properties["Probe"];
         let constraints =
             resource_type_override(&schema.type_name, CfnPropertyPath::new(None, "Probe"))
@@ -854,7 +856,7 @@ fn option_d_top_level_identity_does_not_leak_to_a_nested_same_name() {
         }})).unwrap();
         let rust = generate_synthetic_schema_code(&schema).unwrap();
         assert_eq!(
-            rust.matches("StringIdentity::SsoInstanceArn.identity()")
+            rust.matches("StringIdentity::SsoInstanceArn.identity_layer()")
                 .count(),
             1,
             "{rust}"

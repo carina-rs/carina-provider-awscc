@@ -59,7 +59,7 @@ Shorthand formats: `ipsec_1` or `Type.ipsec_1`
 
 ### `vpn_gateway_id`
 
-- **Type:** `aws.ec2.VpnGateway.Id`
+- **Type:** aws.ec2.VpnGateway.Id — identity: String(pattern); member: String
 
 
 

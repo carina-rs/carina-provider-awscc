@@ -14,7 +14,7 @@ pub fn ec2_egress_only_internet_gateway_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for AWS::EC2::EgressOnlyInternetGateway");
     #[inline(never)]
     fn build_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2EgressOnlyInternetGatewayId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2EgressOnlyInternetGatewayId.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2EgressOnlyInternetGatewayId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("Service Generated ID of the EgressOnlyInternetGateway (read-only)")
                 .with_provider_name("Id")
             .build()
@@ -31,7 +31,7 @@ pub fn ec2_egress_only_internet_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_vpc_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("vpc_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcId.check().expect("shared string check"), None))
+        AttributeSchema::required("vpc_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ID of the VPC for which to create the egress-only internet gateway.")
                 .with_provider_name("VpcId")

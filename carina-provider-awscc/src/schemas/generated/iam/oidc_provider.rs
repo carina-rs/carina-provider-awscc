@@ -8,14 +8,9 @@ use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        crate::schemas::string_identity::StringIdentity::IamOidcProviderArn.identity(),
-        None,
-        None,
-        crate::schemas::string_identity::StringIdentity::IamOidcProviderArn
-            .check()
-            .expect("shared string check"),
-        None,
+    AttributeType::string_member(
+        crate::schemas::string_identity::StringIdentity::IamOidcProviderArn.identity_layer(),
+        carina_core::schema::StringMemberConstraints::new(None, None),
     )
 }
 
@@ -26,7 +21,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for AWS::IAM::OIDCProvider");
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamOidcProviderArn.identity(), None, Some((Some(20), Some(2048))), crate::schemas::string_identity::StringIdentity::IamOidcProviderArn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IamOidcProviderArn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, Some((Some(20), Some(2048))))))
                 .with_description("Amazon Resource Name (ARN) of the OIDC provider (read-only)")
                 .with_provider_name("Arn")
             .build()
@@ -56,7 +51,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_thumbprint_list_attribute());
     #[inline(never)]
     fn build_url_attribute() -> AttributeSchema {
-        AttributeSchema::optional("url", carina_core::schema::types::https_url())
+        AttributeSchema::optional("url", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::HttpsUrl.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, Some((Some(1), Some(255))))))
                 .create_only()
                 .with_provider_name("Url")
             .build()

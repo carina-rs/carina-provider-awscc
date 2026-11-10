@@ -8139,7 +8139,6 @@ impl StringLeaf<'_> {
                 }
                 (
                     refined_string_type(
-                        "None",
                         constraints.pattern.as_ref(),
                         &length,
                         to_dsl.unwrap_or("None"),
@@ -8153,19 +8152,9 @@ impl StringLeaf<'_> {
     fn type_display(&self, cfn_type: &str, prop_name: &str) -> TypeDisplay {
         match self {
             Self::Named {
-                identity: Some(identity),
-                constraints,
-            } if identity.is_core_builtin() && constraints.has_local_constraints() => {
-                TypeDisplay::Plain(format!(
-                    "{} — {}",
-                    identity.identity(),
-                    string_identity::BuiltinConstraintLoss::new(*identity, constraints).markdown()
-                ))
-            }
-            Self::Named {
                 identity: Some(_),
-                constraints,
-            } if constraints.has_local_constraints() => TypeDisplay::Plain(self.display()),
+                constraints: _,
+            } => TypeDisplay::Plain(self.display()),
             Self::Named {
                 identity: _,
                 constraints: _,
@@ -8192,20 +8181,25 @@ impl StringLeaf<'_> {
                 identity: Some(identity),
                 constraints,
             } => {
-                if constraints.has_local_constraints() {
-                    format!(
-                        "{} — {}",
-                        identity.identity(),
-                        string_refinement_display(
-                            constraints.pattern.as_ref().map(ApprovedPattern::as_str),
-                            constraints.min_length,
-                            constraints.max_length,
-                            None,
-                        )
+                let layer = identity.identity_layer();
+                let definition = layer.parts();
+                let (min, max) = definition.length.unwrap_or((None, None));
+                format!(
+                    "{} — identity: {}; member: {}",
+                    identity.identity(),
+                    string_refinement_display(
+                        definition.pattern.map(|pattern| pattern.as_str()),
+                        min,
+                        max,
+                        None,
+                    ),
+                    string_refinement_display(
+                        constraints.pattern.as_ref().map(ApprovedPattern::as_str),
+                        constraints.min_length,
+                        constraints.max_length,
+                        None,
                     )
-                } else {
-                    identity.identity().to_string()
-                }
+                )
             }
             Self::Named {
                 identity: None,
@@ -8298,11 +8292,6 @@ fn string_leaf<'a>(
             property_path,
         )?
     {
-        string_identity::validate_builtin_constraints(
-            entry.identity,
-            &constraints,
-            emitted.source_pointer,
-        )?;
         return Ok(StringLeaf::Named {
             identity: entry.identity,
             constraints,
@@ -8339,11 +8328,6 @@ fn string_leaf<'a>(
             .map_or(Ok(constraints.clone()), |entry| {
                 entry.string_constraints(constraints)
             })?;
-        string_identity::validate_builtin_constraints(
-            inferred,
-            &constraints,
-            string.source_pointer,
-        )?;
         #[cfg(test)]
         tests::option_d_tests::record_site(
             cfn_type,
@@ -8495,18 +8479,16 @@ fn emit_length_option(min: Option<u64>, max: Option<u64>) -> String {
     format!("Some(({}, {}))", min_str, max_str)
 }
 
-fn refined_string_type(
-    identity: &str,
-    pattern: Option<&ApprovedPattern>,
-    length: &str,
-    to_dsl: &str,
-) -> String {
+/// Anonymous refinements cannot accept a TypeIdentity. Named strings must use
+/// `string_identity::emit`, which combines a catalog layer with member constraints.
+fn refined_string_type(pattern: Option<&ApprovedPattern>, length: &str, to_dsl: &str) -> String {
     let pattern = emit_pattern_option(pattern);
-    format!("AttributeType::refined_string({identity}, {pattern}, {length}, {to_dsl})")
+    format!("AttributeType::refined_string(None, {pattern}, {length}, {to_dsl})")
 }
 
-fn refined_int_type(identity: &str, range: &str) -> String {
-    format!("AttributeType::refined_int({identity}, {range})")
+/// CFN numeric bounds here are anonymous; catalog identities are never rebuilt.
+fn refined_int_type(range: &str) -> String {
+    format!("AttributeType::refined_int(None, {range})")
 }
 
 fn catalog_int_enum_for_property(
@@ -14059,10 +14041,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 res_override.and_then(TypeOverride::kind)
             {
                 let (min, max) = emitted.numeric_override_range(*min, *max)?;
-                return Ok((
-                    refined_int_type("None", &emit_int_range_option(min, max)),
-                    None,
-                ));
+                return Ok((refined_int_type(&emit_int_range_option(min, max)), None));
             }
             if let Some(NarrowingKind::IntEnum(values)) = res_override.and_then(TypeOverride::kind)
             {
@@ -14079,13 +14058,10 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             // Use CF min/max if available (including one-sided), otherwise check known overrides
             let range = effective_numeric_range(&emitted, prop_name, &schema.type_name)?;
             if let Some((min, max)) = range {
-                (
-                    refined_int_type("None", &emit_int_range_option(min, max)),
-                    None,
-                )
+                (refined_int_type(&emit_int_range_option(min, max)), None)
             } else if emitted.numeric()?.format.is_some() {
                 // Format-only integer (e.g., int64) - informational, no range validation
-                (refined_int_type("None", "None"), None)
+                (refined_int_type("None"), None)
             } else {
                 ("AttributeType::int()".to_string(), None)
             }
@@ -15379,8 +15355,8 @@ mod tests {
                 "Email",
                 json!({"type":"string","pattern":"[^\\s@]+@[^\\s@]+\\.[^\\s@]+","minLength":6,"maxLength":64}),
                 None,
-                "types::email()",
-                "String(pattern, len: 6..=64)",
+                r#"AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Email.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("[^\\s@]+@[^\\s@]+\\.[^\\s@]+", carina_core::schema::PatternMatch::Full)), Some((Some(6), Some(64)))))"#,
+                "Email — identity: String; member: String(pattern, len: 6..=64)",
             ),
             (
                 "AWS::Test::Resource",
@@ -15472,7 +15448,7 @@ mod tests {
                     .as_ref()
                     .and_then(TypeValue::effective_type)
                     == Some("string")
-                    && (property.pattern.as_deref() == Some("(?=x)x") || name == "Email")
+                    && property.pattern.as_deref() == Some("(?=x)x")
                 {
                     for message in [
                         generation_failure(|| {
@@ -15946,9 +15922,9 @@ mod tests {
     #[test]
     fn test_generate_schema_code_imports_types_only_when_unqualified() {
         for (type_name, needs_types) in [
-            ("AWS::ElasticLoadBalancingV2::LoadBalancer", true),
+            ("AWS::ElasticLoadBalancingV2::LoadBalancer", false),
             ("AWS::IAM::OIDCProvider", false),
-            ("AWS::EC2::VPC", true),
+            ("AWS::EC2::VPC", false),
         ] {
             let schema = cfn_schema_for_codegen_tests(type_name);
             let generated = generate_schema_code(&schema, type_name).unwrap();
@@ -15965,7 +15941,7 @@ mod tests {
                 assert!(uses_core_schema_types_path(&generated), "{generated}");
             } else {
                 assert!(
-                    generated.contains("carina_core::schema::types::"),
+                    generated.contains("crate::schemas::string_identity::StringIdentity::"),
                     "{generated}"
                 );
             }
@@ -19240,7 +19216,6 @@ mod tests {
                 ("S3BucketSource.S3KeyPrefix", None, Some(0), 1024),
             ] {
                 let expected = refined_string_type(
-                    "None",
                     pattern.map(ApprovedPattern::whole).as_ref(),
                     &format!("Some(({min:?}, Some({max})))"),
                     "None",
@@ -19328,7 +19303,6 @@ mod tests {
             (
                 "Csv.HeaderList",
                 refined_string_type(
-                    "None",
                     Some(&ApprovedPattern::whole(
                         r"^[\x20-\x21\x23-\x2B\x2D-\x7E]*\z",
                     )),
@@ -19866,7 +19840,6 @@ mod tests {
                     "{path}"
                 );
                 let expected = refined_string_type(
-                    "None",
                     Some(&ApprovedPattern::whole(pattern)),
                     &emit_length_option(min, max),
                     "None",
@@ -20125,7 +20098,7 @@ mod tests {
             ("AlarmPromQLCriteria.PendingPeriod", 0, Some(86400)),
             ("AlarmPromQLCriteria.RecoveryPeriod", 0, Some(86400)),
         ] {
-            let expected = refined_int_type("None", &emit_int_range_option(Some(min), max));
+            let expected = refined_int_type(&emit_int_range_option(Some(min), max));
             assert!(
                 generated_cloudwatch_field(&generated, path).starts_with(&expected),
                 "{path}"
@@ -20202,7 +20175,6 @@ mod tests {
                 // A zero lower bound is equivalent to the default lower bound.
                 let length = emit_length_option(Some(min), max);
                 let expected = refined_string_type(
-                    "None",
                     pattern.map(ApprovedPattern::whole).as_ref(),
                     &length,
                     "None",
@@ -20272,7 +20244,8 @@ mod tests {
                 .next()
                 .unwrap();
             assert!(
-                section.contains("List<aws.Arn>") && section.contains("items: ..=5"),
+                section.contains("List<aws.Arn — identity: String(pattern); member: String>")
+                    && section.contains("items: ..=5"),
                 "{section}"
             );
             assert!(!section.contains("length: 1..=1024"), "{section}");
@@ -20504,15 +20477,9 @@ mod tests {
     }
 
     fn expected_type_prefix(expected: &str) -> String {
-        if let Some(Some(identity)) = string_identity::from_constructor(expected)
-            && !identity.is_core_builtin()
-        {
+        if let Some(Some(identity)) = string_identity::from_constructor(expected) {
             let name = format!("crate::schemas::string_identity::StringIdentity::{identity:?}");
-            return if identity.check().is_some() {
-                format!("AttributeType::refined_string_with_validator({name}.identity(), ")
-            } else {
-                format!("AttributeType::refined_string(Some({name}.identity()), ")
-            };
+            return format!("AttributeType::string_member({name}.identity_layer(), ");
         }
         if expected == "carina_core::schema::types::positive_int()" {
             return "AttributeType::refined_int(None, Some((Some(1), None)))".into();
@@ -21245,12 +21212,12 @@ mod tests {
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         assert!(
             generated.contains(
-                "StructField::optional(\"arn\", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), "
+                "StructField::optional(\"arn\", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new("
             )
         );
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         assert!(
-            markdown.contains(&format!("| `arn` | `{}` |", StringIdentity::Arn.identity(),)),
+            markdown.contains("| `arn` | aws.Arn — identity: String(pattern); member: String |"),
             "an inferred module helper must display its catalog identity in struct tables: {markdown}",
         );
     }
@@ -21258,12 +21225,20 @@ mod tests {
     #[test]
     fn catalog_displays_in_markdown_preserve_shared_type_labels() {
         for (cfn_type, attribute, expected) in [
-            ("AWS::IAM::Role", "arn", "`aws.iam.Role.Arn`"),
-            ("AWS::KMS::Key", "arn", "`aws.kms.Key.Arn`"),
+            (
+                "AWS::IAM::Role",
+                "arn",
+                "aws.iam.Role.Arn — identity: String(pattern); member: String",
+            ),
+            (
+                "AWS::KMS::Key",
+                "arn",
+                "aws.kms.Key.Arn — identity: String(pattern); member: String",
+            ),
             (
                 "AWS::Scheduler::Schedule",
                 "arn",
-                "aws.Arn — String(pattern, len: 1..=1224)",
+                "aws.Arn — identity: String(pattern); member: String(pattern, len: 1..=1224)",
             ),
         ] {
             let schema = cfn_schema_for_codegen_tests(cfn_type);
@@ -21392,7 +21367,7 @@ mod tests {
             assert!(generated.contains(&expected_type_prefix(&format!(
                 "crate::schemas::catalog::{constructor}()"
             ))));
-            assert!(markdown.contains(&format!("`{identity}`")));
+            assert!(markdown.contains(&format!("{identity} — identity:")));
         }
         assert!(generated.contains("AttributeType::map_with_key("));
         assert!(
@@ -21557,7 +21532,7 @@ mod tests {
         assert!(generated.contains("Some((Some(1), Some(100)))"));
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         assert!(markdown.contains(
-            "- **Type:** aws.sso.PermissionSet.SessionDuration — String(pattern, len: 1..=100)"
+            "- **Type:** aws.sso.PermissionSet.SessionDuration — identity: String(pattern, len: 1..=100); member: String(pattern, len: 1..=100)"
         ));
         for path in [
             CfnPropertyPath::new(None, "session_duration"),
@@ -21589,7 +21564,7 @@ mod tests {
         );
         assert!(generated.contains("StringIdentity::SchedulerScheduleScheduleExpression"));
         assert!(markdown.contains(
-            "- **Type:** aws.scheduler.Schedule.ScheduleExpression — String(len: 1..=256)"
+            "- **Type:** aws.scheduler.Schedule.ScheduleExpression — identity: String(len: 1..=256); member: String(len: 1..=256)"
         ));
 
         for (raw, dsl) in [("StartDate", "start_date"), ("EndDate", "end_date")] {
@@ -21718,7 +21693,7 @@ mod tests {
         assert!(
             generated.contains(
                 "AttributeSchema::optional(\"group_name\", \
-                 AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::SchedulerScheduleGroupName.identity(), "
+                 AttributeType::string_member(crate::schemas::string_identity::StringIdentity::SchedulerScheduleGroupName.identity_layer(), carina_core::schema::StringMemberConstraints::new("
             ),
             "Schedule.GroupName must use the Cloud Control default-group validator: {generated}"
         );
@@ -21734,7 +21709,7 @@ mod tests {
             .expect("Scheduler Schedule markdown generation should succeed");
         assert!(
             markdown.contains(
-                "- **Type:** aws.scheduler.Schedule.GroupName — String(pattern, len: 1..=64)"
+                "- **Type:** aws.scheduler.Schedule.GroupName — identity: String(len: 1..=64); member: String(pattern, len: 1..=64)"
             ),
             "Schedule.GroupName docs must expose the restricted type: {markdown}"
         );
@@ -21998,7 +21973,7 @@ mod tests {
                 CfnPropertyPath::new(None, "Entries"),
                 "/definitions/Entries/patternProperties/test",
             );
-            let key = refined_string_type("None", constraints.pattern.as_ref(), "None", "None");
+            let key = refined_string_type(constraints.pattern.as_ref(), "None", "None");
             assert!(
                 generated.contains(&format!(
                     "AttributeType::map_with_key({key}, AttributeType::string())"
@@ -22024,7 +21999,6 @@ mod tests {
         });
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let expected = refined_string_type(
-            "None",
             Some(&ApprovedPattern::whole(r"^[\s\S]*\S[\s\S]*\z")),
             "None",
             "None",
@@ -23042,7 +23016,7 @@ mod tests {
         assert!(
             generated.contains(
                 // #593: Use AWSCC's generic ARN constructor with the same type semantics.
-                r#"StructField::provider_populated("function_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), "#
+                r#"StructField::provider_populated("function_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new("#
             ),
             "FunctionMetadata.FunctionARN must be provider-populated: {generated}"
         );
@@ -23084,7 +23058,7 @@ mod tests {
             // #593: Use AWSCC's generic ARN constructor with the same type semantics.
             (
                 "table_arn",
-                "AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), ",
+                "AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(",
             ),
         ] {
             assert!(
@@ -23135,7 +23109,7 @@ mod tests {
         assert!(
             inventory_table_configuration.contains(
                 // #593: Use AWSCC's generic ARN constructor with the same type semantics.
-                r#"StructField::provider_populated("table_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), "#
+                r#"StructField::provider_populated("table_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new("#
             ),
             "InventoryTableConfiguration.TableArn must be provider-populated: {inventory_table_configuration}"
         );
@@ -23157,7 +23131,7 @@ mod tests {
         assert!(
             journal_table_configuration.contains(
                 // #593: Use AWSCC's generic ARN constructor with the same type semantics.
-                r#"StructField::provider_populated("table_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), "#
+                r#"StructField::provider_populated("table_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new("#
             ),
             "JournalTableConfiguration.TableArn must be provider-populated: {journal_table_configuration}"
         );
@@ -24411,7 +24385,7 @@ mod tests {
                 (
                     "names",
                     concat!(
-                        "AttributeType::refined_list(carina_core::schema::types::domain_name(), ",
+                        "AttributeType::refined_list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::DomainName.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)), ",
                         "false, Some((Some(1), Some(3))), carina_core::schema::ListElements::Unique)"
                     ),
                 ),
@@ -24588,8 +24562,8 @@ mod tests {
         let markdown = generate_test_markdown(&schema, cfn_type).unwrap();
         for expected in [
             "### `health_check_port`\n\n- **Type:** `String(pattern)`",
-            "| `http_code` | `aws.elasticloadbalancingv2.TargetGroup.HttpCode` |",
-            "| `grpc_code` | `aws.elasticloadbalancingv2.TargetGroup.GrpcCode` |",
+            "| `http_code` | aws.elasticloadbalancingv2.TargetGroup.HttpCode — identity: String; member: String |",
+            "| `grpc_code` | aws.elasticloadbalancingv2.TargetGroup.GrpcCode — identity: String; member: String |",
             "- **Type:** [Struct(Matcher)](#matcher-1)",
         ] {
             assert!(
@@ -25005,7 +24979,8 @@ mod tests {
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "CidrIp", &schema, "", &BTreeMap::new());
         assert_eq!(
-            type_str, "types::ipv4_cidr()",
+            type_str,
+            "AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))",
             "CidrIp should produce types::ipv4_cidr()"
         );
     }
@@ -25043,7 +25018,8 @@ mod tests {
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "CidrIpv6", &schema, "", &BTreeMap::new());
         assert_eq!(
-            type_str, "types::ipv6_cidr()",
+            type_str,
+            "AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv6Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))",
             "CidrIpv6 should produce types::ipv6_cidr()"
         );
     }
@@ -25086,7 +25062,8 @@ mod tests {
             &BTreeMap::new(),
         );
         assert_eq!(
-            type_str, "types::ipv4_address()",
+            type_str,
+            "AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Address.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))",
             "PrivateIpAddress should produce types::ipv4_address()"
         );
     }
@@ -25124,7 +25101,8 @@ mod tests {
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "PublicIp", &schema, "", &BTreeMap::new());
         assert_eq!(
-            type_str, "types::ipv4_address()",
+            type_str,
+            "AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Address.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))",
             "PublicIp should produce types::ipv4_address()"
         );
     }
@@ -26014,7 +25992,9 @@ mod tests {
         ] {
             assert_eq!(arn_identity(service, resource).unwrap(), identity);
             let constructor = arn_constructor(service, resource).unwrap();
-            assert!(constructor.contains(&format!("StringIdentity::{identity:?}.identity()")));
+            assert!(
+                constructor.contains(&format!("StringIdentity::{identity:?}.identity_layer()"))
+            );
             assert!(!constructor.contains("Some((Some("));
         }
     }
@@ -26045,8 +26025,8 @@ mod tests {
     #[test]
     fn virtual_arn_module_uses_the_same_catalog_path() {
         let module = generate_arn_helper_module("AWS::IAM::Policy").unwrap();
-        assert!(module.contains("StringIdentity::IamPolicyArn.identity()"));
-        assert!(module.contains("StringIdentity::IamPolicyArn.check()"));
+        assert!(module.contains("StringIdentity::IamPolicyArn.identity_layer()"));
+        assert!(module.contains("StringMemberConstraints::new(None, None)"));
     }
 
     #[test]
@@ -26062,7 +26042,9 @@ mod tests {
         ] {
             assert_eq!(arn_identity(service, resource).unwrap(), identity);
             let constructor = arn_constructor(service, resource).unwrap();
-            assert!(constructor.contains(&format!("StringIdentity::{identity:?}.identity()")));
+            assert!(
+                constructor.contains(&format!("StringIdentity::{identity:?}.identity_layer()"))
+            );
             assert!(!constructor.contains("Some((Some("));
         }
     }
@@ -26124,12 +26106,10 @@ mod tests {
         let generated =
             generate_schema_code(&schema, "AWS::S3::Bucket").expect("generate s3 bucket");
         assert!(generated.contains("pub fn arn() -> AttributeType"));
-        assert!(
-            generated.contains(
-                "crate::schemas::string_identity::StringIdentity::S3BucketArn.identity()"
-            )
-        );
-        assert!(generated.contains("AttributeSchema::provider_populated(\"arn\", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::S3BucketArn.identity(), "));
+        assert!(generated.contains(
+            "crate::schemas::string_identity::StringIdentity::S3BucketArn.identity_layer()"
+        ));
+        assert!(generated.contains("AttributeSchema::provider_populated(\"arn\", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::S3BucketArn.identity_layer(), carina_core::schema::StringMemberConstraints::new("));
     }
 
     #[test]
@@ -26139,7 +26119,7 @@ mod tests {
             .expect("generate organizations account");
         assert!(generated.contains("pub fn arn() -> AttributeType"));
         assert!(generated.contains(
-            "crate::schemas::string_identity::StringIdentity::OrganizationsAccountArn.identity()"
+            "crate::schemas::string_identity::StringIdentity::OrganizationsAccountArn.identity_layer()"
         ));
     }
 
@@ -27424,33 +27404,23 @@ mod tests {
     }
 
     #[test]
-    fn test_iam_oidc_url_emits_the_unchanged_core_builtin() {
+    fn test_iam_oidc_url_keeps_core_identity_and_cfn_member_length() {
         let schema = cfn_schema_for_codegen_tests("AWS::IAM::OIDCProvider");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         assert!(
             generated.contains(
-                "AttributeSchema::optional(\"url\", carina_core::schema::types::https_url())"
+                "AttributeSchema::optional(\"url\", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::HttpsUrl.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, Some((Some(1), Some(255))))))"
             ),
             "{generated}"
         );
         assert_eq!(
             type_display_string("Url", &schema.properties["Url"], &schema),
-            format!(
-                "HttpsUrl — {}",
-                string_identity::BuiltinConstraintLoss::new(
-                    StringIdentity::HttpsUrl,
-                    &StringConstraints {
-                        pattern: None,
-                        min_length: Some(1),
-                        max_length: Some(255)
-                    }
-                )
-                .markdown()
-            )
+            "HttpsUrl — identity: String; member: String(len: 1..=255)"
         );
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         assert!(
-            markdown.contains("- **Type:** HttpsUrl — CFN length 1..=255"),
+            markdown
+                .contains("- **Type:** HttpsUrl — identity: String; member: String(len: 1..=255)"),
             "{markdown}"
         );
     }
@@ -30368,7 +30338,7 @@ mod tests {
         let code = generate_schema_code(&schema, &schema.type_name).unwrap();
         assert!(
             code.contains(
-                "AttributeSchema::optional(\"log_group_name\", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::LogsLogGroupLogGroupName.identity(), "
+                "AttributeSchema::optional(\"log_group_name\", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::LogsLogGroupLogGroupName.identity_layer(), carina_core::schema::StringMemberConstraints::new("
             ),
             "LogGroupName must use the AWSCC-local refinement: {code}"
         );
@@ -30379,7 +30349,7 @@ mod tests {
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         assert!(
             markdown
-                .contains("### `log_group_name`\n\n- **Type:** aws.logs.LogGroup.LogGroupName — String(pattern, len: 1..=512)\n"),
+                .contains("### `log_group_name`\n\n- **Type:** aws.logs.LogGroup.LogGroupName — identity: String(pattern, len: 1..=512); member: String(pattern, len: 1..=512)\n"),
             "LogGroupName docs must name the local refinement: {markdown}"
         );
     }
@@ -30416,14 +30386,14 @@ mod tests {
         let code = generate_schema_code(&schema, &schema.type_name).unwrap();
         assert!(
             code.contains(
-                "AttributeSchema::required(\"display_name\", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IdentitystoreGroupDisplayName.identity(), "
+                "AttributeSchema::required(\"display_name\", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IdentitystoreGroupDisplayName.identity_layer(), carina_core::schema::StringMemberConstraints::new("
             ),
             "DisplayName must use the AWSCC-local refinement: {code}"
         );
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         assert!(
             markdown.contains(
-                "### `display_name`\n\n- **Type:** aws.identitystore.Group.DisplayName — String(pattern, len: 1..=1024)\n"
+                "### `display_name`\n\n- **Type:** aws.identitystore.Group.DisplayName — identity: String(pattern, len: 1..=1024); member: String(pattern, len: 1..=1024)\n"
             ),
             "DisplayName docs must name the local refinement: {markdown}"
         );
@@ -32180,13 +32150,14 @@ mod tests {
 
         assert!(
             generated.contains(
-                "AttributeSchema::required(\"email\", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::OrganizationsAccountEmail.identity(), "
+                "AttributeSchema::required(\"email\", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::OrganizationsAccountEmail.identity_layer(), carina_core::schema::StringMemberConstraints::new("
             ),
             "Expected the AWSCC bounded email refinement in generated code: {generated}"
         );
         assert!(
-            !generated
-                .contains("crate::schemas::string_identity::StringIdentity::Email.identity()"),
+            !generated.contains(
+                "crate::schemas::string_identity::StringIdentity::Email.identity_layer()"
+            ),
             "Account.Email must not use the unbounded core type: {generated}"
         );
         assert!(
@@ -32195,7 +32166,7 @@ mod tests {
         );
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         assert!(
-            markdown.contains("### `email`\n\n- **Type:** aws.organizations.Account.Email — String(pattern, len: 6..=64)\n"),
+            markdown.contains("### `email`\n\n- **Type:** aws.organizations.Account.Email — identity: String(len: 6..=64); member: String(pattern, len: 6..=64)\n"),
             "Account.Email docs must name the local refinement: {markdown}"
         );
     }

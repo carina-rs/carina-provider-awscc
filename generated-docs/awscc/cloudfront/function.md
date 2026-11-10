@@ -160,19 +160,19 @@ Shorthand formats: `development` or `Stage.development`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key_value_store_arn` | `aws.Arn` | Yes | The Amazon Resource Name (ARN) of the key value store association. |
+| `key_value_store_arn` | aws.Arn — identity: String(pattern); member: String | Yes | The Amazon Resource Name (ARN) of the key value store association. |
 
 ### function_metadata
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `function_arn` | `aws.Arn` | No | The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function. Provider-populated; cannot be set. |
+| `function_arn` | aws.Arn — identity: String(pattern); member: String | No | The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function. Provider-populated; cannot be set. |
 
 ## Attribute Reference
 
 ### `function_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 
 

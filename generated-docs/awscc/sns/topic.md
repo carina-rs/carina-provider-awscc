@@ -165,16 +165,16 @@ Shorthand formats: `pass_through` or `TracingConfig.pass_through`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `failure_feedback_role_arn` | `aws.Arn` | No | The IAM role ARN to be used when logging failed message deliveries in Amazon CloudWatch. |
+| `failure_feedback_role_arn` | aws.Arn — identity: String(pattern); member: String | No | The IAM role ARN to be used when logging failed message deliveries in Amazon CloudWatch. |
 | `protocol` | [Enum (Protocol)](#delivery_status_loggingprotocol-protocol) | Yes | Indicates one of the supported protocols for the Amazon SNS topic. At least one of the other three ``LoggingConfig`` properties is recommend along with ``Protocol``. |
-| `success_feedback_role_arn` | `aws.Arn` | No | The IAM role ARN to be used when logging successful message deliveries in Amazon CloudWatch. |
+| `success_feedback_role_arn` | aws.Arn — identity: String(pattern); member: String | No | The IAM role ARN to be used when logging successful message deliveries in Amazon CloudWatch. |
 | `success_feedback_sample_rate` | `String(pattern)` | No | The percentage of successful message deliveries to be logged in Amazon CloudWatch. Valid percentage values range from 0 to 100. |
 
 ## Attribute Reference
 
 ### `topic_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 
 

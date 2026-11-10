@@ -66,7 +66,7 @@ Specifies the log group class for this log group. There are two classes: + The `
 
 ### `log_group_name`
 
-- **Type:** aws.logs.LogGroup.LogGroupName — String(pattern, len: 1..=512)
+- **Type:** aws.logs.LogGroup.LogGroupName — identity: String(pattern, len: 1..=512); member: String(pattern, len: 1..=512)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -109,7 +109,7 @@ Shorthand formats: `standard` or `LogGroupClass.standard`
 
 ### `arn`
 
-- **Type:** `aws.logs.LogGroup.Arn`
+- **Type:** aws.logs.LogGroup.Arn — identity: String(pattern); member: String
 
 
 

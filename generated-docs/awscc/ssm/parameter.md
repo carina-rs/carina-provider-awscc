@@ -129,7 +129,7 @@ Shorthand formats: `string` or `Type.string`
 
 ### `arn`
 
-- **Type:** aws.Arn — String(pattern)
+- **Type:** aws.Arn — identity: String(pattern); member: String(pattern)
 
 
 

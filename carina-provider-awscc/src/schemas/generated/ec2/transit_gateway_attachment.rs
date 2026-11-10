@@ -16,7 +16,7 @@ pub fn ec2_transit_gateway_attachment_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for AWS::EC2::TransitGatewayAttachment");
     #[inline(never)]
     fn build_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayAttachmentId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayAttachmentId.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayAttachmentId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_provider_name("Id")
             .build()
     }
@@ -34,7 +34,7 @@ pub fn ec2_transit_gateway_attachment_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_options_attribute());
     #[inline(never)]
     fn build_subnet_ids_attribute() -> AttributeSchema {
-        AttributeSchema::required("subnet_ids", AttributeType::unordered_list(AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2SubnetId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2SubnetId.check().expect("shared string check"), None)))
+        AttributeSchema::required("subnet_ids", AttributeType::unordered_list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2SubnetId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))))
                 .with_provider_name("SubnetIds")
             .build()
     }
@@ -49,7 +49,7 @@ pub fn ec2_transit_gateway_attachment_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_transit_gateway_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("transit_gateway_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayId.check().expect("shared string check"), None))
+        AttributeSchema::required("transit_gateway_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_provider_name("TransitGatewayId")
             .build()
@@ -57,7 +57,7 @@ pub fn ec2_transit_gateway_attachment_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_transit_gateway_id_attribute());
     #[inline(never)]
     fn build_vpc_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("vpc_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcId.check().expect("shared string check"), None))
+        AttributeSchema::required("vpc_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_provider_name("VpcId")
             .build()

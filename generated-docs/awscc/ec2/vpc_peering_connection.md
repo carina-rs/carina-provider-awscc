@@ -32,7 +32,7 @@ awscc.ec2.VpcPeeringConnection {
 
 ### `assume_role_region`
 
-- **Type:** `aws.Region`
+- **Type:** aws.Region — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -41,7 +41,7 @@ The Region code to use when calling Security Token Service (STS) to assume the P
 
 ### `peer_owner_id`
 
-- **Type:** `aws.AccountId`
+- **Type:** aws.AccountId — identity: String(pattern, len: 12..=12); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -49,7 +49,7 @@ The AWS account ID of the owner of the accepter VPC.
 
 ### `peer_region`
 
-- **Type:** `aws.Region`
+- **Type:** aws.Region — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -57,7 +57,7 @@ The Region code for the accepter VPC, if the accepter VPC is located in a Region
 
 ### `peer_role_arn`
 
-- **Type:** `aws.iam.Role.Arn`
+- **Type:** aws.iam.Role.Arn — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -66,7 +66,7 @@ The Amazon Resource Name (ARN) of the VPC peer role for the peering connection i
 
 ### `peer_vpc_id`
 
-- **Type:** `aws.ec2.Vpc.Id`
+- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -79,7 +79,7 @@ The ID of the VPC with which you are creating the VPC peering connection. You mu
 
 ### `vpc_id`
 
-- **Type:** `aws.ec2.Vpc.Id`
+- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -89,7 +89,7 @@ The ID of the VPC.
 
 ### `id`
 
-- **Type:** `aws.ec2.VpcPeeringConnection.Id`
+- **Type:** aws.ec2.VpcPeeringConnection.Id — identity: String(pattern); member: String
 
 ## AWS API narrowings
 

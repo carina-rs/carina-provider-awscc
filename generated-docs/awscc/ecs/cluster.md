@@ -168,7 +168,7 @@ Shorthand formats: `none` or `Logging.none`
 
 ### `arn`
 
-- **Type:** `aws.ecs.Cluster.Arn`
+- **Type:** aws.ecs.Cluster.Arn — identity: String(pattern); member: String
 
 
 

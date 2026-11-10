@@ -43,7 +43,7 @@ Shorthand formats: `all` or `FeatureSet.all`
 
 ### `arn`
 
-- **Type:** aws.organizations.Organization.Arn — String(pattern)
+- **Type:** aws.organizations.Organization.Arn — identity: String(pattern); member: String(pattern)
 
 The Amazon Resource Name (ARN) of an organization.
 
@@ -55,7 +55,7 @@ The unique identifier (ID) of an organization.
 
 ### `management_account_arn`
 
-- **Type:** aws.Arn — String(pattern)
+- **Type:** aws.Arn — identity: String(pattern); member: String(pattern)
 
 The Amazon Resource Name (ARN) of the account that is designated as the management account for the organization.
 
@@ -67,7 +67,7 @@ The email address that is associated with the AWS account that is designated as 
 
 ### `management_account_id`
 
-- **Type:** aws.AccountId — String(pattern)
+- **Type:** aws.AccountId — identity: String(pattern, len: 12..=12); member: String(pattern)
 
 The unique identifier (ID) of the management account of an organization.
 

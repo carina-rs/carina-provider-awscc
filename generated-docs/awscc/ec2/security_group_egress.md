@@ -35,7 +35,7 @@ awscc.ec2.SecurityGroupEgress {
 
 ### `cidr_ip`
 
-- **Type:** `Ipv4Cidr`
+- **Type:** Ipv4Cidr — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -43,7 +43,7 @@ The IPv4 address range, in CIDR format. You must specify exactly one of the foll
 
 ### `cidr_ipv6`
 
-- **Type:** `Ipv6Cidr`
+- **Type:** Ipv6Cidr — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -58,7 +58,7 @@ The description of an egress (outbound) security group rule. Constraints: Up to 
 
 ### `destination_prefix_list_id`
 
-- **Type:** `aws.ec2.PrefixList.Id`
+- **Type:** aws.ec2.PrefixList.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -66,7 +66,7 @@ The prefix list IDs for an AWS service. This is the AWS service to access throug
 
 ### `destination_security_group_id`
 
-- **Type:** `aws.ec2.SecurityGroup.Id`
+- **Type:** aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -82,7 +82,7 @@ If the protocol is TCP or UDP, this is the start of the port range. If the proto
 
 ### `group_id`
 
-- **Type:** `aws.ec2.SecurityGroup.Id`
+- **Type:** aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String
 - **Required:** Yes
 - **Create-only:** Yes
 

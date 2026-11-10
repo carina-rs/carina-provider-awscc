@@ -650,8 +650,8 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `bucket_account_id` | `aws.AccountId` | No | The account ID that owns the destination S3 bucket. If no account ID is provided, the owner is not validated before exporting data. Although this value is optional, we strongly recommend that you set it to help prevent problems if the destination bucket ownership changes. |
-| `bucket_arn` | `aws.Arn` | Yes | The Amazon Resource Name (ARN) of the bucket to which data is exported. |
+| `bucket_account_id` | aws.AccountId — identity: String(pattern, len: 12..=12); member: String | No | The account ID that owns the destination S3 bucket. If no account ID is provided, the owner is not validated before exporting data. Although this value is optional, we strongly recommend that you set it to help prevent problems if the destination bucket ownership changes. |
+| `bucket_arn` | aws.Arn — identity: String(pattern); member: String | Yes | The Amazon Resource Name (ARN) of the bucket to which data is exported. |
 | `format` | [Enum (Format)](#destinationformat-format) | Yes | Specifies the file format used when exporting data to Amazon S3. *Allowed values*: ``CSV`` \| ``ORC`` \| ``Parquet`` |
 | `prefix` | String | No | The prefix to use when exporting data. The prefix is prepended to all results. |
 
@@ -696,7 +696,7 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `abort_incomplete_multipart_upload` | [Struct(AbortIncompleteMultipartUpload)](#lifecycle_configurationrulesabort_incomplete_multipart_upload) | No | Specifies a lifecycle rule that stops incomplete multipart uploads to an Amazon S3 bucket. |
-| `expiration_date` | aws.s3.Bucket.LifecycleDate — String(pattern) | No | Indicates when objects are deleted from Amazon S3 and Amazon S3 Glacier. The date value must be in ISO 8601 format. The time is always midnight UTC. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time. |
+| `expiration_date` | aws.s3.Bucket.LifecycleDate — identity: String(pattern); member: String(pattern) | No | Indicates when objects are deleted from Amazon S3 and Amazon S3 Glacier. The date value must be in ISO 8601 format. The time is always midnight UTC. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time. |
 | `expiration_in_days` | `Int(1..)` | No | Indicates the number of days after creation when objects are deleted from Amazon S3 and Amazon S3 Glacier. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time. |
 | `expired_object_delete_marker` | Bool | No | Indicates whether Amazon S3 will remove a delete marker without any noncurrent versions. If set to true, the delete marker will be removed if there are no noncurrent versions. This cannot be specified with ``ExpirationInDays``, ``ExpirationDate``, or ``TagFilters``. |
 | `id` | String(len: ..=255) | No | Unique identifier for the rule. The value can't be longer than 255 characters. |
@@ -735,7 +735,7 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `storage_class` | [Enum (StorageClass)](#lifecycle_configurationrulestransitionsstorage_class-storageclass) | Yes | The storage class to which you want the object to transition. |
-| `transition_date` | aws.s3.Bucket.LifecycleDate — String(pattern) | No | Indicates when objects are transitioned to the specified storage class. The date value must be in ISO 8601 format. The time is always midnight UTC. |
+| `transition_date` | aws.s3.Bucket.LifecycleDate — identity: String(pattern); member: String(pattern) | No | Indicates when objects are transitioned to the specified storage class. The date value must be in ISO 8601 format. The time is always midnight UTC. |
 | `transition_in_days` | `Int(0..)` | No | Indicates the number of days after creation when objects are transitioned to the specified storage class. If the specified storage class is ``INTELLIGENT_TIERING``, ``GLACIER_IR``, ``GLACIER``, or ``DEEP_ARCHIVE``, valid values are ``0`` or positive integers. If the specified storage class is ``STANDARD_IA`` or ``ONEZONE_IA``, valid values are positive integers greater than ``30``. Be aware that some storage classes have a minimum storage duration and that you're charged for transitioning objects before their minimum storage duration. For more information, see [Constraints and considerations for transitions](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-transition-general-considerations.html#lifecycle-configuration-constraints) in the *Amazon S3 User Guide*. |
 
 ### logging_configuration
@@ -773,7 +773,7 @@ Exactly one of `partitioned_prefix`, `simple_prefix` must be specified.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `table_bucket_arn` | `aws.Arn` | No | The Amazon Resource Name (ARN) of the table bucket where the metadata configuration is stored. |
+| `table_bucket_arn` | aws.Arn — identity: String(pattern); member: String | No | The Amazon Resource Name (ARN) of the table bucket where the metadata configuration is stored. |
 | `table_bucket_type` | [Enum (TableBucketType)](#metadata_configurationdestinationtable_bucket_type-tablebuckettype) | Yes | The type of the table bucket where the metadata configuration is stored. The ``aws`` value indicates an AWS managed table bucket, and the ``customer`` value indicates a customer-managed table bucket. V2 metadata configurations are stored in AWS managed table buckets, and V1 metadata configurations are stored in customer-managed table buckets. |
 | `table_namespace` | String | No | The namespace in the table bucket where the metadata tables for a metadata configuration are stored. |
 
@@ -783,7 +783,7 @@ Exactly one of `partitioned_prefix`, `simple_prefix` must be specified.
 |-------|------|----------|-------------|
 | `configuration_state` | [Enum (ConfigurationState)](#metadata_configurationinventory_table_configurationconfiguration_state-configurationstate) | Yes | The configuration state of the inventory table, indicating whether the inventory table is enabled or disabled. |
 | `encryption_configuration` | [Struct(MetadataTableEncryptionConfiguration)](#metadata_table_encryption_configuration) | No | The encryption configuration for the inventory table. |
-| `table_arn` | `aws.Arn` | No | The Amazon Resource Name (ARN) for the inventory table. Provider-populated; cannot be set. |
+| `table_arn` | aws.Arn — identity: String(pattern); member: String | No | The Amazon Resource Name (ARN) for the inventory table. Provider-populated; cannot be set. |
 | `table_name` | String | No | The name of the inventory table. Provider-populated; cannot be set. |
 
 ### metadata_configuration.journal_table_configuration
@@ -792,7 +792,7 @@ Exactly one of `partitioned_prefix`, `simple_prefix` must be specified.
 |-------|------|----------|-------------|
 | `encryption_configuration` | [Struct(MetadataTableEncryptionConfiguration)](#metadata_table_encryption_configuration) | No | The encryption configuration for the journal table. |
 | `record_expiration` | [Struct(RecordExpiration)](#metadata_configurationjournal_table_configurationrecord_expiration) | Yes | The journal table record expiration settings for the journal table. |
-| `table_arn` | `aws.Arn` | No | The Amazon Resource Name (ARN) for the journal table. Provider-populated; cannot be set. |
+| `table_arn` | aws.Arn — identity: String(pattern); member: String | No | The Amazon Resource Name (ARN) for the journal table. Provider-populated; cannot be set. |
 | `table_name` | String | No | The name of the journal table. Provider-populated; cannot be set. |
 
 ### metadata_configuration.journal_table_configuration.record_expiration
@@ -812,8 +812,8 @@ Exactly one of `partitioned_prefix`, `simple_prefix` must be specified.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `table_arn` | `aws.Arn` | No | The Amazon Resource Name (ARN) for the metadata table in the metadata table configuration. The specified metadata table name must be unique within the ``aws_s3_metadata`` namespace in the destination table bucket. Provider-populated; cannot be set. |
-| `table_bucket_arn` | `aws.Arn` | Yes | The Amazon Resource Name (ARN) for the table bucket that's specified as the destination in the metadata table configuration. The destination table bucket must be in the same Region and AWS-account as the general purpose bucket. |
+| `table_arn` | aws.Arn — identity: String(pattern); member: String | No | The Amazon Resource Name (ARN) for the metadata table in the metadata table configuration. The specified metadata table name must be unique within the ``aws_s3_metadata`` namespace in the destination table bucket. Provider-populated; cannot be set. |
+| `table_bucket_arn` | aws.Arn — identity: String(pattern); member: String | Yes | The Amazon Resource Name (ARN) for the table bucket that's specified as the destination in the metadata table configuration. The destination table bucket must be in the same Region and AWS-account as the general purpose bucket. |
 | `table_name` | String | Yes | The name for the metadata table in your metadata table configuration. The specified metadata table name must be unique within the ``aws_s3_metadata`` namespace in the destination table bucket. |
 | `table_namespace` | [Enum (TableNamespace)](#metadata_table_configurations3_tables_destinationtable_namespace-tablenamespace) | No | The table bucket namespace for the metadata table in your metadata table configuration. This value is always ``aws_s3_metadata``. Provider-populated; cannot be set. |
 
@@ -830,7 +830,7 @@ Used by: `metadata_configuration.inventory_table_configuration.encryption_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `access_point_arn` | `aws.Arn` | No | The access point that was used while performing operations on the object. The metrics configuration only includes objects that meet the filter's criteria. |
+| `access_point_arn` | aws.Arn — identity: String(pattern); member: String | No | The access point that was used while performing operations on the object. The metrics configuration only includes objects that meet the filter's criteria. |
 | `id` | `String(pattern, len: ..=64)` | Yes | The ID used to identify the metrics configuration. This can be any value you choose that helps you identify your metrics configuration. |
 | `prefix` | String | No | The prefix that an object must have to be included in the metrics results. |
 | `tag_filters` | `List<Map<String, String>>` (unique items) | No | Specifies a list of tag filters to use as a metrics configuration filter. The metrics configuration includes only objects that meet the filter's criteria. |
@@ -856,7 +856,7 @@ Used by: `metadata_configuration.inventory_table_configuration.encryption_config
 |-------|------|----------|-------------|
 | `event` | `aws.s3.Bucket.NotificationConfiguration.Event` | Yes | The Amazon S3 bucket event for which to invoke the LAMlong function. For more information, see [Supported Event Types](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
 | `filter` | [Struct(NotificationFilter)](#notification_filter) | No | The filtering rules that determine which objects invoke the AWS Lambda function. For example, you can create a filter so that only image files with a ``.jpg`` extension invoke the function when they are added to the Amazon S3 bucket. |
-| `function` | `aws.Arn` | Yes | The Amazon Resource Name (ARN) of the LAMlong function that Amazon S3 invokes when the specified event type occurs. |
+| `function` | aws.Arn — identity: String(pattern); member: String | Yes | The Amazon Resource Name (ARN) of the LAMlong function that Amazon S3 invokes when the specified event type occurs. |
 
 ### notification_configuration.queue_configurations
 
@@ -864,7 +864,7 @@ Used by: `metadata_configuration.inventory_table_configuration.encryption_config
 |-------|------|----------|-------------|
 | `event` | `aws.s3.Bucket.NotificationConfiguration.Event` | Yes | The Amazon S3 bucket event about which you want to publish messages to Amazon SQS. For more information, see [Supported Event Types](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
 | `filter` | [Struct(NotificationFilter)](#notification_filter) | No | The filtering rules that determine which objects trigger notifications. For example, you can create a filter so that Amazon S3 sends notifications only when image files with a ``.jpg`` extension are added to the bucket. For more information, see [Configuring event notifications using object key name filtering](https://docs.aws.amazon.com/AmazonS3/latest/user-guide/notification-how-to-filtering.html) in the *Amazon S3 User Guide*. |
-| `queue` | `aws.Arn` | Yes | The Amazon Resource Name (ARN) of the Amazon SQS queue to which Amazon S3 publishes a message when it detects events of the specified type. FIFO queues are not allowed when enabling an SQS queue as the event notification destination. |
+| `queue` | aws.Arn — identity: String(pattern); member: String | Yes | The Amazon Resource Name (ARN) of the Amazon SQS queue to which Amazon S3 publishes a message when it detects events of the specified type. FIFO queues are not allowed when enabling an SQS queue as the event notification destination. |
 
 ### notification_configuration.topic_configurations
 
@@ -872,7 +872,7 @@ Used by: `metadata_configuration.inventory_table_configuration.encryption_config
 |-------|------|----------|-------------|
 | `event` | `aws.s3.Bucket.NotificationConfiguration.Event` | Yes | The Amazon S3 bucket event about which to send notifications. For more information, see [Supported Event Types](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
 | `filter` | [Struct(NotificationFilter)](#notification_filter) | No | The filtering rules that determine for which objects to send notifications. For example, you can create a filter so that Amazon S3 sends notifications only when image files with a ``.jpg`` extension are added to the bucket. |
-| `topic` | `aws.Arn` | Yes | The Amazon Resource Name (ARN) of the Amazon SNS topic to which Amazon S3 publishes a message when it detects events of the specified type. |
+| `topic` | aws.Arn — identity: String(pattern); member: String | Yes | The Amazon Resource Name (ARN) of the Amazon SNS topic to which Amazon S3 publishes a message when it detects events of the specified type. |
 
 ### notification_filter
 
@@ -941,7 +941,7 @@ Used by: `notification_configuration.lambda_configurations.filter`, `notificatio
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `role` | `aws.iam.Role.Arn` | Yes | The Amazon Resource Name (ARN) of the IAMlong (IAM) role that Amazon S3 assumes when replicating objects. For more information, see [How to Set Up Replication](https://docs.aws.amazon.com/AmazonS3/latest/dev/replication-how-setup.html) in the *Amazon S3 User Guide*. |
+| `role` | aws.iam.Role.Arn — identity: String(pattern); member: String | Yes | The Amazon Resource Name (ARN) of the IAMlong (IAM) role that Amazon S3 assumes when replicating objects. For more information, see [How to Set Up Replication](https://docs.aws.amazon.com/AmazonS3/latest/dev/replication-how-setup.html) in the *Amazon S3 User Guide*. |
 | `rules` | List\<[Struct(ReplicationRule)](#replication_configurationrules)\> (items: 1..=1000) (unique items) | Yes | A container for one or more replication rules. A replication configuration must have at least one rule and can contain a maximum of 1,000 rules. |
 
 ### replication_configuration.rules
@@ -968,7 +968,7 @@ Used by: `notification_configuration.lambda_configurations.filter`, `notificatio
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `access_control_translation` | [Struct(AccessControlTranslation)](#replication_configurationrulesdestinationaccess_control_translation) | No | Specify this only in a cross-account scenario (where source and destination bucket owners are not the same), and you want to change replica ownership to the AWS-account that owns the destination bucket. If this is not specified in the replication configuration, the replicas are owned by same AWS-account that owns the source object. |
-| `account` | `aws.AccountId` | No | Destination bucket owner account ID. In a cross-account scenario, if you direct Amazon S3 to change replica ownership to the AWS-account that owns the destination bucket by specifying the ``AccessControlTranslation`` property, this is the account ID of the destination bucket owner. For more information, see [Cross-Region Replication Additional Configuration: Change Replica Owner](https://docs.aws.amazon.com/AmazonS3/latest/dev/crr-change-owner.html) in the *Amazon S3 User Guide*. If you specify the ``AccessControlTranslation`` property, the ``Account`` property is required. |
+| `account` | aws.AccountId — identity: String(pattern, len: 12..=12); member: String | No | Destination bucket owner account ID. In a cross-account scenario, if you direct Amazon S3 to change replica ownership to the AWS-account that owns the destination bucket by specifying the ``AccessControlTranslation`` property, this is the account ID of the destination bucket owner. For more information, see [Cross-Region Replication Additional Configuration: Change Replica Owner](https://docs.aws.amazon.com/AmazonS3/latest/dev/crr-change-owner.html) in the *Amazon S3 User Guide*. If you specify the ``AccessControlTranslation`` property, the ``Account`` property is required. |
 | `bucket` | String | Yes | The Amazon Resource Name (ARN) of the bucket where you want Amazon S3 to store the results. |
 | `encryption_configuration` | [Struct(EncryptionConfiguration)](#replication_configurationrulesdestinationencryption_configuration) | No | Specifies encryption-related information. |
 | `metrics` | [Struct(Metrics)](#replication_configurationrulesdestinationmetrics) | No | A container specifying replication metrics-related settings enabling replication metrics and events. |
@@ -1093,7 +1093,7 @@ Used by: `replication_configuration.rules.destination.metrics.event_threshold`, 
 
 ### `arn`
 
-- **Type:** `aws.s3.Bucket.Arn`
+- **Type:** aws.s3.Bucket.Arn — identity: String(pattern); member: String
 
 
 

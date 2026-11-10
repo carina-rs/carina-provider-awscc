@@ -25,7 +25,7 @@ awscc.ec2.Eip {
 
 ### `address`
 
-- **Type:** `Ipv4Address`
+- **Type:** Ipv4Address — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -41,14 +41,14 @@ The network (``vpc``). If you define an Elastic IP address and associate it with
 
 ### `instance_id`
 
-- **Type:** `aws.ec2.Instance.Id`
+- **Type:** aws.ec2.Instance.Id — identity: String(pattern); member: String
 - **Required:** No
 
 The ID of the instance. Updates to the ``InstanceId`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.
 
 ### `ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id`
+- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -79,7 +79,7 @@ Any tags assigned to the Elastic IP address. Updates to the ``Tags`` property ma
 
 ### `transfer_address`
 
-- **Type:** `Ipv4Address`
+- **Type:** Ipv4Address — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -101,13 +101,13 @@ Shorthand formats: `vpc` or `Domain.vpc`
 
 ### `allocation_id`
 
-- **Type:** `aws.ec2.Eip.AllocationId`
+- **Type:** aws.ec2.Eip.AllocationId — identity: String(pattern); member: String
 
 
 
 ### `public_ip`
 
-- **Type:** `Ipv4Address`
+- **Type:** Ipv4Address — identity: String; member: String
 
 
 

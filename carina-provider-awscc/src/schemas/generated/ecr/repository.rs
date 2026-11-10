@@ -9,14 +9,9 @@ use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        crate::schemas::string_identity::StringIdentity::Arn.identity(),
-        None,
-        None,
-        crate::schemas::string_identity::StringIdentity::Arn
-            .check()
-            .expect("shared string check"),
-        None,
+    AttributeType::string_member(
+        crate::schemas::string_identity::StringIdentity::Arn.identity_layer(),
+        carina_core::schema::StringMemberConstraints::new(None, None),
     )
 }
 
@@ -39,7 +34,7 @@ pub fn ecr_repository_config() -> AwsccSchemaConfig {
         .with_description("The ``AWS::ECR::Repository`` resource specifies an Amazon Elastic Container Registry (Amazon ECR) repository, where users can push and pull Docker images, Open Container Initiative (OCI) images, and OCI compatible artifacts. For more information, see [Amazon ECR private repositories](https://docs.aws.amazon.com/AmazonECR/latest/userguide/Repositories.html) in the *Amazon ECR User Guide*.");
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("Arn")
             .build()

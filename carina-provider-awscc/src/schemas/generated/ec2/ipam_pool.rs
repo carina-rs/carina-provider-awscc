@@ -6,18 +6,13 @@
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{
-    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, types,
+    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField,
 };
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        crate::schemas::string_identity::StringIdentity::Ec2IpamPoolArn.identity(),
-        None,
-        None,
-        crate::schemas::string_identity::StringIdentity::Ec2IpamPoolArn
-            .check()
-            .expect("shared string check"),
-        None,
+    AttributeType::string_member(
+        crate::schemas::string_identity::StringIdentity::Ec2IpamPoolArn.identity_layer(),
+        carina_core::schema::StringMemberConstraints::new(None, None),
     )
 }
 
@@ -89,7 +84,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_allocation_resource_tags_attribute());
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolArn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2IpamPoolArn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolArn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The Amazon Resource Name (ARN) of the IPAM Pool. (read-only)")
                 .with_provider_name("Arn")
             .build()
@@ -121,7 +116,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_description_attribute());
     #[inline(never)]
     fn build_ipam_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("ipam_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("ipam_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The Amazon Resource Name (ARN) of the IPAM this pool is a part of. (read-only)")
                 .with_provider_name("IpamArn")
             .build()
@@ -129,7 +124,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipam_arn_attribute());
     #[inline(never)]
     fn build_ipam_pool_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("ipam_pool_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("ipam_pool_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("Id of the IPAM Pool. (read-only)")
                 .with_provider_name("IpamPoolId")
             .build()
@@ -137,7 +132,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipam_pool_id_attribute());
     #[inline(never)]
     fn build_ipam_scope_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("ipam_scope_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("ipam_scope_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The Amazon Resource Name (ARN) of the scope this pool is a part of. (read-only)")
                 .with_provider_name("IpamScopeArn")
             .build()
@@ -179,7 +174,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_pool_depth_attribute());
     #[inline(never)]
     fn build_provisioned_cidrs_attribute() -> AttributeSchema {
-        AttributeSchema::optional("provisioned_cidrs", AttributeType::refined_list(AttributeType::struct_("ProvisionedCidr".to_string(), vec![StructField::required("cidr", types::ipv4_cidr()).with_provider_name("Cidr").build()]), false, None, carina_core::schema::ListElements::Unique))
+        AttributeSchema::optional("provisioned_cidrs", AttributeType::refined_list(AttributeType::struct_("ProvisionedCidr".to_string(), vec![StructField::required("cidr", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))).with_provider_name("Cidr").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("A list of cidrs representing the address space available for allocation in this pool.")
                 .with_provider_name("ProvisionedCidrs")
                 .with_block_name("provisioned_cidr")
@@ -206,7 +201,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_publicly_advertisable_attribute());
     #[inline(never)]
     fn build_source_ipam_pool_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("source_ipam_pool_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.check().expect("shared string check"), None))
+        AttributeSchema::optional("source_ipam_pool_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The Id of this pool's source. If set, all space provisioned in this pool must be free space provisioned in the parent pool.")
                 .with_provider_name("SourceIpamPoolId")
@@ -217,7 +212,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     fn build_source_resource_attribute() -> AttributeSchema {
         AttributeSchema::optional("source_resource", AttributeType::struct_("SourceResource".to_string(), vec![StructField::required("resource_id", AttributeType::string()).with_provider_name("ResourceId").build(),
                     StructField::required("resource_owner", AttributeType::string()).with_provider_name("ResourceOwner").build(),
-                    StructField::required("resource_region", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Region.identity(), None, None, crate::schemas::string_identity::StringIdentity::Region.check().expect("shared string check"), None)).with_provider_name("ResourceRegion").build(),
+                    StructField::required("resource_region", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Region.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))).with_provider_name("ResourceRegion").build(),
                     StructField::required("resource_type", AttributeType::enum_(carina_core::schema::enum_identity("ResourceType", Some("aws.ec2.IpamPool.SourceResource")), Some(vec!["vpc".to_string()]), vec![("vpc".to_string(), "vpc".to_string())], None, None)).with_provider_name("ResourceType").build()]))
                 .create_only()
                 .with_provider_name("SourceResource")
@@ -263,7 +258,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_schema_def_0() -> AttributeType { AttributeType::struct_("SourceResource".to_string(), vec![StructField::required("resource_id", AttributeType::string()).with_provider_name("ResourceId").build(),
                     StructField::required("resource_owner", AttributeType::string()).with_provider_name("ResourceOwner").build(),
-                    StructField::required("resource_region", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Region.identity(), None, None, crate::schemas::string_identity::StringIdentity::Region.check().expect("shared string check"), None)).with_provider_name("ResourceRegion").build(),
+                    StructField::required("resource_region", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Region.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))).with_provider_name("ResourceRegion").build(),
                     StructField::required("resource_type", AttributeType::enum_(carina_core::schema::enum_identity("ResourceType", Some("aws.ec2.IpamPool.SourceResource")), Some(vec!["vpc".to_string()]), vec![("vpc".to_string(), "vpc".to_string())], None, None)).with_provider_name("ResourceType").build()]) }
     schema = schema.with_def("SourceResource", build_schema_def_0());
     AwsccSchemaConfig {

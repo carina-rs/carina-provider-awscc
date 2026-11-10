@@ -10,14 +10,9 @@ use carina_core::schema::{
 };
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        crate::schemas::string_identity::StringIdentity::Ec2IpamArn.identity(),
-        None,
-        None,
-        crate::schemas::string_identity::StringIdentity::Ec2IpamArn
-            .check()
-            .expect("shared string check"),
-        None,
+    AttributeType::string_member(
+        crate::schemas::string_identity::StringIdentity::Ec2IpamArn.identity_layer(),
+        carina_core::schema::StringMemberConstraints::new(None, None),
     )
 }
 
@@ -32,7 +27,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
         .with_description("Resource Schema of AWS::EC2::IPAM Type");
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2IpamArn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2IpamArn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2IpamArn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The Amazon Resource Name (ARN) of the IPAM. (read-only)")
                 .with_provider_name("Arn")
             .build()
@@ -80,7 +75,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_enable_private_gua_attribute());
     #[inline(never)]
     fn build_ipam_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("ipam_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2IpamId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2IpamId.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("ipam_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2IpamId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("Id of the IPAM. (read-only)")
                 .with_provider_name("IpamId")
             .build()
@@ -96,7 +91,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_metered_account_attribute());
     #[inline(never)]
     fn build_operating_regions_attribute() -> AttributeSchema {
-        AttributeSchema::optional("operating_regions", AttributeType::refined_list(AttributeType::struct_("IpamOperatingRegion".to_string(), vec![StructField::required("region_name", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Region.identity(), None, None, crate::schemas::string_identity::StringIdentity::Region.check().expect("shared string check"), None)).with_description("The name of the region.").with_provider_name("RegionName").build()]), false, None, carina_core::schema::ListElements::Unique))
+        AttributeSchema::optional("operating_regions", AttributeType::refined_list(AttributeType::struct_("IpamOperatingRegion".to_string(), vec![StructField::required("region_name", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Region.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))).with_description("The name of the region.").with_provider_name("RegionName").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The regions IPAM is enabled for. Allows pools to be created in these regions, as well as enabling monitoring")
                 .with_provider_name("OperatingRegions")
                 .with_block_name("operating_region")

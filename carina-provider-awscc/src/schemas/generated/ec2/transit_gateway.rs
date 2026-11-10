@@ -40,7 +40,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_amazon_side_asn_attribute());
     #[inline(never)]
     fn build_association_default_route_table_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("association_default_route_table_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayRouteTableId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayRouteTableId.check().expect("shared string check"), None))
+        AttributeSchema::optional("association_default_route_table_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayRouteTableId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_provider_name("AssociationDefaultRouteTableId")
             .build()
     }
@@ -97,7 +97,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_encryption_support_state_attribute());
     #[inline(never)]
     fn build_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayId.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_provider_name("Id")
             .build()
     }
@@ -112,7 +112,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_multicast_support_attribute());
     #[inline(never)]
     fn build_propagation_default_route_table_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("propagation_default_route_table_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayRouteTableId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayRouteTableId.check().expect("shared string check"), None))
+        AttributeSchema::optional("propagation_default_route_table_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2TransitGatewayRouteTableId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_provider_name("PropagationDefaultRouteTableId")
             .build()
     }
@@ -134,7 +134,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_transit_gateway_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("transit_gateway_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("transit_gateway_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_provider_name("TransitGatewayArn")
             .build()
     }

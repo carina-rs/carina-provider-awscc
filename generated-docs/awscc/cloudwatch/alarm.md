@@ -64,7 +64,7 @@ Indicates whether actions should be executed during any changes to the alarm sta
 
 ### `alarm_actions`
 
-- **Type:** `List<aws.Arn>` (items: ..=5)
+- **Type:** `List<aws.Arn — identity: String(pattern); member: String>` (items: ..=5)
 - **Required:** No
 
 The list of actions to execute when this alarm transitions into an ALARM state from any other state. Specify each action as an Amazon Resource Name (ARN). For more information about creating alarms and the actions that you can specify, see [PutMetricAlarm](https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html) in the *API Reference*.
@@ -149,7 +149,7 @@ The percentile statistic for the metric associated with the alarm. Specify a val
 
 ### `insufficient_data_actions`
 
-- **Type:** `List<aws.Arn>` (items: ..=5)
+- **Type:** `List<aws.Arn — identity: String(pattern); member: String>` (items: ..=5)
 - **Required:** No
 
 The actions to execute when this alarm transitions to the ``INSUFFICIENT_DATA`` state from any other state. Each action is specified as an Amazon Resource Name (ARN).
@@ -177,7 +177,7 @@ The namespace of the metric associated with the alarm. This is required for an a
 
 ### `ok_actions`
 
-- **Type:** `List<aws.Arn>` (items: ..=5)
+- **Type:** `List<aws.Arn — identity: String(pattern); member: String>` (items: ..=5)
 - **Required:** No
 
 The actions to execute when this alarm transitions to the ``OK`` state from any other state. Each action is specified as an Amazon Resource Name (ARN).
@@ -412,7 +412,7 @@ Exactly one of `sliding_window`, `wall_clock_window` must be specified.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `account_id` | `aws.AccountId` | No | The ID of the account where the metrics are located, if this is a cross-account alarm. |
+| `account_id` | aws.AccountId — identity: String(pattern, len: 12..=12); member: String | No | The ID of the account where the metrics are located, if this is a cross-account alarm. |
 | `expression` | `String(len: 1..=2048)` | No | The math expression to be performed on the returned data, if this object is performing a math expression. This expression can use the ``Id`` of the other metrics to refer to those metrics, and can also use the ``Id`` of other expressions to use the result of those expressions. For more information about metric math expressions, see [Metric Math Syntax and Functions](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/using-metric-math.html#metric-math-syntax) in the *User Guide*. Within each MetricDataQuery object, you must specify either ``Expression`` or ``MetricStat`` but not both. |
 | `id` | `String(pattern, len: 1..=255)` | Yes | A short name used to tie this object to the results in the response. This name must be unique within a single call to ``GetMetricData``. If you are performing math expressions on this set of data, this name represents that data and can serve as a variable in the mathematical expression. The valid characters are letters, numbers, and underscore. The first character must be a lowercase letter. |
 | `label` | String | No | A human-readable label for this metric or expression. This is especially useful if this is an expression, so that you know what the value represents. If the metric or expression is shown in a CW dashboard widget, the label is shown. If ``Label`` is omitted, CW generates a default. |
@@ -448,7 +448,7 @@ Exactly one of `sliding_window`, `wall_clock_window` must be specified.
 
 ### `arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 
 

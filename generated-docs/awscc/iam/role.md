@@ -57,7 +57,7 @@ A description of the role that you provide.
 
 ### `managed_policy_arns`
 
-- **Type:** `List<aws.iam.Policy.Arn>` (unique items)
+- **Type:** `List<aws.iam.Policy.Arn — identity: String(pattern); member: String>` (unique items)
 - **Required:** No
 
 A list of Amazon Resource Names (ARNs) of the IAM managed policies that you want to attach to the role. For more information about ARNs, see [Amazon Resource Names (ARNs) and Service Namespaces](https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) in the *General Reference*.
@@ -80,7 +80,7 @@ The path to the role. For more information about paths, see [IAM Identifiers](ht
 
 ### `permissions_boundary`
 
-- **Type:** `aws.iam.Policy.Arn`
+- **Type:** aws.iam.Policy.Arn — identity: String(pattern); member: String
 - **Required:** No
 
 The ARN of the policy used to set the permissions boundary for the role. For more information about permissions boundaries, see [Permissions boundaries for IAM identities](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_boundaries.html) in the *IAM User Guide*.
@@ -94,7 +94,7 @@ Adds or updates an inline policy document that is embedded in the specified IAM 
 
 ### `role_name`
 
-- **Type:** aws.iam.Role.Name — String(len: 1..=64)
+- **Type:** aws.iam.Role.Name — identity: String(pattern, len: 1..=64); member: String(len: 1..=64)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -114,19 +114,19 @@ A list of tags that are attached to the role. For more information about tagging
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `policy_document` | PolicyDocument | Yes | The entire contents of the policy that defines permissions. For more information, see [Overview of JSON policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html#access_policies-json). |
-| `policy_name` | aws.iam.Policy.Name — String(len: 1..=128) | Yes | The friendly name (not ARN) identifying the policy. |
+| `policy_name` | aws.iam.Policy.Name — identity: String(pattern, len: 1..=128); member: String(len: 1..=128) | Yes | The friendly name (not ARN) identifying the policy. |
 
 ## Attribute Reference
 
 ### `arn`
 
-- **Type:** `aws.iam.Role.Arn`
+- **Type:** aws.iam.Role.Arn — identity: String(pattern); member: String
 
 
 
 ### `role_id`
 
-- **Type:** `aws.iam.Role.Id`
+- **Type:** aws.iam.Role.Id — identity: String(pattern); member: String
 
 
 

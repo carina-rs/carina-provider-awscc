@@ -24,7 +24,7 @@ pub fn iam_role_policy_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_policy_document_attribute());
     #[inline(never)]
     fn build_policy_name_attribute() -> AttributeSchema {
-        AttributeSchema::required("policy_name", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamPolicyName.identity(), None, Some((Some(1), Some(128))), crate::schemas::string_identity::StringIdentity::IamPolicyName.check().expect("shared string check"), None))
+        AttributeSchema::required("policy_name", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IamPolicyName.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, Some((Some(1), Some(128))))))
                 .create_only()
                 .with_description("The name of the policy document. This parameter allows (through its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of upper and lowercase alphanumeric characters with no spaces. You can also include any of the following characters: _+=,.@-")
                 .with_provider_name("PolicyName")
@@ -33,7 +33,7 @@ pub fn iam_role_policy_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_policy_name_attribute());
     #[inline(never)]
     fn build_role_name_attribute() -> AttributeSchema {
-        AttributeSchema::required("role_name", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamRoleName.identity(), None, Some((Some(1), Some(64))), crate::schemas::string_identity::StringIdentity::IamRoleName.check().expect("shared string check"), None))
+        AttributeSchema::required("role_name", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IamRoleName.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, Some((Some(1), Some(64))))))
                 .create_only()
                 .with_description("The name of the role to associate the policy with. This parameter allows (through its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of upper and lowercase alphanumeric characters with no spaces. You can also include any of the following characters: _+=,.@-")
                 .with_provider_name("RoleName")

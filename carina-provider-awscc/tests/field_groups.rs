@@ -48,8 +48,10 @@ async fn step6_cached_field_groups_survive_loaded_wasm() {
     use carina_plugin_host::WasmProviderFactory;
     use carina_provider_resolver::{ProviderLoadIdentity, ProviderTrustClass, VerifiedLoad};
 
-    let wasm = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../target/wasm32-wasip2/release/carina-provider-awscc.wasm");
+    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target"));
+    let wasm = target_dir.join("wasm32-wasip2/release/carina-provider-awscc.wasm");
     // This regression must exercise a real guest; a missing build is a failure.
     let bytes =
         std::fs::read(wasm).expect("build the release wasm32-wasip2 provider before this test");

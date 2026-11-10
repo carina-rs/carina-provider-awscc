@@ -5,7 +5,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
-AWSCC_WASM="$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-awscc.wasm"
+TARGET_DIR="${CARGO_TARGET_DIR:-$PROJECT_ROOT/target}"
+if [[ "$TARGET_DIR" != /* ]]; then
+    TARGET_DIR="$PROJECT_ROOT/$TARGET_DIR"
+fi
+AWSCC_WASM="$TARGET_DIR/wasm32-wasip2/release/carina-provider-awscc.wasm"
 CARINA_BIN="${CARINA_BIN:-carina}"
 
 if [[ "$CARINA_BIN" == */* ]]; then

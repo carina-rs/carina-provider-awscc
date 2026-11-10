@@ -28,7 +28,7 @@ awscc.ec2.Vpc {
 
 ### `cidr_block`
 
-- **Type:** `Ipv4Cidr`
+- **Type:** Ipv4Cidr — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -57,7 +57,7 @@ The allowed tenancy of instances launched into the VPC. + ``default``: An instan
 
 ### `ipv4_ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id`
+- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -95,31 +95,31 @@ Shorthand formats: `default` or `InstanceTenancy.default`
 
 ### `cidr_block_associations`
 
-- **Type:** `List<aws.ec2.VpcCidrBlockAssociation.Id>`
+- **Type:** `List<aws.ec2.VpcCidrBlockAssociation.Id — identity: String(pattern); member: String>`
 
 
 
 ### `default_network_acl`
 
-- **Type:** `aws.ec2.NetworkAcl.Id`
+- **Type:** aws.ec2.NetworkAcl.Id — identity: String(pattern); member: String
 
 
 
 ### `default_security_group`
 
-- **Type:** `aws.ec2.SecurityGroup.Id`
+- **Type:** aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String
 
 
 
 ### `ipv6_cidr_blocks`
 
-- **Type:** `List<Ipv6Cidr>`
+- **Type:** `List<Ipv6Cidr — identity: String; member: String>`
 
 
 
 ### `vpc_id`
 
-- **Type:** `aws.ec2.Vpc.Id`
+- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
 
 
 

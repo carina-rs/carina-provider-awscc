@@ -353,7 +353,7 @@ Used by: `contributor_insights_specification`, `global_secondary_indexes.contrib
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `s3_bucket` | `String(pattern, len: ..=255)` | Yes | The S3 bucket that is being imported from. |
-| `s3_bucket_owner` | `aws.AccountId` | No | The account number of the S3 bucket that is being imported from. If the bucket is owned by the requester this is optional. |
+| `s3_bucket_owner` | aws.AccountId — identity: String(pattern, len: 12..=12); member: String | No | The account number of the S3 bucket that is being imported from. If the bucket is owned by the requester this is optional. |
 | `s3_key_prefix` | `String(len: ..=1024)` | No | The key prefix shared by all S3 Objects that are being imported. |
 
 ### key_schema
@@ -370,7 +370,7 @@ Used by: `global_secondary_indexes.key_schema`, `key_schema`, `local_secondary_i
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `approximate_creation_date_time_precision` | [Enum (ApproximateCreationDateTimePrecision)](#kinesis_stream_specificationapproximate_creation_date_time_precision-approximatecreationdatetimeprecision) | No | The precision for the time and date that the stream was created. |
-| `stream_arn` | `aws.Arn` | Yes | The ARN for a specific Kinesis data stream. Length Constraints: Minimum length of 37. Maximum length of 1024. |
+| `stream_arn` | aws.Arn — identity: String(pattern); member: String | Yes | The ARN for a specific Kinesis data stream. Length Constraints: Minimum length of 37. Maximum length of 1024. |
 
 ### local_secondary_indexes
 
@@ -461,13 +461,13 @@ At least one of `read_units_per_second`, `write_units_per_second` must be specif
 
 ### `arn`
 
-- **Type:** `aws.dynamodb.Table.Arn`
+- **Type:** aws.dynamodb.Table.Arn — identity: String(pattern); member: String
 
 
 
 ### `stream_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 
 

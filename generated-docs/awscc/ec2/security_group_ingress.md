@@ -33,7 +33,7 @@ awscc.ec2.SecurityGroupIngress {
 
 ### `cidr_ip`
 
-- **Type:** `Ipv4Cidr`
+- **Type:** Ipv4Cidr — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -41,7 +41,7 @@ The IPv4 ranges
 
 ### `cidr_ipv6`
 
-- **Type:** `Ipv6Cidr`
+- **Type:** Ipv6Cidr — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -64,7 +64,7 @@ The start of port range for the TCP and UDP protocols, or an ICMP/ICMPv6 type nu
 
 ### `group_id`
 
-- **Type:** `aws.ec2.SecurityGroup.Id`
+- **Type:** aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -88,7 +88,7 @@ The IP protocol name (tcp, udp, icmp, icmpv6) or number (see Protocol Numbers). 
 
 ### `source_prefix_list_id`
 
-- **Type:** `aws.ec2.PrefixList.Id`
+- **Type:** aws.ec2.PrefixList.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -96,7 +96,7 @@ The IP protocol name (tcp, udp, icmp, icmpv6) or number (see Protocol Numbers). 
 
 ### `source_security_group_id`
 
-- **Type:** `aws.ec2.SecurityGroup.Id`
+- **Type:** aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -112,7 +112,7 @@ The ID of the security group. You must specify either the security group ID or t
 
 ### `source_security_group_owner_id`
 
-- **Type:** `aws.AccountId`
+- **Type:** aws.AccountId — identity: String(pattern, len: 12..=12); member: String
 - **Required:** No
 - **Create-only:** Yes
 

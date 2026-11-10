@@ -14,7 +14,7 @@ pub fn wafv2_web_acl_association_config() -> AwsccSchemaConfig {
         .with_description("Associates WebACL to Application Load Balancer, CloudFront or API Gateway.");
     #[inline(never)]
     fn build_resource_arn_attribute() -> AttributeSchema {
-        AttributeSchema::required("resource_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, Some((Some(20), Some(2048))), crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
+        AttributeSchema::required("resource_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, Some((Some(20), Some(2048))))))
                 .create_only()
                 .with_provider_name("ResourceArn")
             .build()
@@ -22,7 +22,7 @@ pub fn wafv2_web_acl_association_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_resource_arn_attribute());
     #[inline(never)]
     fn build_web_acl_arn_attribute() -> AttributeSchema {
-        AttributeSchema::required("web_acl_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, Some((Some(20), Some(2048))), crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
+        AttributeSchema::required("web_acl_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, Some((Some(20), Some(2048))))))
                 .create_only()
                 .with_provider_name("WebACLArn")
             .build()

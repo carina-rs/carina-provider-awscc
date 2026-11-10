@@ -46,7 +46,7 @@ The options for the transit gateway vpc attachment.
 
 ### `subnet_ids`
 
-- **Type:** `List<aws.ec2.Subnet.Id>`
+- **Type:** `List<aws.ec2.Subnet.Id — identity: String(pattern); member: String>`
 - **Required:** Yes
 
 ### `tags`
@@ -56,13 +56,13 @@ The options for the transit gateway vpc attachment.
 
 ### `transit_gateway_id`
 
-- **Type:** `aws.ec2.TransitGateway.Id`
+- **Type:** aws.ec2.TransitGateway.Id — identity: String(pattern); member: String
 - **Required:** Yes
 - **Create-only:** Yes
 
 ### `vpc_id`
 
-- **Type:** `aws.ec2.Vpc.Id`
+- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -119,7 +119,7 @@ Shorthand formats: `enable` or `SecurityGroupReferencingSupport.enable`
 
 ### `id`
 
-- **Type:** `aws.ec2.TransitGatewayAttachment.Id`
+- **Type:** aws.ec2.TransitGatewayAttachment.Id — identity: String(pattern); member: String
 
 ## AWS API narrowings
 

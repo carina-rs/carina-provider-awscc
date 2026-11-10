@@ -1,5 +1,7 @@
-//! Identity bindings carry no field structure or local constraints.
-use carina_core::schema::{CustomValidator, RawShape, StringIdentityParts, TypeIdentity};
+//! Catalog bindings for reusable String definitions, separate from member constraints.
+use carina_core::schema::{AttributeType, CustomValidator, StringIdentityLayer, TypeIdentity};
+#[cfg(any(test, feature = "test-utils"))]
+use carina_core::schema::{RawShape, StringIdentityParts};
 
 #[cfg(any(test, feature = "test-utils"))]
 pub type StructuralStringMetadata = (Option<String>, Option<(Option<u64>, Option<u64>)>);
@@ -362,9 +364,9 @@ impl StringIdentity {
         self.identity().provider.is_none()
     }
 
-    /// Only the shared callback is returned, never constructor structure.
-    fn validation_declaration(self) -> Option<carina_core::schema::AttributeType> {
-        Some(match self {
+    /// Catalog declarations have no knowledge of the CFN slot using them.
+    pub(crate) fn declaration(self) -> AttributeType {
+        match self {
             Self::AccountId => carina_aws_types::aws_account_id(),
             Self::Arn => super::catalog::arn(),
             Self::AvailabilityZoneZoneId => carina_aws_types::availability_zone_id(),
@@ -425,7 +427,7 @@ impl StringIdentity {
             Self::IdentitystoreGroupDisplayName => {
                 super::catalog::identitystore_group_display_name()
             }
-            Self::IdentitystoreStoreId => return None,
+            Self::IdentitystoreStoreId => carina_aws_types::identity_store_id(),
             Self::Ipv4Address => carina_core::schema::types::ipv4_address(),
             Self::Ipv4Cidr => carina_core::schema::types::ipv4_cidr(),
             Self::Ipv6Address => carina_core::schema::types::ipv6_address(),
@@ -444,19 +446,19 @@ impl StringIdentity {
             Self::RedirectProtocol => carina_core::schema::types::redirect_protocol(),
             Self::RedirectQuery => carina_core::schema::types::redirect_query(),
             Self::ResourceId => carina_aws_types::aws_resource_id(),
-            Self::Route53HostedZoneId => return None,
+            Self::Route53HostedZoneId => carina_aws_types::route53_hosted_zone_id(),
             Self::S3BucketArn => super::catalog::s3_bucket_arn(),
             Self::S3BucketLifecycleDate => super::catalog::s3_lifecycle_date(),
             Self::SchedulerScheduleGroupName => super::catalog::scheduler_schedule_group_name(),
             Self::SchedulerScheduleScheduleExpression => {
                 super::catalog::scheduler_schedule_expression()
             }
-            Self::SsoInstanceArn => return None,
-            Self::SsoPermissionSetArn => return None,
+            Self::SsoInstanceArn => super::catalog::sso_instance_arn(),
+            Self::SsoPermissionSetArn => super::catalog::sso_permission_set_arn(),
             Self::SsoPermissionSetSessionDuration => {
                 super::catalog::sso_permission_set_session_duration()
             }
-            Self::SsoPrincipalId => return None,
+            Self::SsoPrincipalId => carina_aws_types::sso_principal_id(),
             Self::Wafv2WebACLByteMatchSearchString => {
                 super::catalog::wafv2_byte_match_search_string()
             }
@@ -464,12 +466,17 @@ impl StringIdentity {
                 super::catalog::wafv2_byte_match_search_string_base64()
             }
             Self::Wafv2WebAclArn => super::catalog::wafv2_web_acl_arn(),
-        })
+        }
+    }
+
+    /// The typed catalog layer cannot accept member patterns or bounds.
+    pub fn identity_layer(self) -> StringIdentityLayer {
+        super::catalog::string_identity_layer(self)
     }
 
     #[cfg(any(test, feature = "test-utils"))]
     pub fn callback_declaration_metadata(self) -> Option<StructuralStringMetadata> {
-        let declaration = self.validation_declaration()?;
+        let declaration = self.declaration();
         match declaration.raw_shape() {
             RawShape::String {
                 identity_layer:
@@ -493,27 +500,6 @@ impl StringIdentity {
     }
 
     pub fn check(self) -> Option<CustomValidator> {
-        use std::collections::BTreeMap;
-        use std::sync::LazyLock;
-        static CHECKS: LazyLock<BTreeMap<StringIdentity, Option<CustomValidator>>> =
-            LazyLock::new(|| {
-                StringIdentity::ALL
-                    .iter()
-                    .map(|identity| {
-                        let check = identity.validation_declaration().and_then(|declaration| {
-                            match declaration.raw_shape() {
-                                RawShape::String {
-                                    identity_layer: StringIdentityParts { validate, .. },
-                                    ..
-                                }
-                                | RawShape::Enum { validate, .. } => validate.cloned(),
-                                _ => unreachable!("string identity check"),
-                            }
-                        });
-                        (*identity, check)
-                    })
-                    .collect()
-            });
-        CHECKS[&self].clone()
+        self.identity_layer().parts().validate.cloned()
     }
 }

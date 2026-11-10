@@ -134,7 +134,7 @@ Determines whether or not address space from this pool is publicly advertised. M
 
 ### `source_ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id`
+- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -218,7 +218,7 @@ Shorthand formats: `create_in_progress` or `State.create_in_progress`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cidr` | `Ipv4Cidr` | Yes |  |
+| `cidr` | Ipv4Cidr — identity: String; member: String | Yes |  |
 
 ### source_resource
 
@@ -226,32 +226,32 @@ Shorthand formats: `create_in_progress` or `State.create_in_progress`
 |-------|------|----------|-------------|
 | `resource_id` | String | Yes |  |
 | `resource_owner` | String | Yes |  |
-| `resource_region` | `aws.Region` | Yes |  |
+| `resource_region` | aws.Region — identity: String; member: String | Yes |  |
 | `resource_type` | [Enum (ResourceType)](#source_resourceresource_type-resourcetype) | Yes |  |
 
 ## Attribute Reference
 
 ### `arn`
 
-- **Type:** `aws.ec2.IpamPool.Arn`
+- **Type:** aws.ec2.IpamPool.Arn — identity: String(pattern); member: String
 
 The Amazon Resource Name (ARN) of the IPAM Pool.
 
 ### `ipam_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 The Amazon Resource Name (ARN) of the IPAM this pool is a part of.
 
 ### `ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id`
+- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
 
 Id of the IPAM Pool.
 
 ### `ipam_scope_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 The Amazon Resource Name (ARN) of the scope this pool is a part of.
 

@@ -32,7 +32,7 @@ awscc.identitystore.GroupMembership {
 
 ### `group_id`
 
-- **Type:** aws.sso.Principal.Id — String(pattern, len: 1..=47)
+- **Type:** aws.sso.Principal.Id — identity: String(pattern); member: String(pattern, len: 1..=47)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -40,7 +40,7 @@ The unique identifier for a group in the identity store.
 
 ### `identity_store_id`
 
-- **Type:** aws.identitystore.Store.Id — String(pattern, len: 1..=36)
+- **Type:** aws.identitystore.Store.Id — identity: String(pattern); member: String(pattern, len: 1..=36)
 - **Required:** Yes
 - **Create-only:** Yes
 

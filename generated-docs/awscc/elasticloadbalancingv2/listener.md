@@ -58,7 +58,7 @@ The listener attributes. Attributes that you do not modify retain their current 
 
 ### `load_balancer_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -210,7 +210,7 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `certificate_arn` | `aws.Arn` | No | The Amazon Resource Name (ARN) of the certificate. |
+| `certificate_arn` | aws.Arn — identity: String(pattern); member: String | No | The Amazon Resource Name (ARN) of the certificate. |
 
 ### default_actions
 
@@ -223,7 +223,7 @@ Shorthand formats: `http` or `Protocol.http`
 | `jwt_validation_config` | [Struct(JwtValidationConfig)](#default_actionsjwt_validation_config) | No | [HTTPS listeners] Information for validating JWT access tokens in client requests. Specify only when ``Type`` is ``jwt-validation``. |
 | `order` | Int(1..=50000) | No | The order for the action. This value is required for rules with multiple actions. The action with the lowest value for order is performed first. |
 | `redirect_config` | [Struct(RedirectConfig)](#default_actionsredirect_config) | No | [Application Load Balancer] Information for creating a redirect action. Specify only when ``Type`` is ``redirect``. |
-| `target_group_arn` | `aws.Arn` | No | The Amazon Resource Name (ARN) of the target group. Specify only when ``Type`` is ``forward`` and you want to route to a single target group. To route to multiple target groups, you must use ``ForwardConfig`` instead. |
+| `target_group_arn` | aws.Arn — identity: String(pattern); member: String | No | The Amazon Resource Name (ARN) of the target group. Specify only when ``Type`` is ``forward`` and you want to route to a single target group. To route to multiple target groups, you must use ``ForwardConfig`` instead. |
 | `type` | [Enum (Type)](#default_actionstype-type) | Yes | The type of action. |
 
 ### default_actions.authenticate_cognito_config
@@ -235,7 +235,7 @@ Shorthand formats: `http` or `Protocol.http`
 | `scope` | String | No | The set of user claims to be requested from the IdP. The default is ``openid``. To verify which scope values your IdP supports and how to separate multiple values, see the documentation for your IdP. |
 | `session_cookie_name` | String | No | The name of the cookie used to maintain session information. The default is AWSELBAuthSessionCookie. |
 | `session_timeout` | `String(pattern)` | No | The maximum duration of the authentication session, in seconds. The default is 604800 seconds (7 days). |
-| `user_pool_arn` | `aws.Arn` | Yes | The Amazon Resource Name (ARN) of the Amazon Cognito user pool. |
+| `user_pool_arn` | aws.Arn — identity: String(pattern); member: String | Yes | The Amazon Resource Name (ARN) of the Amazon Cognito user pool. |
 | `user_pool_client_id` | String | Yes | The ID of the Amazon Cognito user pool client. |
 | `user_pool_domain` | String | Yes | The domain prefix or fully-qualified domain name of the Amazon Cognito user pool. |
 
@@ -244,17 +244,17 @@ Shorthand formats: `http` or `Protocol.http`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `authentication_request_extra_params` | `Map<String, String>` | No | The query parameters (up to 10) to include in the redirect request to the authorization endpoint. |
-| `authorization_endpoint` | `HttpsUrl` | Yes | The authorization endpoint of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |
+| `authorization_endpoint` | HttpsUrl — identity: String; member: String | Yes | The authorization endpoint of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |
 | `client_id` | String | Yes | The OAuth 2.0 client identifier. |
 | `client_secret` | String | No | The OAuth 2.0 client secret. This parameter is required if you are creating a rule. If you are modifying a rule, you can omit this parameter if you set ``UseExistingClientSecret`` to true. |
-| `issuer` | `HttpsUrl` | Yes | The OIDC issuer identifier of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |
+| `issuer` | HttpsUrl — identity: String; member: String | Yes | The OIDC issuer identifier of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |
 | `on_unauthenticated_request` | [Enum (OnUnauthenticatedRequest)](#default_actionsauthenticate_oidc_configon_unauthenticated_request-onunauthenticatedrequest) | No | The behavior if the user is not authenticated. The following are possible values: + deny```` - Return an HTTP 401 Unauthorized error. + allow```` - Allow the request to be forwarded to the target. + authenticate```` - Redirect the request to the IdP authorization endpoint. This is the default value. |
 | `scope` | String | No | The set of user claims to be requested from the IdP. The default is ``openid``. To verify which scope values your IdP supports and how to separate multiple values, see the documentation for your IdP. |
 | `session_cookie_name` | String | No | The name of the cookie used to maintain session information. The default is AWSELBAuthSessionCookie. |
 | `session_timeout` | `String(pattern)` | No | The maximum duration of the authentication session, in seconds. The default is 604800 seconds (7 days). |
-| `token_endpoint` | `HttpsUrl` | Yes | The token endpoint of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |
+| `token_endpoint` | HttpsUrl — identity: String; member: String | Yes | The token endpoint of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |
 | `use_existing_client_secret` | Bool | No | Indicates whether to use the existing client secret when modifying a rule. If you are creating a rule, you can omit this parameter or set it to false. |
-| `user_info_endpoint` | `HttpsUrl` | Yes | The user info endpoint of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |
+| `user_info_endpoint` | HttpsUrl — identity: String; member: String | Yes | The user info endpoint of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |
 
 At least one of `client_secret`, `use_existing_client_secret` must be specified.
 
@@ -264,7 +264,7 @@ At least one of `client_secret`, `use_existing_client_secret` must be specified.
 |-------|------|----------|-------------|
 | `content_type` | [Enum (ContentType)](#default_actionsfixed_response_configcontent_type-contenttype) | No | The content type. Valid Values: text/plain \| text/css \| text/html \| application/javascript \| application/json |
 | `message_body` | String | No | The message. |
-| `status_code` | `HttpResponseStatusCode` | Yes | The HTTP response code (2XX, 4XX, or 5XX). |
+| `status_code` | HttpResponseStatusCode — identity: String; member: String | Yes | The HTTP response code (2XX, 4XX, or 5XX). |
 
 ### default_actions.forward_config
 
@@ -284,7 +284,7 @@ At least one of `client_secret`, `use_existing_client_secret` must be specified.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `target_group_arn` | `aws.Arn` | No | The Amazon Resource Name (ARN) of the target group. |
+| `target_group_arn` | aws.Arn — identity: String(pattern); member: String | No | The Amazon Resource Name (ARN) of the target group. |
 | `weight` | Int(0..=999) | No | The weight. The range is 0 to 999. |
 
 ### default_actions.jwt_validation_config
@@ -293,7 +293,7 @@ At least one of `client_secret`, `use_existing_client_secret` must be specified.
 |-------|------|----------|-------------|
 | `additional_claims` | List\<[Struct(JwtValidationActionAdditionalClaim)](#default_actionsjwt_validation_configadditional_claims)\> (items: ..=10) (unique items) | No |  |
 | `issuer` | `String(len: ..=256)` | Yes |  |
-| `jwks_endpoint` | `HttpsUrl` | Yes |  |
+| `jwks_endpoint` | HttpsUrl — identity: String; member: String | Yes |  |
 
 ### default_actions.jwt_validation_config.additional_claims
 
@@ -307,11 +307,11 @@ At least one of `client_secret`, `use_existing_client_secret` must be specified.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `host` | `RedirectHost` | No | The hostname. This component is not percent-encoded. The hostname can contain #{host}. |
-| `path` | `RedirectPath` | No | The absolute path, starting with the leading "/". This component is not percent-encoded. The path can contain #{host}, #{path}, and #{port}. |
-| `port` | `RedirectPort` | No | The port. You can specify a value from 1 to 65535 or #{port}. |
-| `protocol` | `RedirectProtocol` | No | The protocol. You can specify HTTP, HTTPS, or #{protocol}. You can redirect HTTP to HTTP, HTTP to HTTPS, and HTTPS to HTTPS. You can't redirect HTTPS to HTTP. |
-| `query` | `RedirectQuery` | No | The query parameters, URL-encoded when necessary, but not percent-encoded. Do not include the leading "?", as it is automatically added. You can specify any of the reserved keywords. |
+| `host` | RedirectHost — identity: String; member: String | No | The hostname. This component is not percent-encoded. The hostname can contain #{host}. |
+| `path` | RedirectPath — identity: String; member: String | No | The absolute path, starting with the leading "/". This component is not percent-encoded. The path can contain #{host}, #{path}, and #{port}. |
+| `port` | RedirectPort — identity: String; member: String | No | The port. You can specify a value from 1 to 65535 or #{port}. |
+| `protocol` | RedirectProtocol — identity: String; member: String | No | The protocol. You can specify HTTP, HTTPS, or #{protocol}. You can redirect HTTP to HTTP, HTTP to HTTPS, and HTTPS to HTTPS. You can't redirect HTTPS to HTTP. |
+| `query` | RedirectQuery — identity: String; member: String | No | The query parameters, URL-encoded when necessary, but not percent-encoded. Do not include the leading "?", as it is automatically added. You can specify any of the reserved keywords. |
 | `status_code` | [Enum (StatusCode)](#default_actionsredirect_configstatus_code-statuscode) | Yes | The HTTP redirect code. The redirect is either permanent (HTTP 301) or temporary (HTTP 302). |
 
 ### listener_attributes
@@ -328,13 +328,13 @@ At least one of `client_secret`, `use_existing_client_secret` must be specified.
 | `advertise_trust_store_ca_names` | [Enum (AdvertiseTrustStoreCaNames)](#mutual_authenticationadvertise_trust_store_ca_names-advertisetruststorecanames) | No | Indicates whether trust store CA certificate names are advertised. |
 | `ignore_client_certificate_expiry` | Bool | No | Indicates whether expired client certificates are ignored. |
 | `mode` | [Enum (Mode)](#mutual_authenticationmode-mode) | No | The client certificate handling method. Options are ``off``, ``passthrough`` or ``verify``. The default value on initial resource creation is ``off``. After mutual authentication is turned on, you must explicitly set the ``Mode`` to ``off`` to turn it off; removing the property from your template will not turn it off. |
-| `trust_store_arn` | `aws.Arn` | No | The Amazon Resource Name (ARN) of the trust store. |
+| `trust_store_arn` | aws.Arn — identity: String(pattern); member: String | No | The Amazon Resource Name (ARN) of the trust store. |
 
 ## Attribute Reference
 
 ### `listener_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 
 

@@ -1,4 +1,6 @@
-use carina_core::schema::{RawShape, StringIdentityParts, ValidatedResourceSchema};
+use carina_core::schema::{
+    RawShape, StringIdentityParts, StringMemberParts, ValidatedResourceSchema,
+};
 use serde::Deserialize;
 
 use crate::test_support::{field, int, string, try_validate_fixtures, validate_fixtures};
@@ -361,10 +363,14 @@ fn role_references_retain_the_scheduler_sinks_cfn_length() {
         field(&schedule, "target.role_arn").as_type().raw_shape(),
         RawShape::String {
             identity_layer: StringIdentityParts {
-                length: Some((Some(1), Some(1600))),
+                identity: Some(identity),
+                length: None,
                 ..
             },
-            ..
-        }
+            member_layer: StringMemberParts {
+                pattern: Some(_),
+                length: Some((Some(1), Some(1600))),
+            },
+        } if identity.to_string() == "aws.Arn"
     ));
 }

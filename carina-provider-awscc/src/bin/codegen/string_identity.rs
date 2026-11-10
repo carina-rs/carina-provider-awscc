@@ -144,6 +144,7 @@ pub(super) fn from_constructor(source: &str) -> Option<Option<StringIdentity>> {
     })
 }
 
+#[cfg(test)]
 pub(super) fn core_constructor(identity: StringIdentity) -> Option<&'static str> {
     match identity {
         StringIdentity::DomainName => Some("carina_core::schema::types::domain_name()"),
@@ -166,9 +167,6 @@ pub(super) fn core_constructor(identity: StringIdentity) -> Option<&'static str>
 }
 
 pub(super) fn emit(identity: Option<StringIdentity>, constraints: &StringConstraints) -> String {
-    if let Some(builtin) = identity.and_then(core_constructor) {
-        return builtin.into();
-    }
     let pattern = emit_pattern_option(constraints.pattern.as_ref());
     let length = emit_length_option(constraints.min_length, constraints.max_length);
     let Some(identity) = identity else {
@@ -178,13 +176,9 @@ pub(super) fn emit(identity: Option<StringIdentity>, constraints: &StringConstra
         return format!("AttributeType::refined_string(None, {pattern}, {length}, None)");
     };
     let name = format!("crate::schemas::string_identity::StringIdentity::{identity:?}");
-    if identity.check().is_some() {
-        format!(
-            "AttributeType::refined_string_with_validator({name}.identity(), {pattern}, {length}, {name}.check().expect(\"shared string check\"), None)"
-        )
-    } else {
-        format!("AttributeType::refined_string(Some({name}.identity()), {pattern}, {length}, None)")
-    }
+    format!(
+        "AttributeType::string_member({name}.identity_layer(), carina_core::schema::StringMemberConstraints::new({pattern}, {length}))"
+    )
 }
 
 impl StringConstraints {
@@ -192,33 +186,6 @@ impl StringConstraints {
         self.pattern.is_some()
             || self.min_length.is_some_and(|n| n > 0)
             || self.max_length.is_some()
-    }
-}
-
-/// A typed loss of local CFN metadata, rather than an ignored projection field.
-/// Core built-in declarations must match their structural fingerprints:
-/// https://github.com/carina-rs/carina/issues/4294
-pub(super) struct BuiltinConstraintLoss<'a> {
-    identity: StringIdentity,
-    constraints: &'a StringConstraints,
-}
-
-impl<'a> BuiltinConstraintLoss<'a> {
-    pub(super) fn new(identity: StringIdentity, constraints: &'a StringConstraints) -> Self {
-        assert!(identity.is_core_builtin());
-        Self {
-            identity,
-            constraints,
-        }
-    }
-
-    pub(super) fn markdown(&self) -> String {
-        let length =
-            string_length_display(self.constraints.min_length, self.constraints.max_length);
-        format!(
-            "CFN length {length} is not enforced locally: core built-in {} cannot carry field constraints ([carina#4294](https://github.com/carina-rs/carina/issues/4294)).",
-            self.identity.identity()
-        )
     }
 }
 
@@ -345,33 +312,4 @@ pub(super) fn constructor(identity: StringIdentity) -> &'static str {
         }
         StringIdentity::Wafv2WebAclArn => "crate::schemas::catalog::wafv2_web_acl_arn()",
     }
-}
-
-/// Built-ins have immutable structural fingerprints. The single admitted local
-/// loss is the HttpsUrl length shape documented by carina#4294; it is selected
-/// by the built-in identity and constraints, never a resource/pointer allowlist.
-pub(super) fn validate_builtin_constraints(
-    identity: Option<StringIdentity>,
-    constraints: &StringConstraints,
-    pointer: &str,
-) -> Result<()> {
-    let Some(identity) = identity.filter(|identity| identity.is_core_builtin()) else {
-        return Ok(());
-    };
-    if !constraints.has_local_constraints()
-        || (identity == StringIdentity::HttpsUrl
-            && constraints.pattern.is_none()
-            && constraints.min_length == Some(1)
-            && constraints.max_length == Some(255))
-    {
-        return Ok(());
-    }
-    Err(schema_layer::SchemaError::Projection {
-        pointer: pointer.to_string(),
-        reason: format!(
-            "core built-in {} cannot acquire local CFN constraints (carina#4294)",
-            identity.identity()
-        ),
-    }
-    .into())
 }

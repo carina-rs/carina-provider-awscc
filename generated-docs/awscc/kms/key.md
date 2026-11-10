@@ -195,7 +195,7 @@ Shorthand formats: `aws_kms` or `Origin.aws_kms`
 
 ### `arn`
 
-- **Type:** `aws.kms.Key.Arn`
+- **Type:** aws.kms.Key.Arn — identity: String(pattern); member: String
 
 
 

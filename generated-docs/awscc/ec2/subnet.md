@@ -41,7 +41,7 @@ Indicates whether a network interface created in this subnet receives an IPv6 ad
 
 ### `availability_zone`
 
-- **Type:** `aws.AvailabilityZone.ZoneName`
+- **Type:** aws.AvailabilityZone.ZoneName — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -49,7 +49,7 @@ The Availability Zone of the subnet. If you update this property, you must also 
 
 ### `availability_zone_id`
 
-- **Type:** `aws.AvailabilityZone.ZoneId`
+- **Type:** aws.AvailabilityZone.ZoneId — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -57,7 +57,7 @@ The AZ ID of the subnet.
 
 ### `cidr_block`
 
-- **Type:** `Ipv4Cidr`
+- **Type:** Ipv4Cidr — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -80,7 +80,7 @@ Indicates the device position for local network interfaces in this subnet. For e
 
 ### `ipv4_ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id`
+- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -98,14 +98,14 @@ An IPv4 netmask length for the subnet.
 
 ### `ipv6_cidr_block`
 
-- **Type:** `Ipv6Cidr`
+- **Type:** Ipv6Cidr — identity: String; member: String
 - **Required:** No
 
 The IPv6 CIDR block. If you specify ``AssignIpv6AddressOnCreation``, you must also specify an IPv6 CIDR block.
 
 ### `ipv6_ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id`
+- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -138,7 +138,7 @@ Indicates whether instances launched in this subnet receive a public IPv4 addres
 
 ### `outpost_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -160,7 +160,7 @@ Any tags assigned to the subnet.
 
 ### `vpc_id`
 
-- **Type:** `aws.ec2.Vpc.Id`
+- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -213,7 +213,7 @@ Shorthand formats: `ip_name` or `HostnameType.ip_name`
 
 ### `ipv6_cidr_blocks`
 
-- **Type:** `List<Ipv6Cidr>`
+- **Type:** `List<Ipv6Cidr — identity: String; member: String>`
 
 
 
@@ -225,7 +225,7 @@ Shorthand formats: `ip_name` or `HostnameType.ip_name`
 
 ### `subnet_id`
 
-- **Type:** `aws.ec2.Subnet.Id`
+- **Type:** aws.ec2.Subnet.Id — identity: String(pattern); member: String
 
 
 

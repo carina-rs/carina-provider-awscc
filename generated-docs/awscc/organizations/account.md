@@ -36,7 +36,7 @@ The friendly name of the member account.
 
 ### `email`
 
-- **Type:** aws.organizations.Account.Email — String(pattern, len: 6..=64)
+- **Type:** aws.organizations.Account.Email — identity: String(len: 6..=64); member: String(pattern, len: 6..=64)
 - **Required:** Yes
 
 The email address of the owner to assign to the new member account.
@@ -50,7 +50,7 @@ List of parent nodes for the member account. Currently only one parent at a time
 
 ### `role_name`
 
-- **Type:** aws.organizations.Account.RoleName — String(pattern, len: 1..=64)
+- **Type:** aws.organizations.Account.RoleName — identity: String(pattern, len: 1..=64); member: String(pattern, len: 1..=64)
 - **Required:** No
 - **Write-only:** Yes
 - **Default:** `"OrganizationAccountAccessRole"`
@@ -101,13 +101,13 @@ Shorthand formats: `active` or `Status.active`
 
 ### `account_id`
 
-- **Type:** aws.AccountId — String(pattern, len: ..=12)
+- **Type:** aws.AccountId — identity: String(pattern, len: 12..=12); member: String(pattern, len: ..=12)
 
 If the account was created successfully, the unique identifier (ID) of the new account.
 
 ### `arn`
 
-- **Type:** aws.organizations.Account.Arn — String(pattern)
+- **Type:** aws.organizations.Account.Arn — identity: String(pattern); member: String(pattern)
 
 The Amazon Resource Name (ARN) of the account.
 

@@ -1,20 +1,21 @@
 //! Verifies that AWSCC hosted-zone ID producers carry the shared Route 53
-//! identity. HostedZone.Id also has the documented 32-character maximum;
-//! LoadBalancer.CanonicalHostedZoneID retains its unbounded CFN output domain.
+//! identity layer. HostedZone.Id adds CFN's 32-character member maximum;
+//! LoadBalancer.CanonicalHostedZoneID has no CFN member constraints.
 
 use std::sync::Arc;
 
 use carina_core::provider::provider_custom_types_from_factories;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, SchemaKind, SchemaRegistry,
+    AttributeSchema, AttributeType, RawShape, ResourceSchema, SchemaKind, SchemaRegistry,
+    StringIdentityParts, StringMemberParts,
 };
 use carina_provider_awscc::AwsccProviderFactory;
 use carina_provider_awscc::schemas::generated::elasticloadbalancingv2::load_balancer::elasticloadbalancingv2_load_balancer_config;
 use carina_provider_awscc::schemas::generated::route53::hosted_zone::route53_hosted_zone_config;
 
 #[test]
-fn hosted_zone_id_producers_keep_identity_and_only_documented_bounds() {
+fn hosted_zone_id_producers_share_catalog_identity_and_keep_cfn_member_bounds() {
     let alias_target_hosted_zone_id = AttributeType::union(vec![
         carina_aws_types::cloudfront_hosted_zone_id(),
         carina_aws_types::route53_hosted_zone_id(),
@@ -50,17 +51,34 @@ fn hosted_zone_id_producers_keep_identity_and_only_documented_bounds() {
             .unwrap_or_else(|| panic!("{label} must exist"))
             .attr_type();
 
-        assert!(
-            matches!(source.raw_shape(),carina_core::schema::RawShape::String {identity_layer: carina_core::schema::StringIdentityParts {identity:Some(id),pattern:None,validate:None,..},..} if id.to_string()=="aws.route53.HostedZone.Id")
-        );
+        let RawShape::String {
+            identity_layer:
+                StringIdentityParts {
+                    identity: Some(identity),
+                    pattern: Some(pattern),
+                    length: Some((None, Some(32))),
+                    validate: None,
+                    ..
+                },
+            member_layer:
+                StringMemberParts {
+                    pattern: None,
+                    length,
+                },
+        } = source.raw_shape()
+        else {
+            panic!("{label} must preserve the catalog definition and CFN member layer");
+        };
+        assert_eq!(identity.to_string(), "aws.route53.HostedZone.Id");
+        assert_eq!(pattern.as_str(), "^Z[A-Z0-9]+$");
+        assert_eq!(length, (attribute_name == "id").then_some((None, Some(32))));
         assert!(
             config
                 .schema
                 .as_schema()
                 .type_in_schema(source)
-                .is_assignable_to(owner.assignment_sink(alias_target_hosted_zone_id, &catalog))
-                == (attribute_name == "id"),
-            "{label}: assignment requires containment of the producer's documented bounds"
+                .is_assignable_to(owner.assignment_sink(alias_target_hosted_zone_id, &catalog)),
+            "{label}: the catalog definition must satisfy the shared hosted-zone ID sink"
         );
         assert!(
             config
@@ -74,7 +92,7 @@ fn hosted_zone_id_producers_keep_identity_and_only_documented_bounds() {
 }
 
 #[test]
-fn hosted_zone_id_values_obey_only_their_evidenced_bounds() {
+fn hosted_zone_id_values_obey_catalog_and_member_bounds() {
     for (label, config, attribute_name) in [
         (
             "LoadBalancer.canonical_hosted_zone_id",
@@ -103,12 +121,19 @@ fn hosted_zone_id_values_obey_only_their_evidenced_bounds() {
             );
         }
 
-        for hosted_zone_id in ["", "/hostedzone/Z1"] {
+        let maximum = format!("Z{}", "1".repeat(31));
+        let value: Value = Value::Concrete(ConcreteValue::String(maximum.clone().into()));
+        assert!(producer_type.validate(&value).is_ok(), "{label}: {maximum}");
+        for hosted_zone_id in [
+            "".to_string(),
+            "/hostedzone/Z1".to_string(),
+            format!("{maximum}1"),
+        ] {
             let value: Value =
                 Value::Concrete(ConcreteValue::String(hosted_zone_id.to_string().into()));
             assert!(
-                producer_type.validate(&value).is_ok(),
-                "{label}: attaching a name cannot reject CFN string {hosted_zone_id:?}"
+                producer_type.validate(&value).is_err(),
+                "{label}: the shared identity must reject {hosted_zone_id:?}"
             );
         }
     }

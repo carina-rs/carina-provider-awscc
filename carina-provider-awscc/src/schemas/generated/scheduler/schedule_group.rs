@@ -8,14 +8,9 @@ use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        crate::schemas::string_identity::StringIdentity::Arn.identity(),
-        None,
-        None,
-        crate::schemas::string_identity::StringIdentity::Arn
-            .check()
-            .expect("shared string check"),
-        None,
+    AttributeType::string_member(
+        crate::schemas::string_identity::StringIdentity::Arn.identity_layer(),
+        carina_core::schema::StringMemberConstraints::new(None, None),
     )
 }
 
@@ -28,7 +23,7 @@ pub fn scheduler_schedule_group_config() -> AwsccSchemaConfig {
         .with_description("Definition of AWS::Scheduler::ScheduleGroup Resource Type");
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), Some(carina_core::schema::PatternSpec::new("^arn:aws[a-z-]*:scheduler:[a-z0-9\\-]+:\\d{12}:schedule-group\\/[0-9a-zA-Z-_.]+$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(1224))), crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("^arn:aws[a-z-]*:scheduler:[a-z0-9\\-]+:\\d{12}:schedule-group\\/[0-9a-zA-Z-_.]+$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(1224))))))
                 .with_description("The Amazon Resource Name (ARN) of the schedule group. (read-only)")
                 .with_provider_name("Arn")
             .build()

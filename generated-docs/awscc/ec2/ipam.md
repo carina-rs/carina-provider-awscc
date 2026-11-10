@@ -105,13 +105,13 @@ Shorthand formats: `free` or `Tier.free`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `region_name` | `aws.Region` | Yes | The name of the region. |
+| `region_name` | aws.Region — identity: String; member: String | Yes | The name of the region. |
 
 ## Attribute Reference
 
 ### `arn`
 
-- **Type:** `aws.ec2.Ipam.Arn`
+- **Type:** aws.ec2.Ipam.Arn — identity: String(pattern); member: String
 
 The Amazon Resource Name (ARN) of the IPAM.
 
@@ -129,7 +129,7 @@ The Id of the default resource discovery, created with this IPAM.
 
 ### `ipam_id`
 
-- **Type:** `aws.ec2.Ipam.Id`
+- **Type:** aws.ec2.Ipam.Id — identity: String(pattern); member: String
 
 Id of the IPAM.
 

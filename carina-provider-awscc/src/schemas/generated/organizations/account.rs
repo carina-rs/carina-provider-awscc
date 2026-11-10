@@ -9,14 +9,9 @@ use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        crate::schemas::string_identity::StringIdentity::OrganizationsAccountArn.identity(),
-        None,
-        None,
-        crate::schemas::string_identity::StringIdentity::OrganizationsAccountArn
-            .check()
-            .expect("shared string check"),
-        None,
+    AttributeType::string_member(
+        crate::schemas::string_identity::StringIdentity::OrganizationsAccountArn.identity_layer(),
+        carina_core::schema::StringMemberConstraints::new(None, None),
     )
 }
 
@@ -40,7 +35,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.default_prevent_destroy();
     #[inline(never)]
     fn build_account_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("account_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::AccountId.identity(), Some(carina_core::schema::PatternSpec::new("^\\d{12}$", carina_core::schema::PatternMatch::Full)), Some((None, Some(12))), crate::schemas::string_identity::StringIdentity::AccountId.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("account_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::AccountId.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("^\\d{12}$", carina_core::schema::PatternMatch::Full)), Some((None, Some(12))))))
                 .with_description("If the account was created successfully, the unique identifier (ID) of the new account. (read-only)")
                 .with_provider_name("AccountId")
             .build()
@@ -56,7 +51,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_account_name_attribute());
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::OrganizationsAccountArn.identity(), Some(carina_core::schema::PatternSpec::new("^arn:aws.*:organizations::\\d{12}:account\\/o-[a-z0-9]{10,32}\\/\\d{12}", carina_core::schema::PatternMatch::Full)), None, crate::schemas::string_identity::StringIdentity::OrganizationsAccountArn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::OrganizationsAccountArn.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("^arn:aws.*:organizations::\\d{12}:account\\/o-[a-z0-9]{10,32}\\/\\d{12}", carina_core::schema::PatternMatch::Full)), None)))
                 .with_description("The Amazon Resource Name (ARN) of the account. (read-only)")
                 .with_provider_name("Arn")
             .build()
@@ -64,7 +59,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_arn_attribute());
     #[inline(never)]
     fn build_email_attribute() -> AttributeSchema {
-        AttributeSchema::required("email", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::OrganizationsAccountEmail.identity(), Some(carina_core::schema::PatternSpec::new("[^\\s@]+@[^\\s@]+\\.[^\\s@]+", carina_core::schema::PatternMatch::Full)), Some((Some(6), Some(64))), crate::schemas::string_identity::StringIdentity::OrganizationsAccountEmail.check().expect("shared string check"), None))
+        AttributeSchema::required("email", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::OrganizationsAccountEmail.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("[^\\s@]+@[^\\s@]+\\.[^\\s@]+", carina_core::schema::PatternMatch::Full)), Some((Some(6), Some(64))))))
                 .with_description("The email address of the owner to assign to the new member account.")
                 .with_provider_name("Email")
             .build()
@@ -104,7 +99,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_paths_attribute());
     #[inline(never)]
     fn build_role_name_attribute() -> AttributeSchema {
-        AttributeSchema::optional("role_name", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::OrganizationsAccountRoleName.identity(), Some(carina_core::schema::PatternSpec::new("[\\w+=,.@-]{1,64}", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(64))), crate::schemas::string_identity::StringIdentity::OrganizationsAccountRoleName.check().expect("shared string check"), None))
+        AttributeSchema::optional("role_name", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::OrganizationsAccountRoleName.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("[\\w+=,.@-]{1,64}", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(64))))))
                 .write_only()
                 .with_description("The name of an IAM role that AWS Organizations automatically preconfigures in the new member account. Default name is OrganizationAccountAccessRole if not specified.")
                 .with_provider_name("RoleName")

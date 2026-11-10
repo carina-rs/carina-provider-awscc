@@ -29,7 +29,7 @@ awscc.ec2.TransitGateway {
 
 ### `association_default_route_table_id`
 
-- **Type:** `aws.ec2.TransitGatewayRouteTable.Id`
+- **Type:** aws.ec2.TransitGatewayRouteTable.Id — identity: String(pattern); member: String
 - **Required:** No
 
 ### `auto_accept_shared_attachments`
@@ -71,7 +71,7 @@ awscc.ec2.TransitGateway {
 
 ### `propagation_default_route_table_id`
 
-- **Type:** `aws.ec2.TransitGatewayRouteTable.Id`
+- **Type:** aws.ec2.TransitGatewayRouteTable.Id — identity: String(pattern); member: String
 - **Required:** No
 
 ### `security_group_referencing_support`
@@ -187,11 +187,11 @@ Shorthand formats: `enable` or `VpnEcmpSupport.enable`
 
 ### `id`
 
-- **Type:** `aws.ec2.TransitGateway.Id`
+- **Type:** aws.ec2.TransitGateway.Id — identity: String(pattern); member: String
 
 ### `transit_gateway_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 ## AWS API narrowings
 

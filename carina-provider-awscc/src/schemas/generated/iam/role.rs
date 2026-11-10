@@ -10,14 +10,9 @@ use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        crate::schemas::string_identity::StringIdentity::IamRoleArn.identity(),
-        None,
-        None,
-        crate::schemas::string_identity::StringIdentity::IamRoleArn
-            .check()
-            .expect("shared string check"),
-        None,
+    AttributeType::string_member(
+        crate::schemas::string_identity::StringIdentity::IamRoleArn.identity_layer(),
+        carina_core::schema::StringMemberConstraints::new(None, None),
     )
 }
 
@@ -28,7 +23,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
         .with_description("Creates a new role for your AWS-account.   For more information about roles, see [IAM roles](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html) in the *IAM User Guide*. For information about quotas for role names and the number of roles you can create, see [IAM and quotas](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html) in the *IAM User Guide*.");
     #[inline(never)]
     fn build_arn_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamRoleArn.identity(), None, None, crate::schemas::string_identity::StringIdentity::IamRoleArn.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IamRoleArn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("Arn")
             .build()
@@ -53,7 +48,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_description_attribute());
     #[inline(never)]
     fn build_managed_policy_arns_attribute() -> AttributeSchema {
-        AttributeSchema::optional("managed_policy_arns", AttributeType::refined_list(AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamPolicyArn.identity(), None, None, crate::schemas::string_identity::StringIdentity::IamPolicyArn.check().expect("shared string check"), None), false, None, carina_core::schema::ListElements::Unique))
+        AttributeSchema::optional("managed_policy_arns", AttributeType::refined_list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IamPolicyArn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("A list of Amazon Resource Names (ARNs) of the IAM managed policies that you want to attach to the role. For more information about ARNs, see [Amazon Resource Names (ARNs) and Service Namespaces](https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) in the *General Reference*.")
                 .with_provider_name("ManagedPolicyArns")
             .build()
@@ -79,7 +74,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_path_attribute());
     #[inline(never)]
     fn build_permissions_boundary_attribute() -> AttributeSchema {
-        AttributeSchema::optional("permissions_boundary", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamPolicyArn.identity(), None, None, crate::schemas::string_identity::StringIdentity::IamPolicyArn.check().expect("shared string check"), None))
+        AttributeSchema::optional("permissions_boundary", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IamPolicyArn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The ARN of the policy used to set the permissions boundary for the role. For more information about permissions boundaries, see [Permissions boundaries for IAM identities](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_boundaries.html) in the *IAM User Guide*.")
                 .with_provider_name("PermissionsBoundary")
             .build()
@@ -88,7 +83,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_policies_attribute() -> AttributeSchema {
         AttributeSchema::optional("policies", AttributeType::unordered_list(AttributeType::struct_("Policy".to_string(), vec![StructField::required("policy_document", carina_aws_types::iam_policy_document()).with_documented_iam_grammar().with_description("The entire contents of the policy that defines permissions. For more information, see [Overview of JSON policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html#access_policies-json).").with_provider_name("PolicyDocument").build(),
-                    StructField::required("policy_name", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamPolicyName.identity(), None, Some((Some(1), Some(128))), crate::schemas::string_identity::StringIdentity::IamPolicyName.check().expect("shared string check"), None)).with_description("The friendly name (not ARN) identifying the policy.").with_provider_name("PolicyName").build()])))
+                    StructField::required("policy_name", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IamPolicyName.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, Some((Some(1), Some(128)))))).with_description("The friendly name (not ARN) identifying the policy.").with_provider_name("PolicyName").build()])))
                 .with_description("Adds or updates an inline policy document that is embedded in the specified IAM role. When you embed an inline policy in a role, the inline policy is used as part of the role's access (permissions) policy. The role's trust policy is created at the same time as the role. You can update a role's trust policy later. For more information about IAM roles, go to [Using Roles to Delegate Permissions and Federate Identities](https://docs.aws.amazon.com/IAM/latest/UserGuide/roles-toplevel.html). A role can also have an attached managed policy. For information about policies, see [Managed Policies and Inline Policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-vs-inline.html) in the *User Guide*. For information about limits on the number of inline policies that you can embed with a role, see [Limitations on Entities](https://docs.aws.amazon.com/IAM/latest/UserGuide/LimitationsOnEntities.html) in the *User Guide*. If an external policy (such as ``AWS::IAM::Policy`` or ``AWS::IAM::ManagedPolicy``) has a ``Ref`` to a role and if a resource (such as ``AWS::ECS::Service``) also has a ``Ref`` to the same role, add a ``DependsOn`` attribute to the resource to make the resource depend on the external policy. This dependency ensures that the role's policy is available throughout the resource's lifecycle. For example, when you delete a stack with an ``AWS::ECS::Service`` resource, the ``DependsOn`` attribute ensures that CFN deletes the ``AWS::ECS::Service`` resource before deleting its role's policy.")
                 .with_provider_name("Policies")
                 .with_block_name("policy")
@@ -97,7 +92,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_policies_attribute());
     #[inline(never)]
     fn build_role_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("role_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamRoleId.identity(), None, None, crate::schemas::string_identity::StringIdentity::IamRoleId.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("role_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IamRoleId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("RoleId")
             .build()
@@ -105,7 +100,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_role_id_attribute());
     #[inline(never)]
     fn build_role_name_attribute() -> AttributeSchema {
-        AttributeSchema::optional("role_name", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamRoleName.identity(), None, Some((Some(1), Some(64))), crate::schemas::string_identity::StringIdentity::IamRoleName.check().expect("shared string check"), None))
+        AttributeSchema::optional("role_name", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IamRoleName.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, Some((Some(1), Some(64))))))
                 .create_only()
                 .with_description("A name for the IAM role, up to 64 characters in length. For valid values, see the ``RoleName`` parameter for the [CreateRole](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html) action in the *User Guide*. This parameter allows (per its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of upper and lowercase alphanumeric characters with no spaces. You can also include any of the following characters: _+=,.@-. The role name must be unique within the account. Role names are not distinguished by case. For example, you cannot create roles named both \"Role1\" and \"role1\". If you don't specify a name, CFN generates a unique physical ID and uses that ID for the role name. If you specify a name, you must specify the ``CAPABILITY_NAMED_IAM`` value to acknowledge your template's capabilities. For more information, see [Acknowledging Resources in Templates](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-template.html#using-iam-capabilities). Naming an IAM resource can cause an unrecoverable error if you reuse the same template in multiple Regions. To prevent this, we recommend using ``Fn::Join`` and ``AWS::Region`` to create a Region-specific name, as in the following example: ``{\"Fn::Join\": [\"\", [{\"Ref\": \"AWS::Region\"}, {\"Ref\": \"MyResourceName\"}]]}``.")
                 .with_provider_name("RoleName")

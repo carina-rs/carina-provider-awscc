@@ -49,7 +49,7 @@ awscc.sso.Assignment {
 
 ### `instance_arn`
 
-- **Type:** aws.sso.Instance.Arn — String(pattern, len: 10..=1224)
+- **Type:** aws.sso.Instance.Arn — identity: String(pattern); member: String(pattern, len: 10..=1224)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -57,7 +57,7 @@ The sso instance that the permission set is owned.
 
 ### `permission_set_arn`
 
-- **Type:** aws.sso.PermissionSet.Arn — String(pattern, len: 10..=1224)
+- **Type:** aws.sso.PermissionSet.Arn — identity: String(pattern); member: String(pattern, len: 10..=1224)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -65,7 +65,7 @@ The permission set that the assignment will be assigned
 
 ### `principal_id`
 
-- **Type:** aws.sso.Principal.Id — String(pattern, len: 1..=47)
+- **Type:** aws.sso.Principal.Id — identity: String(pattern); member: String(pattern, len: 1..=47)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -81,7 +81,7 @@ The assignee's type, user/group
 
 ### `target_id`
 
-- **Type:** aws.AccountId — String(pattern)
+- **Type:** aws.AccountId — identity: String(pattern, len: 12..=12); member: String(pattern)
 - **Required:** Yes
 - **Create-only:** Yes
 

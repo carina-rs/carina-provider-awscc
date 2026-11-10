@@ -39,7 +39,7 @@ awscc.iam.OidcProvider {
 
 ### `url`
 
-- **Type:** HttpsUrl — CFN length 1..=255 is not enforced locally: core built-in HttpsUrl cannot carry field constraints ([carina#4294](https://github.com/carina-rs/carina/issues/4294)).
+- **Type:** HttpsUrl — identity: String; member: String(len: 1..=255)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -47,7 +47,7 @@ awscc.iam.OidcProvider {
 
 ### `arn`
 
-- **Type:** aws.iam.OidcProvider.Arn — String(len: 20..=2048)
+- **Type:** aws.iam.OidcProvider.Arn — identity: String(pattern); member: String(len: 20..=2048)
 
 Amazon Resource Name (ARN) of the OIDC provider
 

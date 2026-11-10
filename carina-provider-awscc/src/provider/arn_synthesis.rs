@@ -225,14 +225,20 @@ mod tests {
         let RawShape::String {
             identity_layer:
                 StringIdentityParts {
-                    pattern: None,
+                    pattern: Some(_),
                     validate: Some(validate),
                     ..
                 },
-            ..
+            member_layer:
+                carina_core::schema::StringMemberParts {
+                    pattern: None,
+                    length: None,
+                },
         } = ty.raw_shape()
         else {
-            panic!("IAM role ARN helper must retain its shared callback without field constraints");
+            panic!(
+                "IAM role ARN helper must retain its catalog definition without member constraints"
+            );
         };
         let mut seen = std::collections::BTreeSet::new();
         let mut failures = Vec::new();

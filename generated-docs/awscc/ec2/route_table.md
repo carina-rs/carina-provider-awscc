@@ -37,7 +37,7 @@ Any tags assigned to the route table.
 
 ### `vpc_id`
 
-- **Type:** `aws.ec2.Vpc.Id`
+- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -47,7 +47,7 @@ The ID of the VPC.
 
 ### `route_table_id`
 
-- **Type:** `aws.ec2.RouteTable.Id`
+- **Type:** aws.ec2.RouteTable.Id — identity: String(pattern); member: String
 
 
 

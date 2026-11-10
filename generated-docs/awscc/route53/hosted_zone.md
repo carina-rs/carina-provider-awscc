@@ -155,20 +155,20 @@ Shorthand formats: `us_east_1` or `VPCRegion.us_east_1`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cloud_watch_logs_log_group_arn` | `aws.Arn` | Yes | The Amazon Resource Name (ARN) of the CloudWatch Logs log group that Amazon Route 53 is publishing logs to. |
+| `cloud_watch_logs_log_group_arn` | aws.Arn — identity: String(pattern); member: String | Yes | The Amazon Resource Name (ARN) of the CloudWatch Logs log group that Amazon Route 53 is publishing logs to. |
 
 ### vp_cs
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `vpc_id` | `aws.ec2.Vpc.Id` | Yes | *Private hosted zones only:* The ID of an Amazon VPC. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
+| `vpc_id` | aws.ec2.Vpc.Id — identity: String(pattern); member: String | Yes | *Private hosted zones only:* The ID of an Amazon VPC. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
 | `vpc_region` | [Enum (VPCRegion)](#vp_csvpc_region-vpcregion) | Yes | *Private hosted zones only:* The region that an Amazon VPC was created in. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
 
 ## Attribute Reference
 
 ### `id`
 
-- **Type:** aws.route53.HostedZone.Id — String(len: ..=32)
+- **Type:** aws.route53.HostedZone.Id — identity: String(pattern, len: ..=32); member: String(len: ..=32)
 
 
 

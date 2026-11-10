@@ -160,7 +160,7 @@ Shorthand formats: `wildcard` or `ImageTagMutabilityExclusionFilterType.wildcard
 
 ### `arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 
 

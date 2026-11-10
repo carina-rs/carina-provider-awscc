@@ -22,7 +22,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_description_attribute());
     #[inline(never)]
     fn build_display_name_attribute() -> AttributeSchema {
-        AttributeSchema::required("display_name", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IdentitystoreGroupDisplayName.identity(), Some(carina_core::schema::PatternSpec::new("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  ]+$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(1024))), crate::schemas::string_identity::StringIdentity::IdentitystoreGroupDisplayName.check().expect("shared string check"), None))
+        AttributeSchema::required("display_name", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IdentitystoreGroupDisplayName.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  ]+$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(1024))))))
                 .with_description("A string containing the name of the group. This value is commonly displayed when the group is referenced.")
                 .with_provider_name("DisplayName")
             .build()
@@ -30,7 +30,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_display_name_attribute());
     #[inline(never)]
     fn build_group_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("group_id", AttributeType::refined_string(Some(crate::schemas::string_identity::StringIdentity::SsoPrincipalId.identity()), Some(carina_core::schema::PatternSpec::new("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(47))), None))
+        AttributeSchema::provider_populated("group_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::SsoPrincipalId.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(47))))))
                 .with_description("The unique identifier for a group in the identity store. (read-only)")
                 .with_provider_name("GroupId")
             .build()
@@ -38,7 +38,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_group_id_attribute());
     #[inline(never)]
     fn build_identity_store_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("identity_store_id", AttributeType::refined_string(Some(crate::schemas::string_identity::StringIdentity::IdentitystoreStoreId.identity()), Some(carina_core::schema::PatternSpec::new("^d-[0-9a-f]{10}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(36))), None))
+        AttributeSchema::required("identity_store_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IdentitystoreStoreId.identity_layer(), carina_core::schema::StringMemberConstraints::new(Some(carina_core::schema::PatternSpec::new("^d-[0-9a-f]{10}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(36))))))
                 .create_only()
                 .with_description("The globally unique identifier for the identity store.")
                 .with_provider_name("IdentityStoreId")

@@ -173,7 +173,7 @@ The number of consecutive health check failures required before considering a ta
 
 ### `vpc_id`
 
-- **Type:** `aws.ec2.Vpc.Id`
+- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -243,8 +243,8 @@ Shorthand formats: `instance` or `TargetType.instance`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `grpc_code` | `aws.elasticloadbalancingv2.TargetGroup.GrpcCode` | No | You can specify values between 0 and 99. You can specify multiple values, or a range of values. The default value is 12. |
-| `http_code` | `aws.elasticloadbalancingv2.TargetGroup.HttpCode` | No | For Application Load Balancers, you can specify values between 200 and 499, and the default value is 200. You can specify multiple values or a range of values.  |
+| `grpc_code` | aws.elasticloadbalancingv2.TargetGroup.GrpcCode — identity: String; member: String | No | You can specify values between 0 and 99. You can specify multiple values, or a range of values. The default value is 12. |
+| `http_code` | aws.elasticloadbalancingv2.TargetGroup.HttpCode — identity: String; member: String | No | For Application Load Balancers, you can specify values between 200 and 499, and the default value is 200. You can specify multiple values or a range of values.  |
 
 ### target_group_attributes
 
@@ -266,13 +266,13 @@ Shorthand formats: `instance` or `TargetType.instance`
 
 ### `load_balancer_arns`
 
-- **Type:** `List<aws.Arn>` (items: ..=1)
+- **Type:** `List<aws.Arn — identity: String(pattern); member: String>` (items: ..=1)
 
 The Amazon Resource Names (ARNs) of the load balancers that route traffic to this target group.
 
 ### `target_group_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 
 The ARN of the Target Group
 

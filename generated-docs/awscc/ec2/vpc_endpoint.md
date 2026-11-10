@@ -81,7 +81,7 @@ Indicate whether to associate a private hosted zone with the specified VPC. The 
 
 ### `resource_configuration_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -89,14 +89,14 @@ The Amazon Resource Name (ARN) of the resource configuration.
 
 ### `route_table_ids`
 
-- **Type:** `List<aws.ec2.RouteTable.Id>` (unique items)
+- **Type:** `List<aws.ec2.RouteTable.Id — identity: String(pattern); member: String>` (unique items)
 - **Required:** No
 
 The IDs of the route tables. Routing is supported only for gateway endpoints.
 
 ### `security_group_ids`
 
-- **Type:** `List<aws.ec2.SecurityGroup.Id>` (unique items)
+- **Type:** `List<aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String>` (unique items)
 - **Required:** No
 
 The IDs of the security groups to associate with the endpoint network interfaces. If this parameter is not specified, we use the default security group for the VPC. Security groups are supported only for interface endpoints.
@@ -111,7 +111,7 @@ The name of the endpoint service.
 
 ### `service_network_arn`
 
-- **Type:** `aws.Arn`
+- **Type:** aws.Arn — identity: String(pattern); member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -119,7 +119,7 @@ The Amazon Resource Name (ARN) of the service network.
 
 ### `service_region`
 
-- **Type:** `aws.Region`
+- **Type:** aws.Region — identity: String; member: String
 - **Required:** No
 - **Create-only:** Yes
 
@@ -127,7 +127,7 @@ Describes a Region.
 
 ### `subnet_ids`
 
-- **Type:** `List<aws.ec2.Subnet.Id>` (unique items)
+- **Type:** `List<aws.ec2.Subnet.Id — identity: String(pattern); member: String>` (unique items)
 - **Required:** No
 
 The IDs of the subnets in which to create endpoint network interfaces. You must specify this property for an interface endpoint or a Gateway Load Balancer endpoint. You can't specify this property for a gateway endpoint. For a Gateway Load Balancer endpoint, you can specify only one subnet.
@@ -149,7 +149,7 @@ The type of endpoint. Default: Gateway
 
 ### `vpc_id`
 
-- **Type:** `aws.ec2.Vpc.Id`
+- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -240,13 +240,13 @@ Shorthand formats: `interface` or `VpcEndpointType.interface`
 
 ### `id`
 
-- **Type:** `aws.ec2.VpcEndpoint.Id`
+- **Type:** aws.ec2.VpcEndpoint.Id — identity: String(pattern); member: String
 
 
 
 ### `network_interface_ids`
 
-- **Type:** `List<aws.ec2.NetworkInterface.Id>`
+- **Type:** `List<aws.ec2.NetworkInterface.Id — identity: String(pattern); member: String>`
 
 
 

@@ -71,7 +71,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_dns_options_attribute());
     #[inline(never)]
     fn build_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcEndpointId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcEndpointId.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcEndpointId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("Id")
             .build()
@@ -87,7 +87,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ip_address_type_attribute());
     #[inline(never)]
     fn build_network_interface_ids_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("network_interface_ids", AttributeType::unordered_list(AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2NetworkInterfaceId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2NetworkInterfaceId.check().expect("shared string check"), None)))
+        AttributeSchema::provider_populated("network_interface_ids", AttributeType::unordered_list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2NetworkInterfaceId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))))
                 .with_description(" (read-only)")
                 .with_provider_name("NetworkInterfaceIds")
             .build()
@@ -112,7 +112,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_private_dns_enabled_attribute());
     #[inline(never)]
     fn build_resource_configuration_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("resource_configuration_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
+        AttributeSchema::optional("resource_configuration_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The Amazon Resource Name (ARN) of the resource configuration.")
                 .with_provider_name("ResourceConfigurationArn")
@@ -121,7 +121,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_resource_configuration_arn_attribute());
     #[inline(never)]
     fn build_route_table_ids_attribute() -> AttributeSchema {
-        AttributeSchema::optional("route_table_ids", AttributeType::refined_list(AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2RouteTableId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2RouteTableId.check().expect("shared string check"), None), false, None, carina_core::schema::ListElements::Unique))
+        AttributeSchema::optional("route_table_ids", AttributeType::refined_list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2RouteTableId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The IDs of the route tables. Routing is supported only for gateway endpoints.")
                 .with_provider_name("RouteTableIds")
             .build()
@@ -129,7 +129,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_route_table_ids_attribute());
     #[inline(never)]
     fn build_security_group_ids_attribute() -> AttributeSchema {
-        AttributeSchema::optional("security_group_ids", AttributeType::refined_list(AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2SecurityGroupId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2SecurityGroupId.check().expect("shared string check"), None), false, None, carina_core::schema::ListElements::Unique))
+        AttributeSchema::optional("security_group_ids", AttributeType::refined_list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2SecurityGroupId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The IDs of the security groups to associate with the endpoint network interfaces. If this parameter is not specified, we use the default security group for the VPC. Security groups are supported only for interface endpoints.")
                 .with_provider_name("SecurityGroupIds")
             .build()
@@ -146,7 +146,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_service_name_attribute());
     #[inline(never)]
     fn build_service_network_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("service_network_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
+        AttributeSchema::optional("service_network_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The Amazon Resource Name (ARN) of the service network.")
                 .with_provider_name("ServiceNetworkArn")
@@ -155,7 +155,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_service_network_arn_attribute());
     #[inline(never)]
     fn build_service_region_attribute() -> AttributeSchema {
-        AttributeSchema::optional("service_region", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Region.identity(), None, None, crate::schemas::string_identity::StringIdentity::Region.check().expect("shared string check"), None))
+        AttributeSchema::optional("service_region", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Region.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("Describes a Region.")
                 .with_provider_name("ServiceRegion")
@@ -164,7 +164,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_service_region_attribute());
     #[inline(never)]
     fn build_subnet_ids_attribute() -> AttributeSchema {
-        AttributeSchema::optional("subnet_ids", AttributeType::refined_list(AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2SubnetId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2SubnetId.check().expect("shared string check"), None), false, None, carina_core::schema::ListElements::Unique))
+        AttributeSchema::optional("subnet_ids", AttributeType::refined_list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2SubnetId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The IDs of the subnets in which to create endpoint network interfaces. You must specify this property for an interface endpoint or a Gateway Load Balancer endpoint. You can't specify this property for a gateway endpoint. For a Gateway Load Balancer endpoint, you can specify only one subnet.")
                 .with_provider_name("SubnetIds")
             .build()
@@ -190,7 +190,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_vpc_endpoint_type_attribute());
     #[inline(never)]
     fn build_vpc_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("vpc_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcId.check().expect("shared string check"), None))
+        AttributeSchema::required("vpc_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ID of the VPC.")
                 .with_provider_name("VpcId")

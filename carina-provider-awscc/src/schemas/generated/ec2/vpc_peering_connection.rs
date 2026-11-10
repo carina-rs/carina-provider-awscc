@@ -14,7 +14,7 @@ pub fn ec2_vpc_peering_connection_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for AWS::EC2::VPCPeeringConnection");
     #[inline(never)]
     fn build_assume_role_region_attribute() -> AttributeSchema {
-        AttributeSchema::optional("assume_role_region", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Region.identity(), None, None, crate::schemas::string_identity::StringIdentity::Region.check().expect("shared string check"), None))
+        AttributeSchema::optional("assume_role_region", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Region.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .write_only()
                 .with_description("The Region code to use when calling Security Token Service (STS) to assume the PeerRoleArn, if provided.")
@@ -24,14 +24,14 @@ pub fn ec2_vpc_peering_connection_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_assume_role_region_attribute());
     #[inline(never)]
     fn build_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcPeeringConnectionId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcPeeringConnectionId.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcPeeringConnectionId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_provider_name("Id")
             .build()
     }
     schema = schema.attribute(build_id_attribute());
     #[inline(never)]
     fn build_peer_owner_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("peer_owner_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::AccountId.identity(), None, None, crate::schemas::string_identity::StringIdentity::AccountId.check().expect("shared string check"), None))
+        AttributeSchema::optional("peer_owner_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::AccountId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The AWS account ID of the owner of the accepter VPC.")
                 .with_provider_name("PeerOwnerId")
@@ -40,7 +40,7 @@ pub fn ec2_vpc_peering_connection_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_peer_owner_id_attribute());
     #[inline(never)]
     fn build_peer_region_attribute() -> AttributeSchema {
-        AttributeSchema::optional("peer_region", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Region.identity(), None, None, crate::schemas::string_identity::StringIdentity::Region.check().expect("shared string check"), None))
+        AttributeSchema::optional("peer_region", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Region.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The Region code for the accepter VPC, if the accepter VPC is located in a Region other than the Region in which you make the request.")
                 .with_provider_name("PeerRegion")
@@ -49,7 +49,7 @@ pub fn ec2_vpc_peering_connection_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_peer_region_attribute());
     #[inline(never)]
     fn build_peer_role_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("peer_role_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::IamRoleArn.identity(), None, None, crate::schemas::string_identity::StringIdentity::IamRoleArn.check().expect("shared string check"), None))
+        AttributeSchema::optional("peer_role_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::IamRoleArn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .write_only()
                 .with_description("The Amazon Resource Name (ARN) of the VPC peer role for the peering connection in another AWS account.")
@@ -59,7 +59,7 @@ pub fn ec2_vpc_peering_connection_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_peer_role_arn_attribute());
     #[inline(never)]
     fn build_peer_vpc_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("peer_vpc_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcId.check().expect("shared string check"), None))
+        AttributeSchema::required("peer_vpc_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ID of the VPC with which you are creating the VPC peering connection. You must specify this parameter in the request.")
                 .with_provider_name("PeerVpcId")
@@ -76,7 +76,7 @@ pub fn ec2_vpc_peering_connection_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_vpc_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("vpc_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcId.check().expect("shared string check"), None))
+        AttributeSchema::required("vpc_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ID of the VPC.")
                 .with_provider_name("VpcId")

@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField, types};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 /// Returns the schema config for ec2_subnet (AWS::EC2::Subnet)
 #[rustfmt::skip]
@@ -22,7 +22,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_assign_ipv6_address_on_creation_attribute());
     #[inline(never)]
     fn build_availability_zone_attribute() -> AttributeSchema {
-        AttributeSchema::optional("availability_zone", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneName.identity(), None, None, crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneName.check().expect("shared string check"), None))
+        AttributeSchema::optional("availability_zone", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneName.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The Availability Zone of the subnet. If you update this property, you must also update the ``CidrBlock`` property.")
                 .with_provider_name("AvailabilityZone")
@@ -31,7 +31,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_availability_zone_attribute());
     #[inline(never)]
     fn build_availability_zone_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("availability_zone_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneId.identity(), None, None, crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneId.check().expect("shared string check"), None))
+        AttributeSchema::optional("availability_zone_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::AvailabilityZoneZoneId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The AZ ID of the subnet.")
                 .with_provider_name("AvailabilityZoneId")
@@ -48,7 +48,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_block_public_access_states_attribute());
     #[inline(never)]
     fn build_cidr_block_attribute() -> AttributeSchema {
-        AttributeSchema::optional("cidr_block", types::ipv4_cidr())
+        AttributeSchema::optional("cidr_block", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The IPv4 CIDR block assigned to the subnet. If you update this property, we create a new subnet, and then delete the existing one.")
                 .with_provider_name("CidrBlock")
@@ -74,7 +74,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_enable_lni_at_device_index_attribute());
     #[inline(never)]
     fn build_ipv4_ipam_pool_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipv4_ipam_pool_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.check().expect("shared string check"), None))
+        AttributeSchema::optional("ipv4_ipam_pool_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .write_only()
                 .with_description("An IPv4 IPAM pool ID for the subnet.")
@@ -94,7 +94,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipv4_netmask_length_attribute());
     #[inline(never)]
     fn build_ipv6_cidr_block_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipv6_cidr_block", types::ipv6_cidr())
+        AttributeSchema::optional("ipv6_cidr_block", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv6Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description("The IPv6 CIDR block. If you specify ``AssignIpv6AddressOnCreation``, you must also specify an IPv6 CIDR block.")
                 .with_provider_name("Ipv6CidrBlock")
             .build()
@@ -102,7 +102,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipv6_cidr_block_attribute());
     #[inline(never)]
     fn build_ipv6_cidr_blocks_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("ipv6_cidr_blocks", AttributeType::list(types::ipv6_cidr()))
+        AttributeSchema::provider_populated("ipv6_cidr_blocks", AttributeType::list(AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv6Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))))
                 .with_description(" (read-only)")
                 .with_provider_name("Ipv6CidrBlocks")
             .build()
@@ -110,7 +110,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipv6_cidr_blocks_attribute());
     #[inline(never)]
     fn build_ipv6_ipam_pool_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ipv6_ipam_pool_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.check().expect("shared string check"), None))
+        AttributeSchema::optional("ipv6_ipam_pool_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2IpamPoolId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .write_only()
                 .with_description("An IPv6 IPAM pool ID for the subnet.")
@@ -155,7 +155,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_network_acl_association_id_attribute());
     #[inline(never)]
     fn build_outpost_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("outpost_arn", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Arn.identity(), None, None, crate::schemas::string_identity::StringIdentity::Arn.check().expect("shared string check"), None))
+        AttributeSchema::optional("outpost_arn", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The Amazon Resource Name (ARN) of the Outpost.")
                 .with_provider_name("OutpostArn")
@@ -174,7 +174,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_private_dns_name_options_on_launch_attribute());
     #[inline(never)]
     fn build_subnet_id_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("subnet_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2SubnetId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2SubnetId.check().expect("shared string check"), None))
+        AttributeSchema::provider_populated("subnet_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2SubnetId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .with_description(" (read-only)")
                 .with_provider_name("SubnetId")
             .build()
@@ -191,7 +191,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_vpc_id_attribute() -> AttributeSchema {
-        AttributeSchema::required("vpc_id", AttributeType::refined_string_with_validator(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity(), None, None, crate::schemas::string_identity::StringIdentity::Ec2VpcId.check().expect("shared string check"), None))
+        AttributeSchema::required("vpc_id", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ec2VpcId.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None)))
                 .create_only()
                 .with_description("The ID of the VPC the subnet is in. If you update this property, you must also update the ``CidrBlock`` property.")
                 .with_provider_name("VpcId")

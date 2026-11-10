@@ -22,4 +22,4 @@ The tags for the VPC.
 
 ### `cidr_block_associations`
 
-- **Type:** `List<aws.ec2.VpcCidrBlockAssociation.Id>`
+- **Type:** `List<aws.ec2.VpcCidrBlockAssociation.Id — identity: String(pattern); member: String>`
