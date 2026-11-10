@@ -1,5 +1,6 @@
 use carina_core::provider::ProviderFactory;
 use carina_core::schema::RawShape;
+use carina_core::schema::StringIdentityParts;
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
@@ -173,11 +174,14 @@ fn ipam_pool_locale_is_plain_string_accepting_regions_and_local_zone_border_grou
     assert!(matches!(
         locale.as_type().raw_shape(),
         RawShape::String {
-            identity: None,
-            pattern: None,
-            length: None,
-            validate: None,
-            to_dsl: None
+            identity_layer: StringIdentityParts {
+                identity: None,
+                pattern: None,
+                length: None,
+                validate: None,
+                to_dsl: None
+            },
+            ..
         }
     ));
     for value in ["us-west-2-lax-1", "ap-northeast-1"] {

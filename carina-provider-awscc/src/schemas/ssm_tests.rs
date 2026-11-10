@@ -1,4 +1,5 @@
 use carina_core::schema::RawShape;
+use carina_core::schema::StringIdentityParts;
 
 use crate::test_support::{field, try_validate_fixtures, validate_fixtures};
 
@@ -23,13 +24,11 @@ fn ssm_parameter_length_bounds_are_anonymous_strings() {
         assert!(
             matches!(
                 field(&schema, path).as_type().raw_shape(),
-                RawShape::String {
-                    identity: None,
+                RawShape::String { identity_layer: StringIdentityParts { identity: None,
                     pattern: None,
                     length: Some(length),
                     validate: None,
-                    to_dsl: None,
-                } if length == expected_length
+                    to_dsl: None }, .. } if length == expected_length
             ),
             "{path} must be an anonymous string with only length bounds"
         );

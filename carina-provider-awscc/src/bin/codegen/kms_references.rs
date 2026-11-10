@@ -22,7 +22,11 @@ pub enum ReferenceKind {
 impl ReferenceKind {
     pub fn default_length(self) -> Option<(Option<u64>, Option<u64>)> {
         let default_type = carina_aws_types::kms_key_reference();
-        let carina_core::schema::RawShape::Reference { length, .. } = default_type.raw_shape()
+        let carina_core::schema::RawShape::Reference {
+            identity: _,
+            pattern: _,
+            length,
+        } = default_type.raw_shape()
         else {
             unreachable!("KMS constructors must return reference leaves");
         };
@@ -61,8 +65,9 @@ impl ReferenceKind {
         static DEFAULT_TYPE: std::sync::LazyLock<carina_core::schema::AttributeType> =
             std::sync::LazyLock::new(carina_aws_types::kms_key_reference);
         let carina_core::schema::RawShape::Reference {
+            identity: _,
             pattern: Some(pattern),
-            ..
+            length: _,
         } = DEFAULT_TYPE.raw_shape()
         else {
             unreachable!("KMS reference constructor must carry a pattern");

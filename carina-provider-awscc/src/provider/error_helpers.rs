@@ -1,9 +1,14 @@
 //! Structured AWS error construction for provider errors.
 
 use aws_smithy_types::error::metadata::ProvideErrorMetadata;
+use aws_smithy_types::retry::ProvideErrorKind;
+use carina_aws_types::Transience;
+use carina_aws_types::sdk::cloudcontrol::types::HandlerErrorCode;
 use carina_core::provider::ProviderError;
+use carina_core::provider_text::Retryability;
 #[cfg(test)]
 use carina_core::test_utils::provider_text::NativeWireFixture as _;
+use carina_provider_protocol::OperationKind;
 use thiserror::Error;
 
 type AwsSdkError<E> = aws_smithy_runtime_api::client::result::SdkError<
@@ -81,7 +86,7 @@ pub(crate) fn api_error_with_meta<E, S>(
 ) -> ProviderError
 where
     S: Into<String>,
-    E: std::error::Error + ProvideErrorMetadata + Send + Sync + 'static,
+    E: std::error::Error + ProvideErrorMetadata + ProvideErrorKind + Send + Sync + 'static,
 {
     api_error_with_meta_cause(context, operation, err, |message, source| {
         AwsServiceErrorCause { message, source }
@@ -97,7 +102,7 @@ pub(crate) fn api_error_with_meta_and_subject<E, S, Subject>(
 where
     S: Into<String>,
     Subject: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static,
-    E: std::error::Error + ProvideErrorMetadata + Send + Sync + 'static,
+    E: std::error::Error + ProvideErrorMetadata + ProvideErrorKind + Send + Sync + 'static,
 {
     api_error_with_meta_cause(context, operation, err, |message, source| {
         AwsServiceErrorWithSubjectCause {
@@ -117,8 +122,12 @@ fn api_error_with_meta_cause<E, S, Cause>(
 where
     S: Into<String>,
     Cause: std::error::Error + Send + Sync + 'static,
-    E: std::error::Error + ProvideErrorMetadata + Send + Sync + 'static,
+    E: std::error::Error + ProvideErrorMetadata + ProvideErrorKind + Send + Sync + 'static,
 {
+    let retryability = match super::AwsccProvider::read_error_transience(&err) {
+        Transience::Transient => Retryability::Transient,
+        Transience::Permanent => Retryability::Unclassified,
+    };
     let status = err
         .raw_response()
         .map(|response| response.status().as_u16());
@@ -139,7 +148,8 @@ where
         } else {
             ProviderError::api_error_caused_by(context, cause)
         }
-        .with_operation(operation);
+        .with_operation(operation)
+        .with_retryability(retryability);
     if let Some(status) = status {
         error = error.with_status(status);
     }
@@ -183,6 +193,39 @@ fn is_not_found_error_code(code: &str) -> bool {
     )
 }
 
+/// Classify handler failures while their structured code and status message are available.
+pub(crate) fn cloudcontrol_failure_retryability(
+    operation: OperationKind,
+    error_code: Option<&HandlerErrorCode>,
+    status_message: &str,
+) -> Retryability {
+    if matches!(error_code, Some(HandlerErrorCode::Throttling))
+        || ["Throttling", "Rate exceeded", "RequestLimitExceeded"]
+            .iter()
+            .any(|marker| status_message.contains(marker))
+    {
+        return Retryability::Transient;
+    }
+    if operation == OperationKind::Delete
+        && (error_code.is_some_and(|code| {
+            // The pinned SDK models ResourceConflict; as_str also accepts a
+            // DependencyViolation code from a newer CloudControl handler.
+            matches!(code.as_str(), "ResourceConflict" | "DependencyViolation")
+        }) || [
+            "DependencyViolation",
+            "has dependent object",
+            "has a dependent object",
+            "resource has dependencies",
+            "mapped public address",
+        ]
+        .iter()
+        .any(|marker| status_message.contains(marker)))
+    {
+        return Retryability::DependencyBlocked;
+    }
+    Retryability::Unclassified
+}
+
 /// Terminal CloudControl operation status returned after a successful API call.
 #[derive(Debug, Error)]
 pub(crate) enum CloudControlOperationFailure {
@@ -195,6 +238,22 @@ pub(crate) enum CloudControlOperationFailure {
 }
 
 impl CloudControlOperationFailure {
+    pub(crate) fn into_provider_error(
+        self,
+        operation: OperationKind,
+        error_code: Option<&HandlerErrorCode>,
+    ) -> ProviderError {
+        let (Self::Generic { status_message } | Self::SnsTopicArchivePolicy { status_message }) =
+            &self;
+        let retryability = cloudcontrol_failure_retryability(operation, error_code, status_message);
+        let mut error = ProviderError::api_error_caused_by("Operation failed", self)
+            .with_retryability(retryability);
+        if let Some(code) = error_code {
+            error = error.with_code(code.as_str());
+        }
+        error
+    }
+
     pub(crate) fn new(status_message: impl Into<String>) -> Self {
         Self::Generic {
             status_message: status_message.into(),
@@ -228,6 +287,58 @@ mod tests {
     use carina_aws_types::sdk::cloudcontrol::types::error::GeneralServiceException;
     use carina_core::test_utils::provider_text::BindProviderText as _;
     use carina_provider_protocol::types::ProviderErrorKind;
+
+    #[test]
+    fn typed_retryability_sdk_errors_survive_host_binding() {
+        for (status, code, expected) in [
+            (400, "ThrottlingException", Retryability::Transient),
+            (400, "RequestTimeout", Retryability::Transient),
+            (400, "SlowDown", Retryability::Transient),
+            (409, "OperationAborted", Retryability::Unclassified),
+            (429, "Unmodeled", Retryability::Transient),
+            (500, "Unmodeled", Retryability::Transient),
+            (503, "Unmodeled", Retryability::Transient),
+            (403, "AccessDeniedException", Retryability::Unclassified),
+            (400, "InvalidRequestException", Retryability::Unclassified),
+        ] {
+            let sdk_error = SdkError::service_error(
+                aws_smithy_types::error::ErrorMetadata::builder()
+                    .code(code)
+                    .message("Throttling text alone must not decide SDK retryability")
+                    .build(),
+                Response::new(StatusCode::try_from(status).unwrap(), SdkBody::empty()),
+            );
+            let error = api_error_with_meta(
+                "Failed to get resource",
+                "cloudcontrol.GetResource",
+                sdk_error,
+            )
+            .into_host_for_test();
+            assert_eq!(error.retryability(), expected, "{status} {code}");
+            assert_eq!(error.is_transient(), expected == Retryability::Transient);
+            assert!(!error.is_delete_dependency());
+        }
+    }
+
+    #[test]
+    fn typed_retryability_sdk_io_retains_awscc_transport_policy() {
+        use carina_plugin_sdk::wasi_http::{SendPhase, transport_connector_error_for_test};
+
+        // The shared AWS classifier treats this code-less WASI I/O failure as
+        // permanent. AWSCC's existing read policy treats unannotated I/O
+        // failures as transient.
+        let connector = transport_connector_error_for_test(SendPhase::NotSent);
+        assert!(connector.is_io());
+        let sdk_error: SdkError<aws_smithy_types::error::ErrorMetadata> =
+            SdkError::dispatch_failure(connector);
+        let error = api_error_with_meta(
+            "Failed to get resource",
+            "cloudcontrol.GetResource",
+            sdk_error,
+        )
+        .into_host_for_test();
+        assert_eq!(error.retryability(), Retryability::Transient);
+    }
 
     #[test]
     fn cloudcontrol_error_renders_reason_once_and_preserves_wire_metadata() {

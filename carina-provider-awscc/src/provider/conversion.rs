@@ -365,9 +365,10 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     // is restricted to structural state→DSL normalization, so the
     // pre-#3222 `namespace: None` gate is no longer needed.
     if let Shape::String {
-        to_dsl: Some(transform),
-        ..
+        identity_layer,
+        member_layer: _,
     } = shape
+        && let Some(transform) = identity_layer.to_dsl
         && let Some(s) = value.as_str()
     {
         return Some(Value::Concrete(ConcreteValue::String(

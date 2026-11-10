@@ -9,7 +9,8 @@ use carina_core::provider::{
 };
 use carina_core::resource::{ResolvedResource, Resource, ResourceId};
 use carina_core::schema::{
-    AttributeType, SchemaRegistry, ValidatedConfigSchema, ValidatedProviderSchemaWitness,
+    AttributeType, SchemaRegistry, StringIdentityParts, ValidatedConfigSchema,
+    ValidatedProviderSchemaWitness,
 };
 use carina_provider_awscc::AwsccNormalizer;
 
@@ -87,7 +88,11 @@ pub async fn dispatch_create<P: carina_core::provider::Provider + ?Sized>(
 
 #[allow(dead_code)]
 pub fn assert_arn_identity(t: AttributeType, expected: &str) {
-    let carina_core::schema::RawShape::String { identity, .. } = t.raw_shape() else {
+    let carina_core::schema::RawShape::String {
+        identity_layer: StringIdentityParts { identity, .. },
+        ..
+    } = t.raw_shape()
+    else {
         panic!("arn() should be a refined string");
     };
     assert_eq!(identity.map(|id| id.to_string()).as_deref(), Some(expected));

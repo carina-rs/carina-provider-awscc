@@ -1,6 +1,7 @@
 mod common;
 
 use carina_core::resource::{ConcreteValue, Value};
+use carina_core::schema::StringIdentityParts;
 
 #[test]
 fn arn_identity_is_provider_scoped() {
@@ -13,7 +14,11 @@ fn arn_identity_is_provider_scoped() {
 #[test]
 fn arn_accepts_eks_multi_segment_oidc_provider() {
     let t = carina_provider_awscc::schemas::generated::iam::oidc_provider::arn();
-    let carina_core::schema::RawShape::String { validate, .. } = t.raw_shape() else {
+    let carina_core::schema::RawShape::String {
+        identity_layer: StringIdentityParts { validate, .. },
+        ..
+    } = t.raw_shape()
+    else {
         panic!("arn() should be a refined string");
     };
     let v = Value::Concrete(ConcreteValue::String(

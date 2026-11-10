@@ -3,8 +3,9 @@
 //! both the inline Action.RedirectConfig site and the def-map RedirectConfig
 //! site, so a future codegen regression that reverts either one is caught
 //! locally.
-
-use carina_core::schema::{CompiledAttributeType, CompiledStructField, RawShape};
+use carina_core::schema::{
+    CompiledAttributeType, CompiledStructField, RawShape, StringIdentityParts,
+};
 use carina_provider_awscc::schemas::generated::elasticloadbalancingv2::listener::elasticloadbalancingv2_listener_config;
 
 fn find_field<'a>(t: &'a CompiledAttributeType, field: &str) -> Option<&'a CompiledStructField> {
@@ -22,7 +23,11 @@ fn peel_list_element(t: &CompiledAttributeType) -> &CompiledAttributeType {
 }
 
 fn assert_redirect_type(field: &CompiledStructField, expected_identity: &str, where_: &str) {
-    let RawShape::String { identity, .. } = field.field_type().raw_shape() else {
+    let RawShape::String {
+        identity_layer: StringIdentityParts { identity, .. },
+        ..
+    } = field.field_type().raw_shape()
+    else {
         panic!(
             "{where_}: redirect field should be a refined string, got {:?}",
             field.field_type().raw_shape()

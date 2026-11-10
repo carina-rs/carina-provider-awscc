@@ -3,6 +3,7 @@ use carina_core::formatter::{FormatConfig, format};
 use carina_core::parser::{ProviderContext, parse_file};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_core::schema::RawShape;
+use carina_core::schema::StringIdentityParts;
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
@@ -334,13 +335,11 @@ fn refined_topic_strings_accept_arn_and_identity_typed_references() {
         assert!(
             matches!(
                 sink.as_type().raw_shape(),
-                RawShape::String {
-                    identity: None,
+                RawShape::String { identity_layer: StringIdentityParts { identity: None,
                     pattern,
                     length,
                     validate: None,
-                    to_dsl: None,
-                } if pattern.is_some() == refined && length == expected_length
+                    to_dsl: None }, .. } if pattern.is_some() == refined && length == expected_length
             ),
             "{path} must retain its declared string constraints"
         );
@@ -350,7 +349,10 @@ fn refined_topic_strings_accept_arn_and_identity_typed_references() {
             assert!(matches!(
                 source.as_type().raw_shape(),
                 RawShape::String {
-                    identity: Some(_),
+                    identity_layer: StringIdentityParts {
+                        identity: Some(_),
+                        ..
+                    },
                     ..
                 }
             ));

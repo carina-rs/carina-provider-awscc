@@ -20,7 +20,7 @@ use carina_core::provider::{ProviderError, ProviderResult};
 #[cfg(test)]
 use carina_core::test_utils::provider_text::BindProviderText as _;
 use carina_plugin_sdk::PhasedToken;
-use carina_provider_protocol::{OperationStep, PendingPhase};
+use carina_provider_protocol::{OperationKind, OperationStep, PendingPhase};
 use serde::{Deserialize, Serialize};
 
 use super::read_back::{ReadBackContinuation, ReadFailure, UpdateReadBackContinuation};
@@ -40,6 +40,7 @@ pub enum WaitOutcome {
     PartialOrFailed {
         identifier: String,
         status_message: String,
+        error_code: Option<HandlerErrorCode>,
     },
 }
 
@@ -1559,7 +1560,7 @@ impl AwsccProvider {
                     .await?
             }
             CcRequestPhase::InFlight(token) => {
-                self.poll_in_flight_phase(type_name, token, retry_policy)
+                self.poll_in_flight_phase(type_name, token, retry_policy, OperationKind::Update)
                     .await?
             }
         };
@@ -1701,7 +1702,7 @@ impl AwsccProvider {
                     .await?
             }
             CcRequestPhase::InFlight(token) => {
-                self.poll_in_flight_phase(type_name, token, retry_policy)
+                self.poll_in_flight_phase(type_name, token, retry_policy, OperationKind::Delete)
                     .await?
             }
         };
@@ -1789,8 +1790,9 @@ impl AwsccProvider {
         type_name: &str,
         token: InFlightRequest,
         retry_policy: RetryPolicy,
+        operation: OperationKind,
     ) -> ProviderResult<CcWaitStep> {
-        match self.poll_request_status(token).await? {
+        match self.poll_request_status(token, operation).await? {
             RequestStatusStep::Pending(token) => Ok(OperationStep::Pending {
                 pending: token.into(),
                 poll_after_secs: POLL_AFTER_SECS,
@@ -2085,12 +2087,14 @@ impl AwsccProvider {
     fn finish_delete_step(type_name: &str, step: CcWaitStep) -> ProviderResult<CcDeleteWaitStep> {
         match step {
             OperationStep::Done(WaitOutcome::Success { .. }) => Ok(OperationStep::Done(())),
-            OperationStep::Done(WaitOutcome::PartialOrFailed { status_message, .. }) => {
-                Err(ProviderError::api_error_caused_by(
-                    "Operation failed",
-                    CloudControlOperationFailure::for_delete(type_name, status_message),
-                ))
-            }
+            OperationStep::Done(WaitOutcome::PartialOrFailed {
+                status_message,
+                error_code,
+                ..
+            }) => Err(
+                CloudControlOperationFailure::for_delete(type_name, status_message)
+                    .into_provider_error(OperationKind::Delete, error_code.as_ref()),
+            ),
             OperationStep::Verdict(error) => Ok(OperationStep::Verdict(error)),
             OperationStep::Pending {
                 pending,
@@ -2255,6 +2259,7 @@ impl AwsccProvider {
     async fn poll_request_status(
         &self,
         token: InFlightRequest,
+        operation: OperationKind,
     ) -> ProviderResult<RequestStatusStep> {
         let request = token.request().clone();
         let status = self
@@ -2276,7 +2281,7 @@ impl AwsccProvider {
         let Some(progress) = status.progress_event() else {
             return Ok(RequestStatusStep::Pending(token));
         };
-        match Self::classify_progress_event(&self.diagnostics, progress) {
+        match Self::classify_progress_event(&self.diagnostics, progress, operation) {
             Ok(Some(outcome)) => Ok(RequestStatusStep::Done(outcome)),
             Ok(None) => Ok(RequestStatusStep::Pending(token)),
             Err(error)
@@ -2307,9 +2312,11 @@ impl AwsccProvider {
             WaitOutcome::PartialOrFailed {
                 identifier,
                 status_message,
+                error_code,
             } if identifier.is_empty() => WaitOutcome::PartialOrFailed {
                 identifier: fallback.to_string(),
                 status_message,
+                error_code,
             },
             other => other,
         }
@@ -2318,6 +2325,7 @@ impl AwsccProvider {
     pub(crate) fn classify_progress_event(
         diagnostics: &carina_plugin_sdk::ProviderDiagnostics,
         progress: &ProgressEvent,
+        operation: OperationKind,
     ) -> ProviderResult<Option<WaitOutcome>> {
         match progress.operation_status() {
             None
@@ -2327,8 +2335,9 @@ impl AwsccProvider {
             Some(OperationStatus::Success) => Ok(Some(WaitOutcome::Success {
                 identifier: progress.identifier().unwrap_or("").to_string(),
             })),
-            Some(OperationStatus::Failed) => Self::terminal_failure_outcome(progress),
-            Some(OperationStatus::CancelComplete) => Self::terminal_failure_outcome(progress),
+            Some(OperationStatus::Failed | OperationStatus::CancelComplete) => {
+                Self::terminal_failure_outcome(progress, operation)
+            }
             Some(future_status) => {
                 diagnostics.emit(carina_plugin_sdk::ProviderEvent::diagnostic(
                     carina_plugin_sdk::EventLevel::Warn,
@@ -2344,7 +2353,10 @@ impl AwsccProvider {
         }
     }
 
-    fn terminal_failure_outcome(progress: &ProgressEvent) -> ProviderResult<Option<WaitOutcome>> {
+    fn terminal_failure_outcome(
+        progress: &ProgressEvent,
+        operation: OperationKind,
+    ) -> ProviderResult<Option<WaitOutcome>> {
         let msg = progress
             .status_message()
             .unwrap_or("Unknown error")
@@ -2352,15 +2364,16 @@ impl AwsccProvider {
         if let Some(identifier) = progress.identifier()
             && !identifier.is_empty()
         {
+            // Preserve the existing identifier-bearing outcome and its retry
+            // behavior. Delete error construction still needs the handler code.
             return Ok(Some(WaitOutcome::PartialOrFailed {
                 identifier: identifier.to_string(),
                 status_message: msg,
+                error_code: progress.error_code().cloned(),
             }));
         }
-        Err(ProviderError::api_error_caused_by(
-            "Operation failed",
-            CloudControlOperationFailure::new(msg),
-        ))
+        Err(CloudControlOperationFailure::new(msg)
+            .into_provider_error(operation, progress.error_code()))
     }
 }
 
@@ -2746,6 +2759,34 @@ mod tests {
     }
 
     #[test]
+    fn typed_retryability_progress_throttling_uses_code_or_status_message() {
+        for (code, message) in [
+            (
+                Some(HandlerErrorCode::Throttling),
+                "downstream rejected request",
+            ),
+            (None, "Throttling"),
+            (None, "Rate exceeded"),
+            (None, "RequestLimitExceeded"),
+        ] {
+            let event = ProgressEvent::builder()
+                .operation_status(OperationStatus::Failed)
+                .set_error_code(code)
+                .status_message(message)
+                .build();
+            let error = AwsccProvider::classify_progress_event(
+                &crate::test_support::diagnostics(),
+                &event,
+                OperationKind::Update,
+            )
+            .expect_err("terminal progress without an identifier")
+            .into_host_for_test();
+            assert!(error.is_transient(), "{message}");
+            assert!(!error.is_delete_dependency());
+        }
+    }
+
+    #[test]
     fn classify_failed_progress_with_identifier_as_partial_or_failed() {
         let progress = progress(
             OperationStatus::Failed,
@@ -2753,16 +2794,20 @@ mod tests {
             Some("post-create read denied"),
         );
 
-        let outcome =
-            AwsccProvider::classify_progress_event(&crate::test_support::diagnostics(), &progress)
-                .expect("classification should not fail")
-                .expect("terminal failed progress must produce an outcome");
+        let outcome = AwsccProvider::classify_progress_event(
+            &crate::test_support::diagnostics(),
+            &progress,
+            OperationKind::Update,
+        )
+        .expect("classification should not fail")
+        .expect("terminal failed progress must produce an outcome");
 
         assert_eq!(
             outcome,
             WaitOutcome::PartialOrFailed {
                 identifier: "arn:aws:test:resource/created".to_string(),
                 status_message: "post-create read denied".to_string(),
+                error_code: None,
             }
         );
     }
@@ -2775,9 +2820,12 @@ mod tests {
             Some("handler failed before identifier"),
         );
 
-        let err =
-            AwsccProvider::classify_progress_event(&crate::test_support::diagnostics(), &progress)
-                .expect_err("failed progress without identifier must remain an error");
+        let err = AwsccProvider::classify_progress_event(
+            &crate::test_support::diagnostics(),
+            &progress,
+            OperationKind::Update,
+        )
+        .expect_err("failed progress without identifier must remain an error");
 
         assert_eq!(
             err.clone()
@@ -2801,9 +2849,12 @@ mod tests {
             Some("handler failed before useful identifier"),
         );
 
-        let err =
-            AwsccProvider::classify_progress_event(&crate::test_support::diagnostics(), &progress)
-                .expect_err("empty identifier must not be treated as partial success");
+        let err = AwsccProvider::classify_progress_event(
+            &crate::test_support::diagnostics(),
+            &progress,
+            OperationKind::Update,
+        )
+        .expect_err("empty identifier must not be treated as partial success");
 
         assert_eq!(
             err.clone()
@@ -2827,16 +2878,20 @@ mod tests {
             Some("operation cancelled after identifier"),
         );
 
-        let outcome =
-            AwsccProvider::classify_progress_event(&crate::test_support::diagnostics(), &progress)
-                .expect("classification should not fail")
-                .expect("terminal cancelled progress must produce an outcome");
+        let outcome = AwsccProvider::classify_progress_event(
+            &crate::test_support::diagnostics(),
+            &progress,
+            OperationKind::Update,
+        )
+        .expect("classification should not fail")
+        .expect("terminal cancelled progress must produce an outcome");
 
         assert_eq!(
             outcome,
             WaitOutcome::PartialOrFailed {
                 identifier: "created-before-cancel".to_string(),
                 status_message: "operation cancelled after identifier".to_string(),
+                error_code: None,
             }
         );
     }
@@ -2849,9 +2904,12 @@ mod tests {
             Some("operation cancelled before identifier"),
         );
 
-        let err =
-            AwsccProvider::classify_progress_event(&crate::test_support::diagnostics(), &progress)
-                .expect_err("cancel without identifier must remain an error");
+        let err = AwsccProvider::classify_progress_event(
+            &crate::test_support::diagnostics(),
+            &progress,
+            OperationKind::Update,
+        )
+        .expect_err("cancel without identifier must remain an error");
 
         assert_eq!(
             err.clone()

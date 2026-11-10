@@ -1,4 +1,4 @@
-use carina_core::schema::{CompiledAttributeType, CompiledPattern, RawShape};
+use carina_core::schema::{CompiledAttributeType, CompiledPattern, RawShape, StringIdentityParts};
 
 use super::pattern::{ApprovedPattern, SUBSTRING_PATTERN_EXCEPTIONS, is_whole_anchored};
 use crate::test_support::{field, string};
@@ -93,6 +93,28 @@ fn substring_exception_lookup_requires_the_exact_resource_path_and_source() {
     assert!(lookup(exception.resource_type, exception.source_path, "changed").is_none());
 }
 
+fn audit_pattern(
+    resource: &str,
+    path: &str,
+    pattern: Option<&carina_core::schema::PatternSpec>,
+    failures: &mut Vec<String>,
+) -> usize {
+    let Some(pattern) = pattern else {
+        return 0;
+    };
+    if !matches!(pattern.mode(), carina_core::schema::PatternMatch::Full)
+        && !SUBSTRING_PATTERN_EXCEPTIONS.iter().any(|exception| {
+            exception.resource_type == resource
+                && exception.schema_paths.contains(&path)
+                && exception.emitted == pattern.as_str()
+                && matches!(pattern.mode(), carina_core::schema::PatternMatch::Substring { reason } if reason.as_str() == exception.reason)
+        })
+    {
+        failures.push(format!("{resource} {path}: {pattern:?}"));
+    }
+    1
+}
+
 fn audit_patterns(
     resource: &str,
     path: &str,
@@ -101,20 +123,15 @@ fn audit_patterns(
 ) -> usize {
     let mut count = 0;
     match attr.raw_shape() {
-        RawShape::String { pattern, .. } | RawShape::Reference { pattern, .. } => {
-            if let Some(pattern) = pattern {
-                count += 1;
-                if !matches!(pattern.mode(), carina_core::schema::PatternMatch::Full)
-                    && !SUBSTRING_PATTERN_EXCEPTIONS.iter().any(|exception| {
-                        exception.resource_type == resource
-                            && exception.schema_paths.contains(&path)
-                            && exception.emitted == pattern.as_str()
-                            && matches!(pattern.mode(), carina_core::schema::PatternMatch::Substring { reason } if reason.as_str() == exception.reason)
-                    })
-                {
-                    failures.push(format!("{resource} {path}: {pattern:?}"));
-                }
-            }
+        RawShape::String {
+            identity_layer,
+            member_layer,
+        } => {
+            count += audit_pattern(resource, path, identity_layer.pattern, failures);
+            count += audit_pattern(resource, path, member_layer.pattern, failures);
+        }
+        RawShape::Reference { pattern, .. } => {
+            count += audit_pattern(resource, path, pattern, failures);
         }
         RawShape::Struct { fields, .. } => {
             for field in fields {
@@ -247,7 +264,11 @@ fn oidc_thumbprint_items_match_exactly_forty_hex_characters() {
     let thumbprints = field(&config.schema, "thumbprint_list");
     let item = thumbprints.list_element().unwrap();
     let RawShape::String {
-        pattern: Some(pattern),
+        identity_layer:
+            StringIdentityParts {
+                pattern: Some(pattern),
+                ..
+            },
         ..
     } = item.as_type().raw_shape()
     else {
@@ -280,7 +301,10 @@ fn organization_management_account_email_rejects_embedded_email_values() {
     assert!(matches!(
         email.as_type().raw_shape(),
         RawShape::String {
-            length: Some((Some(6), Some(64))),
+            identity_layer: StringIdentityParts {
+                length: Some((Some(6), Some(64))),
+                ..
+            },
             ..
         }
     ));
@@ -319,7 +343,11 @@ fn wafv2_non_whitespace_name_pattern_preserves_multiline_search_language() {
         "rules.statement.rate_based_statement.custom_keys.cookie.name",
     );
     let RawShape::String {
-        pattern: Some(pattern),
+        identity_layer:
+            StringIdentityParts {
+                pattern: Some(pattern),
+                ..
+            },
         ..
     } = name.as_type().raw_shape()
     else {
@@ -347,7 +375,11 @@ fn scheduler_source_preserves_the_registered_substring_language() {
     let config = super::generated::get_config_by_type("scheduler.Schedule").unwrap();
     let source = field(&config.schema, "target.event_bridge_parameters.source");
     let RawShape::String {
-        pattern: Some(pattern),
+        identity_layer:
+            StringIdentityParts {
+                pattern: Some(pattern),
+                ..
+            },
         ..
     } = source.as_type().raw_shape()
     else {

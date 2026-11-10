@@ -3,8 +3,9 @@
 #[path = "../bin/codegen/kms_references.rs"]
 #[allow(dead_code)]
 mod classification;
-
-use carina_core::schema::{CompiledAttributeType, CompiledResourceSchema, Shape, ShapeWalkBudget};
+use carina_core::schema::{
+    CompiledAttributeType, CompiledResourceSchema, Shape, ShapeWalkBudget, StringIdentityParts,
+};
 use classification::{
     CLASSIFICATIONS, Classification, NotReference, PathSegment, classify_string, property_path,
 };
@@ -99,7 +100,11 @@ impl Coverage {
                 ..
             } => check(pattern, Some(identity), length),
             Shape::String {
-                pattern, length, ..
+                identity_layer:
+                    StringIdentityParts {
+                        pattern, length, ..
+                    },
+                ..
             } => check(pattern, None, length),
             Shape::Enum { base, .. } => self.walk(schema, base, path, name, description, read_only),
             Shape::List { element_type, .. } => self.walk(
@@ -197,10 +202,13 @@ fn kms_key_outputs_keep_their_output_types() {
     let key_id = schema.attributes().get("key_id").unwrap();
     assert!(arn.is_read_only() && key_id.is_read_only());
     assert!(
-        matches!(schema.shape_of(arn.attr_type()), Shape::String { identity: Some(identity), .. } if identity == &carina_aws_types::AwsType::KmsKeyArn.identity())
+        matches!(schema.shape_of(arn.attr_type()), Shape::String { identity_layer: StringIdentityParts { identity: Some(identity), .. }, .. } if identity == &carina_aws_types::AwsType::KmsKeyArn.identity())
     );
     assert!(matches!(
         schema.shape_of(key_id.attr_type()),
-        Shape::String { identity: None, .. }
+        Shape::String {
+            identity_layer: StringIdentityParts { identity: None, .. },
+            ..
+        }
     ));
 }

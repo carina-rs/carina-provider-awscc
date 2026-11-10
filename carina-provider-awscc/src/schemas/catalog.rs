@@ -973,6 +973,7 @@ carina_aws_types::define_aws_type_catalog! {
 
 #[cfg(test)]
 mod tests {
+    use carina_core::schema::{IntIdentityParts, StringIdentityParts};
     use std::collections::BTreeSet;
 
     use carina_core::schema::RawShape;
@@ -1042,7 +1043,11 @@ mod tests {
             .copied()
             .filter_map(|row| match row.attribute_type().raw_shape() {
                 RawShape::String {
-                    pattern: Some(pattern),
+                    identity_layer:
+                        StringIdentityParts {
+                            pattern: Some(pattern),
+                            ..
+                        },
                     ..
                 } if pattern.as_str().starts_with(&prefix) => Some(format!("{row:?}")),
                 _ => None,
@@ -1060,8 +1065,12 @@ mod tests {
         for (row, rest) in rows {
             let attribute_type = row.attribute_type();
             let RawShape::String {
-                pattern: Some(pattern),
-                validate: Some(validate),
+                identity_layer:
+                    StringIdentityParts {
+                        pattern: Some(pattern),
+                        validate: Some(validate),
+                        ..
+                    },
                 ..
             } = attribute_type.raw_shape()
             else {
@@ -1128,7 +1137,11 @@ mod tests {
             );
             let attribute_type = ecs_cluster_arn();
             let RawShape::String {
-                validate: Some(validate),
+                identity_layer:
+                    StringIdentityParts {
+                        validate: Some(validate),
+                        ..
+                    },
                 ..
             } = attribute_type.raw_shape()
             else {
@@ -1167,7 +1180,11 @@ mod tests {
     fn oidc_arn_validation_preserves_strict_iam_checks_and_diagnostics() {
         let attribute_type = iam_oidc_provider_arn();
         let RawShape::String {
-            validate: Some(validate),
+            identity_layer:
+                StringIdentityParts {
+                    validate: Some(validate),
+                    ..
+                },
             ..
         } = attribute_type.raw_shape()
         else {
@@ -1258,10 +1275,18 @@ mod tests {
             let attribute_type = awscc_type.attribute_type();
             let (identity, validate) = match attribute_type.raw_shape() {
                 RawShape::String {
-                    identity, validate, ..
+                    identity_layer:
+                        StringIdentityParts {
+                            identity, validate, ..
+                        },
+                    ..
                 }
                 | RawShape::Int {
-                    identity, validate, ..
+                    identity_layer:
+                        IntIdentityParts {
+                            identity, validate, ..
+                        },
+                    ..
                 } => (identity, validate),
                 shape => panic!("AWSCC catalog row must be a scalar, got {shape:?}"),
             };
@@ -1292,13 +1317,21 @@ mod tests {
             let attribute_type = awscc_type.attribute_type();
             let identity = match attribute_type.raw_shape() {
                 RawShape::String {
-                    identity: Some(identity),
-                    validate: Some(_),
+                    identity_layer:
+                        StringIdentityParts {
+                            identity: Some(identity),
+                            validate: Some(_),
+                            ..
+                        },
                     ..
                 }
                 | RawShape::Int {
-                    identity: Some(identity),
-                    validate: Some(_),
+                    identity_layer:
+                        IntIdentityParts {
+                            identity: Some(identity),
+                            validate: Some(_),
+                            ..
+                        },
                     ..
                 } => identity,
                 _ => panic!("AWSCC shared-identity refinement must retain its callback"),

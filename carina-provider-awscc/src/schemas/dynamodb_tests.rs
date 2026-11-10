@@ -1,6 +1,6 @@
 use carina_core::executor::prepare_provider_ready_resource;
 use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::{RawShape, ValidatedResourceSchema};
+use carina_core::schema::{RawShape, StringIdentityParts, ValidatedResourceSchema};
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
@@ -553,8 +553,11 @@ fn refined_strings_accept_arn_and_identity_typed_references() {
             matches!(
                 sink.as_type().raw_shape(),
                 RawShape::String {
-                    identity: None,
-                    length: Some(_),
+                    identity_layer: StringIdentityParts {
+                        identity: None,
+                        length: Some(_),
+                        ..
+                    },
                     ..
                 }
             ),
@@ -566,7 +569,10 @@ fn refined_strings_accept_arn_and_identity_typed_references() {
             assert!(matches!(
                 source.as_type().raw_shape(),
                 RawShape::String {
-                    identity: Some(_),
+                    identity_layer: StringIdentityParts {
+                        identity: Some(_),
+                        ..
+                    },
                     ..
                 }
             ));

@@ -1,4 +1,4 @@
-use carina_core::schema::{RawShape, ValidatedResourceSchema};
+use carina_core::schema::{RawShape, StringIdentityParts, ValidatedResourceSchema};
 use serde::Deserialize;
 
 use crate::test_support::{field, int, string, try_validate_fixtures, validate_fixtures};
@@ -75,9 +75,13 @@ fn scheduler_expression_catalog_callback_keeps_identity_bounds_and_all_vectors()
     assert_eq!(row.refines(), None);
     let attribute_type = row.attribute_type();
     let RawShape::String {
-        identity: Some(identity),
-        length,
-        validate: Some(callback),
+        identity_layer:
+            StringIdentityParts {
+                identity: Some(identity),
+                length,
+                validate: Some(callback),
+                ..
+            },
         ..
     } = attribute_type.raw_shape()
     else {
@@ -191,9 +195,12 @@ fn scheduler_dates_follow_cloud_control_input_and_read_back_formats() {
         assert!(matches!(
             date.as_type().raw_shape(),
             RawShape::String {
-                identity: None,
-                validate: None,
-                pattern: Some(_),
+                identity_layer: StringIdentityParts {
+                    identity: None,
+                    validate: None,
+                    pattern: Some(_),
+                    ..
+                },
                 ..
             }
         ));
@@ -221,9 +228,12 @@ fn scheduler_dates_follow_cloud_control_input_and_read_back_formats() {
         assert!(matches!(
             date.as_type().raw_shape(),
             RawShape::String {
-                identity: None,
-                validate: None,
-                pattern: Some(_),
+                identity_layer: StringIdentityParts {
+                    identity: None,
+                    validate: None,
+                    pattern: Some(_),
+                    ..
+                },
                 ..
             }
         ));
@@ -254,10 +264,13 @@ fn scheduler_dates_follow_cloud_control_input_and_read_back_formats() {
     assert!(matches!(
         timezone.as_type().raw_shape(),
         RawShape::String {
-            identity: None,
-            pattern: None,
-            length: Some((Some(1), Some(50))),
-            validate: None,
+            identity_layer: StringIdentityParts {
+                identity: None,
+                pattern: None,
+                length: Some((Some(1), Some(50))),
+                validate: None,
+                ..
+            },
             ..
         }
     ));
