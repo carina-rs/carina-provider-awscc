@@ -48,15 +48,19 @@ async fn step6_cached_field_groups_survive_loaded_wasm() {
     use carina_plugin_host::WasmProviderFactory;
     use carina_provider_resolver::{ProviderLoadIdentity, ProviderTrustClass, VerifiedLoad};
 
-    // Cargo keeps its rustc info cache at the root, above any target triple.
-    let wasm = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .ancestors()
-        .find(|dir| dir.join(".rustc_info.json").is_file())
-        .expect("build the release wasm32-wasip2 provider before this test")
-        .join("wasm32-wasip2/release/carina-provider-awscc.wasm");
-    // This regression must exercise a real guest; a missing build is a failure.
-    let bytes =
-        std::fs::read(wasm).expect("build the release wasm32-wasip2 provider before this test");
+    // Cargo layouts vary, so custom artifact paths must be explicit.
+    let wasm = std::env::var_os("AWSCC_PROVIDER_WASM")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../target/wasm32-wasip2/release/carina-provider-awscc.wasm")
+        });
+    let bytes = std::fs::read(&wasm).unwrap_or_else(|err| {
+        panic!(
+            "failed to read {}: {err}; build the release wasm32-wasip2 provider or set AWSCC_PROVIDER_WASM",
+            wasm.display()
+        )
+    });
     let load = VerifiedLoad::for_test(
         &bytes,
         ProviderLoadIdentity::for_test("awscc", ProviderTrustClass::Untrusted),
