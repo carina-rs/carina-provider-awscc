@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use carina_aws_types::Transience;
 use carina_core::provider::{AppliedIdentifier, Observation, ProviderError, ProviderResult};
+use carina_core::provider_text::Retryability;
 use carina_core::resource::{ResourceId, Value};
 use serde::{Deserialize, Serialize};
 
@@ -34,7 +35,10 @@ impl ReadFailure {
     }
 
     pub fn into_error(self) -> ProviderError {
-        self.error
+        match self.transience {
+            Transience::Transient => self.error.with_retryability(Retryability::Transient),
+            Transience::Permanent => self.error,
+        }
     }
 
     pub(crate) fn into_parts(self) -> (ProviderError, Transience, Option<HashMap<String, Value>>) {
@@ -282,7 +286,7 @@ pub(super) fn finish_final_read_back<A>(completion: CreateCompletion<A>) -> Read
         } => ReadBackCompletion::Partial {
             identifier,
             attributes,
-            reason,
+            reason: reason.with_retryability(Retryability::Unclassified),
             missing_attributes,
         },
         CreateCompletion::ReadBackPending {
@@ -293,7 +297,7 @@ pub(super) fn finish_final_read_back<A>(completion: CreateCompletion<A>) -> Read
         } => ReadBackCompletion::Partial {
             identifier: continuation.identifier,
             attributes,
-            reason,
+            reason: reason.with_retryability(Retryability::Unclassified),
             missing_attributes,
         },
         CreateCompletion::Failed { identifier, error } => {
@@ -304,9 +308,34 @@ pub(super) fn finish_final_read_back<A>(completion: CreateCompletion<A>) -> Read
 
 #[cfg(test)]
 mod tests {
-    use super::NonEmptyAttributeNames;
+    use super::{NonEmptyAttributeNames, ReadFailure};
     use crate::{CcCreateToken, CcUpdateToken};
+    use carina_aws_types::Transience;
+    use carina_core::provider::ProviderError;
+    use carina_core::provider_text::Retryability;
+    use carina_core::test_utils::provider_text::BindProviderText as _;
     use carina_plugin_sdk::PhasedToken;
+
+    #[test]
+    fn typed_retryability_read_failure_retains_transience() {
+        for (transience, expected) in [
+            (Transience::Transient, Retryability::Transient),
+            (Transience::Permanent, Retryability::Unclassified),
+        ] {
+            for direct in [false, true] {
+                let failure = ReadFailure::new(ProviderError::api_error("read failed"), transience);
+                let error = if direct {
+                    failure.into_error()
+                } else {
+                    ProviderError::from(failure)
+                }
+                .into_host_for_test();
+                assert_eq!(error.retryability(), expected);
+                assert_eq!(error.is_transient(), expected == Retryability::Transient);
+                assert!(!error.is_delete_dependency());
+            }
+        }
+    }
 
     #[test]
     fn missing_attribute_names_are_nonempty_dsl_roots() {

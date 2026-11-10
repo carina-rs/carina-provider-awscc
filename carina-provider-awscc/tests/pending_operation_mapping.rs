@@ -28,6 +28,7 @@ use carina_core::provider::{
     PendingToken, Poll, ProviderDirectiveSchema, ProviderError, ReadOutcome, ResumeCreateRequest,
     ResumeFailureKind, Sent, UpdateOutcome, UpdateOutcomeKind, UpdatePatch,
 };
+use carina_core::provider_text::Retryability;
 use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
 use carina_plugin_sdk::PhasedToken;
 use carina_provider_awscc::provider::{
@@ -438,6 +439,7 @@ enum TestCreateStep {
         identifier: AppliedIdentifier,
         attributes: HashMap<String, Value>,
         reason: String,
+        retryability: Retryability,
         missing_attributes: Vec<String>,
     },
     Completed {
@@ -570,6 +572,7 @@ impl CcIssuedCreate for TestIssuedCreate {
             identifier,
             attributes,
             reason: reason.clone().into_host_for_test().to_string(),
+            retryability: reason.retryability(),
             missing_attributes: missing_attributes.into(),
         })
     }
@@ -680,6 +683,7 @@ impl CcResumedCreate for TestIssuedCreate {
             identifier,
             attributes,
             reason: reason.clone().into_host_for_test().to_string(),
+            retryability: reason.retryability(),
             missing_attributes: missing_attributes.into(),
         })
     }
@@ -3636,6 +3640,7 @@ async fn retryable_failed_create_with_identifier_is_identifier_reported_without_
                 observation.as_ref(),
                 Observation::Read(ReadOutcome::NotFound { .. })
             ));
+            assert_eq!(error.retryability(), Retryability::Unclassified);
             assert!(
                 error
                     .clone()
@@ -5225,6 +5230,125 @@ async fn internet_gateway_unconfirmed_detach_resends_without_rechecking_attachme
 }
 
 #[tokio::test]
+async fn typed_retryability_delete_dependency_status_messages_and_codes() {
+    for (code, message) in [
+        (None, "DependencyViolation"),
+        (None, "resource has dependent object"),
+        (None, "resource has a dependent object"),
+        (None, "resource has dependencies"),
+        (None, "VPC has a mapped public address"),
+        (Some("ResourceConflict"), "resource is in use"),
+        (Some("DependencyViolation"), "resource is in use"),
+    ] {
+        for identifier in [None, Some(VPC_ID)] {
+            let (provider, service) = provider_with_script([(
+                "GetResourceRequestStatus",
+                vec![status_reply_with_error_code(
+                    "FAILED",
+                    identifier,
+                    code,
+                    Some(message),
+                )],
+            )])
+            .await;
+            let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
+            let token = CcDeleteToken::Delete(
+                serde_json::from_value(json!({
+                    "phase": "in_flight", "request": "delete-dependency", "attempt": 0,
+                }))
+                .unwrap(),
+            );
+            let error = provider
+                .poll_delete_step(&id, &vpc_identifier(), &delete_request(), token)
+                .await
+                .expect_err("delete dependency must be reported to the host")
+                .into_host_for_test();
+            assert!(
+                error.is_delete_dependency(),
+                "{code:?} {message}, {identifier:?}"
+            );
+            assert_eq!(error.retryability(), Retryability::DependencyBlocked);
+            assert!(!error.is_transient());
+            assert_eq!(service.calls("DeleteResource"), 0);
+        }
+    }
+}
+
+#[tokio::test]
+async fn typed_retryability_create_dependency_is_unclassified() {
+    for code in [None, Some("ResourceConflict"), Some("DependencyViolation")] {
+        let (provider, _) = provider_with_script([(
+            "GetResourceRequestStatus",
+            vec![status_reply_with_error_code(
+                "FAILED",
+                None,
+                code,
+                Some("resource has a dependent object: DependencyViolation"),
+            )],
+        )])
+        .await;
+        let resource = common::normalize_resource(vpc_resource()).await;
+        let failure = poll_test_create(
+            &provider,
+            resource.as_resource(),
+            in_flight_create_token(None),
+        )
+        .await
+        .expect_err("failed create must remain tracked");
+        let TestCreateVerdict::InFlight { error, .. } = failure else {
+            panic!("expected tracked create failure, got {failure:?}");
+        };
+        let error = error.into_host_for_test();
+        assert_eq!(error.retryability(), Retryability::Unclassified);
+        assert!(!error.is_delete_dependency());
+        assert!(!error.is_transient());
+    }
+}
+
+#[tokio::test]
+async fn typed_retryability_get_resource_throttling_and_access_denied() {
+    for (reply, expected) in [
+        (throttled(), Retryability::Transient),
+        (
+            Reply::Error {
+                status: 403,
+                code: "AccessDeniedException",
+                message: "Throttling DependencyViolation text is not a retry verdict",
+            },
+            Retryability::Unclassified,
+        ),
+    ] {
+        let (provider, _) = provider_with_script([("GetResource", vec![reply])]).await;
+        let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
+        let error = provider
+            .read(&id, &vpc_identifier(), carina_core::provider::ReadRequest)
+            .await
+            .expect_err("scripted read failure")
+            .into_host_for_test();
+        assert_eq!(error.retryability(), expected);
+        assert_eq!(error.is_transient(), expected == Retryability::Transient);
+        assert!(!error.is_delete_dependency());
+    }
+}
+
+#[tokio::test]
+async fn typed_retryability_partial_create_is_unclassified() {
+    let (provider, service) = provider_with_script([("GetResource", vec![throttled()])]).await;
+    let step = poll_read_back_create(
+        &provider,
+        &vpc_resource(),
+        read_back_continuation_token("ec2.Vpc", VPC_ID),
+        PollFinality::FinalAttempt,
+    )
+    .await;
+    let TestCreateStep::Partial { retryability, .. } = step else {
+        panic!("final read failure must produce a partial create: {step:?}");
+    };
+    assert_eq!(retryability, Retryability::Unclassified);
+    assert_eq!(service.calls("CreateResource"), 0);
+}
+
+#[tokio::test]
 async fn internet_gateway_detach_partial_failure_does_not_reissue_or_delete() {
     let (provider, service) = provider_with_script([
         (
@@ -5271,6 +5395,10 @@ async fn internet_gateway_detach_partial_failure_does_not_reissue_or_delete() {
         error.clone().into_host_for_test().to_string(),
         "[ec2.InternetGateway.pending] Failed to detach Internet Gateway from VPC before deletion: Throttling"
     );
+    let host_error = error.clone().into_host_for_test();
+    assert_eq!(host_error.retryability(), Retryability::Unclassified);
+    assert!(!host_error.is_delete_dependency());
+    assert!(!host_error.is_transient());
     assert!(
         error
             .clone()
