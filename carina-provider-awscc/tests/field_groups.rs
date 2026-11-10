@@ -49,7 +49,10 @@ async fn step6_cached_field_groups_survive_loaded_wasm() {
     use carina_provider_resolver::{ProviderLoadIdentity, ProviderTrustClass, VerifiedLoad};
 
     let wasm = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join("../wasm32-wasip2/release/carina-provider-awscc.wasm");
+        .ancestors()
+        .map(|dir| dir.join("wasm32-wasip2/release/carina-provider-awscc.wasm"))
+        .find(|path| path.exists())
+        .expect("build the release wasm32-wasip2 provider before this test");
     // This regression must exercise a real guest; a missing build is a failure.
     let bytes =
         std::fs::read(wasm).expect("build the release wasm32-wasip2 provider before this test");
