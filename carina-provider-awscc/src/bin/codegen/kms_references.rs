@@ -14,7 +14,8 @@ pub enum Classification {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Fallback grammar for reference leaves without a CFN pattern.
+/// Known reference identities. Their definitions are owned by the shared catalog;
+/// slot constraints cannot be passed to a reference constructor.
 pub enum ReferenceKind {
     Key,
 }
@@ -33,30 +34,22 @@ impl ReferenceKind {
         length
     }
 
-    pub fn constructor(
-        self,
-        cfn_length: Option<(Option<u64>, Option<u64>)>,
-        pattern: &PatternSpec,
-    ) -> String {
-        if cfn_length.is_none() || cfn_length == self.default_length() {
-            return "carina_aws_types::kms_key_reference()".to_string();
+    pub fn constructor(self) -> &'static str {
+        match self {
+            Self::Key => "carina_aws_types::kms_key_reference()",
         }
-        let mode = match pattern.mode() {
-            carina_core::schema::PatternMatch::Full => {
-                "carina_core::schema::PatternMatch::Full".to_string()
-            }
-            carina_core::schema::PatternMatch::Substring { reason } => format!(
-                "carina_core::schema::PatternMatch::Substring {{ reason: carina_core::schema::PatternReason::new({:?}).expect(\"visible reviewed pattern reason\") }}",
-                reason.as_str(),
-            ),
-        };
-        let pattern = format!(
-            "Some(carina_core::schema::PatternSpec::new({:?}, {mode}))",
-            pattern.as_str()
-        );
-        format!(
-            "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), {pattern}, {cfn_length:?})"
-        )
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Key => "aws.kms.Key.Reference",
+        }
+    }
+
+    pub fn input_rule_code_prefix(self) -> &'static str {
+        match self {
+            Self::Key => "awscc.kms_reference",
+        }
     }
 
     pub fn default_pattern(self) -> &'static PatternSpec {
@@ -152,7 +145,8 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         path: "kms_key_id",
         classification: Classification::Reference(ReferenceKind::Key),
         // CFN accepts (key|alias) ARNs, unlike the AWS provider's key-only Smithy input.
-        // Preserve this constraint through the ordinary CFN pattern conversion.
+        // Preserve this constraint as an input rule, intersected with the
+        // canonical grammar (the intentional tightening approved in #613).
         cfn_pattern: Some(r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\Z"),
         cfn_length: Some((None, Some(256))),
     },
@@ -200,7 +194,9 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         resource: "scheduler.Schedule",
         path: "kms_key_arn",
         classification: Classification::Reference(ReferenceKind::Key),
-        // CFN explicitly accepts (key|alias)/ ARNs only, length 1..2048.
+        // Keep CFN's (key|alias) ARN pattern as an input rule intersected
+        // with canonical, as approved in #613. Its 1..=2048 bounds equal
+        // canonical, so no length rule is needed.
         cfn_pattern: Some(r"^arn:aws[a-z-]*:kms:[a-z0-9\-]+:\d{12}:(key|alias)\/[0-9a-zA-Z-_]*$"),
         cfn_length: Some((Some(1), Some(2048))),
     },

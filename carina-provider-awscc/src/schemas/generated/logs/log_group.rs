@@ -60,7 +60,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_field_index_policies_attribute());
     #[inline(never)]
     fn build_kms_key_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("kms_key_id", carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some(carina_core::schema::PatternSpec::new("^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\\d{12}:(key|alias)/.+\\z", carina_core::schema::PatternMatch::Full)), Some((None, Some(256)))))
+        AttributeSchema::optional("kms_key_id", carina_aws_types::kms_key_reference())
                 .with_description("The Amazon Resource Name (ARN) of the KMS key to use when encrypting log data. To associate an KMS key with the log group, specify the ARN of that KMS key here. If you do so, ingested data is encrypted using this key. This association is stored as long as the data encrypted with the KMS key is still within CWL. This enables CWL to decrypt this data whenever it is requested. If you attempt to associate a KMS key with the log group but the KMS key doesn't exist or is deactivated, you will receive an ``InvalidParameterException`` error. Log group data is always encrypted in CWL. If you omit this key, the encryption does not use KMS. For more information, see [Encrypt log data in using](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html)")
                 .with_provider_name("KmsKeyId")
             .build()
@@ -112,6 +112,8 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     schema = schema
         .with_unique_name_attribute("log_group_name");
+    schema = schema.input_rule(carina_core::schema::InputRule::new(carina_core::schema::InputRuleScope::EveryWrite, carina_core::schema::InputRuleTarget::Value(carina_core::schema::InputPath::new("kms_key_id").expect("valid input path")), carina_core::schema::InputRuleCode::new("awscc.kms_reference.pattern").expect("valid input rule code"), carina_core::schema::InputPredicate::Matches(carina_core::schema::PatternSpec::new("^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\\d{12}:(key|alias)/.+\\z", carina_core::schema::PatternMatch::Full))));
+    schema = schema.input_rule(carina_core::schema::InputRule::new(carina_core::schema::InputRuleScope::EveryWrite, carina_core::schema::InputRuleTarget::Value(carina_core::schema::InputPath::new("kms_key_id").expect("valid input path")), carina_core::schema::InputRuleCode::new("awscc.kms_reference.length").expect("valid input rule code"), carina_core::schema::InputPredicate::Length { min: None, max: Some(256) }));
     schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);
     AwsccSchemaConfig {
         aws_type_name: "AWS::Logs::LogGroup",

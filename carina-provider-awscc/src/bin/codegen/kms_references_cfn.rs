@@ -5,10 +5,12 @@ use super::schema_layer::{
     Dependency, Layer, PropertyKeywords, RefTarget, SchemaNode, SourceEvidence, SourceReference,
 };
 use super::{
-    CfnPropertyPath, CfnSchema, ParsedCfnSchema, SchemaProperty, dsl_resource_name_from_type,
-    emit_pattern_option, is_property_read_only, project_string_constraints,
+    CfnPropertyPath, CfnSchema, ParsedCfnSchema, PatternLiteral, SchemaProperty, StringConstraints,
+    dsl_resource_name_from_type, emit_pattern_spec, is_property_read_only,
+    project_string_constraints,
 };
 use anyhow::{Result, bail};
+use carina_core::schema::InputRuleScope;
 use heck::ToSnakeCase;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -179,6 +181,8 @@ pub(super) struct EmissionContext<'a> {
     /// Collection suffixes come from actual emitter decisions, never lookahead.
     paths: RefCell<BTreeMap<Vec<String>, String>>,
     sites: RefCell<BTreeMap<Vec<String>, EmittedSite>>,
+    /// Slot constraints are separate from the canonical Reference definition.
+    reference_input_rules: RefCell<BTreeMap<String, ReferenceInputRules>>,
     /// Cached struct identities follow the CFN tree before type overrides.
     definition_identity_paths: BTreeMap<String, Vec<String>>,
     enum_discovery: bool,
@@ -253,6 +257,7 @@ impl<'a> EmissionContext<'a> {
             classified_sources: RefCell::new(BTreeMap::new()),
             paths: RefCell::new(BTreeMap::new()),
             sites: RefCell::new(BTreeMap::new()),
+            reference_input_rules: RefCell::new(BTreeMap::new()),
             // Invalid projections are rejected by both renderer boundaries. This
             // naming cache must also permit source-only KMS inventory, including
             // unresolved references and tag cycles that have their own judgement.
@@ -559,34 +564,126 @@ impl<'a> EmissionContext<'a> {
         Ok(Some(kind))
     }
 
-    pub(super) fn reference_constructor(
+    pub(super) fn reference_kind(
         &self,
         path: &[String],
         kind: ReferenceKind,
         cfn_property_path: CfnPropertyPath<'_>,
         plan: &super::emission_plan::StringPlan<'_>,
-    ) -> Result<String> {
-        let entry = kms_references::entry(&self.resource, &self.dsl_path(path))
-            .ok_or_else(|| plan.emission_error("missing classified reference constructor"))?;
-        if plan.pattern.is_none() {
-            return Ok(kind.constructor(entry.cfn_length, kind.default_pattern()));
-        }
+    ) -> Result<ReferenceKind> {
         let source_path = self.pattern_source_path(path, plan.pattern, cfn_property_path);
-        let constraints = project_string_constraints(
+        let mut constraints = project_string_constraints(
             plan,
             &self.schema.type_name,
             cfn_property_path,
             &source_path,
         )?;
-        let pattern = emit_pattern_option(constraints.pattern.as_ref());
-        let length = if constraints.min_length.is_some() || constraints.max_length.is_some() {
-            Some((constraints.min_length, constraints.max_length))
-        } else {
-            entry.cfn_length
+        // Equality proves these constraints already follow from canonical.
+        // In particular Scheduler's and ECR's 1..=2048 bounds need no rule.
+        if Some((constraints.min_length, constraints.max_length)) == kind.default_length() {
+            constraints.min_length = None;
+            constraints.max_length = None;
+        }
+        if constraints
+            .pattern
+            .as_ref()
+            .map(|pattern| pattern.as_spec())
+            == Some(kind.default_pattern())
+        {
+            constraints.pattern = None;
+        }
+        if constraints.pattern.is_some()
+            || constraints.min_length.is_some()
+            || constraints.max_length.is_some()
+        {
+            if path.len() != 1 {
+                return Err(plan
+                    .emission_error("nested Reference slot constraints need a nested rule design")
+                    .into());
+            }
+            let dsl_path = self.dsl_path(path);
+            let pointer = format!("/properties/{}", path[0]);
+            let scope = if self
+                .schema
+                .metadata()
+                .create_only_properties
+                .iter()
+                .flatten()
+                .any(|create_only| pointer == *create_only)
+            {
+                InputRuleScope::CreateOnly
+            } else {
+                InputRuleScope::EveryWrite
+            };
+            self.reference_input_rules.borrow_mut().insert(
+                dsl_path,
+                ReferenceInputRules {
+                    kind,
+                    scope,
+                    constraints,
+                },
+            );
+        }
+        Ok(kind)
+    }
+
+    pub(super) fn reference_input_rules_rust(&self) -> String {
+        let mut code = String::new();
+        for (path, rules) in self.reference_input_rules.borrow().iter() {
+            let prefix = rules.kind.input_rule_code_prefix();
+            let (scope, _) = input_rule_scope_labels(rules.scope);
+            let mut emit = |suffix: &str, predicate: String| {
+                code.push_str(&format!(
+                    "    schema = schema.input_rule(carina_core::schema::InputRule::new(carina_core::schema::InputRuleScope::{scope}, carina_core::schema::InputRuleTarget::Value(carina_core::schema::InputPath::new({path:?}).expect(\"valid input path\")), carina_core::schema::InputRuleCode::new(\"{prefix}.{suffix}\").expect(\"valid input rule code\"), {predicate}));\n",
+                ));
+            };
+            if let Some(pattern) = &rules.constraints.pattern {
+                emit(
+                    "pattern",
+                    format!(
+                        "carina_core::schema::InputPredicate::Matches({})",
+                        emit_pattern_spec(pattern, PatternLiteral::Quoted),
+                    ),
+                );
+            }
+            let StringConstraints {
+                min_length: min,
+                max_length: max,
+                ..
+            } = rules.constraints;
+            if min.is_some() || max.is_some() {
+                emit(
+                    "length",
+                    format!(
+                        "carina_core::schema::InputPredicate::Length {{ min: {min:?}, max: {max:?} }}",
+                    ),
+                );
+            }
+        }
+        code
+    }
+
+    pub(super) fn reference_input_rules_markdown(&self, path: &str) -> String {
+        let rules = self.reference_input_rules.borrow();
+        let Some(rules) = rules.get(path) else {
+            return String::new();
         };
-        Ok(format!(
-            "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), {pattern}, {length:?})"
-        ))
+        let (_, scope) = input_rule_scope_labels(rules.scope);
+        let mut markdown = String::new();
+        if let Some(pattern) = &rules.constraints.pattern {
+            markdown.push_str(&format!(
+                "- **Input pattern ({scope}):** `{}`\n",
+                pattern.as_str()
+            ));
+        }
+        if rules.constraints.min_length.is_some() || rules.constraints.max_length.is_some() {
+            let length = super::string_length_display(
+                rules.constraints.min_length,
+                rules.constraints.max_length,
+            );
+            markdown.push_str(&format!("- **Input length ({scope}):** `{length}`\n"));
+        }
+        markdown
     }
 
     /// The projected map value has no independent CFN node to record.
@@ -668,6 +765,19 @@ impl<'a> EmissionContext<'a> {
         }
         Ok(())
     }
+}
+
+fn input_rule_scope_labels(scope: InputRuleScope) -> (&'static str, &'static str) {
+    match scope {
+        InputRuleScope::CreateOnly => ("CreateOnly", "create only"),
+        InputRuleScope::EveryWrite => ("EveryWrite", "every write"),
+    }
+}
+
+struct ReferenceInputRules {
+    kind: ReferenceKind,
+    scope: InputRuleScope,
+    constraints: StringConstraints,
 }
 
 impl std::ops::Deref for EmissionContext<'_> {
@@ -788,6 +898,41 @@ fn kms_nodes(layer: &Layer) -> BTreeSet<String> {
 mod tests {
     use super::*;
     use serde_json::{Value, json};
+
+    #[test]
+    fn nested_reference_slot_constraints_require_a_nested_rule_design() {
+        let schema = ParsedCfnSchema::from_json(json!({
+            "typeName": "AWS::EC2::VPC",
+            "properties": {"Settings": {"type": "object", "properties": {
+                "KmsKeyId": {"type": "string", "maxLength": 256}
+            }}}
+        }))
+        .unwrap();
+        let context = EmissionContext::from_source(&schema).unwrap();
+        let plan = super::super::emission_plan::StringPlan {
+            source_pointer: "/properties/Settings/properties/KmsKeyId",
+            description: None,
+            format: None,
+            pattern: None,
+            min_length: None,
+            max_length: Some(256),
+        };
+        let error = context
+            .reference_kind(
+                &["Settings".into(), "KmsKeyId".into()],
+                ReferenceKind::Key,
+                CfnPropertyPath::new(Some("Settings"), "KmsKeyId"),
+                &plan,
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains(plan.source_pointer)
+                && error.contains("nested Reference slot constraints need a nested rule design"),
+            "{error}"
+        );
+        assert!(context.reference_input_rules.borrow().is_empty());
+    }
 
     fn scan_json(source: &Value) -> BTreeSet<String> {
         kms_nodes(&Layer::for_codegen(source).unwrap())

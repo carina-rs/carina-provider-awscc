@@ -77,7 +77,7 @@ pub fn scheduler_schedule_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_group_name_attribute());
     #[inline(never)]
     fn build_kms_key_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("kms_key_arn", carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some(carina_core::schema::PatternSpec::new("^arn:aws[a-z-]*:kms:[a-z0-9\\-]+:\\d{12}:(key|alias)\\/[0-9a-zA-Z-_]*$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(2048)))))
+        AttributeSchema::optional("kms_key_arn", carina_aws_types::kms_key_reference())
                 .with_description("The ARN for a KMS Key that will be used to encrypt customer data.")
                 .with_provider_name("KmsKeyArn")
             .build()
@@ -163,6 +163,7 @@ pub fn scheduler_schedule_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_target_attribute());
     schema = schema
         .with_unique_name_attribute("name");
+    schema = schema.input_rule(carina_core::schema::InputRule::new(carina_core::schema::InputRuleScope::EveryWrite, carina_core::schema::InputRuleTarget::Value(carina_core::schema::InputPath::new("kms_key_arn").expect("valid input path")), carina_core::schema::InputRuleCode::new("awscc.kms_reference.pattern").expect("valid input rule code"), carina_core::schema::InputPredicate::Matches(carina_core::schema::PatternSpec::new("^arn:aws[a-z-]*:kms:[a-z0-9\\-]+:\\d{12}:(key|alias)\\/[0-9a-zA-Z-_]*$", carina_core::schema::PatternMatch::Full))));
     #[inline(never)]
     fn build_schema_def_0() -> AttributeType { AttributeType::struct_("AwsVpcConfiguration".to_string(), vec![StructField::optional("assign_public_ip", AttributeType::enum_(carina_core::schema::enum_identity("AssignPublicIp", Some("aws.scheduler.Schedule.Target.EcsParameters.NetworkConfiguration.AwsVpcConfiguration")), Some(vec!["ENABLED".to_string(), "DISABLED".to_string()]), vec![("ENABLED".to_string(), "enabled".to_string()), ("DISABLED".to_string(), "disabled".to_string())], None, None)).with_provider_name("AssignPublicIp").build(),
                     StructField::optional("security_groups", AttributeType::refined_list(AttributeType::refined_string(None, None, Some((Some(1), Some(1000))), None), false, Some((Some(1), Some(5))), carina_core::schema::ListElements::AllowDuplicates)).with_description("Specifies the security groups associated with the task. These security groups must all be in the same VPC. You can specify as many as five security groups. If you do not specify a security group, the default security group for the VPC is used.").with_provider_name("SecurityGroups").build(),
