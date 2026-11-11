@@ -12,7 +12,7 @@ It manages resources through the [AWS Cloud Control API](https://docs.aws.amazon
 ```crn
 provider awscc {
   source  = 'carina-rs/awscc'
-  version = '0.10.0'
+  version = '0.11.0'
   region  = awscc.Region.ap_northeast_1
 }
 
