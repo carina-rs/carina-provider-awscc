@@ -4880,6 +4880,7 @@ fn render_markdown(
         )? {
             default.write_markdown(&mut page);
         }
+        page.push_str(&schema.reference_input_rules_markdown(&attr_name));
         page.push_str("\n");
 
         if let Some(d) = generated_property_description(schema, prop_name, prop) {
@@ -6205,6 +6206,8 @@ pub fn {}() -> AwsccSchemaConfig {{
         body.push_str(&format!("    schema = schema.field_group({group});\n"));
     }
 
+    body.push_str(&schema.reference_input_rules_rust());
+
     // Tags map-shape validation is portable schema data so native and WASM
     // consumers admit the same schema and enforce the same rule.
     if tags.is_some() {
@@ -7075,6 +7078,7 @@ fn map_key_enum_info(
 fn key_enum_info<'a>(key: &'a StringLeaf<'_>) -> Option<&'a EnumInfo> {
     match key {
         StringLeaf::Named { .. } => None,
+        StringLeaf::Reference(_) => None,
         StringLeaf::Enum(EnumLeaf::String { info, plan: _ }) => Some(info),
         StringLeaf::Enum(EnumLeaf::Integer(_values) | EnumLeaf::Number(_values)) => None,
         StringLeaf::Inferred {
@@ -8101,6 +8105,7 @@ enum StringLeaf<'a> {
         constraints: StringConstraints,
     },
     Enum(EnumLeaf),
+    Reference(kms_references::ReferenceKind),
     Inferred {
         rust_type: String,
         display_type: String,
@@ -8120,6 +8125,7 @@ impl StringLeaf<'_> {
                 constraints,
             } => (string_identity::emit(identity, &constraints), None),
             Self::Enum(leaf) => leaf.emit(cfn_type, prop_name),
+            Self::Reference(kind) => (kind.constructor().to_string(), None),
             Self::Inferred {
                 rust_type,
                 display_type: _,
@@ -8154,7 +8160,8 @@ impl StringLeaf<'_> {
             Self::Named {
                 identity: Some(_),
                 constraints: _,
-            } => TypeDisplay::Plain(self.display()),
+            }
+            | Self::Reference(_) => TypeDisplay::Plain(self.display()),
             Self::Named {
                 identity: _,
                 constraints: _,
@@ -8211,6 +8218,7 @@ impl StringLeaf<'_> {
                 None,
             ),
             Self::Enum(leaf) => leaf.display(),
+            Self::Reference(kind) => kind.display_name().to_string(),
             Self::Inferred {
                 rust_type,
                 display_type,
@@ -8263,15 +8271,14 @@ fn emission_reference(
     let Some(kind) = classified.classify()? else {
         return Ok(None);
     };
-    Ok(Some(StringLeaf::Inferred {
-        rust_type: classified.schema().reference_constructor(
+    Ok(Some(StringLeaf::Reference(
+        classified.schema().reference_kind(
             classified.path(),
             kind,
             cfn_property_path,
             plan.string()?,
         )?,
-        display_type: "aws.kms.Key.Reference".to_string(),
-    }))
+    )))
 }
 
 /// Classify a resolved string leaf once, before either Rust or Markdown
@@ -30244,37 +30251,6 @@ mod tests {
     }
 
     #[test]
-    fn kms_reference_length_override_preserves_the_complete_pattern_spec() {
-        use carina_core::schema::{PatternReason, PatternSpec};
-
-        for mode in [
-            PatternMatch::Full,
-            PatternMatch::Substring {
-                reason: PatternReason::new("shared reference grammar keeps search semantics")
-                    .unwrap(),
-            },
-        ] {
-            let pattern = PatternSpec::new("reference-[a-z]+", mode);
-            let code =
-                kms_references::ReferenceKind::Key.constructor(Some((None, Some(42))), &pattern);
-            assert_eq!(emitted_pattern_specs(&code), vec![pattern]);
-            assert!(code.ends_with("Some((None, Some(42))))"));
-        }
-        let shared = carina_aws_types::kms_key_reference();
-        let carina_core::schema::RawShape::Reference {
-            pattern: Some(pattern),
-            ..
-        } = shared.raw_shape()
-        else {
-            panic!("shared KMS reference must carry its complete pattern");
-        };
-        assert_eq!(
-            kms_references::ReferenceKind::Key.default_pattern(),
-            pattern
-        );
-    }
-
-    #[test]
     fn test_kms_pattern_uses_classified_reference_constructor() {
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Single("string".to_string())),
@@ -30295,10 +30271,7 @@ mod tests {
             "aws.logs.LogGroup",
             &BTreeMap::new(),
         );
-        assert_eq!(
-            type_str,
-            r#"carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some(carina_core::schema::PatternSpec::new("^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\\d{12}:(key|alias)/.+\\z", carina_core::schema::PatternMatch::Full)), Some((None, Some(256))))"#
-        );
+        assert_eq!(type_str, "carina_aws_types::kms_key_reference()");
     }
 
     #[test]

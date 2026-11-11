@@ -77,7 +77,7 @@ fn classification_follows_shared_definitions_and_array_paths_before_overrides() 
 }
 
 #[test]
-fn scheduler_generates_cfn_patterned_reference() {
+fn scheduler_generates_canonical_reference_and_cfn_pattern_rule() {
     let schema: Value = serde_json::from_str(include_str!(
         "../../cfn-schema-cache/AWS__Scheduler__Schedule.json"
     ))
@@ -90,17 +90,59 @@ fn scheduler_generates_cfn_patterned_reference() {
     );
     let pattern = serde_json::to_string(&schema["properties"]["KmsKeyArn"]["pattern"]).unwrap();
     let expected = format!(
-        "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some(carina_core::schema::PatternSpec::new({pattern}, carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(2048))))"
+        "carina_core::schema::InputPredicate::Matches(carina_core::schema::PatternSpec::new({pattern}, carina_core::schema::PatternMatch::Full))"
     );
-    assert!(
-        String::from_utf8(output.stdout)
-            .unwrap()
-            .contains(&expected)
-    );
+    let code = String::from_utf8(output.stdout).unwrap();
+    assert!(code.contains(&expected));
+    assert!(code.contains("carina_aws_types::kms_key_reference()"));
+    assert!(!code.contains("AttributeType::reference("));
 }
 
 #[test]
-fn final_scheduler_leaf_is_a_reference_accepting_alias_arns() {
+fn reference_rule_scope_follows_cfn_create_only_metadata() {
+    for (source, property, field) in [
+        (
+            include_str!("../../cfn-schema-cache/AWS__Scheduler__Schedule.json"),
+            "KmsKeyArn",
+            "kms_key_arn",
+        ),
+        (
+            include_str!("../../cfn-schema-cache/AWS__Logs__LogGroup.json"),
+            "KmsKeyId",
+            "kms_key_id",
+        ),
+    ] {
+        let mut schema: Value = serde_json::from_str(source).unwrap();
+        for create_only in [false, true] {
+            if create_only {
+                schema["createOnlyProperties"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!(format!("/properties/{property}")));
+            }
+            let output = generate(&schema, "rust");
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let code = String::from_utf8(output.stdout).unwrap();
+            let scope = if create_only {
+                "CreateOnly"
+            } else {
+                "EveryWrite"
+            };
+            assert!(code.contains(&format!(
+                "InputRuleScope::{scope}, carina_core::schema::InputRuleTarget::Value(carina_core::schema::InputPath::new(\"{field}\")"
+            )));
+            assert!(code.contains("carina_aws_types::kms_key_reference()"));
+            assert!(!code.contains("AttributeType::reference("));
+        }
+    }
+}
+
+#[test]
+fn final_scheduler_leaf_is_the_canonical_reference() {
     let config =
         carina_provider_awscc::schemas::generated::scheduler::schedule::scheduler_schedule_config();
     let schema = config.schema.as_schema();
@@ -123,23 +165,25 @@ fn final_scheduler_leaf_is_a_reference_accepting_alias_arns() {
             "arn:aws:kms:us-east-1:123456789012:key/11111111-1111-1111-1111-111111111111"
         )
     );
-    assert!(!pattern.is_match("alias/customer"));
+    // The canonical leaf accepts bare aliases; slot rejection is covered in
+    // kms_reference_input_rules.rs.
+    assert!(pattern.is_match("alias/customer"));
 }
 
 #[test]
-fn scheduler_reference_rejects_alias_names_disallowed_by_cfn() {
+fn scheduler_input_rule_keeps_the_old_cfn_pattern() {
+    use carina_core::schema::{InputPredicate, InputRuleTarget};
+
     let config =
         carina_provider_awscc::schemas::generated::scheduler::schedule::scheduler_schedule_config();
     let schema = config.schema.as_schema();
-    let ty = schema.attributes()["kms_key_arn"].attr_type();
-    let Shape::Reference {
-        pattern: Some(pattern),
-        ..
-    } = schema.shape_of(ty)
-    else {
-        panic!("scheduler kms_key_arn must be a patterned reference");
+    let rule = schema.input_rules().iter().find(|rule| {
+        rule.code().as_str() == "awscc.kms_reference.pattern"
+            && matches!(rule.target(), InputRuleTarget::Value(path) if path.as_str() == "kms_key_arn")
+    }).expect("scheduler kms_key_arn must retain its slot pattern rule");
+    let InputPredicate::Matches(pattern) = rule.predicate() else {
+        panic!("scheduler kms_key_arn must retain its slot pattern rule");
     };
-    let pattern = carina_core::schema::CompiledPattern::try_new(pattern).unwrap();
     assert!(pattern.is_match("arn:aws:kms:us-east-1:123456789012:alias/scheduler"));
     assert!(pattern.is_match("arn:aws:kms:us-east-1:123456789012:alias/"));
     assert!(!pattern.is_match("arn:aws:kms:us-east-1:123456789012:alias/team/scheduler"));

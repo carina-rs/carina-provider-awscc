@@ -103,6 +103,7 @@ The name of the schedule group to associate with this schedule. If you omit this
 
 - **Type:** aws.kms.Key.Reference
 - **Required:** No
+- **Input pattern (every write):** `^arn:aws[a-z-]*:kms:[a-z0-9\-]+:\d{12}:(key|alias)\/[0-9a-zA-Z-_]*$`
 
 The ARN for a KMS Key that will be used to encrypt customer data.
 

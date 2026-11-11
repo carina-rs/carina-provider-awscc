@@ -1,7 +1,6 @@
 //! Round-four regressions: classification must observe ordinary CFN shapes.
 #![cfg(not(target_arch = "wasm32"))]
 
-use carina_core::schema::Shape;
 use serde_json::{Value, json};
 use std::process::{Command, Output};
 
@@ -428,26 +427,31 @@ fn policy_document_projections_require_raw_source_accounting() {
 }
 
 #[test]
-fn logs_reference_keeps_cfn_maximum_and_no_synthetic_minimum() {
+fn logs_input_rules_keep_cfn_maximum_and_no_synthetic_minimum() {
     let config =
         carina_provider_awscc::schemas::generated::logs::log_group::logs_log_group_config();
     let schema = config.schema.as_schema();
-    let ty = schema.attributes()["kms_key_id"].attr_type();
-    let Shape::Reference {
-        pattern, length, ..
-    } = schema.shape_of(ty)
-    else {
-        panic!("logs kms_key_id must be a reference");
+    use carina_core::schema::{InputPredicate, InputRuleTarget};
+    let rule = |code: &str| {
+        schema.input_rules().iter().find(|rule| {
+        rule.code().as_str() == code
+            && matches!(rule.target(), InputRuleTarget::Value(path) if path.as_str() == "kms_key_id")
+    }).expect("logs kms_key_id must retain its slot rule")
+    };
+    let InputPredicate::Matches(pattern) = rule("awscc.kms_reference.pattern").predicate() else {
+        panic!("logs must retain its slot pattern rule");
     };
     assert_eq!(
-        pattern,
-        Some(&carina_core::schema::PatternSpec::new(
-            r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z",
-            carina_core::schema::PatternMatch::Full
-        ))
+        pattern.as_str(),
+        r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z"
     );
-    assert_eq!(length, Some((None, Some(256))));
-    let pattern = carina_core::schema::CompiledPattern::try_new(pattern.unwrap()).unwrap();
+    assert!(matches!(
+        rule("awscc.kms_reference.length").predicate(),
+        InputPredicate::Length {
+            min: None,
+            max: Some(256)
+        }
+    ));
     assert!(pattern.is_match("arn:aws:kms:us-east-1:123456789012:alias/team/scheduler"));
     assert!(!pattern.is_match("arn:aws:kms:us-east-1:123456789012:alias/customer\n"));
 }

@@ -4,16 +4,40 @@
 #[allow(dead_code)]
 mod classification;
 use carina_core::schema::{
-    CompiledAttributeType, CompiledResourceSchema, Shape, ShapeWalkBudget, StringIdentityParts,
+    CompiledAttributeType, CompiledResourceSchema, InputPredicate, InputRuleScope, InputRuleTarget,
+    PatternMatch, PatternSpec, Shape, ShapeWalkBudget, StringIdentityParts,
 };
 use classification::{
     CLASSIFICATIONS, Classification, NotReference, PathSegment, classify_string, property_path,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+
+fn cfn_rule_scope(schema: &CompiledResourceSchema, path: &str) -> InputRuleScope {
+    let config = super::generated::get_config_by_type(schema.resource_type()).unwrap();
+    let property = schema.attributes()[path].provider_name().unwrap();
+    let cache = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../cfn-schema-cache")
+        .join(format!("{}.json", config.aws_type_name.replace("::", "__")));
+    let source: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(cache).unwrap()).unwrap();
+    let pointer = format!("/properties/{property}");
+    // Use CFN's committed metadata rather than the generated input mode.
+    if source["createOnlyProperties"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|value| value.as_str() == Some(pointer.as_str()))
+    {
+        InputRuleScope::CreateOnly
+    } else {
+        InputRuleScope::EveryWrite
+    }
+}
 
 #[derive(Default)]
 struct Coverage {
     references: BTreeSet<(String, String)>,
+    verified_rules: BTreeSet<(String, String, String)>,
     ancestors: BTreeSet<usize>,
 }
 
@@ -50,34 +74,99 @@ impl Coverage {
             .unwrap()
             {
                 Some(Classification::Reference(kind)) => {
+                    let entry = classification::entry(schema.resource_type(), path).unwrap();
                     assert_eq!(
                         identity,
                         Some(&carina_aws_types::AwsType::KmsKeyReference.identity()),
                         "{}.{path} must be a reference leaf",
                         schema.resource_type()
                     );
-                    let entry = classification::entry(schema.resource_type(), path).unwrap();
-                    let expected_pattern = entry.cfn_pattern.map_or_else(
-                        || kind.default_pattern().clone(),
-                        |pattern| {
-                            carina_core::schema::PatternSpec::new(
-                                pattern.replace(r"\Z", r"\z"),
-                                carina_core::schema::PatternMatch::Full,
-                            )
-                        },
-                    );
                     assert_eq!(
                         pattern,
-                        Some(&expected_pattern),
+                        Some(kind.default_pattern()),
                         "{}.{path}: wrong KMS reference pattern",
                         schema.resource_type()
                     );
                     assert_eq!(
                         length,
-                        entry.cfn_length.or_else(|| kind.default_length()),
+                        kind.default_length(),
                         "{}.{path}: wrong KMS reference length",
                         schema.resource_type()
                     );
+                    let extra_pattern = entry
+                        .cfn_pattern
+                        .map(|pattern| {
+                            PatternSpec::new(pattern.replace(r"\Z", r"\z"), PatternMatch::Full)
+                        })
+                        .filter(|pattern| pattern != kind.default_pattern());
+                    let extra_length = entry
+                        .cfn_length
+                        .filter(|bounds| Some(*bounds) != kind.default_length());
+                    let prefix = format!("{}.", kind.input_rule_code_prefix());
+                    let mut expected: BTreeMap<String, InputPredicate<PatternSpec>> =
+                        BTreeMap::new();
+                    if let Some(pattern) = extra_pattern {
+                        expected
+                            .insert(format!("{prefix}pattern"), InputPredicate::Matches(pattern));
+                    }
+                    if let Some((min, max)) = extra_length {
+                        expected.insert(
+                            format!("{prefix}length"),
+                            InputPredicate::Length { min, max },
+                        );
+                    }
+                    let rules: Vec<_> = schema.input_rules().iter().filter(|rule| {
+                        matches!(rule.target(), InputRuleTarget::Value(target) if target.as_str() == path)
+                            && rule.code().as_str().starts_with(&prefix)
+                    }).collect();
+                    assert_eq!(
+                        rules.len(),
+                        expected.len(),
+                        "{}.{path}: wrong Reference input rule count",
+                        schema.resource_type()
+                    );
+                    if !expected.is_empty() {
+                        let scope = cfn_rule_scope(schema, path);
+                        for rule in rules {
+                            let code = rule.code().as_str();
+                            let expected = expected.remove(code).unwrap_or_else(|| {
+                                panic!(
+                                    "{}.{path}: unexpected Reference input rule {code}",
+                                    schema.resource_type()
+                                )
+                            });
+                            assert_eq!(
+                                rule.scope(),
+                                scope,
+                                "{}.{path}: wrong scope for {code}",
+                                schema.resource_type()
+                            );
+                            let actual = match rule.predicate() {
+                                InputPredicate::Matches(pattern) => {
+                                    InputPredicate::Matches(pattern.as_ref().clone())
+                                }
+                                InputPredicate::Length { min, max } => InputPredicate::Length {
+                                    min: *min,
+                                    max: *max,
+                                },
+                                other => panic!(
+                                    "{}.{path}: unexpected predicate for {code}: {other:?}",
+                                    schema.resource_type()
+                                ),
+                            };
+                            assert_eq!(
+                                actual,
+                                expected,
+                                "{}.{path}: wrong predicate for {code}",
+                                schema.resource_type()
+                            );
+                            self.verified_rules.insert((
+                                key.0.clone(),
+                                key.1.clone(),
+                                code.to_string(),
+                            ));
+                        }
+                    }
                     self.references.insert(key.clone());
                 }
                 Some(Classification::NotReference(NotReference::Other(reason))) => {
@@ -159,7 +248,7 @@ impl Coverage {
 }
 
 #[test]
-fn final_registry_classifies_every_kms_input_and_preserves_reference_patterns() {
+fn final_registry_classifies_every_kms_input_and_uses_canonical_references() {
     let registry = super::schema_registry();
     let mut coverage = Coverage::default();
     for (_, _, _, schema) in registry.iter() {
@@ -172,6 +261,31 @@ fn final_registry_classifies_every_kms_input_and_preserves_reference_patterns() 
                 name,
                 attribute.description(),
                 attribute.is_read_only(),
+            );
+        }
+        let prefix = format!(
+            "{}.",
+            classification::ReferenceKind::Key.input_rule_code_prefix()
+        );
+        for rule in schema
+            .input_rules()
+            .iter()
+            .filter(|rule| rule.code().as_str().starts_with(&prefix))
+        {
+            let InputRuleTarget::Value(path) = rule.target() else {
+                panic!(
+                    "{}: Reference input rule must target a Value path",
+                    schema.resource_type()
+                );
+            };
+            let key = (
+                schema.resource_type().to_string(),
+                path.as_str().to_string(),
+                rule.code().as_str().to_string(),
+            );
+            assert!(
+                coverage.verified_rules.contains(&key),
+                "unexpected Reference input rule: {key:?}"
             );
         }
     }
