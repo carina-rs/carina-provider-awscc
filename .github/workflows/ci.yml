@@ -24,7 +24,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/rust-toolchain
@@ -32,7 +32,11 @@ jobs:
       - name: Test acceptance run registry
         run: bash acceptance-tests/shared/tests/run_registry_test.sh
       - run: cargo build -p carina-provider-awscc --target wasm32-wasip2 --release
+      - run: cargo test --no-run
+      # Bound test execution (including real-time waits); compilation above keeps
+      # cold caches from tripping this limit.
       - run: cargo test
+        timeout-minutes: 15
 
   validate-examples:
     name: Validate Examples
