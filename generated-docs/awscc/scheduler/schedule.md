@@ -103,7 +103,6 @@ The name of the schedule group to associate with this schedule. If you omit this
 
 - **Type:** aws.kms.Key.Reference
 - **Required:** No
-- **Input pattern (every write):** `^arn:aws[a-z-]*:kms:[a-z0-9\-]+:\d{12}:(key|alias)\/[0-9a-zA-Z-_]*$`
 
 The ARN for a KMS Key that will be used to encrypt customer data.
 
@@ -343,6 +342,12 @@ Shorthand formats: `task_definition` or `PropagateTags.task_definition`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `message_group_id` | String(len: 1..=128) | No | The FIFO message group ID to use as the target. |
+
+## Additional Input Constraints
+
+| Input rule |
+|------------|
+| `value at kms_key_arn: must match /^arn:aws[a-z-]*:kms:[a-z0-9\-]+:\d{12}:(key\|alias)\/[0-9a-zA-Z-_]*$/ (Full) (on every write)` |
 
 ## Attribute Reference
 

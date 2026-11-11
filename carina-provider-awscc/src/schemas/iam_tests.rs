@@ -12,7 +12,7 @@ use carina_core::provider::{ProviderFactory, provider_custom_types_from_factorie
 use carina_core::resolver::resolve_ref_value_with_config;
 use carina_core::resource::{AuthoredConcreteValue, AuthoredResource, AuthoredValue};
 use carina_core::schema::{
-    RawShape, SchemaKind, StringIdentityParts, TypeAssignability, TypeIdentity,
+    RawShape, SchemaKind, StringIdentityParts, StringMemberParts, TypeAssignability, TypeIdentity,
     ValidatedResourceSchema, builtin_type_registry,
 };
 use carina_core::validation::{
@@ -113,14 +113,19 @@ fn role_path_uses_shared_anonymous_path_type_and_keeps_the_root_path() {
     let RawShape::String {
         identity_layer:
             StringIdentityParts {
-                pattern: shared_pattern,
-                length: shared_length,
+                identity: None,
+                pattern: None,
+                length: None,
                 ..
             },
-        ..
+        member_layer:
+            StringMemberParts {
+                pattern: shared_pattern,
+                length: shared_length,
+            },
     } = shared.raw_shape()
     else {
-        panic!("shared IAM path must remain String");
+        panic!("shared IAM path must keep anonymous constraints in its member layer");
     };
     assert!(identity.is_none());
     assert_eq!(pattern, shared_pattern);

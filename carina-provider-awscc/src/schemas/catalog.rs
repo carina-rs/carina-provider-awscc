@@ -6,9 +6,13 @@
 //! constraints. Its rows use the exported
 //! `carina_aws_types::define_aws_type_catalog` grammar shared with `AwsType`.
 
-use super::pattern::{ApprovedPattern, refined_string, refined_string_with_validator};
+use super::pattern::{
+    ApprovedPattern, refined_string, refined_string_with_validator,
+    string_definition_with_validator,
+};
 use super::string_identity::StringIdentity;
 use crate::partition::{Partition, arn_regex};
+use carina_aws_types::IdentityDefinition;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeType, CompiledPattern, RawShape, StringIdentityLayer, TypeIdentity, legacy_validator,
@@ -326,10 +330,10 @@ fn validated_service_arn(
     service: &'static str,
     resource_prefix: Option<&'static str>,
     label: &'static str,
-) -> AttributeType {
+) -> IdentityDefinition {
     // Keep `label` to preserve the established `Invalid <service> ARN ...`
     // diagnostic for both AWSCC identities and refinements of shared rows.
-    refined_string_with_validator(
+    string_definition_with_validator(
         identity,
         Some(pattern),
         None,
@@ -351,10 +355,10 @@ fn validated_iam_arn(
     pattern: ApprovedPattern,
     resource_prefix: &'static str,
     label: &'static str,
-) -> AttributeType {
+) -> IdentityDefinition {
     // The explicit label preserves AWSCC's `Invalid IAM OIDC Provider ARN ...`
     // prefix while the AWSCC validator supplies the detailed reason.
-    refined_string_with_validator(
+    string_definition_with_validator(
         identity,
         Some(pattern),
         None,
@@ -371,11 +375,11 @@ fn validated_iam_arn(
     )
 }
 
-fn validated_int_enum(identity: TypeIdentity, valid_values: &'static [i64]) -> AttributeType {
-    AttributeType::refined_int_with_validator(
+fn validated_int_enum(identity: TypeIdentity, valid_values: &'static [i64]) -> IdentityDefinition {
+    IdentityDefinition::int(
         identity,
         None,
-        legacy_validator(move |value| {
+        Some(legacy_validator(move |value| {
             if let Value::Concrete(ConcreteValue::Int(value)) = value {
                 if valid_values.contains(value) {
                     Ok(())
@@ -385,17 +389,17 @@ fn validated_int_enum(identity: TypeIdentity, valid_values: &'static [i64]) -> A
             } else {
                 Err("Expected integer".to_string().into())
             }
-        }),
+        })),
     )
 }
 
-fn validated_identitystore_group_display_name(identity: TypeIdentity) -> AttributeType {
+fn validated_identitystore_group_display_name(identity: TypeIdentity) -> IdentityDefinition {
     // Preserve CFN's exact pattern and character bounds; reserved names are case-sensitive.
     // https://docs.aws.amazon.com/singlesignon/latest/IdentityStoreAPIReference/API_CreateGroup.html#IdentityStore-CreateGroup-request-DisplayName
     let pattern = ApprovedPattern::whole(r"^[\p{L}\p{M}\p{S}\p{N}\p{P}\t\n\r  ]+$");
     let compiled_pattern = CompiledPattern::try_new(pattern.as_spec())
         .expect("IdentityStore Group.DisplayName pattern must compile");
-    refined_string_with_validator(
+    string_definition_with_validator(
         identity,
         Some(pattern),
         Some((Some(1), Some(1024))),
@@ -431,12 +435,12 @@ fn validated_identitystore_group_display_name(identity: TypeIdentity) -> Attribu
     )
 }
 
-fn validated_logs_log_group_name(identity: TypeIdentity) -> AttributeType {
+fn validated_logs_log_group_name(identity: TypeIdentity) -> IdentityDefinition {
     // Preserve CFN's pattern and bounds; check the reserved prefix case-insensitively.
     // https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_CreateLogGroup.html
     // Live CreateLogGroup, carina-test-001, 2026-11-05: InvalidParameterException:
     // "Log groups starting with AWS/ are reserved for AWS."
-    refined_string_with_validator(
+    string_definition_with_validator(
         identity,
         Some(ApprovedPattern::whole(r"^[.\-_/#A-Za-z0-9]{1,512}\z")),
         Some((Some(1), Some(512))),
@@ -473,11 +477,11 @@ fn validated_logs_log_group_name(identity: TypeIdentity) -> AttributeType {
     )
 }
 
-fn validated_organizations_account_email(identity: TypeIdentity) -> AttributeType {
+fn validated_organizations_account_email(identity: TypeIdentity) -> IdentityDefinition {
     // Use the shared AWS identity so core Email stays unbounded. Preserve
     // core's grammar for historical reads, without CreateAccount-only rules.
     // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-Email
-    refined_string_with_validator(
+    string_definition_with_validator(
         identity,
         None,
         Some((Some(6), Some(64))),
@@ -501,11 +505,11 @@ fn validated_organizations_account_email(identity: TypeIdentity) -> AttributeTyp
     )
 }
 
-fn validated_organizations_account_role_name(identity: TypeIdentity) -> AttributeType {
+fn validated_organizations_account_role_name(identity: TypeIdentity) -> IdentityDefinition {
     // The reserved prefix is a callback check; the pattern needs no lookaround.
     // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-RoleName
     // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#API_CreateAccount_Errors
-    refined_string_with_validator(
+    string_definition_with_validator(
         identity,
         Some(ApprovedPattern::whole(r"^[\w+=,.@-]+\z")),
         Some((Some(1), Some(64))),
@@ -537,14 +541,14 @@ fn validated_organizations_account_role_name(identity: TypeIdentity) -> Attribut
     )
 }
 
-fn validated_s3_lifecycle_date(identity: TypeIdentity) -> AttributeType {
+fn validated_s3_lifecycle_date(identity: TypeIdentity) -> IdentityDefinition {
     // Both actions require a calendar date at midnight UTC.
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_LifecycleExpiration.html
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_Transition.html
     // Cloud Control GetResource, carina-test-001, ap-northeast-1, 2026-11-04:
     // ExpirationDate was "2030-01-01T00:00:00Z" without fractional seconds.
     // Retain the .000Z spelling accepted by the cached iso8601UTC pattern too.
-    refined_string_with_validator(
+    string_definition_with_validator(
         identity,
         Some(ApprovedPattern::whole(
             r"^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T00:00:00(?:\.000)?Z\z",
@@ -596,7 +600,7 @@ fn validated_s3_lifecycle_date(identity: TypeIdentity) -> AttributeType {
     )
 }
 
-fn validated_sso_permission_set_session_duration(identity: TypeIdentity) -> AttributeType {
+fn validated_sso_permission_set_session_duration(identity: TypeIdentity) -> IdentityDefinition {
     // Keep the existing CFN grammar, spelling out ECMAScript's ASCII \d.
     // Fractions are allowed only on seconds; date components may be zero.
     let pattern = ApprovedPattern::whole(concat!(
@@ -607,7 +611,7 @@ fn validated_sso_permission_set_session_duration(identity: TypeIdentity) -> Attr
     ));
     let compiled_pattern = CompiledPattern::try_new(pattern.as_spec())
         .expect("SSO PermissionSet.SessionDuration pattern must compile");
-    refined_string_with_validator(
+    string_definition_with_validator(
         identity,
         Some(pattern),
         Some((Some(1), Some(100))),
@@ -667,8 +671,8 @@ fn validated_sso_permission_set_session_duration(identity: TypeIdentity) -> Attr
     )
 }
 
-fn validated_scheduler_schedule_expression(identity: TypeIdentity) -> AttributeType {
-    refined_string_with_validator(
+fn validated_scheduler_schedule_expression(identity: TypeIdentity) -> IdentityDefinition {
+    string_definition_with_validator(
         identity,
         None,
         Some((Some(1), Some(256))),
@@ -683,7 +687,7 @@ fn validated_scheduler_schedule_expression(identity: TypeIdentity) -> AttributeT
     )
 }
 
-fn validated_wafv2_byte_match_search_string(identity: TypeIdentity) -> AttributeType {
+fn validated_wafv2_byte_match_search_string(identity: TypeIdentity) -> IdentityDefinition {
     // Core refined_string length counts characters, but this API counts UTF-8 bytes.
     // https://docs.aws.amazon.com/waf/latest/APIReference/API_ByteMatchStatement.html#waf-Type-ByteMatchStatement-SearchString
     // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
@@ -691,7 +695,7 @@ fn validated_wafv2_byte_match_search_string(identity: TypeIdentity) -> Attribute
     // rejected 201 ASCII bytes, 67×'あ' (201 bytes) and empty string.
     // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
     // accepted 66×'あ' and read back all 66 characters through get-resource.
-    refined_string_with_validator(
+    string_definition_with_validator(
         identity,
         None,
         None,
@@ -711,7 +715,7 @@ fn validated_wafv2_byte_match_search_string(identity: TypeIdentity) -> Attribute
     )
 }
 
-fn validated_wafv2_byte_match_search_string_base64(identity: TypeIdentity) -> AttributeType {
+fn validated_wafv2_byte_match_search_string_base64(identity: TypeIdentity) -> IdentityDefinition {
     use base64::Engine;
     use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD};
 
@@ -720,7 +724,7 @@ fn validated_wafv2_byte_match_search_string_base64(identity: TypeIdentity) -> At
     // API documentation only (not separately probed): SearchStringBase64 must
     // decode to 1..=200 bytes; the 200-byte limit applies before encoding.
     // Padding is unspecified, so accept both padded and unpadded standard base64.
-    refined_string_with_validator(
+    string_definition_with_validator(
         identity,
         None,
         None,
@@ -747,7 +751,7 @@ fn validated_wafv2_byte_match_search_string_base64(identity: TypeIdentity) -> At
     )
 }
 
-fn validated_scheduler_schedule_group_name(identity: TypeIdentity) -> AttributeType {
+fn validated_scheduler_schedule_group_name(identity: TypeIdentity) -> IdentityDefinition {
     // Measured with carina-test-008 in ap-northeast-1 on 2026-10-30: creating
     // AWS::Scheduler::Schedule in a non-default group succeeded, but Carina's
     // post-create read returned not_found. The direct checks were:
@@ -763,7 +767,7 @@ fn validated_scheduler_schedule_group_name(identity: TypeIdentity) -> AttributeT
     // Deleting the group cascaded to the schedule; direct schedule deletion
     // through Cloud Control was not measured. Require a statically provable
     // default group so Carina never creates a resource it cannot read/track.
-    refined_string_with_validator(
+    string_definition_with_validator(
         identity,
         None,
         Some((Some(1), Some(64))),

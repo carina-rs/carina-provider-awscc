@@ -231,6 +231,7 @@ const SHARED_UTILITIES: &[&str] = &[
     "FinalAttempt",
     "GuardedAssumeRoleProvider::new",
     "Idempotency",
+    "IdentityDefinition",
     // Part of the existing #541 KMS reference exception, not another type.
     "KMS_KEY_REFERENCE_PATTERN",
     "ResendGuard",

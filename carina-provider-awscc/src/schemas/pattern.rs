@@ -1,5 +1,6 @@
 //! Pattern approval shared by the generator and AWSCC runtime constructors.
 
+use carina_aws_types::IdentityDefinition;
 use carina_core::schema::{
     AttributeType, CustomValidator, DslTransform, PatternMatch, PatternReason, PatternSpec,
     TypeIdentity,
@@ -44,6 +45,10 @@ impl ApprovedPattern {
 
     pub fn as_spec(&self) -> &PatternSpec {
         &self.0
+    }
+
+    fn into_spec(self) -> PatternSpec {
+        self.0
     }
 
     pub fn as_str(&self) -> &str {
@@ -161,7 +166,12 @@ pub(super) fn refined_string(
     length: Option<(Option<u64>, Option<u64>)>,
     to_dsl: Option<DslTransform>,
 ) -> AttributeType {
-    AttributeType::refined_string(identity, pattern.map(|pattern| pattern.0), length, to_dsl)
+    AttributeType::refined_string(
+        identity,
+        pattern.map(ApprovedPattern::into_spec),
+        length,
+        to_dsl,
+    )
 }
 
 pub(super) fn refined_string_with_validator(
@@ -173,9 +183,25 @@ pub(super) fn refined_string_with_validator(
 ) -> AttributeType {
     AttributeType::refined_string_with_validator(
         identity,
-        pattern.map(|pattern| pattern.0),
+        pattern.map(ApprovedPattern::into_spec),
         length,
         validate,
+        to_dsl,
+    )
+}
+
+pub(super) fn string_definition_with_validator(
+    identity: TypeIdentity,
+    pattern: Option<ApprovedPattern>,
+    length: Option<(Option<u64>, Option<u64>)>,
+    validator: CustomValidator,
+    to_dsl: Option<DslTransform>,
+) -> IdentityDefinition {
+    IdentityDefinition::string(
+        identity,
+        pattern.map(ApprovedPattern::into_spec),
+        length,
+        Some(validator),
         to_dsl,
     )
 }
