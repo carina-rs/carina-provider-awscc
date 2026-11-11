@@ -53,8 +53,6 @@ Creates or updates a *field index policy* for the specified log group. Only log 
 
 - **Type:** aws.kms.Key.Reference
 - **Required:** No
-- **Input pattern (every write):** `^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z`
-- **Input length (every write):** `..=256`
 
 The Amazon Resource Name (ARN) of the KMS key to use when encrypting log data. To associate an KMS key with the log group, specify the ARN of that KMS key here. If you do so, ingested data is encrypted using this key. This association is stored as long as the data encrypted with the KMS key is still within CWL. This enables CWL to decrypt this data whenever it is requested. If you attempt to associate a KMS key with the log group but the KMS key doesn't exist or is deactivated, you will receive an ``InvalidParameterException`` error. Log group data is always encrypted in CWL. If you omit this key, the encryption does not use KMS. For more information, see [Encrypt log data in using](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html)
 
@@ -106,6 +104,13 @@ An array of key-value pairs to apply to the log group. For more information, see
 | `DELIVERY` | `aws.logs.LogGroup.LogGroupClass.delivery` |
 
 Shorthand formats: `standard` or `LogGroupClass.standard`
+
+## Additional Input Constraints
+
+| Input rule |
+|------------|
+| `value at kms_key_id: must match /^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key\|alias)/.+\z/ (Full) (on every write)` |
+| `value at kms_key_id: must have length ..=256 Unicode scalar values (on every write)` |
 
 ## Attribute Reference
 

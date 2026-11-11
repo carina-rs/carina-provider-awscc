@@ -1402,8 +1402,9 @@ fn main() {}
 mod tests {
     use super::*;
     use carina_core::schema::{
-        CompiledAttributeType, CustomValidator, IntIdentityParts, RawShape, ResourceValidation,
-        StringIdentityParts, TypeIdentity as CoreTypeIdentity,
+        AttributeType, CompiledAttributeType, CustomValidator, IntIdentityParts, RawShape,
+        ResourceValidation, StringIdentityParts, StringMemberConstraints,
+        TypeIdentity as CoreTypeIdentity, ValidatedConfigSchema,
     };
     use carina_core::test_utils::provider_text::{BindProviderText as _, NativeWireFixture as _};
     use carina_plugin_sdk::types::{TypeIdentity as WireTypeIdentity, ValidatorType};
@@ -1630,8 +1631,33 @@ mod tests {
             .copied()
             .find(|aws_type| aws_type.identity() == *identity)
         {
-            assert!(aws_type.has_validator());
-            return aws_type.valid_sample();
+            let sample = aws_type.valid_sample();
+            // Shared String rows may enforce their grammar entirely through
+            // metadata while AWSCC retains callbacks. Validate the sample with
+            // AWSCC's identity policy, including its partition decisions.
+            if let Some(string_identity) = schemas::string_identity::StringIdentity::ALL
+                .iter()
+                .find(|candidate| candidate.identity() == *identity)
+            {
+                let ty = AttributeType::string_member(
+                    string_identity.identity_layer(),
+                    StringMemberConstraints::new(None, None),
+                );
+                let schema =
+                    ValidatedConfigSchema::validate(BTreeMap::from([("sample".into(), ty)]))
+                        .expect("AWSCC catalog sample type must pass admission");
+                schema
+                    .rootless_type("sample")
+                    .unwrap()
+                    .validate(&bridge_probe(CallbackScalar::String, sample))
+                    .unwrap_or_else(|error| panic!("AWSCC catalog sample for {identity}: {error}"));
+            } else {
+                assert!(
+                    aws_type.has_validator(),
+                    "metadata-only identity {identity} needs an AWSCC sample policy"
+                );
+            }
+            return sample;
         }
 
         assert!(

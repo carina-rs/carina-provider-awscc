@@ -14,7 +14,7 @@
 
 use anyhow::{Context, Result};
 use carina_aws_types::dsl_enum_value;
-use carina_core::schema::{ListElements, PatternMatch};
+use carina_core::schema::{ListElements, PatternMatch, PatternSpec};
 use carina_docgen::example::{self, DocExample, ExampleKind};
 use carina_docgen::{Heading, PageBuilder, TableCell};
 use carina_provider_awscc::schemas::catalog::AwsccType;
@@ -3244,13 +3244,20 @@ fn generated_property_description(
     description
 }
 
+/// Properties emitted into the runtime schema, including deprecated ones.
+fn runtime_top_level_properties(
+    schema: &CfnSchema,
+) -> impl Iterator<Item = (&String, &SchemaProperty)> {
+    schema
+        .properties
+        .iter()
+        .filter(|(name, _)| !should_omit_top_level_property(&schema.type_name, name))
+}
+
 fn documented_top_level_properties(
     schema: &CfnSchema,
 ) -> impl Iterator<Item = (&String, &SchemaProperty)> {
-    schema.properties.iter().filter(|(name, property)| {
-        !is_deprecated_property(property)
-            && !should_omit_top_level_property(&schema.type_name, name)
-    })
+    runtime_top_level_properties(schema).filter(|(_, property)| !is_deprecated_property(property))
 }
 
 fn is_struct_property(prop: &SchemaProperty, schema: &CfnSchema) -> QueryResult<bool> {
@@ -3634,7 +3641,8 @@ fn type_display_at_resolved(
     if !is_dsl_tags_property(classified.schema(), classified.path())? {
         classified.property().try_query()?;
     }
-    if let Some(reference) = emission_reference(&classified, cfn_property_path)? {
+    let type_projection = project_property_type(&classified, cfn_property_path)?;
+    if let Some(reference) = type_projection.emission_reference(&classified, cfn_property_path)? {
         return Ok(TypeDisplay::Plain(reference.display()));
     }
     let schema = classified.schema();
@@ -3645,7 +3653,7 @@ fn type_display_at_resolved(
         schema,
         cfn_property_path,
         prop,
-        resource_type_override(&schema.type_name, cfn_property_path),
+        type_projection.override_type,
     )? {
         return Ok(TypeDisplay::Code(display));
     }
@@ -4214,18 +4222,16 @@ fn markdown_type(
     if !is_dsl_tags_property(classified.schema(), classified.path())? {
         classified.property().try_query()?;
     }
-    if let Some(reference) = emission_reference(
-        &classified,
-        CfnPropertyPath::new(cfn_parent, classified.name()),
-    )? {
+    let cfn_property_path = CfnPropertyPath::new(cfn_parent, classified.name());
+    let type_projection = project_property_type(&classified, cfn_property_path)?;
+    if let Some(reference) = type_projection.emission_reference(&classified, cfn_property_path)? {
         return Ok(MarkdownType::Plain(reference.display()));
     }
     let schema = classified.schema();
     let prop = classified.property();
     let prop_name = classified.name();
     let property_path = classified.path();
-    let cfn_property_path = CfnPropertyPath::new(cfn_parent, prop_name);
-    let override_type = resource_type_override(&schema.type_name, cfn_property_path);
+    let override_type = type_projection.override_type;
     // Top-level properties retain source struct links, as on main. Nested
     // overrides replace the field's source type and take precedence over links.
     if cfn_parent.is_some()
@@ -4287,7 +4293,7 @@ fn override_type_display(
     let Some(override_type) = override_type else {
         return Ok(None);
     };
-    if override_type.string_binding().is_some() {
+    if !override_type.replaces_leaf_type() {
         return Ok(None);
     }
     // A collection's item walk retains its raw CFN field key. Bounds belong
@@ -4642,10 +4648,15 @@ fn render_markdown(
     let mut struct_field_enums: BTreeMap<MarkdownStructFieldKey, EnumInfo> = BTreeMap::new();
     let mut struct_defs: BTreeMap<MarkdownStructKey, StructDefInfo> = BTreeMap::new();
 
-    for (prop_name, prop) in &schema.properties {
-        if is_deprecated_property(prop)
-            || should_omit_top_level_property(&schema.type_name, prop_name)
-        {
+    for (prop_name, prop) in runtime_top_level_properties(schema) {
+        if is_deprecated_property(prop) {
+            // Deprecated attributes remain in the runtime schema. Account for
+            // their Reference declarations and rules before hiding the field docs.
+            let path = [prop_name.clone()];
+            let classified = schema.property_at(&path, prop);
+            let cfn_path = CfnPropertyPath::new(None, prop_name);
+            let _ = project_property_type(&classified, cfn_path)?
+                .emission_reference(&classified, cfn_path)?;
             continue;
         }
         // Apply resource-scoped enum overlay (awscc#357) for top-level
@@ -4880,7 +4891,6 @@ fn render_markdown(
         )? {
             default.write_markdown(&mut page);
         }
-        page.push_str(&schema.reference_input_rules_markdown(&attr_name));
         page.push_str("\n");
 
         if let Some(d) = generated_property_description(schema, prop_name, prop) {
@@ -5116,6 +5126,8 @@ fn render_markdown(
             }
         }
     }
+
+    page.input_rules_section(&schema.reference_input_rules())?;
 
     // Attribute Reference (read-only attributes)
     let synth_for_type: Vec<&SyntheticAttribute> = synthetic_attributes()
@@ -5558,13 +5570,18 @@ fn generate_attribute_type(
     let prop_name = classified.name();
     let schema = classified.schema();
     let property_path = CfnPropertyPath::new(paths.cfn_parent, prop_name);
-    let override_type = checked_resource_type_override(schema, property_path, prop)?;
+    let type_projection = project_property_type(&classified, property_path)?;
+    if let Some(reference) = type_projection.emission_reference(&classified, property_path)? {
+        return Ok(reference.emit(&schema.type_name, prop_name).0);
+    }
+    let override_type = type_projection.override_type;
+    let replacement = override_type.filter(|entry| entry.replaces_leaf_type());
 
     if let Some(NarrowingKind::NamedType {
         name,
         expression,
         display: _,
-    }) = override_type.and_then(TypeOverride::kind)
+    }) = replacement.and_then(TypeOverride::kind)
     {
         assert!(
             !schema
@@ -5575,11 +5592,10 @@ fn generate_attribute_type(
             schema.type_name,
             property_path
         );
-        let emitted_expression = override_type.expect("named refinement").emit_expression(
-            prop,
-            schema,
-            property_path,
-        )?;
+        let emitted_expression =
+            replacement
+                .expect("named refinement")
+                .emit_expression(prop, schema, property_path)?;
         let _ = expression;
         EMITTED_DEFS.with(|definitions| {
             let mut definitions = definitions.borrow_mut();
@@ -5598,9 +5614,7 @@ fn generate_attribute_type(
         ));
     }
 
-    if let Some(entry) = override_type.filter(|entry| {
-        entry.attribute_type_expression().is_some() && entry.string_binding().is_none()
-    }) {
+    if let Some(entry) = replacement.filter(|entry| entry.attribute_type_expression().is_some()) {
         return entry.emit_expression(prop, schema, property_path);
     }
 
@@ -5997,10 +6011,7 @@ pub fn {}() -> AwsccSchemaConfig {{
     }
 
     // Generate attributes for each property
-    for (prop_name, prop) in &schema.properties {
-        if should_omit_top_level_property(&schema.type_name, prop_name) {
-            continue;
-        }
+    for (prop_name, prop) in runtime_top_level_properties(schema) {
         let attr_name = dsl_attribute_name(schema, prop_name)?;
         let property_path = [prop_name.clone()];
         let is_read_only = is_property_read_only(schema, prop, &property_path)?;
@@ -8239,11 +8250,59 @@ impl StringLeaf<'_> {
     }
 }
 
-/// Shared by Rust and Markdown at their type decision points.
-fn emission_reference(
-    classified: &EmissionProperty<'_>,
+/// The checked override and Reference decision travel together to both writers.
+struct PropertyTypeProjection<'a> {
+    override_type: Option<&'static TypeOverride>,
+    reference: Option<(kms_references::ReferenceKind, emission_plan::StringPlan<'a>)>,
+}
+
+impl PropertyTypeProjection<'_> {
+    fn emission_reference(
+        &self,
+        classified: &EmissionProperty<'_>,
+        cfn_property_path: CfnPropertyPath<'_>,
+    ) -> Result<Option<StringLeaf<'static>>> {
+        let Some((kind, plan)) = &self.reference else {
+            return Ok(None);
+        };
+        Ok(Some(StringLeaf::Reference(
+            classified.schema().reference_kind(
+                classified.path(),
+                *kind,
+                cfn_property_path,
+                plan,
+            )?,
+        )))
+    }
+}
+
+/// Shared by eager rule preparation and every Rust/Markdown type decision.
+fn project_property_type<'a>(
+    classified: &EmissionProperty<'a>,
     cfn_property_path: CfnPropertyPath<'_>,
-) -> Result<Option<StringLeaf<'static>>> {
+) -> Result<PropertyTypeProjection<'a>> {
+    // Collection elements retain the containing property's CFN key, but its
+    // override addresses the collection itself, not an independently emitted item.
+    let override_type = if classified.path().last().is_some_and(|name| name == "*") {
+        None
+    } else {
+        checked_resource_type_override(
+            classified.schema(),
+            cfn_property_path,
+            classified.property(),
+        )?
+    };
+    Ok(PropertyTypeProjection {
+        override_type,
+        reference: reference_projection(classified, override_type)?,
+    })
+}
+
+/// Return a Reference only when the checked override leaves its type intact.
+fn reference_projection<'a>(
+    classified: &EmissionProperty<'a>,
+    override_type: Option<&TypeOverride>,
+) -> Result<Option<(kms_references::ReferenceKind, emission_plan::StringPlan<'a>)>> {
     if is_dsl_tags_property(classified.schema(), classified.path())? {
         return Ok(None);
     }
@@ -8271,14 +8330,11 @@ fn emission_reference(
     let Some(kind) = classified.classify()? else {
         return Ok(None);
     };
-    Ok(Some(StringLeaf::Reference(
-        classified.schema().reference_kind(
-            classified.path(),
-            kind,
-            cfn_property_path,
-            plan.string()?,
-        )?,
-    )))
+    // Retain KMS provenance accounting even when an override replaces the leaf.
+    if override_type.is_some_and(TypeOverride::replaces_leaf_type) {
+        return Ok(None);
+    }
+    Ok(Some((kind, plan.string()?.clone())))
 }
 
 /// Classify a resolved string leaf once, before either Rust or Markdown
@@ -8432,9 +8488,9 @@ fn string_refinement_display(
     )
 }
 
-/// Format a validated pattern from `string_constraints` as a Rust literal.
+/// Format an approved pattern declaration as a Rust literal.
 /// Escape quotes and backslashes without changing the regex itself.
-fn emit_pattern_spec(pattern: &ApprovedPattern, literal: PatternLiteral) -> String {
+fn emit_pattern_spec(pattern: &PatternSpec, literal: PatternLiteral) -> String {
     let source = pattern.as_str();
     let regex = match literal {
         PatternLiteral::Quoted => format!("{source:?}"),
@@ -8446,7 +8502,7 @@ fn emit_pattern_spec(pattern: &ApprovedPattern, literal: PatternLiteral) -> Stri
             format!("r{hashes}\"{source}\"{hashes}")
         }
     };
-    let mode = match pattern.as_spec().mode() {
+    let mode = match pattern.mode() {
         PatternMatch::Full => "carina_core::schema::PatternMatch::Full".to_string(),
         PatternMatch::Substring { reason } => format!(
             "carina_core::schema::PatternMatch::Substring {{ reason: carina_core::schema::PatternReason::new({}).expect(\"visible reviewed pattern reason\") }}",
@@ -8462,7 +8518,7 @@ fn emit_pattern_option(pattern: Option<&ApprovedPattern>) -> String {
         |pattern| {
             format!(
                 "Some({})",
-                emit_pattern_spec(pattern, PatternLiteral::Quoted)
+                emit_pattern_spec(pattern.as_spec(), PatternLiteral::Quoted)
             )
         },
     )
@@ -13692,7 +13748,8 @@ fn generate_object_map_type(
         ObjectMapValueKind::DirectString => {
             let value_path = schema.collection_path(paths.provider, PathSegment::MapValue);
             let value = schema.property_at(&value_path, value);
-            if let Some(reference) = emission_reference(&value, property_path)? {
+            let type_projection = project_property_type(&value, property_path)?;
+            if let Some(reference) = type_projection.emission_reference(&value, property_path)? {
                 reference.emit(&schema.type_name, prop_name)
             } else {
                 let value_property = value.property();
@@ -13800,10 +13857,9 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     if !is_dsl_tags_property(classified.schema(), classified.path())? {
         classified.property().try_query()?;
     }
-    if let Some(reference) = emission_reference(
-        &classified,
-        CfnPropertyPath::new(paths.cfn_parent, classified.name()),
-    )? {
+    let cfn_property_path = CfnPropertyPath::new(paths.cfn_parent, classified.name());
+    let type_projection = project_property_type(&classified, cfn_property_path)?;
+    if let Some(reference) = type_projection.emission_reference(&classified, cfn_property_path)? {
         return Ok(reference.emit(&classified.schema().type_name, classified.name()));
     }
     let schema = classified.schema();
@@ -13817,34 +13873,34 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     let ref_context = ref_state.context;
     let struct_path = paths.structural;
     let property_path = paths.provider;
-    let cfn_parent = paths.cfn_parent;
-    let cfn_property_path = CfnPropertyPath::new(cfn_parent, prop_name);
     // Decide overlays before walking source children: enum overlays retain
     // collection wrappers but discard struct bodies. Traversing those bodies
     // would falsely consume their overrides and publish unused definitions.
     // Collection items keep the provider name for inference, but are not the
     // property addressed by its override key.
     if ref_context == RefContext::Normal
-        && let Some(override_type) =
-            checked_resource_type_override(schema, cfn_property_path, prop)?
-    {
-        if let Some(item_type) =
+        && let Some(override_type) = type_projection.override_type
+        && let Some(item_type) =
             emit_array_item_override(schema, cfn_property_path, prop, override_type)?
-        {
-            return Ok((item_type, None));
-        }
-        if let Some(values) = override_type.enum_values() {
-            return Ok((
-                emit_enum_property_type(
-                    schema,
-                    cfn_property_path,
-                    prop,
-                    "AttributeType::string()",
-                    override_forces_unordered(&schema.type_name, cfn_property_path),
-                )?,
-                Some(enum_info_for_override(prop_name, values)),
-            ));
-        }
+    {
+        return Ok((item_type, None));
+    }
+    if ref_context == RefContext::Normal
+        && let Some(override_type) = type_projection
+            .override_type
+            .filter(|entry| entry.replaces_leaf_type())
+        && let Some(values) = override_type.enum_values()
+    {
+        return Ok((
+            emit_enum_property_type(
+                schema,
+                cfn_property_path,
+                prop,
+                "AttributeType::string()",
+                override_forces_unordered(&schema.type_name, cfn_property_path),
+            )?,
+            Some(enum_info_for_override(prop_name, values)),
+        ));
     }
     // Every resource tag property is projected to the canonical DSL `tags` map,
     // preserving the CFN property name only in the provider mapping.
@@ -14118,10 +14174,9 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             )?;
             let force_unordered = override_forces_unordered(&schema.type_name, cfn_property_path);
             let array_type = if ref_context == RefContext::Normal
-                && let Some(override_type) =
-                    resource_type_override(&schema.type_name, cfn_property_path).filter(|entry| {
-                        matches!(entry.kind(), Some(NarrowingKind::Array { items: None, .. }))
-                    }) {
+                && let Some(override_type) = type_projection.override_type.filter(|entry| {
+                    matches!(entry.kind(), Some(NarrowingKind::Array { items: None, .. }))
+                }) {
                 emit_array_override(
                     schema,
                     cfn_property_path,
@@ -14138,7 +14193,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         EmissionType::Object => {
             // Check known string type overrides first, mirroring the string branch
             // for CFN union types whose first type is object.
-            let res_override = resource_type_override(&schema.type_name, cfn_property_path);
+            let res_override = type_projection.override_type;
             if let Some(override_type) =
                 res_override.and_then(TypeOverride::attribute_type_expression)
             {

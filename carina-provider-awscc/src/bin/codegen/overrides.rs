@@ -358,6 +358,27 @@ impl TypeOverride {
         }
     }
 
+    /// String refinements and collection bounds retain the source leaf type.
+    /// Array wrappers are still consumed separately by the collection writer.
+    pub(super) fn replaces_leaf_type(&self) -> bool {
+        match self.item_override() {
+            None => false,
+            Some(NarrowingKind::Primitive { .. } | NarrowingKind::ArrayItemType { .. }) => {
+                self.string_binding().is_none()
+            }
+            Some(NarrowingKind::NamedType { .. }) => true,
+            Some(NarrowingKind::Enum(_) | NarrowingKind::EnumUnordered(_)) => {
+                self.identity.is_none()
+            }
+            Some(
+                NarrowingKind::Array { .. }
+                | NarrowingKind::MapKeyLength { .. }
+                | NarrowingKind::IntRange(_, _)
+                | NarrowingKind::IntEnum(_),
+            ) => false,
+        }
+    }
+
     pub(super) fn requires_array_source(&self) -> bool {
         matches!(
             self.kind(),

@@ -149,7 +149,7 @@ impl ConstraintSpec {
     ) -> Self {
         let emitted = pattern.as_ref().map_or_else(
             || "None".to_string(),
-            |pattern| format!("Some({})", emit_pattern_spec(pattern, literal)),
+            |pattern| format!("Some({})", emit_pattern_spec(pattern.as_spec(), literal)),
         );
         let (min, max) = length.unwrap_or((None, None));
         let code_length = emit_length_option(min, max);

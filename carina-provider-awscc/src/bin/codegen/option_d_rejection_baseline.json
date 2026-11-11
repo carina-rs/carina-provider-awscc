@@ -1,0 +1,937 @@
+[
+  {
+    "resource": "AWS::Budgets::Budget",
+    "field": "BudgetData.BillingViewArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "CacheBehavior.RealtimeLogConfigArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "DefaultCacheBehavior.RealtimeLogConfigArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "FunctionAssociation.FunctionARN",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "LambdaFunctionAssociation.LambdaFunctionARN",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "OriginMtlsConfig.ClientCertificateArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "ViewerCertificate.AcmCertificateArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudFront::Distribution",
+    "field": "VpcOriginConfig.OwnerAccountId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudFront::Function",
+    "field": "FunctionARN",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudFront::Function",
+    "field": "FunctionMetadata.FunctionARN",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudFront::Function",
+    "field": "KeyValueStoreAssociation.KeyValueStoreARN",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudWatch::Alarm",
+    "field": "AlarmActions",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudWatch::Alarm",
+    "field": "Arn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudWatch::Alarm",
+    "field": "InsufficientDataActions",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudWatch::Alarm",
+    "field": "MetricDataQuery.AccountId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::CloudWatch::Alarm",
+    "field": "OKActions",
+    "example": ""
+  },
+  {
+    "resource": "AWS::DynamoDB::Table",
+    "field": "Arn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::DynamoDB::Table",
+    "field": "KinesisStreamSpecification.StreamArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::DynamoDB::Table",
+    "field": "S3BucketSource.S3BucketOwner",
+    "example": ""
+  },
+  {
+    "resource": "AWS::DynamoDB::Table",
+    "field": "StreamArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::EIP",
+    "field": "AllocationId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::EIP",
+    "field": "InstanceId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::EIP",
+    "field": "IpamPoolId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::EgressOnlyInternetGateway",
+    "field": "Id",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::EgressOnlyInternetGateway",
+    "field": "VpcId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::FlowLog",
+    "field": "DeliverCrossAccountRole",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::FlowLog",
+    "field": "DeliverLogsPermissionArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::FlowLog",
+    "field": "Id",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::FlowLog",
+    "field": "LogDestination",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::IPAM",
+    "field": "Arn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::IPAM",
+    "field": "IpamId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::IPAMPool",
+    "field": "Arn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::IPAMPool",
+    "field": "IpamArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::IPAMPool",
+    "field": "IpamPoolId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::IPAMPool",
+    "field": "IpamScopeArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::IPAMPool",
+    "field": "SourceIpamPoolId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::InternetGateway",
+    "field": "InternetGatewayId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "AllocationId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "AvailabilityZoneAddress.AllocationIds",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "AvailabilityZoneAddress.AvailabilityZoneId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "EniId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "NatGatewayId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "RouteTableId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "SecondaryAllocationIds",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "SubnetId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::NatGateway",
+    "field": "VpcId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "CarrierGatewayId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "CoreNetworkArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "DestinationPrefixListId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "EgressOnlyInternetGatewayId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "InstanceId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "LocalGatewayId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "NatGatewayId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "NetworkInterfaceId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "RouteTableId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "TransitGatewayId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "VpcEndpointId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Route",
+    "field": "VpcPeeringConnectionId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::RouteTable",
+    "field": "RouteTableId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::RouteTable",
+    "field": "VpcId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "Egress.DestinationPrefixListId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "Egress.DestinationSecurityGroupId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "GroupId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "Id",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "Ingress.SourcePrefixListId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "Ingress.SourceSecurityGroupId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "Ingress.SourceSecurityGroupOwnerId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroup",
+    "field": "VpcId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupEgress",
+    "field": "DestinationPrefixListId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupEgress",
+    "field": "DestinationSecurityGroupId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupEgress",
+    "field": "GroupId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupIngress",
+    "field": "GroupId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupIngress",
+    "field": "SourcePrefixListId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupIngress",
+    "field": "SourceSecurityGroupId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SecurityGroupIngress",
+    "field": "SourceSecurityGroupOwnerId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Subnet",
+    "field": "AvailabilityZoneId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Subnet",
+    "field": "Ipv4IpamPoolId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Subnet",
+    "field": "Ipv6IpamPoolId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Subnet",
+    "field": "OutpostArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Subnet",
+    "field": "SubnetId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::Subnet",
+    "field": "VpcId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SubnetRouteTableAssociation",
+    "field": "Id",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SubnetRouteTableAssociation",
+    "field": "RouteTableId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::SubnetRouteTableAssociation",
+    "field": "SubnetId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::TransitGateway",
+    "field": "AssociationDefaultRouteTableId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::TransitGateway",
+    "field": "Id",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::TransitGateway",
+    "field": "PropagationDefaultRouteTableId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::TransitGateway",
+    "field": "TransitGatewayArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::TransitGatewayAttachment",
+    "field": "Id",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::TransitGatewayAttachment",
+    "field": "SubnetIds",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::TransitGatewayAttachment",
+    "field": "TransitGatewayId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::TransitGatewayAttachment",
+    "field": "VpcId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPC",
+    "field": "CidrBlockAssociations",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPC",
+    "field": "DefaultNetworkAcl",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPC",
+    "field": "DefaultSecurityGroup",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPC",
+    "field": "Ipv4IpamPoolId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPC",
+    "field": "VpcId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "Id",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "NetworkInterfaceIds",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "ResourceConfigurationArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "RouteTableIds",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "SecurityGroupIds",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "ServiceNetworkArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "SubnetIds",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCEndpoint",
+    "field": "VpcId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCGatewayAttachment",
+    "field": "InternetGatewayId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCGatewayAttachment",
+    "field": "VpcId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCGatewayAttachment",
+    "field": "VpnGatewayId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCPeeringConnection",
+    "field": "Id",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCPeeringConnection",
+    "field": "PeerOwnerId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCPeeringConnection",
+    "field": "PeerRoleArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCPeeringConnection",
+    "field": "PeerVpcId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPCPeeringConnection",
+    "field": "VpcId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::EC2::VPNGateway",
+    "field": "VPNGatewayId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ECR::Repository",
+    "field": "Arn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ECS::Cluster",
+    "field": "Arn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ECS::Cluster",
+    "field": "ExecuteCommandConfiguration.KmsKeyId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ECS::Cluster",
+    "field": "ManagedStorageConfiguration.KmsKeyId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "Action.TargetGroupArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "AuthenticateCognitoConfig.UserPoolArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "Certificate.CertificateArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "ListenerArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "LoadBalancerArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "MutualAuthentication.TrustStoreArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::Listener",
+    "field": "TargetGroupTuple.TargetGroupArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "field": "Ipv4IpamPoolId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "field": "LoadBalancerArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "field": "SubnetMapping.AllocationId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "field": "SubnetMapping.SubnetId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    "field": "LoadBalancerArns",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    "field": "TargetGroupArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    "field": "VpcId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::IAM::OIDCProvider",
+    "field": "Arn",
+    "example": "xxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "resource": "AWS::IAM::Role",
+    "field": "Arn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::IAM::Role",
+    "field": "ManagedPolicyArns",
+    "example": ""
+  },
+  {
+    "resource": "AWS::IAM::Role",
+    "field": "PermissionsBoundary",
+    "example": ""
+  },
+  {
+    "resource": "AWS::IAM::Role",
+    "field": "Policy.PolicyName",
+    "example": " "
+  },
+  {
+    "resource": "AWS::IAM::Role",
+    "field": "RoleId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::IAM::Role",
+    "field": "RoleName",
+    "example": " "
+  },
+  {
+    "resource": "AWS::IAM::RolePolicy",
+    "field": "PolicyName",
+    "example": " "
+  },
+  {
+    "resource": "AWS::IAM::RolePolicy",
+    "field": "RoleName",
+    "example": " "
+  },
+  {
+    "resource": "AWS::KMS::Key",
+    "field": "Arn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::Logs::LogGroup",
+    "field": "Arn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::Organizations::Account",
+    "field": "Arn",
+    "example": "arn:aws-zz:organizations::123456789012:account/o-abcdefghij/123456789012"
+  },
+  {
+    "resource": "AWS::Organizations::Organization",
+    "field": "Arn",
+    "example": "arn:aws-zz:organizations::123456789012:organization/o-abcdefghij"
+  },
+  {
+    "resource": "AWS::Organizations::Organization",
+    "field": "ManagementAccountArn",
+    "example": "arn:aws-zz:organizations::123456789012:account/o-abcdefghij/123456789012"
+  },
+  {
+    "resource": "AWS::Route53::HostedZone",
+    "field": "QueryLoggingConfig.CloudWatchLogsLogGroupArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::Route53::HostedZone",
+    "field": "VPC.VPCId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "Arn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "Destination.BucketAccountId",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "Destination.BucketArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "EncryptionConfiguration.ReplicaKmsKeyID",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "InventoryTableConfiguration.TableArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "JournalTableConfiguration.TableArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "LambdaConfiguration.Function",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "MetadataDestination.TableBucketArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "MetadataTableEncryptionConfiguration.KmsKeyArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "MetricsConfiguration.AccessPointArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "QueueConfiguration.Queue",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "ReplicationConfiguration.Role",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "ReplicationDestination.Account",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "Rule.ExpirationDate",
+    "example": "2030-01-01T12:00:00Z"
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "S3TablesDestination.TableArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "S3TablesDestination.TableBucketArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "ServerSideEncryptionByDefault.KMSMasterKeyID",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "TopicConfiguration.Topic",
+    "example": ""
+  },
+  {
+    "resource": "AWS::S3::Bucket",
+    "field": "Transition.TransitionDate",
+    "example": "2030-01-01T12:00:00Z"
+  },
+  {
+    "resource": "AWS::SNS::Subscription",
+    "field": "Arn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::SNS::Subscription",
+    "field": "SubscriptionRoleArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::SNS::Subscription",
+    "field": "TopicArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::SNS::Topic",
+    "field": "LoggingConfig.FailureFeedbackRoleArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::SNS::Topic",
+    "field": "LoggingConfig.SuccessFeedbackRoleArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::SNS::Topic",
+    "field": "TopicArn",
+    "example": ""
+  },
+  {
+    "resource": "AWS::SSM::Parameter",
+    "field": "Arn",
+    "example": "arn:aws-zz:ssm:us-east-1:123456789012:parameter/example"
+  },
+  {
+    "resource": "AWS::SSO::PermissionSet",
+    "field": "PermissionsBoundary.ManagedPolicyArn",
+    "example": "xxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "resource": "AWS::Scheduler::Schedule",
+    "field": "Arn",
+    "example": "arn:aws-zz:scheduler:us-east-1:123456789012:schedule/default/test"
+  },
+  {
+    "resource": "AWS::Scheduler::Schedule",
+    "field": "DeadLetterConfig.Arn",
+    "example": "arn:aws-zz:sqs:us-east-1:123456789012:queue"
+  },
+  {
+    "resource": "AWS::Scheduler::Schedule",
+    "field": "EcsParameters.TaskDefinitionArn",
+    "example": "x"
+  },
+  {
+    "resource": "AWS::Scheduler::Schedule",
+    "field": "Target.Arn",
+    "example": "x"
+  },
+  {
+    "resource": "AWS::Scheduler::Schedule",
+    "field": "Target.RoleArn",
+    "example": "arn:aws-zz:iam::123456789012:role/example"
+  },
+  {
+    "resource": "AWS::Scheduler::ScheduleGroup",
+    "field": "Arn",
+    "example": "arn:aws-zz:scheduler:us-east-1:123456789012:schedule-group/default"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "Arn",
+    "example": "xxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "IPSetReferenceStatement.Arn",
+    "example": "xxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "RegexPatternSetReferenceStatement.Arn",
+    "example": "xxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACL",
+    "field": "RuleGroupReferenceStatement.Arn",
+    "example": "xxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACLAssociation",
+    "field": "ResourceArn",
+    "example": "xxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "resource": "AWS::WAFv2::WebACLAssociation",
+    "field": "WebACLArn",
+    "example": "xxxxxxxxxxxxxxxxxxxx"
+  }
+]

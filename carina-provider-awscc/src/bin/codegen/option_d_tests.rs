@@ -278,6 +278,175 @@ fn option_d_json_pointer_reviewed_original_meaning() {
     }
 }
 
+fn constrained_kms_log_group_schema() -> ParsedCfnSchema {
+    ParsedCfnSchema::from_json(json!({
+        "typeName": "AWS::Logs::LogGroup",
+        "properties": {
+            "LogGroupName": {
+                "type": "string",
+                "pattern": r"^[.\-_/#A-Za-z0-9]{1,512}\Z"
+            },
+            "KmsKeyId": {
+                "type": "string",
+                "pattern": r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\Z",
+                "maxLength": 256
+            }
+        },
+        "required": ["LogGroupName"],
+        "primaryIdentifier": ["/properties/LogGroupName"]
+    }))
+    .unwrap()
+}
+
+#[test]
+fn non_replacing_kms_overrides_preserve_reference_input_rules() {
+    for (case, entry) in [
+        (
+            "identity-only",
+            TypeOverride::identity(Some(StringIdentity::Arn)),
+        ),
+        (
+            "string Primitive refinement",
+            TypeOverride::identity(Some(StringIdentity::Arn)).with_narrowing(
+                NarrowingKind::Primitive {
+                    expression: ConstraintSpec::string(
+                        None,
+                        Some((Some(1), Some(256))),
+                        PatternLiteral::Quoted,
+                    ),
+                    display: OverrideTypeDisplay::new("String"),
+                    block_name: None,
+                    default: None,
+                },
+                AwsEvidence::fixture(),
+            ),
+        ),
+    ] {
+        let mut overrides = ResourceTypeOverrides::default();
+        overrides.insert(("AWS::Logs::LogGroup", "KmsKeyId"), entry);
+        with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
+            let schema = constrained_kms_log_group_schema();
+            let context = EmissionContext::from_source(&schema).unwrap();
+            assert!(
+                !context.reference_input_rules().is_empty(),
+                "{case} must preserve Reference input rules",
+            );
+            let rust = generate_schema_code(&schema, &schema.type_name).unwrap();
+            let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            assert!(rust.contains("carina_aws_types::kms_key_reference()"), "{case}: {rust}");
+            assert!(rust.contains("schema.input_rule("), "{case}: {rust}");
+            assert!(markdown.contains("aws.kms.Key.Reference"), "{case}: {markdown}");
+            assert!(
+                markdown.contains("## Additional Input Constraints"),
+                "{case}: {markdown}",
+            );
+        });
+    }
+}
+
+#[test]
+fn deprecated_kms_property_keeps_runtime_rules_and_documented_rows() {
+    let overrides = Box::leak(Box::new(ResourceTypeOverrides::default()));
+    with_resource_type_overrides(overrides, || {
+        let mut schema = constrained_kms_log_group_schema();
+        schema.edit_json(|source| {
+            source["properties"]["KmsKeyId"]["description"] =
+                json!("(Deprecated.) The KMS key identifier.");
+        });
+        assert!(is_deprecated_property(&schema.properties["KmsKeyId"]));
+        let context = EmissionContext::from_source(&schema).unwrap();
+        let rust = super::super::render_schema_code(&context, &schema.type_name).unwrap();
+        let rules = context.reference_input_rules();
+        assert!(!rules.is_empty(), "deprecated runtime slots retain their rules");
+        assert!(rust.contains("build_kms_key_id_attribute"), "{rust}");
+        assert!(rust.contains("carina_aws_types::kms_key_reference()"), "{rust}");
+        assert_eq!(rust.matches("schema.input_rule(").count(), rules.len(), "{rust}");
+
+        // Render Markdown with a fresh context, independent of the Rust visit.
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let mut section = carina_docgen::PageBuilder::<()>::new();
+        section.input_rules_section(&rules).unwrap();
+        let expected = section.finish().unwrap();
+        assert_eq!(markdown.matches(&expected).count(), 1, "{markdown}\nExpected:\n{expected}");
+        assert!(!markdown.contains("### `kms_key_id`\n"), "{markdown}");
+    });
+}
+
+#[test]
+fn create_only_kms_property_derives_reference_rules_in_both_outputs() {
+    let overrides = Box::leak(Box::new(ResourceTypeOverrides::default()));
+    with_resource_type_overrides(overrides, || {
+        let mut schema = constrained_kms_log_group_schema();
+        schema.edit_json(|source| {
+            source["createOnlyProperties"] = json!(["/properties/KmsKeyId"]);
+        });
+        let context = EmissionContext::from_source(&schema).unwrap();
+        let rules = context.reference_input_rules();
+        assert!(!rules.is_empty(), "must derive rules for the constrained KMS slot");
+        for rule in &rules {
+            assert_eq!(
+                rule.scope(),
+                carina_core::schema::InputRuleScope::CreateOnly,
+                "{} must inherit the CFN createOnlyProperties scope",
+                rule.code(),
+            );
+        }
+        let rust = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert_eq!(
+            rust.matches("InputRuleScope::CreateOnly").count(),
+            rules.len(),
+            "{rust}",
+        );
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let rows: Vec<_> = markdown
+            .lines()
+            .filter(|line| line.starts_with("| `value at kms_key_id: "))
+            .collect();
+        assert_eq!(rows.len(), rules.len(), "{markdown}");
+        for row in rows {
+            assert!(row.ends_with("(on create)` |"), "{row}");
+        }
+    });
+}
+
+#[test]
+fn type_replacing_kms_override_has_no_reference_input_rules() {
+    let mut overrides = ResourceTypeOverrides::default();
+    overrides.insert(
+        ("AWS::Logs::LogGroup", "KmsKeyId"),
+        NarrowingKind::NamedType {
+            name: "OverriddenKmsKey",
+            expression: ConstraintSpec::string(None, None, PatternLiteral::Quoted),
+            display: OverrideTypeDisplay::new("OverriddenKmsKey"),
+        },
+    );
+    with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
+        let schema = constrained_kms_log_group_schema();
+        let context = EmissionContext::from_source(&schema).unwrap();
+        assert!(
+            context.reference_input_rules().is_empty(),
+            "a NamedType override must not declare Reference input rules",
+        );
+        let rust = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(
+            rust.contains("AttributeType::ref_(\"OverriddenKmsKey\".to_string())"),
+            "{rust}",
+        );
+        assert!(
+            markdown.contains("### `kms_key_id`\n\n- **Type:** `OverriddenKmsKey`\n"),
+            "{markdown}",
+        );
+        assert!(!rust.contains("kms_key_reference()"), "{rust}");
+        assert!(!rust.contains("schema.input_rule("), "{rust}");
+        assert!(!markdown.contains("aws.kms.Key.Reference"), "{markdown}");
+        assert!(
+            !markdown.contains("## Additional Input Constraints"),
+            "{markdown}",
+        );
+    });
+}
+
 #[test]
 fn option_d_identity_and_narrowing_are_independent() {
     let entry = TypeOverride::identity(Some(StringIdentity::Arn)).with_narrowing(
@@ -526,6 +695,38 @@ fn legacy_constraints(metadata: &serde_json::Value) -> StringConstraints {
     }
 }
 
+fn site_string_identity(site: &serde_json::Value) -> Option<StringIdentity> {
+    site["identity"].as_str().map(|name| {
+        let context = format!(
+            "{}.{} must have a canonical declaration for site identity {name}",
+            site["resource"].as_str().unwrap(),
+            site["field"].as_str().unwrap(),
+        );
+        StringIdentity::ALL
+            .iter()
+            .copied()
+            .find(|id| id.identity().to_string() == name)
+            .expect(&context)
+    })
+}
+
+fn identity_rejects(
+    identity: Option<StringIdentity>,
+    value: &carina_core::resource::Value,
+) -> bool {
+    use carina_core::schema::{AttributeType, StringMemberConstraints, ValidatedConfigSchema};
+
+    identity.is_some_and(|identity| {
+        let ty = AttributeType::string_member(
+            identity.identity_layer(),
+            StringMemberConstraints::new(None, None),
+        );
+        let schema =
+            ValidatedConfigSchema::validate(BTreeMap::from([("value".into(), ty)])).unwrap();
+        schema.rootless_type("value").unwrap().validate(value).is_err()
+    })
+}
+
 fn write_loosening_report(sites: &[serde_json::Value], directory: &std::path::Path) {
     let fallback: serde_json::Value =
         serde_json::from_str(include_str!("option_d_legacy_metadata.json")).unwrap();
@@ -591,11 +792,7 @@ fn write_loosening_report(sites: &[serde_json::Value], directory: &std::path::Pa
             continue;
         };
         assert!(accepts(&new, &example) && !accepts(&old, &example));
-        let identity = site["identity"].as_str().and_then(|name| {
-            StringIdentity::ALL
-                .iter()
-                .find(|id| id.identity().to_string() == name)
-        });
+        let identity = site_string_identity(site);
         let value = carina_core::resource::Value::Concrete(
             carina_core::resource::ConcreteValue::String(example.clone().into()),
         );
@@ -607,6 +804,7 @@ fn write_loosening_report(sites: &[serde_json::Value], directory: &std::path::Pa
         case["oldLength"] = metadata[1].clone();
         case["example"] = json!(example);
         case["callbackRejected"] = json!(rejected);
+        case["identityRejected"] = json!(identity_rejects(identity, &value));
         cases.push(case);
     }
     let show = |pattern: &serde_json::Value, min: Option<u64>, max: Option<u64>| {
@@ -752,9 +950,9 @@ fn option_d_failed_containment_is_a_schema_error() {
     }
 }
 
-/// The fixture records historical constraints and an actual newly admitted
-/// value. Match each case to today's projected site instead of trusting cached
-/// new constraints in the fixture.
+/// The fixture records historical constraints, a newly admitted value and the
+/// current callback/identity rejection facts. Match each case to today's
+/// projected site instead of trusting cached new constraints in the fixture.
 fn verify_loosening_examples(sites: &[serde_json::Value]) {
     let cases: Vec<serde_json::Value> =
         serde_json::from_str(include_str!("option_d_loosened_cases.json")).unwrap();
@@ -780,11 +978,7 @@ fn verify_loosening_examples(sites: &[serde_json::Value]) {
             !accepts(&old, example),
             "historical constraints accept {case}"
         );
-        let identity = site["identity"].as_str().and_then(|name| {
-            StringIdentity::ALL
-                .iter()
-                .find(|id| id.identity().to_string() == name)
-        });
+        let identity = site_string_identity(site);
         let check = identity.and_then(|id| id.check());
         assert_eq!(
             check.is_some(),
@@ -798,6 +992,42 @@ fn verify_loosening_examples(sites: &[serde_json::Value]) {
             check.is_some_and(|check| check(&value).is_err()),
             case["callbackRejected"].as_bool().unwrap(),
             "{case}"
+        );
+        assert_eq!(
+            Some(identity_rejects(identity, &value)),
+            case["identityRejected"].as_bool(),
+            "identity rejection must match the recorded fact for {case}",
+        );
+    }
+}
+
+#[test]
+fn option_d_rejection_baseline_is_preserved() {
+    // Callback rejections recorded at 317ef6b5ab91eef16f81d718cd2f4fa07d7adf48.
+    // Keep this baseline independent of the regenerable loosening report.
+    let baseline: Vec<serde_json::Value> =
+        serde_json::from_str(include_str!("option_d_rejection_baseline.json")).unwrap();
+    assert!(!baseline.is_empty());
+    let cases: Vec<serde_json::Value> =
+        serde_json::from_str(include_str!("option_d_loosened_cases.json")).unwrap();
+    for baseline_case in baseline {
+        let resource = baseline_case["resource"].as_str().unwrap();
+        let field = baseline_case["field"].as_str().unwrap();
+        let example = baseline_case["example"].as_str().unwrap();
+        let context = format!(
+            "rejection baseline case {resource}.{field} example {example:?} must remain in the loosened-cases fixture"
+        );
+        let case = cases
+            .iter()
+            .find(|case| {
+                case["resource"] == resource
+                    && case["field"] == field
+                    && case["example"] == example
+            })
+            .expect(&context);
+        assert!(
+            case["callbackRejected"] == true || case["identityRejected"] == true,
+            "rejection baseline case {resource}.{field} example {example:?} no longer rejects: {case}",
         );
     }
 }

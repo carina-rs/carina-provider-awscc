@@ -4,7 +4,7 @@
 
 use super::*;
 use serde_json::{Value, json};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn observation(context: &EmissionContext<'_>) -> Value {
     let candidates = kms_nodes(context.layer);
@@ -58,6 +58,100 @@ fn markdown_example(type_name: &str) -> carina_docgen::example::DocExample {
     .unwrap()
 }
 
+fn cached_schema_paths() -> Vec<PathBuf> {
+    let cache = Path::new(env!("CARGO_MANIFEST_DIR")).join("../cfn-schema-cache");
+    let mut paths: Vec<_> = std::fs::read_dir(cache)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_str()
+                .is_some_and(|name| name.starts_with("AWS__") && name.ends_with(".json"))
+        })
+        .collect();
+    paths.sort();
+    paths
+}
+
+#[test]
+fn cached_reference_input_rules_and_pages_match_runtime() {
+    use carina_core::schema::InputRuleDisplay;
+    use carina_docgen::PageBuilder;
+    use carina_provider_awscc::schemas::generated;
+
+    let mut compared = 0;
+    for path in cached_schema_paths() {
+        let source = std::fs::read_to_string(path).unwrap();
+        let schema = ParsedCfnSchema::from_json(serde_json::from_str(&source).unwrap()).unwrap();
+        if !schema.is_cloud_control_provisionable() {
+            continue;
+        }
+        let context = EmissionContext::from_source(&schema).unwrap();
+        let rules = context.reference_input_rules();
+        let runtime_context = format!("{} must have a generated runtime config", schema.type_name);
+        let config = generated::configs()
+            .iter()
+            .find(|config| config.aws_type_name == schema.type_name)
+            .expect(&runtime_context);
+        let runtime_rules = config.schema.as_schema().input_rules();
+        // Include diagnostic codes because InputRuleDisplay omits them.
+        // Compare empty slices too, so losing a resource's rules cannot skip it.
+        assert_eq!(
+            rules
+                .iter()
+                .map(|rule| (rule.code().clone(), InputRuleDisplay::new(rule).to_string()))
+                .collect::<Vec<_>>(),
+            runtime_rules
+                .iter()
+                .map(|rule| (rule.code().clone(), InputRuleDisplay::new(rule).to_string()))
+                .collect::<Vec<_>>(),
+            "{}: input-rule codes and declarations must match runtime in order",
+            schema.type_name,
+        );
+        if rules.is_empty() {
+            continue;
+        }
+        compared += 1;
+        let mut expected = PageBuilder::<()>::new();
+        expected.input_rules_section(runtime_rules).unwrap();
+        let expected = expected.finish().unwrap();
+        let markdown = super::super::render_markdown(
+            &context,
+            &schema.type_name,
+            &markdown_example(&schema.type_name),
+        )
+        .unwrap();
+        assert_eq!(
+            markdown.matches(&expected).count(),
+            1,
+            "{} must include the shared runtime input-rule section exactly once:\n{expected}",
+            schema.type_name,
+        );
+        for old_label in ["Input pattern (", "Input length ("] {
+            assert!(
+                !markdown.contains(old_label),
+                "{}: {old_label}",
+                schema.type_name
+            );
+        }
+
+        let section_start = markdown.find(&expected).unwrap();
+        let attributes_start = markdown.find("## Attribute Reference\n").unwrap();
+        assert!(section_start < attributes_start, "{}", schema.type_name);
+        for heading in ["## Enum Values\n", "## Struct Definitions\n"] {
+            if let Some(type_start) = markdown.find(heading) {
+                assert!(
+                    type_start < section_start,
+                    "{}: {heading}",
+                    schema.type_name
+                );
+            }
+        }
+    }
+    assert!(compared > 0, "must compare cached runtime input rules");
+}
+
 fn assert_snapshot(name: &str, actual: Value) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures")
@@ -83,18 +177,7 @@ fn assert_snapshot(name: &str, actual: Value) {
 
 #[test]
 fn supported_cache_kms_decisions_match_pre_layer_golden() {
-    let cache = Path::new(env!("CARGO_MANIFEST_DIR")).join("../cfn-schema-cache");
-    let mut paths: Vec<_> = std::fs::read_dir(cache)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| {
-            path.file_name()
-                .unwrap()
-                .to_str()
-                .is_some_and(|name| name.starts_with("AWS__") && name.ends_with(".json"))
-        })
-        .collect();
-    paths.sort();
+    let paths = cached_schema_paths();
     assert_eq!(paths.len(), 55);
     let mut snapshot = BTreeMap::new();
     for path in paths {
@@ -188,7 +271,7 @@ fn aliases_collections_compositions_dependencies_and_transforms_match_pre_layer_
                 json!([{"properties": {"KmsMasterKeyId": {"$ref": "#/definitions/Alias"}}}]);
         }
         let schema = ParsedCfnSchema::from_json(source.clone()).unwrap();
-        let context = EmissionContext::from_source(&schema).unwrap();
+        let context = EmissionContext::source_context(&schema).unwrap();
         let mut path = vec!["KmsMasterKeyId".to_string()];
         context.property_at(&path, &schema.properties["KmsMasterKeyId"]);
         if name == "list" || name == "map" {
@@ -282,7 +365,7 @@ fn typed_unresolved_references_keep_use_site_evidence_and_opaque_fallback() {
             }
         }))
         .unwrap();
-        let context = EmissionContext::from_source(&schema).unwrap();
+        let context = EmissionContext::source_context(&schema).unwrap();
         let keywords = context.keywords_at("/properties/KmsMasterKeyId").unwrap();
         assert_eq!(
             keywords.reference.as_ref().unwrap().target,
