@@ -17,47 +17,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
       - run: cargo check
 
   test:
     name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - name: Read WASM toolchain
-        id: wasm-toolchain
-        run: |
-          toolchain=$(cat .github/wasm-toolchain)
-          printf 'toolchain=%s\n' "$toolchain" >> "$GITHUB_OUTPUT"
-          printf 'RUSTUP_TOOLCHAIN=%s\n' "$toolchain" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.wasm-toolchain.outputs.toolchain }}
-          targets: wasm32-wasip2
+      - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
       - name: Test acceptance run registry
         run: bash acceptance-tests/shared/tests/run_registry_test.sh
       - run: cargo build -p carina-provider-awscc --target wasm32-wasip2 --release
+      - run: cargo test --no-run
+      # Bound test execution (including real-time waits); compilation above keeps
+      # cold caches from tripping this limit.
       - run: cargo test
+        timeout-minutes: 15
 
   validate-examples:
     name: Validate Examples
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Read WASM toolchain
-        id: wasm-toolchain
-        run: |
-          toolchain=$(cat .github/wasm-toolchain)
-          printf 'toolchain=%s\n' "$toolchain" >> "$GITHUB_OUTPUT"
-          printf 'RUSTUP_TOOLCHAIN=%s\n' "$toolchain" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.wasm-toolchain.outputs.toolchain }}
-          targets: wasm32-wasip2
+      - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
       - name: Build provider WASM
         run: cargo build -p carina-provider-awscc --target wasm32-wasip2 --release
@@ -76,9 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets -- -D warnings
 
@@ -87,9 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
+      - uses: ./.github/actions/rust-toolchain
       - run: cargo fmt --check
 
   acceptance-shell:
@@ -135,6 +117,14 @@ jobs:
       # pinned rev is consistent and >= .carina-core-min-rev.
       - run: ./scripts/check-carina-pin.sh
 
+  check-pinned-toolchain:
+    name: Check Pinned Rust Toolchain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check-pinned-toolchain.sh
+      - run: bash scripts/test-check-pinned-toolchain.sh
+
   provider-release-pin:
     name: Check provider-release Pin
     runs-on: ubuntu-latest
@@ -148,7 +138,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
       - run: bash scripts/check-test-utils-dev-only.sh
       - run: bash scripts/test-check-test-utils-dev-only.sh
@@ -158,9 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
+      - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
       - name: Run schema codegen (from committed cache, no AWS calls)
         run: ./carina-provider-awscc/scripts/generate-schemas.sh --from-cache-only
@@ -180,9 +168,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
+      - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
       - name: Run docs generation (from committed cache, no AWS calls)
         run: ./scripts/generate-docs.sh --from-cache-only
@@ -198,7 +184,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
       - name: Test docs bundle tooling
         run: python3 -m unittest discover -s scripts -p 'test_docs_bundle.py'
@@ -229,7 +215,7 @@ jobs:
 
   publish-dev:
     name: Publish to Carina Registry (dev)
-    needs: [check, test, validate-examples, clippy, fmt, acceptance-shell, docs-drift, carina-pin, provider-release-pin, test-utils-dev-only, codegen-check, docs-check, docs-bundle, wasm-build]
+    needs: [check, test, validate-examples, clippy, fmt, acceptance-shell, docs-drift, carina-pin, check-pinned-toolchain, provider-release-pin, test-utils-dev-only, codegen-check, docs-check, docs-bundle, wasm-build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
