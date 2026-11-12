@@ -48,14 +48,14 @@ awscc.dynamodb.Table {
 
 ### `attribute_definitions`
 
-- **Type:** List\<[Struct(AttributeDefinition)](#attribute_definitions-1)\> (unique items)
+- **Type:** List\<[Struct(AttributeDefinition)](#attribute_definitions-1)\> (unique items, ordered)
 - **Required:** No
 
 A list of attributes that describe the key schema for the table and indexes. This property is required to create a DDB table. Update requires: [Some interruptions](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-updating-stacks-update-behaviors.html#update-some-interrupt). Replacement if you edit an existing AttributeDefinition.
 
 ### `billing_mode`
 
-- **Type:** [Enum (BillingMode)](#billing_mode-billingmode)
+- **Type:** [BillingMode](#billing_mode-billingmode)
 - **Required:** No
 
 Specify how you are charged for read and write throughput and how you manage capacity. Valid values include: + ``PAY_PER_REQUEST`` - We recommend using ``PAY_PER_REQUEST`` for most DynamoDB workloads. ``PAY_PER_REQUEST`` sets the billing mode to [On-demand capacity mode](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/on-demand-capacity-mode.html). + ``PROVISIONED`` - We recommend using ``PROVISIONED`` for steady workloads with predictable growth where capacity requirements can be reliably forecasted. ``PROVISIONED`` sets the billing mode to [Provisioned capacity mode](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/provisioned-capacity-mode.html). If not specified, the default is ``PROVISIONED``.
@@ -69,14 +69,14 @@ The settings used to specify whether to enable CloudWatch Contributor Insights f
 
 ### `deletion_protection_enabled`
 
-- **Type:** Bool
+- **Type:** `Bool`
 - **Required:** No
 
 Determines if a table is protected from deletion. When enabled, the table cannot be deleted by any user or process. This setting is disabled by default. For more information, see [Using deletion protection](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/WorkingWithTables.Basics.html#WorkingWithTables.Basics.DeletionProtection) in the *Developer Guide*.
 
 ### `global_secondary_indexes`
 
-- **Type:** List\<[Struct(GlobalSecondaryIndex)](#global_secondary_indexes-1)\>
+- **Type:** List\<[Struct(GlobalSecondaryIndex)](#global_secondary_indexes-1)\> (ordered)
 - **Required:** No
 
 Global secondary indexes to be created on the table. You can create up to 20 global secondary indexes. If you update a table to include a new global secondary index, CFNlong initiates the index creation and then proceeds with the stack update. CFNlong doesn't wait for the index to complete creation because the backfilling phase can take a long time, depending on the size of the table. You can't use the index or update the table until the index's status is ``ACTIVE``. You can track its status by using the DynamoDB [DescribeTable](https://docs.aws.amazon.com/cli/latest/reference/dynamodb/describe-table.html) command. If you add or delete an index during an update, we recommend that you don't update any other resources. If your stack fails to update and is rolled back while adding a new index, you must manually delete the index. Updates are not supported. The following are exceptions: + If you update either the contributor insights specification or the provisioned throughput values of global secondary indexes, you can update the table without interruption. + You can delete or add one global secondary index without interruption. If you do both in the same update (for example, by changing the index's logical ID), the update fails.
@@ -92,7 +92,7 @@ Specifies the properties of data being imported from the S3 bucket source to the
 
 ### `key_schema`
 
-- **Type:** List\<[Struct(KeySchema)](#key_schema-1)\> (items: 1..=2) (unique items)
+- **Type:** List\<[Struct(KeySchema)](#key_schema-1)\> (items: 1..=2, unique items, ordered)
 - **Required:** Yes
 
 Specifies the attributes that make up the primary key for the table. The attributes in the ``KeySchema`` property must also be defined in the ``AttributeDefinitions`` property.
@@ -106,7 +106,7 @@ The Kinesis Data Streams configuration for the specified table.
 
 ### `local_secondary_indexes`
 
-- **Type:** List\<[Struct(LocalSecondaryIndex)](#local_secondary_indexes-1)\> (items: 1..=5)
+- **Type:** List\<[Struct(LocalSecondaryIndex)](#local_secondary_indexes-1)\> (items: 1..=5, ordered)
 - **Required:** No
 
 Local secondary indexes to be created on the table. You can create up to 5 local secondary indexes. Each index is scoped to a given hash key value. The size of each hash key can be up to 10 gigabytes.
@@ -155,14 +155,14 @@ The settings for the DDB table stream, which captures changes to items stored in
 
 ### `table_class`
 
-- **Type:** [Enum (TableClass)](#table_class-tableclass)
+- **Type:** [TableClass](#table_class-tableclass)
 - **Required:** No
 
 The table class of the new table. Valid values are ``STANDARD`` and ``STANDARD_INFREQUENT_ACCESS``.
 
 ### `table_name`
 
-- **Type:** `String(pattern, len: 3..=255)`
+- **Type:** `String (pattern: /^[a-zA-Z0-9_.-]+\z/ (Full), len: 3..=255)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -170,7 +170,7 @@ A name for the table. If you don't specify a name, CFNlong generates a unique ph
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** Map\<`String`, `String`\>
 - **Required:** No
 
 An array of key-value pairs to apply to this resource. For more information, see [Tag](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-resource-tags.html).
@@ -219,6 +219,15 @@ Shorthand formats: `pay_per_request` or `BillingMode.pay_per_request`
 
 Shorthand formats: `accessed_and_throttled_keys` or `Mode.accessed_and_throttled_keys`
 
+### global_secondary_indexes.key_schema.key_type (KeyType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `HASH` | `aws.dynamodb.Table.GlobalSecondaryIndex.KeySchema.KeyType.hash` |
+| `RANGE` | `aws.dynamodb.Table.GlobalSecondaryIndex.KeySchema.KeyType.range` |
+
+Shorthand formats: `hash` or `KeyType.hash`
+
 ### import_source_specification.input_compression_type (InputCompressionType)
 
 | Value | DSL Identifier |
@@ -243,8 +252,8 @@ Shorthand formats: `csv` or `InputFormat.csv`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `HASH` | `aws.dynamodb.Table.GlobalSecondaryIndex.KeySchema.KeyType.hash` |
-| `RANGE` | `aws.dynamodb.Table.GlobalSecondaryIndex.KeySchema.KeyType.range` |
+| `HASH` | `aws.dynamodb.Table.KeySchema.KeyType.hash` |
+| `RANGE` | `aws.dynamodb.Table.KeySchema.KeyType.range` |
 
 Shorthand formats: `hash` or `KeyType.hash`
 
@@ -257,6 +266,15 @@ Shorthand formats: `hash` or `KeyType.hash`
 
 Shorthand formats: `microsecond` or `ApproximateCreationDateTimePrecision.microsecond`
 
+### local_secondary_indexes.key_schema.key_type (KeyType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `HASH` | `aws.dynamodb.Table.LocalSecondaryIndex.KeySchema.KeyType.hash` |
+| `RANGE` | `aws.dynamodb.Table.LocalSecondaryIndex.KeySchema.KeyType.range` |
+
+Shorthand formats: `hash` or `KeyType.hash`
+
 ### projection.projection_type (ProjectionType)
 
 | Value | DSL Identifier |
@@ -267,6 +285,15 @@ Shorthand formats: `microsecond` or `ApproximateCreationDateTimePrecision.micros
 
 Shorthand formats: `keys_only` or `ProjectionType.keys_only`
 
+### resource_policy.policy_document.version (Version)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `2012-10-17` | `aws.iam.PolicyDocument.Version.2012_10_17` |
+| `2008-10-17` | `aws.iam.PolicyDocument.Version.2008_10_17` |
+
+Use the fully qualified DSL identifiers above; bare numeric values parse as integers.
+
 ### sse_specification.sse_type (SseType)
 
 | Value | DSL Identifier |
@@ -275,6 +302,184 @@ Shorthand formats: `keys_only` or `ProjectionType.keys_only`
 | `KMS` | `aws.dynamodb.Table.SseSpecification.SseType.kms` |
 
 Shorthand formats: `aes256` or `SseType.aes256`
+
+### statement.condition.\<key\> (ConditionOperator)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `string_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_equals` |
+| `string_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_equals_if_exists` |
+| `for_all_values_string_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_equals` |
+| `for_all_values_string_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_equals_if_exists` |
+| `for_any_value_string_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_equals` |
+| `for_any_value_string_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_equals_if_exists` |
+| `string_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_equals` |
+| `string_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_equals_if_exists` |
+| `for_all_values_string_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_equals` |
+| `for_all_values_string_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_equals_if_exists` |
+| `for_any_value_string_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_equals` |
+| `for_any_value_string_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_equals_if_exists` |
+| `string_equals_ignore_case` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_equals_ignore_case` |
+| `string_equals_ignore_case_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_equals_ignore_case_if_exists` |
+| `for_all_values_string_equals_ignore_case` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_equals_ignore_case` |
+| `for_all_values_string_equals_ignore_case_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_equals_ignore_case_if_exists` |
+| `for_any_value_string_equals_ignore_case` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_equals_ignore_case` |
+| `for_any_value_string_equals_ignore_case_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_equals_ignore_case_if_exists` |
+| `string_not_equals_ignore_case` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_equals_ignore_case` |
+| `string_not_equals_ignore_case_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_equals_ignore_case_if_exists` |
+| `for_all_values_string_not_equals_ignore_case` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_equals_ignore_case` |
+| `for_all_values_string_not_equals_ignore_case_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_equals_ignore_case_if_exists` |
+| `for_any_value_string_not_equals_ignore_case` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_equals_ignore_case` |
+| `for_any_value_string_not_equals_ignore_case_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_equals_ignore_case_if_exists` |
+| `string_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_like` |
+| `string_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_like_if_exists` |
+| `for_all_values_string_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_like` |
+| `for_all_values_string_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_like_if_exists` |
+| `for_any_value_string_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_like` |
+| `for_any_value_string_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_like_if_exists` |
+| `string_not_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_like` |
+| `string_not_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_like_if_exists` |
+| `for_all_values_string_not_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_like` |
+| `for_all_values_string_not_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_like_if_exists` |
+| `for_any_value_string_not_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_like` |
+| `for_any_value_string_not_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_like_if_exists` |
+| `numeric_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_equals` |
+| `numeric_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_equals_if_exists` |
+| `for_all_values_numeric_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_equals` |
+| `for_all_values_numeric_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_equals_if_exists` |
+| `for_any_value_numeric_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_equals` |
+| `for_any_value_numeric_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_equals_if_exists` |
+| `numeric_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_not_equals` |
+| `numeric_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_not_equals_if_exists` |
+| `for_all_values_numeric_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_not_equals` |
+| `for_all_values_numeric_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_not_equals_if_exists` |
+| `for_any_value_numeric_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_not_equals` |
+| `for_any_value_numeric_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_not_equals_if_exists` |
+| `numeric_less_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_less_than` |
+| `numeric_less_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_less_than_if_exists` |
+| `for_all_values_numeric_less_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_less_than` |
+| `for_all_values_numeric_less_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_less_than_if_exists` |
+| `for_any_value_numeric_less_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_less_than` |
+| `for_any_value_numeric_less_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_less_than_if_exists` |
+| `numeric_less_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_less_than_equals` |
+| `numeric_less_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_less_than_equals_if_exists` |
+| `for_all_values_numeric_less_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_less_than_equals` |
+| `for_all_values_numeric_less_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_less_than_equals_if_exists` |
+| `for_any_value_numeric_less_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_less_than_equals` |
+| `for_any_value_numeric_less_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_less_than_equals_if_exists` |
+| `numeric_greater_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_greater_than` |
+| `numeric_greater_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_greater_than_if_exists` |
+| `for_all_values_numeric_greater_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_greater_than` |
+| `for_all_values_numeric_greater_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_greater_than_if_exists` |
+| `for_any_value_numeric_greater_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_greater_than` |
+| `for_any_value_numeric_greater_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_greater_than_if_exists` |
+| `numeric_greater_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_greater_than_equals` |
+| `numeric_greater_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_greater_than_equals_if_exists` |
+| `for_all_values_numeric_greater_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_greater_than_equals` |
+| `for_all_values_numeric_greater_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_greater_than_equals_if_exists` |
+| `for_any_value_numeric_greater_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_greater_than_equals` |
+| `for_any_value_numeric_greater_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_greater_than_equals_if_exists` |
+| `date_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_equals` |
+| `date_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_equals_if_exists` |
+| `for_all_values_date_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_equals` |
+| `for_all_values_date_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_equals_if_exists` |
+| `for_any_value_date_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_equals` |
+| `for_any_value_date_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_equals_if_exists` |
+| `date_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_not_equals` |
+| `date_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_not_equals_if_exists` |
+| `for_all_values_date_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_not_equals` |
+| `for_all_values_date_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_not_equals_if_exists` |
+| `for_any_value_date_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_not_equals` |
+| `for_any_value_date_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_not_equals_if_exists` |
+| `date_less_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_less_than` |
+| `date_less_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_less_than_if_exists` |
+| `for_all_values_date_less_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_less_than` |
+| `for_all_values_date_less_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_less_than_if_exists` |
+| `for_any_value_date_less_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_less_than` |
+| `for_any_value_date_less_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_less_than_if_exists` |
+| `date_less_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_less_than_equals` |
+| `date_less_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_less_than_equals_if_exists` |
+| `for_all_values_date_less_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_less_than_equals` |
+| `for_all_values_date_less_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_less_than_equals_if_exists` |
+| `for_any_value_date_less_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_less_than_equals` |
+| `for_any_value_date_less_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_less_than_equals_if_exists` |
+| `date_greater_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_greater_than` |
+| `date_greater_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_greater_than_if_exists` |
+| `for_all_values_date_greater_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_greater_than` |
+| `for_all_values_date_greater_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_greater_than_if_exists` |
+| `for_any_value_date_greater_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_greater_than` |
+| `for_any_value_date_greater_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_greater_than_if_exists` |
+| `date_greater_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_greater_than_equals` |
+| `date_greater_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_greater_than_equals_if_exists` |
+| `for_all_values_date_greater_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_greater_than_equals` |
+| `for_all_values_date_greater_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_greater_than_equals_if_exists` |
+| `for_any_value_date_greater_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_greater_than_equals` |
+| `for_any_value_date_greater_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_greater_than_equals_if_exists` |
+| `bool` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.bool` |
+| `bool_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.bool_if_exists` |
+| `for_all_values_bool` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_bool` |
+| `for_all_values_bool_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_bool_if_exists` |
+| `for_any_value_bool` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_bool` |
+| `for_any_value_bool_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_bool_if_exists` |
+| `binary_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.binary_equals` |
+| `binary_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.binary_equals_if_exists` |
+| `for_all_values_binary_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_binary_equals` |
+| `for_all_values_binary_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_binary_equals_if_exists` |
+| `for_any_value_binary_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_binary_equals` |
+| `for_any_value_binary_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_binary_equals_if_exists` |
+| `ip_address` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.ip_address` |
+| `ip_address_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.ip_address_if_exists` |
+| `for_all_values_ip_address` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_ip_address` |
+| `for_all_values_ip_address_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_ip_address_if_exists` |
+| `for_any_value_ip_address` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_ip_address` |
+| `for_any_value_ip_address_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_ip_address_if_exists` |
+| `not_ip_address` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.not_ip_address` |
+| `not_ip_address_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.not_ip_address_if_exists` |
+| `for_all_values_not_ip_address` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_not_ip_address` |
+| `for_all_values_not_ip_address_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_not_ip_address_if_exists` |
+| `for_any_value_not_ip_address` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_not_ip_address` |
+| `for_any_value_not_ip_address_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_not_ip_address_if_exists` |
+| `arn_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_equals` |
+| `arn_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_equals_if_exists` |
+| `for_all_values_arn_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_equals` |
+| `for_all_values_arn_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_equals_if_exists` |
+| `for_any_value_arn_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_equals` |
+| `for_any_value_arn_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_equals_if_exists` |
+| `arn_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_not_equals` |
+| `arn_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_not_equals_if_exists` |
+| `for_all_values_arn_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_not_equals` |
+| `for_all_values_arn_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_not_equals_if_exists` |
+| `for_any_value_arn_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_not_equals` |
+| `for_any_value_arn_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_not_equals_if_exists` |
+| `arn_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_like` |
+| `arn_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_like_if_exists` |
+| `for_all_values_arn_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_like` |
+| `for_all_values_arn_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_like_if_exists` |
+| `for_any_value_arn_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_like` |
+| `for_any_value_arn_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_like_if_exists` |
+| `arn_not_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_not_like` |
+| `arn_not_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_not_like_if_exists` |
+| `for_all_values_arn_not_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_not_like` |
+| `for_all_values_arn_not_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_not_like_if_exists` |
+| `for_any_value_arn_not_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_not_like` |
+| `for_any_value_arn_not_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_not_like_if_exists` |
+| `null` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.null` |
+| `null_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.null_if_exists` |
+| `for_all_values_null` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_null` |
+| `for_all_values_null_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_null_if_exists` |
+| `for_any_value_null` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_null` |
+| `for_any_value_null_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_null_if_exists` |
+
+Shorthand formats: `string_equals` or `ConditionOperator.string_equals`
+
+### statement.effect (Effect)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `Allow` | `aws.iam.PolicyDocument.Statement.Effect.allow` |
+| `Deny` | `aws.iam.PolicyDocument.Statement.Effect.deny` |
+
+Shorthand formats: `allow` or `Effect.allow`
 
 ### stream_specification.stream_view_type (StreamViewType)
 
@@ -302,8 +507,8 @@ Shorthand formats: `standard` or `TableClass.standard`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `attribute_name` | `String(len: 1..=255)` | Yes | A name for the attribute. |
-| `attribute_type` | [Enum (AttributeType)](#attribute_definitionsattribute_type-attributetype) | Yes | The data type for the attribute, where: + ``S`` - the attribute is of type String + ``N`` - the attribute is of type Number + ``B`` - the attribute is of type Binary |
+| `attribute_name` | `String (len: 1..=255)` | Yes | A name for the attribute. |
+| `attribute_type` | [AttributeType](#attribute_definitionsattribute_type-attributetype) | Yes | The data type for the attribute, where: + ``S`` - the attribute is of type String + ``N`` - the attribute is of type Number + ``B`` - the attribute is of type Binary |
 
 ### contributor_insights_specification
 
@@ -311,27 +516,34 @@ Used by: `contributor_insights_specification`, `global_secondary_indexes.contrib
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `enabled` | Bool | Yes | Indicates whether CloudWatch Contributor Insights are to be enabled (true) or disabled (false). |
-| `mode` | [Enum (Mode)](#contributor_insights_specificationmode-mode) | No | Specifies the CloudWatch Contributor Insights mode for a table. Valid values are ``ACCESSED_AND_THROTTLED_KEYS`` (tracks all access and throttled events) or ``THROTTLED_KEYS`` (tracks only throttled events). This setting determines what type of contributor insights data is collected for the table. |
+| `enabled` | `Bool` | Yes | Indicates whether CloudWatch Contributor Insights are to be enabled (true) or disabled (false). |
+| `mode` | [Mode](#contributor_insights_specificationmode-mode) | No | Specifies the CloudWatch Contributor Insights mode for a table. Valid values are ``ACCESSED_AND_THROTTLED_KEYS`` (tracks all access and throttled events) or ``THROTTLED_KEYS`` (tracks only throttled events). This setting determines what type of contributor insights data is collected for the table. |
 
 ### global_secondary_indexes
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `contributor_insights_specification` | [Struct(ContributorInsightsSpecification)](#contributor_insights_specification-1) | No | The settings used to specify whether to enable CloudWatch Contributor Insights for the global table and define which events to monitor. |
-| `index_name` | `String(pattern, len: 3..=255)` | Yes | The name of the global secondary index. The name must be unique among all other indexes on this table. |
-| `key_schema` | List\<[Struct(KeySchema)](#key_schema-1)\> (items: 1..) (unique items) | Yes | The complete key schema for a global secondary index, which consists of one or more pairs of attribute names and key types: + ``HASH`` - partition key + ``RANGE`` - sort key The partition key of an item is also known as its *hash attribute*. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. The sort key of an item is also known as its *range attribute*. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. |
+| `index_name` | `String (pattern: /^[a-zA-Z0-9_.-]+\z/ (Full), len: 3..=255)` | Yes | The name of the global secondary index. The name must be unique among all other indexes on this table. |
+| `key_schema` | List\<[Struct(KeySchema)](#global_secondary_indexeskey_schema)\> (items: 1..unbounded, unique items, ordered) | Yes | The complete key schema for a global secondary index, which consists of one or more pairs of attribute names and key types: + ``HASH`` - partition key + ``RANGE`` - sort key The partition key of an item is also known as its *hash attribute*. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. The sort key of an item is also known as its *range attribute*. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. |
 | `on_demand_throughput` | [Struct(OnDemandThroughput)](#on_demand_throughput-1) | No | The maximum number of read and write units for the specified global secondary index. If you use this parameter, you must specify ``MaxReadRequestUnits``, ``MaxWriteRequestUnits``, or both. You must use either ``OnDemandThroughput`` or ``ProvisionedThroughput`` based on your table's capacity mode. |
 | `projection` | [Struct(Projection)](#projection) | Yes | Represents attributes that are copied (projected) from the table into the global secondary index. These are in addition to the primary key attributes and index key attributes, which are automatically projected. |
 | `provisioned_throughput` | [Struct(ProvisionedThroughput)](#provisioned_throughput-1) | No | Represents the provisioned throughput settings for the specified global secondary index. You must use either ``OnDemandThroughput`` or ``ProvisionedThroughput`` based on your table's capacity mode. For current minimum and maximum provisioned throughput values, see [Service, Account, and Table Quotas](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html) in the *Amazon DynamoDB Developer Guide*. |
 | `warm_throughput` | [Struct(WarmThroughput)](#warm_throughput-1) | No | Represents the warm throughput value (in read units per second and write units per second) for the specified secondary index. If you use this parameter, you must specify ``ReadUnitsPerSecond``, ``WriteUnitsPerSecond``, or both. |
 
+### global_secondary_indexes.key_schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `attribute_name` | `String (len: 1..=255)` | Yes | The name of a key attribute. |
+| `key_type` | [KeyType](#global_secondary_indexeskey_schemakey_type-keytype) | Yes | The role that this key attribute will assume: + ``HASH`` - partition key + ``RANGE`` - sort key The partition key of an item is also known as its *hash attribute*. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. The sort key of an item is also known as its *range attribute*. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. |
+
 ### import_source_specification
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `input_compression_type` | [Enum (InputCompressionType)](#import_source_specificationinput_compression_type-inputcompressiontype) | No | Type of compression to be used on the input coming from the imported table. |
-| `input_format` | [Enum (InputFormat)](#import_source_specificationinput_format-inputformat) | Yes | The format of the source data. Valid values for ``ImportFormat`` are ``CSV``, ``DYNAMODB_JSON`` or ``ION``. |
+| `input_compression_type` | [InputCompressionType](#import_source_specificationinput_compression_type-inputcompressiontype) | No | Type of compression to be used on the input coming from the imported table. |
+| `input_format` | [InputFormat](#import_source_specificationinput_format-inputformat) | Yes | The format of the source data. Valid values for ``ImportFormat`` are ``CSV``, ``DYNAMODB_JSON`` or ``ION``. |
 | `input_format_options` | [Struct(InputFormatOptions)](#import_source_specificationinput_format_options) | No | Additional properties that specify how the input is formatted, |
 | `s3_bucket_source` | [Struct(S3BucketSource)](#import_source_specifications3_bucket_source) | Yes | The S3 bucket that provides the source for the import. |
 
@@ -345,40 +557,45 @@ Used by: `contributor_insights_specification`, `global_secondary_indexes.contrib
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `delimiter` | `String(pattern, len: 1..=1)` | No | The delimiter used for separating items in the CSV file being imported. |
-| `header_list` | `List<String(pattern, len: 1..=65536)>` (items: 1..=255) (unique items) | No | List of the headers used to specify a common header for all source CSV files being imported. If this field is specified then the first line of each CSV file is treated as data instead of the header. If this field is not specified the the first line of each CSV file is treated as the header. |
+| `delimiter` | `String (pattern: /^[,;:\|\t ]\z/ (Full), len: 1..=1)` | No | The delimiter used for separating items in the CSV file being imported. |
+| `header_list` | List\<`String (pattern: /^[\x20-\x21\x23-\x2B\x2D-\x7E]*\z/ (Full), len: 1..=65536)`\> (items: 1..=255, unique items, ordered) | No | List of the headers used to specify a common header for all source CSV files being imported. If this field is specified then the first line of each CSV file is treated as data instead of the header. If this field is not specified the the first line of each CSV file is treated as the header. |
 
 ### import_source_specification.s3_bucket_source
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `s3_bucket` | `String(pattern, len: ..=255)` | Yes | The S3 bucket that is being imported from. |
-| `s3_bucket_owner` | aws.AccountId — identity: String(pattern, len: 12..=12); member: String | No | The account number of the S3 bucket that is being imported from. If the bucket is owned by the requester this is optional. |
-| `s3_key_prefix` | `String(len: ..=1024)` | No | The key prefix shared by all S3 Objects that are being imported. |
+| `s3_bucket` | `String (pattern: /^[a-z0-9A-Z]+[\.\-\w]*[a-z0-9A-Z]+\z/ (Full), len: unbounded..=255)` | Yes | The S3 bucket that is being imported from. |
+| `s3_bucket_owner` | `aws.AccountId (pattern: /^[0-9]{12}$/ (Full), len: 12..=12)` | No | The account number of the S3 bucket that is being imported from. If the bucket is owned by the requester this is optional. |
+| `s3_key_prefix` | `String (len: unbounded..=1024)` | No | The key prefix shared by all S3 Objects that are being imported. |
 
 ### key_schema
 
-Used by: `global_secondary_indexes.key_schema`, `key_schema`, `local_secondary_indexes.key_schema`
-
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `attribute_name` | `String(len: 1..=255)` | Yes | The name of a key attribute. |
-| `key_type` | [Enum (KeyType)](#key_schemakey_type-keytype) | Yes | The role that this key attribute will assume: + ``HASH`` - partition key + ``RANGE`` - sort key The partition key of an item is also known as its *hash attribute*. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. The sort key of an item is also known as its *range attribute*. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. |
+| `attribute_name` | `String (len: 1..=255)` | Yes | The name of a key attribute. |
+| `key_type` | [KeyType](#key_schemakey_type-keytype) | Yes | The role that this key attribute will assume: + ``HASH`` - partition key + ``RANGE`` - sort key The partition key of an item is also known as its *hash attribute*. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. The sort key of an item is also known as its *range attribute*. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. |
 
 ### kinesis_stream_specification
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `approximate_creation_date_time_precision` | [Enum (ApproximateCreationDateTimePrecision)](#kinesis_stream_specificationapproximate_creation_date_time_precision-approximatecreationdatetimeprecision) | No | The precision for the time and date that the stream was created. |
-| `stream_arn` | aws.Arn — identity: String(pattern); member: String | Yes | The ARN for a specific Kinesis data stream. Length Constraints: Minimum length of 37. Maximum length of 1024. |
+| `approximate_creation_date_time_precision` | [ApproximateCreationDateTimePrecision](#kinesis_stream_specificationapproximate_creation_date_time_precision-approximatecreationdatetimeprecision) | No | The precision for the time and date that the stream was created. |
+| `stream_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The ARN for a specific Kinesis data stream. Length Constraints: Minimum length of 37. Maximum length of 1024. |
 
 ### local_secondary_indexes
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `index_name` | `String(pattern, len: 3..=255)` | Yes | The name of the local secondary index. The name must be unique among all other indexes on this table. |
-| `key_schema` | List\<[Struct(KeySchema)](#key_schema-1)\> (items: 1..) (unique items) | Yes | The complete key schema for the local secondary index, consisting of one or more pairs of attribute names and key types: + ``HASH`` - partition key + ``RANGE`` - sort key The partition key of an item is also known as its *hash attribute*. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. The sort key of an item is also known as its *range attribute*. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. |
+| `index_name` | `String (pattern: /^[a-zA-Z0-9_.-]+\z/ (Full), len: 3..=255)` | Yes | The name of the local secondary index. The name must be unique among all other indexes on this table. |
+| `key_schema` | List\<[Struct(KeySchema)](#local_secondary_indexeskey_schema)\> (items: 1..unbounded, unique items, ordered) | Yes | The complete key schema for the local secondary index, consisting of one or more pairs of attribute names and key types: + ``HASH`` - partition key + ``RANGE`` - sort key The partition key of an item is also known as its *hash attribute*. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. The sort key of an item is also known as its *range attribute*. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. |
 | `projection` | [Struct(Projection)](#projection) | Yes | Represents attributes that are copied (projected) from the table into the local secondary index. These are in addition to the primary key attributes and index key attributes, which are automatically projected. |
+
+### local_secondary_indexes.key_schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `attribute_name` | `String (len: 1..=255)` | Yes | The name of a key attribute. |
+| `key_type` | [KeyType](#local_secondary_indexeskey_schemakey_type-keytype) | Yes | The role that this key attribute will assume: + ``HASH`` - partition key + ``RANGE`` - sort key The partition key of an item is also known as its *hash attribute*. The term "hash attribute" derives from DynamoDB's usage of an internal hash function to evenly distribute data items across partitions, based on their partition key values. The sort key of an item is also known as its *range attribute*. The term "range attribute" derives from the way DynamoDB stores items with the same partition key physically close together, in sorted order by the sort key value. |
 
 ### on_demand_throughput
 
@@ -386,17 +603,32 @@ Used by: `global_secondary_indexes.on_demand_throughput`, `on_demand_throughput`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `max_read_request_units` | Int(1..) | No | Maximum number of read request units for the specified table. To specify a maximum ``OnDemandThroughput`` on your table, set the value of ``MaxReadRequestUnits`` as greater than or equal to 1. To remove the maximum ``OnDemandThroughput`` that is currently set on your table, set the value of ``MaxReadRequestUnits`` to -1. |
-| `max_write_request_units` | Int(1..) | No | Maximum number of write request units for the specified table. To specify a maximum ``OnDemandThroughput`` on your table, set the value of ``MaxWriteRequestUnits`` as greater than or equal to 1. To remove the maximum ``OnDemandThroughput`` that is currently set on your table, set the value of ``MaxWriteRequestUnits`` to -1. |
+| `max_read_request_units` | `Int (range: 1..unbounded)` | No | Maximum number of read request units for the specified table. To specify a maximum ``OnDemandThroughput`` on your table, set the value of ``MaxReadRequestUnits`` as greater than or equal to 1. To remove the maximum ``OnDemandThroughput`` that is currently set on your table, set the value of ``MaxReadRequestUnits`` to -1. |
+| `max_write_request_units` | `Int (range: 1..unbounded)` | No | Maximum number of write request units for the specified table. To specify a maximum ``OnDemandThroughput`` on your table, set the value of ``MaxWriteRequestUnits`` as greater than or equal to 1. To remove the maximum ``OnDemandThroughput`` that is currently set on your table, set the value of ``MaxWriteRequestUnits`` to -1. |
 
 ### point_in_time_recovery_specification
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `point_in_time_recovery_enabled` | Bool | No | Indicates whether point in time recovery is enabled (true) or disabled (false) on the table. |
-| `recovery_period_in_days` | Int(1..=35) | No | The number of preceding days for which continuous backups are taken and maintained. Your table data is only recoverable to any point-in-time from within the configured recovery period. This parameter is optional. If no value is provided, the value will default to 35. |
+| `point_in_time_recovery_enabled` | `Bool` | No | Indicates whether point in time recovery is enabled (true) or disabled (false) on the table. |
+| `recovery_period_in_days` | `Int (range: 1..=35)` | No | The number of preceding days for which continuous backups are taken and maintained. Your table data is only recoverable to any point-in-time from within the configured recovery period. This parameter is optional. If no value is provided, the value will default to 35. |
 
 `recovery_period_in_days` requires `point_in_time_recovery_enabled`.
+
+### principal
+
+Used by: `union_of_principal_or_string.member_0`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `service` | [Union(union\_of\_string\_or\_list\_of\_string)](#union_of_string_or_list_of_string) | No |  |
+| `aws` | [Union(union\_of\_string\_or\_list\_of\_string)](#union_of_string_or_list_of_string) | No |  |
+| `federated` | [Union(union\_of\_string\_or\_list\_of\_string)](#union_of_string_or_list_of_string) | No |  |
+| `canonical_user` | [Union(union\_of\_string\_or\_list\_of\_string)](#union_of_string_or_list_of_string) | No |  |
+
+**Field groups:**
+
+- At least one of: `service`, `aws`, `federated`, `canonical_user`.
 
 ### projection
 
@@ -404,8 +636,8 @@ Used by: `global_secondary_indexes.projection`, `local_secondary_indexes.project
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `non_key_attributes` | `List<String(len: 1..=255)>` (items: 1..=20) | No | Represents the non-key attribute names which will be projected into the index. For global and local secondary indexes, the total count of ``NonKeyAttributes`` summed across all of the secondary indexes, must not exceed 100. If you project the same attribute into two different indexes, this counts as two distinct attributes when determining the total. This limit only applies when you specify the ProjectionType of ``INCLUDE``. You still can specify the ProjectionType of ``ALL`` to project all attributes from the source table, even if the table has more than 100 attributes. |
-| `projection_type` | [Enum (ProjectionType)](#projectionprojection_type-projectiontype) | No | The set of attributes that are projected into the index: + ``KEYS_ONLY`` - Only the index and primary keys are projected into the index. + ``INCLUDE`` - In addition to the attributes described in ``KEYS_ONLY``, the secondary index will include other non-key attributes that you specify. + ``ALL`` - All of the table attributes are projected into the index. When using the DynamoDB console, ``ALL`` is selected by default. |
+| `non_key_attributes` | List\<`String (len: 1..=255)`\> (items: 1..=20, ordered) | No | Represents the non-key attribute names which will be projected into the index. For global and local secondary indexes, the total count of ``NonKeyAttributes`` summed across all of the secondary indexes, must not exceed 100. If you project the same attribute into two different indexes, this counts as two distinct attributes when determining the total. This limit only applies when you specify the ProjectionType of ``INCLUDE``. You still can specify the ProjectionType of ``ALL`` to project all attributes from the source table, even if the table has more than 100 attributes. |
+| `projection_type` | [ProjectionType](#projectionprojection_type-projectiontype) | No | The set of attributes that are projected into the index: + ``KEYS_ONLY`` - Only the index and primary keys are projected into the index. + ``INCLUDE`` - In addition to the attributes described in ``KEYS_ONLY``, the secondary index will include other non-key attributes that you specify. + ``ALL`` - All of the table attributes are projected into the index. When using the DynamoDB console, ``ALL`` is selected by default. |
 
 ### provisioned_throughput
 
@@ -413,8 +645,8 @@ Used by: `global_secondary_indexes.provisioned_throughput`, `provisioned_through
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `read_capacity_units` | `Int(1..)` | Yes | The maximum number of strongly consistent reads consumed per second before DynamoDB returns a ``ThrottlingException``. For more information, see [Specifying Read and Write Requirements](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ProvisionedThroughput.html) in the *Amazon DynamoDB Developer Guide*. If read/write capacity mode is ``PAY_PER_REQUEST`` the value is set to 0. |
-| `write_capacity_units` | `Int(1..)` | Yes | The maximum number of writes consumed per second before DynamoDB returns a ``ThrottlingException``. For more information, see [Specifying Read and Write Requirements](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ProvisionedThroughput.html) in the *Amazon DynamoDB Developer Guide*. If read/write capacity mode is ``PAY_PER_REQUEST`` the value is set to 0. |
+| `read_capacity_units` | `Int (range: 1..unbounded)` | Yes | The maximum number of strongly consistent reads consumed per second before DynamoDB returns a ``ThrottlingException``. For more information, see [Specifying Read and Write Requirements](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ProvisionedThroughput.html) in the *Amazon DynamoDB Developer Guide*. If read/write capacity mode is ``PAY_PER_REQUEST`` the value is set to 0. |
+| `write_capacity_units` | `Int (range: 1..unbounded)` | Yes | The maximum number of writes consumed per second before DynamoDB returns a ``ThrottlingException``. For more information, see [Specifying Read and Write Requirements](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ProvisionedThroughput.html) in the *Amazon DynamoDB Developer Guide*. If read/write capacity mode is ``PAY_PER_REQUEST`` the value is set to 0. |
 
 ### resource_policy
 
@@ -422,29 +654,59 @@ Used by: `resource_policy`, `stream_specification.resource_policy`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `policy_document` | PolicyDocument | Yes | A resource-based policy document that contains permissions to add to the specified DDB table, index, or both. In a CFNshort template, you can provide the policy in JSON or YAML format because CFNshort converts YAML to JSON before submitting it to DDB. For more information about resource-based policies, see [Using resource-based policies for](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/access-control-resource-based.html) and [Resource-based policy examples](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/rbac-examples.html). |
+| `policy_document` | [Struct(PolicyDocument)](#resource_policypolicy_document) | Yes | A resource-based policy document that contains permissions to add to the specified DDB table, index, or both. In a CFNshort template, you can provide the policy in JSON or YAML format because CFNshort converts YAML to JSON before submitting it to DDB. For more information about resource-based policies, see [Using resource-based policies for](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/access-control-resource-based.html) and [Resource-based policy examples](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/rbac-examples.html). |
+
+### resource_policy.policy_document
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | [Version](#resource_policypolicy_documentversion-version) | No |  |
+| `id` | `String` | No |  |
+| `statement` | [Union(resource\_policy.policy\_document.statement)](#resource_policypolicy_documentstatement) | Yes |  |
 
 ### sse_specification
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `kms_master_key_id` | aws.kms.Key.Reference | No | The KMS key that should be used for the KMS encryption. To specify a key, use its key ID, Amazon Resource Name (ARN), alias name, or alias ARN. Note that you should only provide this parameter if the key is different from the default DynamoDB key ``alias/aws/dynamodb``. |
-| `sse_enabled` | Bool | Yes | Indicates whether server-side encryption is done using an AWS managed key or an AWS owned key. If enabled (true), server-side encryption type is set to ``KMS`` and an AWS managed key is used (KMS charges apply). If disabled (false) or not specified, server-side encryption is set to AWS owned key. |
-| `sse_type` | [Enum (SseType)](#sse_specificationsse_type-ssetype) | No | Server-side encryption type. The only supported value is: + ``KMS`` - Server-side encryption that uses KMSlong. The key is stored in your account and is managed by KMS (KMS charges apply). |
+| `kms_master_key_id` | `aws.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | The KMS key that should be used for the KMS encryption. To specify a key, use its key ID, Amazon Resource Name (ARN), alias name, or alias ARN. Note that you should only provide this parameter if the key is different from the default DynamoDB key ``alias/aws/dynamodb``. |
+| `sse_enabled` | `Bool` | Yes | Indicates whether server-side encryption is done using an AWS managed key or an AWS owned key. If enabled (true), server-side encryption type is set to ``KMS`` and an AWS managed key is used (KMS charges apply). If disabled (false) or not specified, server-side encryption is set to AWS owned key. |
+| `sse_type` | [SseType](#sse_specificationsse_type-ssetype) | No | Server-side encryption type. The only supported value is: + ``KMS`` - Server-side encryption that uses KMSlong. The key is stored in your account and is managed by KMS (KMS charges apply). |
+
+### statement
+
+Used by: `resource_policy.policy_document.statement.member_0`, `resource_policy.policy_document.statement.member_1`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `sid` | `String` | No |  |
+| `effect` | [Effect](#statementeffect-effect) | Yes |  |
+| `action` | [Union(union\_of\_string\_or\_list\_of\_string)](#union_of_string_or_list_of_string) | No |  |
+| `not_action` | [Union(union\_of\_string\_or\_list\_of\_string)](#union_of_string_or_list_of_string) | No |  |
+| `resource` | [Union(union\_of\_string\_or\_list\_of\_string)](#union_of_string_or_list_of_string) | No |  |
+| `not_resource` | [Union(union\_of\_string\_or\_list\_of\_string)](#union_of_string_or_list_of_string) | No |  |
+| `principal` | [Union(union\_of\_principal\_or\_string)](#union_of_principal_or_string) | No |  |
+| `not_principal` | [Union(union\_of\_principal\_or\_string)](#union_of_principal_or_string) | No |  |
+| `condition` | Map\<[ConditionOperator](#statementconditionkey-conditionoperator), Map\<`String`, [Union(statement.condition.\<value\>.\<value\>)](#statementconditionvaluevalue)\>\> | No |  |
+
+**Field groups:**
+
+- Exactly one of: `action`, `not_action`.
+- At most one of: `resource`, `not_resource`.
+- At most one of: `principal`, `not_principal`.
 
 ### stream_specification
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `resource_policy` | [Struct(ResourcePolicy)](#resource_policy-1) | No | Creates or updates a resource-based policy document that contains the permissions for DDB resources, such as a table's streams. Resource-based policies let you define access permissions by specifying who has access to each resource, and the actions they are allowed to perform on each resource. When you remove the ``StreamSpecification`` property from the template, DynamoDB disables the stream but retains any attached resource policy until the stream is deleted after 24 hours. When you modify the ``StreamViewType`` property, DynamoDB creates a new stream and retains the old stream's resource policy. The old stream and its resource policy are deleted after the 24-hour retention period. In a CFNshort template, you can provide the policy in JSON or YAML format because CFNshort converts YAML to JSON before submitting it to DDB. For more information about resource-based policies, see [Using resource-based policies for](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/access-control-resource-based.html) and [Resource-based policy examples](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/rbac-examples.html). |
-| `stream_view_type` | [Enum (StreamViewType)](#stream_specificationstream_view_type-streamviewtype) | Yes | When an item in the table is modified, ``StreamViewType`` determines what information is written to the stream for this table. Valid values for ``StreamViewType`` are: + ``KEYS_ONLY`` - Only the key attributes of the modified item are written to the stream. + ``NEW_IMAGE`` - The entire item, as it appears after it was modified, is written to the stream. + ``OLD_IMAGE`` - The entire item, as it appeared before it was modified, is written to the stream. + ``NEW_AND_OLD_IMAGES`` - Both the new and the old item images of the item are written to the stream. |
+| `stream_view_type` | [StreamViewType](#stream_specificationstream_view_type-streamviewtype) | Yes | When an item in the table is modified, ``StreamViewType`` determines what information is written to the stream for this table. Valid values for ``StreamViewType`` are: + ``KEYS_ONLY`` - Only the key attributes of the modified item are written to the stream. + ``NEW_IMAGE`` - The entire item, as it appears after it was modified, is written to the stream. + ``OLD_IMAGE`` - The entire item, as it appeared before it was modified, is written to the stream. + ``NEW_AND_OLD_IMAGES`` - Both the new and the old item images of the item are written to the stream. |
 
 ### time_to_live_specification
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `attribute_name` | `String(len: 1..=255)` | No | The name of the TTL attribute used to store the expiration time for items in the table. + The ``AttributeName`` property is required when enabling the TTL, or when TTL is already enabled. + To update this property, you must first disable TTL and then enable TTL with the new attribute name. |
-| `enabled` | Bool | Yes | Indicates whether TTL is to be enabled (true) or disabled (false) on the table. |
+| `attribute_name` | `String (len: 1..=255)` | No | The name of the TTL attribute used to store the expiration time for items in the table. + The ``AttributeName`` property is required when enabling the TTL, or when TTL is already enabled. + To update this property, you must first disable TTL and then enable TTL with the new attribute name. |
+| `enabled` | `Bool` | Yes | Indicates whether TTL is to be enabled (true) or disabled (false) on the table. |
 
 ### warm_throughput
 
@@ -452,22 +714,72 @@ Used by: `global_secondary_indexes.warm_throughput`, `warm_throughput`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `read_units_per_second` | Int(1..) | No | Represents the number of read operations your base table can instantaneously support. |
-| `write_units_per_second` | Int(1..) | No | Represents the number of write operations your base table can instantaneously support. |
+| `read_units_per_second` | `Int (range: 1..unbounded)` | No | Represents the number of read operations your base table can instantaneously support. |
+| `write_units_per_second` | `Int (range: 1..unbounded)` | No | Represents the number of write operations your base table can instantaneously support. |
 
-At least one of `read_units_per_second`, `write_units_per_second` must be specified.
+**Field groups:**
+
+- At least one of: `read_units_per_second`, `write_units_per_second`.
+
+## Union Definitions
+
+### resource_policy.policy_document.statement
+
+| Member | Type |
+|--------|------|
+| `member_0` | List\<[Struct(Statement)](#statement)\> (items: 1..unbounded, ordered) |
+| `member_1` | [Struct(Statement)](#statement) |
+
+### statement.condition.\<value\>.\<value\>
+
+| Member | Type |
+|--------|------|
+| `member_0` | [Union(union\_of\_string\_or\_list\_of\_string)](#union_of_string_or_list_of_string) |
+| `member_1` | `Int` |
+| `member_2` | `Float` |
+| `member_3` | `Bool` |
+| `member_4` | List\<[Union(union\_of\_string\_or\_int\_or\_float\_or\_bool)](#union_of_string_or_int_or_float_or_bool)\> (items: 1..unbounded, unordered) |
+
+### union_of_principal_or_string
+
+Used by: `statement.not_principal`, `statement.principal`
+
+| Member | Type |
+|--------|------|
+| `member_0` | [Struct(Principal)](#principal) |
+| `member_1` | `String (pattern: /^\*\z/ (Full))` |
+
+### union_of_string_or_int_or_float_or_bool
+
+Used by: `statement.condition.<value>.<value>.member_4`
+
+| Member | Type |
+|--------|------|
+| `member_0` | `String` |
+| `member_1` | `Int` |
+| `member_2` | `Float` |
+| `member_3` | `Bool` |
+
+### union_of_string_or_list_of_string
+
+Used by: `principal.aws`, `principal.canonical_user`, `principal.federated`, `principal.service`, `statement.action`, `statement.not_action`, `statement.not_resource`, `statement.resource`, `statement.condition.<value>.<value>.member_0`
+
+| Member | Type |
+|--------|------|
+| `member_0` | `String` |
+| `member_1` | List\<`String`\> (items: 1..unbounded, unordered) |
 
 ## Attribute Reference
 
 ### `arn`
 
-- **Type:** aws.dynamodb.Table.Arn — identity: String(pattern); member: String
+- **Type:** `aws.dynamodb.Table.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):dynamodb:[^:]*:[^:]*:table/.+$/ (Full), custom validator)`
 
 
 
 ### `stream_arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String
+- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 
 

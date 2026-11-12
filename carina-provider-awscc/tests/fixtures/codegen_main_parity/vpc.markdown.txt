@@ -1,25 +1,25 @@
 ### `enum_modes`
 
-- **Type:** Map\<String(pattern), [Enum (EnumModes)](#enum_modes-enummodes)\>
+- **Type:** Map\<`String (pattern: /.*/ (Full))`, [EnumModes](#enum_modesvalue-enummodes)\>
 - **Required:** No
 
 ### `modes`
 
-- **Type:** `Map<String(pattern), String(pattern, len: 1..=256)>`
+- **Type:** Map\<`String (pattern: /.*/ (Full))`, `String (pattern: /^[a-z]+$/ (Full), len: 1..=256)`\>
 - **Required:** No
 
 ### `ratio`
 
-- **Type:** Float
+- **Type:** `Float`
 - **Required:** No
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** Map\<`String`, `String`\>
 - **Required:** No
 
 The tags for the VPC.
 
 ### `cidr_block_associations`
 
-- **Type:** `List<aws.ec2.VpcCidrBlockAssociation.Id — identity: String(pattern); member: String>`
+- **Type:** List\<`aws.ec2.VpcCidrBlockAssociation.Id (pattern: /^vpc-cidr-assoc-[0-9a-f]{8,}$/ (Full))`\> (unordered)

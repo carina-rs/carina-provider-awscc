@@ -56,14 +56,14 @@ The features configuration for the hosted zone, including accelerated recovery s
 
 ### `tags`
 
-- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
+- **Type:** Map\<`String (len: unbounded..=128)`, `String (len: unbounded..=256)`\>
 - **Required:** No
 
 Adds, edits, or deletes tags for a health check or a hosted zone. For information about using tags for cost allocation, see [Using Cost Allocation Tags](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-alloc-tags.html) in the *User Guide*.
 
 ### `name`
 
-- **Type:** String(len: ..=1024)
+- **Type:** `String (len: unbounded..=1024, DSL transform: StripSuffix("."))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -78,7 +78,7 @@ Creates a configuration for DNS query logging. After you create a query logging 
 
 ### `vp_cs`
 
-- **Type:** List\<[Struct(VPC)](#vp_cs-1)\> (items: 1..) (unique items)
+- **Type:** List\<[Struct(VPC)](#vp_cs-1)\> (items: 1..unbounded, unique items, unordered)
 - **Required:** No
 
 *Private hosted zones:* A complex type that contains information about the VPCs that are associated with the specified hosted zone. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``.
@@ -143,38 +143,38 @@ Shorthand formats: `us_east_1` or `VPCRegion.us_east_1`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `comment` | String(len: ..=256) | No | Any comments that you want to include about the hosted zone. |
+| `comment` | `String (len: unbounded..=256)` | No | Any comments that you want to include about the hosted zone. |
 
 ### hosted_zone_features
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `enable_accelerated_recovery` | Bool | No |  |
+| `enable_accelerated_recovery` | `Bool` | No |  |
 
 ### query_logging_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cloud_watch_logs_log_group_arn` | aws.Arn — identity: String(pattern); member: String | Yes | The Amazon Resource Name (ARN) of the CloudWatch Logs log group that Amazon Route 53 is publishing logs to. |
+| `cloud_watch_logs_log_group_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the CloudWatch Logs log group that Amazon Route 53 is publishing logs to. |
 
 ### vp_cs
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `vpc_id` | aws.ec2.Vpc.Id — identity: String(pattern); member: String | Yes | *Private hosted zones only:* The ID of an Amazon VPC. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
-| `vpc_region` | [Enum (VPCRegion)](#vp_csvpc_region-vpcregion) | Yes | *Private hosted zones only:* The region that an Amazon VPC was created in. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
+| `vpc_id` | `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))` | Yes | *Private hosted zones only:* The ID of an Amazon VPC. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
+| `vpc_region` | [VPCRegion](#vp_csvpc_region-vpcregion) | Yes | *Private hosted zones only:* The region that an Amazon VPC was created in. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
 
 ## Attribute Reference
 
 ### `id`
 
-- **Type:** aws.route53.HostedZone.Id — identity: String(pattern, len: ..=32); member: String(len: ..=32)
+- **Type:** `aws.route53.HostedZone.Id (identity constraints: pattern: /^Z[A-Z0-9]+$/ (Full), len: unbounded..=32, member constraints: len: unbounded..=32)`
 
 
 
 ### `name_servers`
 
-- **Type:** `List<String>`
+- **Type:** List\<`String`\> (ordered)
 
 
 

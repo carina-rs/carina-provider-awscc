@@ -51,13 +51,13 @@ awscc.budgets.Budget {
 
 ### `notifications_with_subscribers`
 
-- **Type:** List\<[Struct(NotificationWithSubscribers)](#notifications_with_subscribers-1)\>
+- **Type:** List\<[Struct(NotificationWithSubscribers)](#notifications_with_subscribers-1)\> (ordered)
 - **Required:** No
 - **Create-only:** Yes
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** Map\<`String`, `String`\>
 - **Required:** No
 
 ## Enum Values
@@ -240,126 +240,128 @@ Shorthand formats: `sns` or `SubscriptionType.sns`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `auto_adjust_data` | [Struct(AutoAdjustData)](#budgetauto_adjust_data) | No |  |
-| `billing_view_arn` | aws.Arn — identity: String(pattern); member: String | No |  |
-| `budget_limit` | [Struct(Spend)](#budgetbudget_limit) | No |  |
-| `budget_name` | `String(pattern, len: 1..=100)` | No | Create-only. Anonymous identifiers hash only declared identity values. |
-| `budget_type` | [Enum (BudgetType)](#budgetbudget_type-budgettype) | Yes |  |
-| `cost_filters` | `Map<String, List<String>>` | No |  |
+| `billing_view_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No |  |
+| `budget_limit` | [Struct(Spend)](#spend) | No |  |
+| `budget_name` | `String (pattern: /^[^:\\]+$/ (Full), len: 1..=100)` | No | Create-only. Anonymous identifiers hash only declared identity values. |
+| `budget_type` | [BudgetType](#budgetbudget_type-budgettype) | Yes |  |
+| `cost_filters` | Map\<`String`, List\<`String`\> (ordered)\> | No |  |
 | `cost_types` | [Struct(CostTypes)](#budgetcost_types) | No |  |
 | `filter_expression` | [Struct(Expression)](#expression) | No |  |
-| `metrics` | List\<[Enum (Metrics)](#budgetmetrics-metrics)\> (items: ..=1) | No |  |
-| `planned_budget_limits` | `Map<String, Spend>` | No |  |
+| `metrics` | List\<[Metrics](#budgetmetrics-metrics)\> (items: unbounded..=1, ordered) | No |  |
+| `planned_budget_limits` | Map\<`String`, [Struct(Spend)](#spend)\> | No |  |
 | `time_period` | [Struct(TimePeriod)](#budgettime_period) | No |  |
-| `time_unit` | [Enum (TimeUnit)](#budgettime_unit-timeunit) | Yes |  |
+| `time_unit` | [TimeUnit](#budgettime_unit-timeunit) | Yes |  |
 
 ### budget.auto_adjust_data
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `auto_adjust_type` | [Enum (AutoAdjustType)](#budgetauto_adjust_dataauto_adjust_type-autoadjusttype) | Yes |  |
+| `auto_adjust_type` | [AutoAdjustType](#budgetauto_adjust_dataauto_adjust_type-autoadjusttype) | Yes |  |
 | `historical_options` | [Struct(HistoricalOptions)](#budgetauto_adjust_datahistorical_options) | No |  |
 
 ### budget.auto_adjust_data.historical_options
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `budget_adjustment_period` | `Int(1..=60)` | Yes |  |
-
-### budget.budget_limit
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `amount` | `Float(0..)` | Yes |  |
-| `unit` | String | Yes |  |
+| `budget_adjustment_period` | `Int (range: 1..=60)` | Yes |  |
 
 ### budget.cost_types
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `include_credit` | Bool | No |  |
-| `include_discount` | Bool | No |  |
-| `include_other_subscription` | Bool | No |  |
-| `include_recurring` | Bool | No |  |
-| `include_refund` | Bool | No |  |
-| `include_subscription` | Bool | No |  |
-| `include_support` | Bool | No |  |
-| `include_tax` | Bool | No |  |
-| `include_upfront` | Bool | No |  |
-| `use_amortized` | Bool | No |  |
-| `use_blended` | Bool | No |  |
+| `include_credit` | `Bool` | No |  |
+| `include_discount` | `Bool` | No |  |
+| `include_other_subscription` | `Bool` | No |  |
+| `include_recurring` | `Bool` | No |  |
+| `include_refund` | `Bool` | No |  |
+| `include_subscription` | `Bool` | No |  |
+| `include_support` | `Bool` | No |  |
+| `include_tax` | `Bool` | No |  |
+| `include_upfront` | `Bool` | No |  |
+| `use_amortized` | `Bool` | No |  |
+| `use_blended` | `Bool` | No |  |
 
 ### budget.time_period
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `end` | String | No |  |
-| `start` | String | No |  |
+| `end` | `String` | No |  |
+| `start` | `String` | No |  |
 
 ### expression
 
-Used by: `budget.filter_expression`, `budget.filter_expression.and`, `budget.filter_expression.not`, `budget.filter_expression.or`
+Used by: `budget.filter_expression`, `expression.and`, `expression.not`, `expression.or`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `and` | List\<[Struct(Expression)](#expression)\> | No |  |
+| `and` | List\<[Struct(Expression)](#expression)\> (ordered) | No |  |
 | `cost_categories` | [Struct(CostCategoryValues)](#expressioncost_categories) | No |  |
 | `dimensions` | [Struct(ExpressionDimensionValues)](#expressiondimensions) | No |  |
 | `not` | [Struct(Expression)](#expression) | No |  |
-| `or` | List\<[Struct(Expression)](#expression)\> | No |  |
+| `or` | List\<[Struct(Expression)](#expression)\> (ordered) | No |  |
 | `tags` | [Struct(TagValues)](#expressiontags) | No |  |
 
 ### expression.cost_categories
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key` | String | No |  |
-| `match_options` | List\<[Enum (MatchOptions)](#expressioncost_categoriesmatch_options-matchoptions)\> | No |  |
-| `values` | `List<String(len: ..=1024)>` (items: 1..) | No |  |
+| `key` | `String` | No |  |
+| `match_options` | List\<[MatchOptions](#expressioncost_categoriesmatch_options-matchoptions)\> (ordered) | No |  |
+| `values` | List\<`String (len: unbounded..=1024)`\> (items: 1..unbounded, ordered) | No |  |
 
 ### expression.dimensions
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key` | [Enum (Key)](#expressiondimensionskey-key) | No |  |
-| `match_options` | List\<[Enum (MatchOptions)](#expressiondimensionsmatch_options-matchoptions)\> (items: ..=1) | No |  |
-| `values` | `List<String(len: ..=1024)>` (items: 1..) | No |  |
+| `key` | [Key](#expressiondimensionskey-key) | No |  |
+| `match_options` | List\<[MatchOptions](#expressiondimensionsmatch_options-matchoptions)\> (items: unbounded..=1, ordered) | No |  |
+| `values` | List\<`String (len: unbounded..=1024)`\> (items: 1..unbounded, ordered) | No |  |
 
 ### expression.tags
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key` | `String(len: ..=1024)` | No |  |
-| `match_options` | List\<[Enum (MatchOptions)](#expressiontagsmatch_options-matchoptions)\> | No |  |
-| `values` | `List<String(len: ..=1024)>` (items: 1..) | No |  |
+| `key` | `String (len: unbounded..=1024)` | No |  |
+| `match_options` | List\<[MatchOptions](#expressiontagsmatch_options-matchoptions)\> (ordered) | No |  |
+| `values` | List\<`String (len: unbounded..=1024)`\> (items: 1..unbounded, ordered) | No |  |
 
 ### notifications_with_subscribers
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `notification` | [Struct(Notification)](#notifications_with_subscribersnotification) | Yes |  |
-| `subscribers` | List\<[Struct(Subscriber)](#notifications_with_subscriberssubscribers)\> | Yes |  |
+| `subscribers` | List\<[Struct(Subscriber)](#notifications_with_subscriberssubscribers)\> (ordered) | Yes |  |
 
 ### notifications_with_subscribers.notification
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `comparison_operator` | [Enum (ComparisonOperator)](#notifications_with_subscribersnotificationcomparison_operator-comparisonoperator) | Yes |  |
-| `notification_type` | [Enum (NotificationType)](#notifications_with_subscribersnotificationnotification_type-notificationtype) | Yes |  |
-| `threshold` | `Float(0..=15000000000000)` | Yes |  |
-| `threshold_type` | [Enum (ThresholdType)](#notifications_with_subscribersnotificationthreshold_type-thresholdtype) | No |  |
+| `comparison_operator` | [ComparisonOperator](#notifications_with_subscribersnotificationcomparison_operator-comparisonoperator) | Yes |  |
+| `notification_type` | [NotificationType](#notifications_with_subscribersnotificationnotification_type-notificationtype) | Yes |  |
+| `threshold` | `Float (range: 0..=15000000000000)` | Yes |  |
+| `threshold_type` | [ThresholdType](#notifications_with_subscribersnotificationthreshold_type-thresholdtype) | No |  |
 
 ### notifications_with_subscribers.subscribers
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `address` | String | Yes |  |
-| `subscription_type` | [Enum (SubscriptionType)](#notifications_with_subscriberssubscriberssubscription_type-subscriptiontype) | Yes |  |
+| `address` | `String` | Yes |  |
+| `subscription_type` | [SubscriptionType](#notifications_with_subscriberssubscriberssubscription_type-subscriptiontype) | Yes |  |
+
+### spend
+
+Used by: `budget.budget_limit`, `budget.planned_budget_limits.<value>`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `amount` | `Float (range: 0..unbounded)` | Yes |  |
+| `unit` | `String` | Yes |  |
 
 ## Attribute Reference
 
 ### `id`
 
-- **Type:** String
+- **Type:** `String`
 
 ## AWS API narrowings
 

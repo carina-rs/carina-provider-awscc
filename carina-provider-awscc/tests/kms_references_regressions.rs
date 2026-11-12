@@ -4,6 +4,35 @@
 use serde_json::{Value, json};
 use std::process::{Command, Output};
 
+fn string_display(
+    pattern: Option<&str>,
+    length: carina_docgen::Bounds<u64>,
+) -> carina_docgen::TypeDisplay<()> {
+    let pattern = pattern.map(|pattern| {
+        carina_core::schema::PatternSpec::new(pattern, carina_core::schema::PatternMatch::Full)
+    });
+    carina_docgen::scalar_display(
+        carina_docgen::ScalarDoc::String {
+            pattern: pattern.as_ref(),
+            length,
+            validate: false,
+            to_dsl: None,
+        },
+        None,
+    )
+}
+
+fn map_display(
+    key: carina_docgen::TypeDisplay<()>,
+    value: carina_docgen::TypeDisplay<()>,
+) -> String {
+    let display =
+        carina_docgen::map_display(key, value, carina_docgen::MapConstraints::default(), None);
+    let mut page = carina_docgen::PageBuilder::new();
+    display.write_to(&mut page);
+    page.finish().unwrap().trim().to_string()
+}
+
 fn generate(schema: &Value, format: &str) -> Output {
     let file = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(file.path(), schema.to_string()).unwrap();
@@ -217,7 +246,10 @@ fn non_reference_string_maps_refine_keys_and_preserve_scalar_values() {
             assert_eq!(rust.matches(r#"AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[a-z]+$", carina_core::schema::PatternMatch::Full)), Some((Some(1), Some(256))), None)"#).count(), 2, "{rust}");
             assert_eq!(
                 markdown
-                    .matches("Map<String(pattern), String(pattern, len: 1..=256)>")
+                    .matches(&map_display(
+                        string_display(Some(".*"), None),
+                        string_display(Some("^[a-z]+$"), Some((Some(1), Some(256))))
+                    ))
                     .count(),
                 2,
                 "{markdown}"
@@ -229,24 +261,26 @@ fn non_reference_string_maps_refine_keys_and_preserve_scalar_values() {
                 2,
                 "{rust}"
             );
-            assert_eq!(
-                markdown
-                    .matches("Map\\<String(pattern), [Enum (Modes)]")
-                    .count(),
-                2,
-                "{markdown}"
-            );
+            assert_eq!(markdown.matches("[Modes](").count(), 2, "{markdown}");
         } else {
             assert_eq!(rust.matches(r#"AttributeType::map_with_key(AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new(".*", carina_core::schema::PatternMatch::Full)), None, None), AttributeType::string())"#).count(), 2, "{rust}");
             assert_eq!(
-                markdown.matches("Map<String(pattern), String>").count(),
+                markdown
+                    .matches(&map_display(
+                        string_display(Some(".*"), None),
+                        string_display(None, None)
+                    ))
+                    .count(),
                 2,
                 "{markdown}"
             );
         }
         assert_eq!(
             markdown
-                .matches("Map<String(len: ..=128), String(len: ..=256)>")
+                .matches(&map_display(
+                    string_display(None, Some((None, Some(128)))),
+                    string_display(None, Some((None, Some(256))))
+                ))
                 .count(),
             1,
             "Tags retain their EC2 API length bounds: {markdown}"
@@ -294,7 +328,13 @@ fn inline_tag_pairs_render_in_rust_and_markdown() {
         )
     );
     let markdown = rendered(&schema, "markdown");
-    assert!(markdown.contains("`Map<String, String>`"), "{markdown}");
+    assert!(
+        markdown.contains(&map_display(
+            string_display(None, None),
+            string_display(None, None)
+        )),
+        "{markdown}"
+    );
     assert!(!markdown.contains("Struct(Tags)"), "{markdown}");
 }
 

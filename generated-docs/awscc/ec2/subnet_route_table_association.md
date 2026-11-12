@@ -36,7 +36,7 @@ awscc.ec2.SubnetRouteTableAssociation {
 
 ### `route_table_id`
 
-- **Type:** aws.ec2.RouteTable.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.RouteTable.Id (pattern: /^rtb-[0-9a-f]{8,}$/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -44,7 +44,7 @@ The ID of the route table. The physical ID changes when the route table ID is ch
 
 ### `subnet_id`
 
-- **Type:** aws.ec2.Subnet.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Subnet.Id (pattern: /^subnet-[0-9a-f]{8,}$/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -54,7 +54,7 @@ The ID of the subnet.
 
 ### `id`
 
-- **Type:** aws.ec2.SubnetRouteTableAssociation.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.SubnetRouteTableAssociation.Id (pattern: /^rtbassoc-[0-9a-f]{8,}$/ (Full))`
 
 
 

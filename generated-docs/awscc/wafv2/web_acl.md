@@ -57,7 +57,7 @@ Collection of application attributes.
 
 ### `custom_response_bodies`
 
-- **Type:** Map\<String(pattern, len: 1..=128), [Struct(CustomResponseBody)](#custom_response_bodies-1)\> (entries: 1..)
+- **Type:** Map\<`String (pattern: /^[\w\-]+$/ (Full), len: 1..=128)`, [Struct(CustomResponseBody)](#custom_response_bodiesvalue)\> (entries: 1..unbounded)
 - **Required:** No
 
 ### `data_protection_config`
@@ -74,12 +74,12 @@ Collection of dataProtects.
 
 ### `description`
 
-- **Type:** `String(pattern, len: 1..=256)`
+- **Type:** `String (pattern: /^[A-Za-z0-9=:#@/,.-][A-Za-z0-9+=:#@/,. \t\n\r\x0B\x0C-]+[A-Za-z0-9+=:#@/,.-]$/ (Full), len: 1..=256)`
 - **Required:** No
 
 ### `name`
 
-- **Type:** `String(pattern, len: 1..=128)`
+- **Type:** `String (pattern: /^[A-Za-z0-9_-]+$/ (Full), len: 1..=128)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -90,25 +90,25 @@ Collection of dataProtects.
 
 ### `rules`
 
-- **Type:** List\<[Struct(Rule)](#rules-1)\>
+- **Type:** List\<[Struct(Rule)](#rules-1)\> (ordered)
 - **Required:** No
 
 Collection of Rules.
 
 ### `scope`
 
-- **Type:** [Enum (Scope)](#scope-scope)
+- **Type:** [Scope](#scope-scope)
 - **Required:** Yes
 - **Create-only:** Yes
 
 ### `tags`
 
-- **Type:** `Map<String(pattern, len: 1..=128), String(pattern, len: ..=256)>` (entries: 1..)
+- **Type:** Map\<`String (pattern: /^[\p{L}\p{Z}\p{N}_.:/=+\-@]*$/ (Full), len: 1..=128)`, `String (pattern: /^[\p{L}\p{Z}\p{N}_.:/=+\-@]*$/ (Full), len: unbounded..=256)`\> (entries: 1..unbounded)
 - **Required:** No
 
 ### `token_domains`
 
-- **Type:** `List<String(pattern, len: 1..=253)>`
+- **Type:** List\<`String (pattern: /^[\w\.\-/]+$/ (Full), len: 1..=253)`\> (ordered)
 - **Required:** No
 
 ### `visibility_config`
@@ -118,7 +118,7 @@ Collection of Rules.
 
 ## Enum Values
 
-### association_config.request_body (RequestBody)
+### association_config.request_body.\<key\> (RequestBody)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -130,7 +130,7 @@ Collection of Rules.
 
 Shorthand formats: `cloudfront` or `RequestBody.cloudfront`
 
-### association_config.request_body.default_size_inspection_limit (SizeInspectionLimit)
+### association_config.request_body.\<value\>.default_size_inspection_limit (SizeInspectionLimit)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -141,7 +141,7 @@ Shorthand formats: `cloudfront` or `RequestBody.cloudfront`
 
 Shorthand formats: `kb_16` or `SizeInspectionLimit.kb_16`
 
-### custom_response_bodies.content_type (ResponseContentType)
+### custom_response_bodies.\<value\>.content_type (ResponseContentType)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -327,6 +327,34 @@ Shorthand formats: `cloudfront` or `Scope.cloudfront`
 | `CONTAINS_WORD` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.contains_word` |
 
 Shorthand formats: `exactly` or `PositionalConstraint.exactly`
+
+### statement.byte_match_statement.text_transformations.type (TextTransformationType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
+
+Shorthand formats: `none` or `TextTransformationType.none`
 
 ### statement.geo_match_statement.country_codes (CountryCodes)
 
@@ -689,6 +717,62 @@ Shorthand formats: `json` or `PayloadType.json`
 
 Shorthand formats: `constant` or `AggregateKeyType.constant`
 
+### statement.rate_based_statement.custom_keys.cookie.text_transformations.type (TextTransformationType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.utf8_to_unicode` |
+
+Shorthand formats: `none` or `TextTransformationType.none`
+
+### statement.rate_based_statement.custom_keys.header.text_transformations.type (TextTransformationType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.utf8_to_unicode` |
+
+Shorthand formats: `none` or `TextTransformationType.none`
+
 ### statement.rate_based_statement.custom_keys.ja3_fingerprint.fallback_behavior (FallbackBehavior)
 
 | Value | DSL Identifier |
@@ -707,6 +791,146 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
+### statement.rate_based_statement.custom_keys.query_argument.text_transformations.type (TextTransformationType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.utf8_to_unicode` |
+
+Shorthand formats: `none` or `TextTransformationType.none`
+
+### statement.rate_based_statement.custom_keys.query_string.text_transformations.type (TextTransformationType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.utf8_to_unicode` |
+
+Shorthand formats: `none` or `TextTransformationType.none`
+
+### statement.rate_based_statement.custom_keys.uri_path.text_transformations.type (TextTransformationType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.utf8_to_unicode` |
+
+Shorthand formats: `none` or `TextTransformationType.none`
+
+### statement.regex_match_statement.text_transformations.type (TextTransformationType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
+
+Shorthand formats: `none` or `TextTransformationType.none`
+
+### statement.regex_pattern_set_reference_statement.text_transformations.type (TextTransformationType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
+
+Shorthand formats: `none` or `TextTransformationType.none`
+
 ### statement.size_constraint_statement.comparison_operator (ComparisonOperator)
 
 | Value | DSL Identifier |
@@ -720,6 +944,34 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 Shorthand formats: `eq` or `ComparisonOperator.eq`
 
+### statement.size_constraint_statement.text_transformations.type (TextTransformationType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
+
+Shorthand formats: `none` or `TextTransformationType.none`
+
 ### statement.sqli_match_statement.sensitivity_level (SensitivityLevel)
 
 | Value | DSL Identifier |
@@ -729,39 +981,74 @@ Shorthand formats: `eq` or `ComparisonOperator.eq`
 
 Shorthand formats: `low` or `SensitivityLevel.low`
 
-### text_transformation.type (TextTransformationType)
+### statement.sqli_match_statement.text_transformations.type (TextTransformationType)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.lowercase` |
-| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
-| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode` |
-| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
-| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
-| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.css_decode` |
-| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
+| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
+
+Shorthand formats: `none` or `TextTransformationType.none`
+
+### statement.xss_match_statement.text_transformations.type (TextTransformationType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
 ## Struct Definitions
 
+### all
+
+Used by: `field_to_match.cookies.match_pattern.all`, `field_to_match.headers.match_pattern.all`, `field_to_match.json_body.match_pattern.all`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+
 ### allow_action
 
-Used by: `default_action.allow`, `rules.action.allow`
+Used by: `default_action.allow`, `rule_action.allow`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -771,30 +1058,30 @@ Used by: `default_action.allow`, `rules.action.allow`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `attributes` | List\<[Struct(ApplicationAttribute)](#application_configattributes)\> (items: 1..=10) | Yes |  |
+| `attributes` | List\<[Struct(ApplicationAttribute)](#application_configattributes)\> (items: 1..=10, ordered) | Yes |  |
 
 ### application_config.attributes
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String(pattern, len: 1..=64) | Yes |  |
-| `values` | `List<String(pattern, len: 1..=64)>` (items: 1..=10) | Yes |  |
+| `name` | `String (pattern: /^[\w\-]+$/ (Full), len: 1..=64)` | Yes |  |
+| `values` | List\<`String (pattern: /^[\w\-]+$/ (Full), len: 1..=64)`\> (items: 1..=10, ordered) | Yes |  |
 
 ### association_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `request_body` | Map\<[Enum (RequestBody)](#association_configrequest_body-requestbody), [Struct(RequestBodyAssociatedResourceTypeConfig)](#association_configrequest_body)\> | No |  |
+| `request_body` | Map\<[RequestBody](#association_configrequest_bodykey-requestbody), [Struct(RequestBodyAssociatedResourceTypeConfig)](#association_configrequest_bodyvalue)\> | No |  |
 
-### association_config.request_body
+### association_config.request_body.\<value\>
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `default_size_inspection_limit` | [Enum (SizeInspectionLimit)](#association_configrequest_bodydefault_size_inspection_limit-sizeinspectionlimit) | Yes |  |
+| `default_size_inspection_limit` | [SizeInspectionLimit](#association_configrequest_bodyvaluedefault_size_inspection_limit-sizeinspectionlimit) | Yes |  |
 
 ### block_action
 
-Used by: `default_action.block`, `rules.action.block`
+Used by: `default_action.block`, `rule_action.block`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -804,9 +1091,9 @@ Used by: `default_action.block`, `rules.action.block`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `custom_response_body_key` | `String(pattern, len: 1..=128)` | No | Custom response body key. |
-| `response_code` | Int(200..=599) | Yes |  |
-| `response_headers` | List\<[Struct(CustomHTTPHeader)](#custom_http_header)\> (items: 1..) | No | Collection of HTTP headers. |
+| `custom_response_body_key` | `String (pattern: /^[A-Za-z0-9_-]+$/ (Full), len: 1..=128)` | No | Custom response body key. |
+| `response_code` | `Int (range: 200..=599)` | Yes |  |
+| `response_headers` | List\<[Struct(CustomHTTPHeader)](#custom_http_header)\> (items: 1..unbounded, ordered) | No | Collection of HTTP headers. |
 
 ### captcha_config
 
@@ -830,8 +1117,8 @@ Used by: `block_action.custom_response.response_headers`, `custom_request_handli
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | `String(pattern, len: 1..=64)` | Yes |  |
-| `value` | String(len: 1..=255) | Yes |  |
+| `name` | `String (pattern: /^[A-Za-z0-9._$-]+$/ (Full), len: 1..=64)` | Yes |  |
+| `value` | `String (len: 1..=255)` | Yes |  |
 
 ### custom_request_handling
 
@@ -839,36 +1126,36 @@ Used by: `allow_action.custom_request_handling`, `rule_action.captcha.custom_req
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `insert_headers` | List\<[Struct(CustomHTTPHeader)](#custom_http_header)\> (items: 1..) | Yes | Collection of HTTP headers. |
+| `insert_headers` | List\<[Struct(CustomHTTPHeader)](#custom_http_header)\> (items: 1..unbounded, ordered) | Yes | Collection of HTTP headers. |
 
-### custom_response_bodies
+### custom_response_bodies.\<value\>
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `content` | String(len: 1..=10240) | Yes |  |
-| `content_type` | [Enum (ResponseContentType)](#custom_response_bodiescontent_type-responsecontenttype) | Yes |  |
+| `content` | `String (len: 1..=10240)` | Yes |  |
+| `content_type` | [ResponseContentType](#custom_response_bodiesvaluecontent_type-responsecontenttype) | Yes |  |
 
 ### data_protection_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `data_protections` | List\<[Struct(DataProtect)](#data_protection_configdata_protections)\> (items: 1..=26) | Yes |  |
+| `data_protections` | List\<[Struct(DataProtect)](#data_protection_configdata_protections)\> (items: 1..=26, ordered) | Yes |  |
 
 ### data_protection_config.data_protections
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `action` | [Enum (DataProtectionAction)](#data_protection_configdata_protectionsaction-dataprotectionaction) | Yes |  |
-| `exclude_rate_based_details` | Bool | No |  |
-| `exclude_rule_match_details` | Bool | No |  |
+| `action` | [DataProtectionAction](#data_protection_configdata_protectionsaction-dataprotectionaction) | Yes |  |
+| `exclude_rate_based_details` | `Bool` | No |  |
+| `exclude_rule_match_details` | `Bool` | No |  |
 | `field` | [Struct(FieldToProtect)](#data_protection_configdata_protectionsfield) | Yes |  |
 
 ### data_protection_config.data_protections.field
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `field_keys` | `List<String(pattern, len: 1..=64)>` (items: ..=100) | No | List of field keys to protect |
-| `field_type` | [Enum (FieldType)](#data_protection_configdata_protectionsfieldfield_type-fieldtype) | Yes | Field type to protect |
+| `field_keys` | List\<`String (pattern: /^.*[^ \t\n\r\x0B\x0C].*$/ (Full), len: 1..=64)`\> (items: unbounded..=100, ordered) | No | List of field keys to protect |
+| `field_type` | [FieldType](#data_protection_configdata_protectionsfieldfield_type-fieldtype) | Yes | Field type to protect |
 
 ### default_action
 
@@ -883,15 +1170,15 @@ Used by: `statement.managed_rule_group_statement.excluded_rules`, `statement.rul
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | `String(pattern, len: 1..=128)` | Yes |  |
+| `name` | `String (pattern: /^[A-Za-z0-9_-]+$/ (Full), len: 1..=128)` | Yes |  |
 
 ### field_identifier
 
-Used by: `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.address_fields`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.email_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.phone_number_fields`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.username_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set.request_inspection.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set.request_inspection.username_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.username_field`
+Used by: `statement.managed_rule_group_statement.managed_rule_group_configs.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.username_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.address_fields`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.email_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.phone_number_fields`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.username_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set.request_inspection.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set.request_inspection.username_field`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `identifier` | String(pattern, len: 1..=512) | Yes |  |
+| `identifier` | `String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=512)` | Yes |  |
 
 ### field_to_match
 
@@ -899,7 +1186,7 @@ Used by: `statement.byte_match_statement.field_to_match`, `statement.regex_match
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `all_query_arguments` | Empty struct (`{}`) | No | All query arguments of a web request. |
+| `all_query_arguments` | [Struct(AllQueryArguments)](#field_to_matchall_query_arguments) | No | All query arguments of a web request. |
 | `body` | [Struct(Body)](#field_to_matchbody) | No |  |
 | `cookies` | [Struct(Cookies)](#field_to_matchcookies) | No |  |
 | `header_order` | [Struct(HeaderOrder)](#field_to_matchheader_order) | No |  |
@@ -907,102 +1194,122 @@ Used by: `statement.byte_match_statement.field_to_match`, `statement.regex_match
 | `ja3_fingerprint` | [Struct(JA3Fingerprint)](#field_to_matchja3_fingerprint) | No |  |
 | `ja4_fingerprint` | [Struct(JA4Fingerprint)](#field_to_matchja4_fingerprint) | No |  |
 | `json_body` | [Struct(JsonBody)](#field_to_matchjson_body) | No |  |
-| `method` | Empty struct (`{}`) | No | The HTTP method of a web request. The method indicates the type of operation that the request is asking the origin to perform. |
-| `query_string` | Empty struct (`{}`) | No | The query string of a web request. This is the part of a URL that appears after a ? character, if any. |
+| `method` | [Struct(Method)](#field_to_matchmethod) | No | The HTTP method of a web request. The method indicates the type of operation that the request is asking the origin to perform. |
+| `query_string` | [Struct(QueryString)](#field_to_matchquery_string) | No | The query string of a web request. This is the part of a URL that appears after a ? character, if any. |
 | `single_header` | [Struct(SingleHeader)](#field_to_matchsingle_header) | No |  |
 | `single_query_argument` | [Struct(SingleQueryArgument)](#field_to_matchsingle_query_argument) | No | One query argument in a web request, identified by name, for example UserName or SalesRegion. The name can be up to 30 characters long and isn't case sensitive. |
 | `uri_fragment` | [Struct(UriFragment)](#field_to_matchuri_fragment) | No |  |
-| `uri_path` | Empty struct (`{}`) | No | The path component of the URI of a web request. This is the part of a web request that identifies a resource, for example, /images/daily-ad.jpg. |
+| `uri_path` | [Struct(UriPath)](#field_to_matchuri_path) | No | The path component of the URI of a web request. This is the part of a web request that identifies a resource, for example, /images/daily-ad.jpg. |
+
+### field_to_match.all_query_arguments
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
 
 ### field_to_match.body
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `oversize_handling` | [Enum (OversizeHandling)](#field_to_matchbodyoversize_handling-oversizehandling) | No |  |
+| `oversize_handling` | [OversizeHandling](#field_to_matchbodyoversize_handling-oversizehandling) | No |  |
 
 ### field_to_match.cookies
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `match_pattern` | [Struct(CookieMatchPattern)](#field_to_matchcookiesmatch_pattern) | Yes |  |
-| `match_scope` | [Enum (MapMatchScope)](#field_to_matchcookiesmatch_scope-mapmatchscope) | Yes |  |
-| `oversize_handling` | [Enum (OversizeHandling)](#field_to_matchcookiesoversize_handling-oversizehandling) | Yes |  |
+| `match_scope` | [MapMatchScope](#field_to_matchcookiesmatch_scope-mapmatchscope) | Yes |  |
+| `oversize_handling` | [OversizeHandling](#field_to_matchcookiesoversize_handling-oversizehandling) | Yes |  |
 
 ### field_to_match.cookies.match_pattern
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `all` | Empty struct (`{}`) | No | Inspect all parts of the web request cookies. |
-| `excluded_cookies` | `List<String(pattern, len: 1..=60)>` (items: 1..=199) | No |  |
-| `included_cookies` | `List<String(pattern, len: 1..=60)>` (items: 1..=199) | No |  |
+| `all` | [Struct(All)](#all) | No | Inspect all parts of the web request cookies. |
+| `excluded_cookies` | List\<`String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=60)`\> (items: 1..=199, ordered) | No |  |
+| `included_cookies` | List\<`String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=60)`\> (items: 1..=199, ordered) | No |  |
 
 ### field_to_match.header_order
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `oversize_handling` | [Enum (OversizeHandling)](#field_to_matchheader_orderoversize_handling-oversizehandling) | Yes |  |
+| `oversize_handling` | [OversizeHandling](#field_to_matchheader_orderoversize_handling-oversizehandling) | Yes |  |
 
 ### field_to_match.headers
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `match_pattern` | [Struct(HeaderMatchPattern)](#field_to_matchheadersmatch_pattern) | Yes |  |
-| `match_scope` | [Enum (MapMatchScope)](#field_to_matchheadersmatch_scope-mapmatchscope) | Yes |  |
-| `oversize_handling` | [Enum (OversizeHandling)](#field_to_matchheadersoversize_handling-oversizehandling) | Yes |  |
+| `match_scope` | [MapMatchScope](#field_to_matchheadersmatch_scope-mapmatchscope) | Yes |  |
+| `oversize_handling` | [OversizeHandling](#field_to_matchheadersoversize_handling-oversizehandling) | Yes |  |
 
 ### field_to_match.headers.match_pattern
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `all` | Empty struct (`{}`) | No | Inspect all parts of the web request headers. |
-| `excluded_headers` | `List<String(pattern, len: 1..=64)>` (items: 1..=199) | No |  |
-| `included_headers` | `List<String(pattern, len: 1..=64)>` (items: 1..=199) | No |  |
+| `all` | [Struct(All)](#all) | No | Inspect all parts of the web request headers. |
+| `excluded_headers` | List\<`String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=64)`\> (items: 1..=199, ordered) | No |  |
+| `included_headers` | List\<`String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=64)`\> (items: 1..=199, ordered) | No |  |
 
 ### field_to_match.ja3_fingerprint
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#field_to_matchja3_fingerprintfallback_behavior-fallbackbehavior) | Yes |  |
+| `fallback_behavior` | [FallbackBehavior](#field_to_matchja3_fingerprintfallback_behavior-fallbackbehavior) | Yes |  |
 
 ### field_to_match.ja4_fingerprint
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#field_to_matchja4_fingerprintfallback_behavior-fallbackbehavior) | Yes |  |
+| `fallback_behavior` | [FallbackBehavior](#field_to_matchja4_fingerprintfallback_behavior-fallbackbehavior) | Yes |  |
 
 ### field_to_match.json_body
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `invalid_fallback_behavior` | [Enum (BodyParsingFallbackBehavior)](#field_to_matchjson_bodyinvalid_fallback_behavior-bodyparsingfallbackbehavior) | No |  |
+| `invalid_fallback_behavior` | [BodyParsingFallbackBehavior](#field_to_matchjson_bodyinvalid_fallback_behavior-bodyparsingfallbackbehavior) | No |  |
 | `match_pattern` | [Struct(JsonMatchPattern)](#field_to_matchjson_bodymatch_pattern) | Yes |  |
-| `match_scope` | [Enum (JsonMatchScope)](#field_to_matchjson_bodymatch_scope-jsonmatchscope) | Yes |  |
-| `oversize_handling` | [Enum (OversizeHandling)](#field_to_matchjson_bodyoversize_handling-oversizehandling) | No |  |
+| `match_scope` | [JsonMatchScope](#field_to_matchjson_bodymatch_scope-jsonmatchscope) | Yes |  |
+| `oversize_handling` | [OversizeHandling](#field_to_matchjson_bodyoversize_handling-oversizehandling) | No |  |
 
 ### field_to_match.json_body.match_pattern
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `all` | Empty struct (`{}`) | No | Inspect all parts of the web request's JSON body. |
-| `included_paths` | `List<String(pattern, len: 1..=512)>` (items: 1..) | No |  |
+| `all` | [Struct(All)](#all) | No | Inspect all parts of the web request's JSON body. |
+| `included_paths` | List\<`String (pattern: /^(?:/\|(?:/(?:[^~]\|~[01])+))$/ (Full), len: 1..=512)`\> (items: 1..unbounded, ordered) | No |  |
+
+### field_to_match.method
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+
+### field_to_match.query_string
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
 
 ### field_to_match.single_header
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | `String(pattern, len: 1..=64)` | Yes |  |
+| `name` | `String (pattern: /^.*[^ \t\n\r\x0B\x0C].*$/ (Full), len: 1..=64)` | Yes |  |
 
 ### field_to_match.single_query_argument
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | `String(pattern, len: 1..=64)` | Yes |  |
+| `name` | `String (pattern: /^.*[^ \t\n\r\x0B\x0C].*$/ (Full), len: 1..=64)` | Yes |  |
 
 ### field_to_match.uri_fragment
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#field_to_matchuri_fragmentfallback_behavior-fallbackbehavior) | No |  |
+| `fallback_behavior` | [FallbackBehavior](#field_to_matchuri_fragmentfallback_behavior-fallbackbehavior) | No |  |
+
+### field_to_match.uri_path
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
 
 ### forwarded_ip_configuration
 
@@ -1010,8 +1317,8 @@ Used by: `statement.asn_match_statement.forwarded_ip_config`, `statement.geo_mat
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#forwarded_ip_configurationfallback_behavior-fallbackbehavior) | Yes |  |
-| `header_name` | `String(pattern, len: 1..=255)` | Yes |  |
+| `fallback_behavior` | [FallbackBehavior](#forwarded_ip_configurationfallback_behavior-fallbackbehavior) | Yes |  |
+| `header_name` | `String (pattern: /^[A-Za-z0-9-]+$/ (Full), len: 1..=255)` | Yes |  |
 
 ### immunity_time_property
 
@@ -1019,13 +1326,13 @@ Used by: `captcha_config.immunity_time_property`, `challenge_config.immunity_tim
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `immunity_time` | Int(60..=259200) | Yes |  |
+| `immunity_time` | `Int (range: 60..=259200)` | Yes |  |
 
 ### on_source_d_do_s_protection_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `alb_low_reputation_mode` | [Enum (AlbLowReputationMode)](#on_source_d_do_s_protection_configalb_low_reputation_mode-alblowreputationmode) | Yes |  |
+| `alb_low_reputation_mode` | [AlbLowReputationMode](#on_source_d_do_s_protection_configalb_low_reputation_mode-alblowreputationmode) | Yes |  |
 
 ### response_inspection
 
@@ -1042,35 +1349,35 @@ Used by: `statement.managed_rule_group_statement.managed_rule_group_configs.aws_
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `failure_strings` | `List<String(pattern, len: 1..=100)>` (items: 1..=5) | Yes |  |
-| `success_strings` | `List<String(pattern, len: 1..=100)>` (items: 1..=5) | Yes |  |
+| `failure_strings` | List\<`String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=100)`\> (items: 1..=5, ordered) | Yes |  |
+| `success_strings` | List\<`String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=100)`\> (items: 1..=5, ordered) | Yes |  |
 
 ### response_inspection.header
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `failure_values` | `List<String(pattern, len: 1..=100)>` (items: 1..=3) | Yes |  |
-| `name` | String(pattern, len: 1..=200) | Yes |  |
-| `success_values` | `List<String(pattern, len: 1..=100)>` (items: 1..=3) | Yes |  |
+| `failure_values` | List\<`String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=100)`\> (items: 1..=3, ordered) | Yes |  |
+| `name` | `String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=200)` | Yes |  |
+| `success_values` | List\<`String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=100)`\> (items: 1..=3, ordered) | Yes |  |
 
 ### response_inspection.json
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `failure_values` | `List<String(pattern, len: 1..=100)>` (items: 1..=5) | Yes |  |
-| `identifier` | String(pattern, len: 1..=512) | Yes |  |
-| `success_values` | `List<String(pattern, len: 1..=100)>` (items: 1..=5) | Yes |  |
+| `failure_values` | List\<`String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=100)`\> (items: 1..=5, ordered) | Yes |  |
+| `identifier` | `String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=512)` | Yes |  |
+| `success_values` | List\<`String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=100)`\> (items: 1..=5, ordered) | Yes |  |
 
 ### response_inspection.status_code
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `failure_codes` | `List<Int(0..=999)> (items: 1..=10)` | Yes |  |
-| `success_codes` | `List<Int(0..=999)> (items: 1..=10)` | Yes |  |
+| `failure_codes` | List\<`Int (range: 0..=999)`\> (items: 1..=10, ordered) | Yes |  |
+| `success_codes` | List\<`Int (range: 0..=999)`\> (items: 1..=10, ordered) | Yes |  |
 
 ### rule_action
 
-Used by: `rules.action`, `rules.statement.managed_rule_group_statement.rule_action_overrides.action_to_use`
+Used by: `rule_action_override.action_to_use`, `rules.action`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -1105,7 +1412,7 @@ Used by: `statement.managed_rule_group_statement.rule_action_overrides`, `statem
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `action_to_use` | [Struct(RuleAction)](#rule_action) | Yes |  |
-| `name` | `String(pattern, len: 1..=128)` | Yes |  |
+| `name` | `String (pattern: /^[A-Za-z0-9_-]+$/ (Full), len: 1..=128)` | Yes |  |
 
 ### rules
 
@@ -1114,10 +1421,10 @@ Used by: `statement.managed_rule_group_statement.rule_action_overrides`, `statem
 | `action` | [Struct(RuleAction)](#rule_action) | No |  |
 | `captcha_config` | [Struct(CaptchaConfig)](#captcha_config-1) | No |  |
 | `challenge_config` | [Struct(ChallengeConfig)](#challenge_config-1) | No |  |
-| `name` | `String(pattern, len: 1..=128)` | Yes |  |
+| `name` | `String (pattern: /^[A-Za-z0-9_-]+$/ (Full), len: 1..=128)` | Yes |  |
 | `override_action` | [Struct(OverrideAction)](#rulesoverride_action) | No |  |
-| `priority` | Int(0..) | Yes |  |
-| `rule_labels` | List\<[Struct(Label)](#rulesrule_labels)\> | No | Collection of Rule Labels. |
+| `priority` | `Int (range: 0..unbounded)` | Yes |  |
+| `rule_labels` | List\<[Struct(Label)](#rulesrule_labels)\> (ordered) | No | Collection of Rule Labels. |
 | `statement` | [Struct(Statement)](#statement) | Yes |  |
 | `visibility_config` | [Struct(VisibilityConfig)](#visibility_config-1) | Yes |  |
 
@@ -1125,18 +1432,28 @@ Used by: `statement.managed_rule_group_statement.rule_action_overrides`, `statem
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `count` | Empty struct (`{}`) | No | Count traffic towards application. |
-| `none` | Empty struct (`{}`) | No | Keep the RuleGroup or ManagedRuleGroup behavior as is. |
+| `count` | [Struct(Count)](#rulesoverride_actioncount) | No | Count traffic towards application. |
+| `none` | [Struct(None)](#rulesoverride_actionnone) | No | Keep the RuleGroup or ManagedRuleGroup behavior as is. |
+
+### rules.override_action.count
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+
+### rules.override_action.none
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
 
 ### rules.rule_labels
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | `String(pattern, len: 1..=1024)` | Yes |  |
+| `name` | `String (pattern: /^[0-9A-Za-z_:-]+$/ (Full), len: 1..=1024)` | Yes |  |
 
 ### statement
 
-Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.statement.managed_rule_group_statement.scope_down_statement`, `rules.statement.not_statement.statement`, `rules.statement.or_statement.statements`, `rules.statement.rate_based_statement.scope_down_statement`
+Used by: `rules.statement`, `statement.and_statement.statements`, `statement.managed_rule_group_statement.scope_down_statement`, `statement.not_statement.statement`, `statement.or_statement.statements`, `statement.rate_based_statement.scope_down_statement`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -1161,13 +1478,13 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `statements` | List\<[Struct(Statement)](#statement)\> (items: 2..) | Yes |  |
+| `statements` | List\<[Struct(Statement)](#statement)\> (items: 2..unbounded, ordered) | Yes |  |
 
 ### statement.asn_match_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `asn_list` | `List<Int(0..=4294967295)>` (items: 1..=100) | No |  |
+| `asn_list` | List\<`Int (range: 0..=4294967295)`\> (items: 1..=100, ordered) | No |  |
 | `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwarded_ip_configuration) | No |  |
 
 ### statement.byte_match_statement
@@ -1175,51 +1492,58 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
-| `positional_constraint` | [Enum (PositionalConstraint)](#statementbyte_match_statementpositional_constraint-positionalconstraint) | Yes |  |
-| `search_string` | aws.wafv2.WebACL.ByteMatchSearchString — identity: String; member: String | No |  |
-| `search_string_base64` | aws.wafv2.WebACL.ByteMatchSearchStringBase64 — identity: String; member: String | No |  |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
+| `positional_constraint` | [PositionalConstraint](#statementbyte_match_statementpositional_constraint-positionalconstraint) | Yes |  |
+| `search_string` | `aws.wafv2.WebACL.ByteMatchSearchString (custom validator)` | No |  |
+| `search_string_base64` | `aws.wafv2.WebACL.ByteMatchSearchStringBase64 (custom validator)` | No |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#statementbyte_match_statementtext_transformations)\> (items: 1..unbounded, ordered) | Yes |  |
+
+### statement.byte_match_statement.text_transformations
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `priority` | `Int (range: 0..unbounded)` | Yes |  |
+| `type` | [TextTransformationType](#statementbyte_match_statementtext_transformationstype-texttransformationtype) | Yes |  |
 
 ### statement.geo_match_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `country_codes` | List\<[Enum (CountryCodes)](#statementgeo_match_statementcountry_codes-countrycodes)\> (items: 1..=50) | No |  |
+| `country_codes` | List\<[CountryCodes](#statementgeo_match_statementcountry_codes-countrycodes)\> (items: 1..=50, ordered) | No |  |
 | `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwarded_ip_configuration) | No |  |
 
 ### statement.ip_set_reference_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | aws.Arn — identity: String(pattern); member: String(len: 20..=2048) | Yes |  |
+| `arn` | `aws.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)` | Yes |  |
 | `ip_set_forwarded_ip_config` | [Struct(IPSetForwardedIPConfiguration)](#statementip_set_reference_statementip_set_forwarded_ip_config) | No |  |
 
 ### statement.ip_set_reference_statement.ip_set_forwarded_ip_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#statementip_set_reference_statementip_set_forwarded_ip_configfallback_behavior-fallbackbehavior) | Yes |  |
-| `header_name` | `String(pattern, len: 1..=255)` | Yes |  |
-| `position` | [Enum (Position)](#statementip_set_reference_statementip_set_forwarded_ip_configposition-position) | Yes |  |
+| `fallback_behavior` | [FallbackBehavior](#statementip_set_reference_statementip_set_forwarded_ip_configfallback_behavior-fallbackbehavior) | Yes |  |
+| `header_name` | `String (pattern: /^[A-Za-z0-9-]+$/ (Full), len: 1..=255)` | Yes |  |
+| `position` | [Position](#statementip_set_reference_statementip_set_forwarded_ip_configposition-position) | Yes |  |
 
 ### statement.label_match_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key` | `String(pattern, len: 1..=1024)` | Yes |  |
-| `scope` | [Enum (LabelMatchScope)](#statementlabel_match_statementscope-labelmatchscope) | Yes |  |
+| `key` | `String (pattern: /^[0-9A-Za-z_:-]+$/ (Full), len: 1..=1024)` | Yes |  |
+| `scope` | [LabelMatchScope](#statementlabel_match_statementscope-labelmatchscope) | Yes |  |
 
 ### statement.managed_rule_group_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `excluded_rules` | List\<[Struct(ExcludedRule)](#excluded_rule)\> (items: ..=100) | No |  |
-| `managed_rule_group_configs` | List\<[Struct(ManagedRuleGroupConfig)](#statementmanaged_rule_group_statementmanaged_rule_group_configs)\> | No | Collection of ManagedRuleGroupConfig. |
-| `name` | String(pattern) | Yes |  |
-| `rule_action_overrides` | List\<[Struct(RuleActionOverride)](#rule_action_override)\> (items: ..=100) | No | Action overrides for rules in the rule group. |
+| `excluded_rules` | List\<[Struct(ExcludedRule)](#excluded_rule)\> (items: unbounded..=100, ordered) | No |  |
+| `managed_rule_group_configs` | List\<[Struct(ManagedRuleGroupConfig)](#statementmanaged_rule_group_statementmanaged_rule_group_configs)\> (ordered) | No | Collection of ManagedRuleGroupConfig. |
+| `name` | `String (pattern: /^[0-9A-Za-z_-]{1,128}$/ (Full))` | Yes |  |
+| `rule_action_overrides` | List\<[Struct(RuleActionOverride)](#rule_action_override)\> (items: unbounded..=100, ordered) | No | Action overrides for rules in the rule group. |
 | `scope_down_statement` | [Struct(Statement)](#statement) | No |  |
-| `vendor_name` | String | Yes |  |
-| `version` | String(pattern, len: 1..=64) | No |  |
+| `vendor_name` | `String` | Yes |  |
+| `version` | `String (pattern: /^[\w#:\.\-/]+$/ (Full), len: 1..=64)` | No |  |
 
 ### statement.managed_rule_group_statement.managed_rule_group_configs
 
@@ -1229,18 +1553,18 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 | `aws_managed_rules_atp_rule_set` | [Struct(AWSManagedRulesATPRuleSet)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_atp_rule_set) | No |  |
 | `aws_managed_rules_anti_d_do_s_rule_set` | [Struct(AWSManagedRulesAntiDDoSRuleSet)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_set) | No |  |
 | `aws_managed_rules_bot_control_rule_set` | [Struct(AWSManagedRulesBotControlRuleSet)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_bot_control_rule_set) | No |  |
-| `login_path` | String(pattern, len: 1..=256) | No |  |
+| `login_path` | `String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=256)` | No |  |
 | `password_field` | [Struct(FieldIdentifier)](#field_identifier) | No |  |
-| `payload_type` | [Enum (PayloadType)](#statementmanaged_rule_group_statementmanaged_rule_group_configspayload_type-payloadtype) | No |  |
+| `payload_type` | [PayloadType](#statementmanaged_rule_group_statementmanaged_rule_group_configspayload_type-payloadtype) | No |  |
 | `username_field` | [Struct(FieldIdentifier)](#field_identifier) | No |  |
 
 ### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `creation_path` | `String(pattern, len: 1..=256)` | Yes |  |
-| `enable_regex_in_path` | Bool | No |  |
-| `registration_page_path` | `String(pattern, len: 1..=256)` | Yes |  |
+| `creation_path` | `String (pattern: /^.*[^ \t\n\r\x0B\x0C].*$/ (Full), len: 1..=256)` | Yes |  |
+| `enable_regex_in_path` | `Bool` | No |  |
+| `registration_page_path` | `String (pattern: /^.*[^ \t\n\r\x0B\x0C].*$/ (Full), len: 1..=256)` | Yes |  |
 | `request_inspection` | [Struct(RequestInspectionACFP)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_acfp_rule_setrequest_inspection) | Yes |  |
 | `response_inspection` | [Struct(ResponseInspection)](#response_inspection) | No |  |
 
@@ -1248,11 +1572,11 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `address_fields` | List\<[Struct(FieldIdentifier)](#field_identifier)\> | No |  |
+| `address_fields` | List\<[Struct(FieldIdentifier)](#field_identifier)\> (ordered) | No |  |
 | `email_field` | [Struct(FieldIdentifier)](#field_identifier) | No |  |
 | `password_field` | [Struct(FieldIdentifier)](#field_identifier) | No |  |
-| `payload_type` | [Enum (PayloadType)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_acfp_rule_setrequest_inspectionpayload_type-payloadtype) | Yes |  |
-| `phone_number_fields` | List\<[Struct(FieldIdentifier)](#field_identifier)\> | No |  |
+| `payload_type` | [PayloadType](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_acfp_rule_setrequest_inspectionpayload_type-payloadtype) | Yes |  |
+| `phone_number_fields` | List\<[Struct(FieldIdentifier)](#field_identifier)\> (ordered) | No |  |
 | `username_field` | [Struct(FieldIdentifier)](#field_identifier) | No |  |
 
 ### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_anti_d_do_s_rule_set
@@ -1260,7 +1584,7 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `client_side_action_config` | [Struct(ClientSideActionConfig)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setclient_side_action_config) | Yes |  |
-| `sensitivity_to_block` | [Enum (SensitivityToAct)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setsensitivity_to_block-sensitivitytoact) | No |  |
+| `sensitivity_to_block` | [SensitivityToAct](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setsensitivity_to_block-sensitivitytoact) | No |  |
 
 ### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_anti_d_do_s_rule_set.client_side_action_config
 
@@ -1272,22 +1596,22 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `exempt_uri_regular_expressions` | List\<[Struct(Regex)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setclient_side_action_configchallengeexempt_uri_regular_expressions)\> | No |  |
-| `sensitivity` | [Enum (SensitivityToAct)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setclient_side_action_configchallengesensitivity-sensitivitytoact) | No |  |
-| `usage_of_action` | [Enum (UsageOfAction)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setclient_side_action_configchallengeusage_of_action-usageofaction) | Yes |  |
+| `exempt_uri_regular_expressions` | List\<[Struct(Regex)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setclient_side_action_configchallengeexempt_uri_regular_expressions)\> (ordered) | No |  |
+| `sensitivity` | [SensitivityToAct](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setclient_side_action_configchallengesensitivity-sensitivitytoact) | No |  |
+| `usage_of_action` | [UsageOfAction](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setclient_side_action_configchallengeusage_of_action-usageofaction) | Yes |  |
 
 ### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_anti_d_do_s_rule_set.client_side_action_config.challenge.exempt_uri_regular_expressions
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `regex_string` | String(len: 1..=512) | No |  |
+| `regex_string` | `String (len: 1..=512)` | No |  |
 
 ### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `enable_regex_in_path` | Bool | No |  |
-| `login_path` | String | Yes |  |
+| `enable_regex_in_path` | `Bool` | No |  |
+| `login_path` | `String` | Yes |  |
 | `request_inspection` | [Struct(RequestInspection)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_atp_rule_setrequest_inspection) | No |  |
 | `response_inspection` | [Struct(ResponseInspection)](#response_inspection) | No |  |
 
@@ -1296,15 +1620,15 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `password_field` | [Struct(FieldIdentifier)](#field_identifier) | Yes |  |
-| `payload_type` | [Enum (PayloadType)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_atp_rule_setrequest_inspectionpayload_type-payloadtype) | Yes |  |
+| `payload_type` | [PayloadType](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_atp_rule_setrequest_inspectionpayload_type-payloadtype) | Yes |  |
 | `username_field` | [Struct(FieldIdentifier)](#field_identifier) | Yes |  |
 
 ### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_bot_control_rule_set
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `enable_machine_learning` | Bool | No |  |
-| `inspection_level` | [Enum (InspectionLevel)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_bot_control_rule_setinspection_level-inspectionlevel) | Yes |  |
+| `enable_machine_learning` | `Bool` | No |  |
+| `inspection_level` | [InspectionLevel](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_bot_control_rule_setinspection_level-inspectionlevel) | Yes |  |
 
 ### statement.not_statement
 
@@ -1316,29 +1640,29 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `statements` | List\<[Struct(Statement)](#statement)\> (items: 2..) | Yes |  |
+| `statements` | List\<[Struct(Statement)](#statement)\> (items: 2..unbounded, ordered) | Yes |  |
 
 ### statement.rate_based_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `aggregate_key_type` | [Enum (AggregateKeyType)](#statementrate_based_statementaggregate_key_type-aggregatekeytype) | Yes |  |
-| `custom_keys` | List\<[Struct(RateBasedStatementCustomKey)](#statementrate_based_statementcustom_keys)\> (items: ..=5) | No | Specifies the aggregate keys to use in a rate-base rule. |
-| `evaluation_window_sec` | IntEnum([60, 120, 300, 600]) | No |  |
+| `aggregate_key_type` | [AggregateKeyType](#statementrate_based_statementaggregate_key_type-aggregatekeytype) | Yes |  |
+| `custom_keys` | List\<[Struct(RateBasedStatementCustomKey)](#statementrate_based_statementcustom_keys)\> (items: unbounded..=5, ordered) | No | Specifies the aggregate keys to use in a rate-base rule. |
+| `evaluation_window_sec` | `Int (one of: 60, 120, 300, 600)` | No |  |
 | `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwarded_ip_configuration) | No |  |
-| `limit` | Int(10..=2000000000) | Yes |  |
+| `limit` | `Int (range: 10..=2000000000)` | Yes |  |
 | `scope_down_statement` | [Struct(Statement)](#statement) | No |  |
 
 ### statement.rate_based_statement.custom_keys
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `asn` | Empty struct (`{}`) | No |  |
+| `asn` | [Struct(Asn)](#statementrate_based_statementcustom_keysasn) | No |  |
 | `cookie` | [Struct(RateLimitCookie)](#statementrate_based_statementcustom_keyscookie) | No |  |
-| `forwarded_ip` | Empty struct (`{}`) | No |  |
-| `http_method` | Empty struct (`{}`) | No |  |
+| `forwarded_ip` | [Struct(ForwardedIp)](#statementrate_based_statementcustom_keysforwarded_ip) | No |  |
+| `http_method` | [Struct(HttpMethod)](#statementrate_based_statementcustom_keyshttp_method) | No |  |
 | `header` | [Struct(RateLimitHeader)](#statementrate_based_statementcustom_keysheader) | No |  |
-| `ip` | Empty struct (`{}`) | No |  |
+| `ip` | [Struct(Ip)](#statementrate_based_statementcustom_keysip) | No |  |
 | `ja3_fingerprint` | [Struct(RateLimitJA3Fingerprint)](#statementrate_based_statementcustom_keysja3_fingerprint) | No |  |
 | `ja4_fingerprint` | [Struct(RateLimitJA4Fingerprint)](#statementrate_based_statementcustom_keysja4_fingerprint) | No |  |
 | `label_namespace` | [Struct(RateLimitLabelNamespace)](#statementrate_based_statementcustom_keyslabel_namespace) | No |  |
@@ -1346,113 +1670,194 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 | `query_string` | [Struct(RateLimitQueryString)](#statementrate_based_statementcustom_keysquery_string) | No |  |
 | `uri_path` | [Struct(RateLimitUriPath)](#statementrate_based_statementcustom_keysuri_path) | No |  |
 
+### statement.rate_based_statement.custom_keys.asn
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+
 ### statement.rate_based_statement.custom_keys.cookie
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String(pattern, len: 1..=64) | Yes | The name of the cookie to use. |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
+| `name` | `String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=64)` | Yes | The name of the cookie to use. |
+| `text_transformations` | List\<[Struct(TextTransformation)](#statementrate_based_statementcustom_keyscookietext_transformations)\> (items: 1..unbounded, ordered) | Yes |  |
+
+### statement.rate_based_statement.custom_keys.cookie.text_transformations
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `priority` | `Int (range: 0..unbounded)` | Yes |  |
+| `type` | [TextTransformationType](#statementrate_based_statementcustom_keyscookietext_transformationstype-texttransformationtype) | Yes |  |
+
+### statement.rate_based_statement.custom_keys.forwarded_ip
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
 
 ### statement.rate_based_statement.custom_keys.header
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String(pattern, len: 1..=64) | Yes | The name of the header to use. |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
+| `name` | `String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=64)` | Yes | The name of the header to use. |
+| `text_transformations` | List\<[Struct(TextTransformation)](#statementrate_based_statementcustom_keysheadertext_transformations)\> (items: 1..unbounded, ordered) | Yes |  |
+
+### statement.rate_based_statement.custom_keys.header.text_transformations
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `priority` | `Int (range: 0..unbounded)` | Yes |  |
+| `type` | [TextTransformationType](#statementrate_based_statementcustom_keysheadertext_transformationstype-texttransformationtype) | Yes |  |
+
+### statement.rate_based_statement.custom_keys.http_method
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+
+### statement.rate_based_statement.custom_keys.ip
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
 
 ### statement.rate_based_statement.custom_keys.ja3_fingerprint
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#statementrate_based_statementcustom_keysja3_fingerprintfallback_behavior-fallbackbehavior) | Yes |  |
+| `fallback_behavior` | [FallbackBehavior](#statementrate_based_statementcustom_keysja3_fingerprintfallback_behavior-fallbackbehavior) | Yes |  |
 
 ### statement.rate_based_statement.custom_keys.ja4_fingerprint
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#statementrate_based_statementcustom_keysja4_fingerprintfallback_behavior-fallbackbehavior) | Yes |  |
+| `fallback_behavior` | [FallbackBehavior](#statementrate_based_statementcustom_keysja4_fingerprintfallback_behavior-fallbackbehavior) | Yes |  |
 
 ### statement.rate_based_statement.custom_keys.label_namespace
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `namespace` | `String(pattern, len: 1..=1024)` | Yes | The namespace to use for aggregation. |
+| `namespace` | `String (pattern: /^[0-9A-Za-z_:-]+:$/ (Full), len: 1..=1024)` | Yes | The namespace to use for aggregation. |
 
 ### statement.rate_based_statement.custom_keys.query_argument
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String(pattern, len: 1..=64) | Yes | The name of the query argument to use. |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
+| `name` | `String (pattern: /^[\s\S]*\S[\s\S]*\z/ (Full), len: 1..=64)` | Yes | The name of the query argument to use. |
+| `text_transformations` | List\<[Struct(TextTransformation)](#statementrate_based_statementcustom_keysquery_argumenttext_transformations)\> (items: 1..unbounded, ordered) | Yes |  |
+
+### statement.rate_based_statement.custom_keys.query_argument.text_transformations
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `priority` | `Int (range: 0..unbounded)` | Yes |  |
+| `type` | [TextTransformationType](#statementrate_based_statementcustom_keysquery_argumenttext_transformationstype-texttransformationtype) | Yes |  |
 
 ### statement.rate_based_statement.custom_keys.query_string
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#statementrate_based_statementcustom_keysquery_stringtext_transformations)\> (items: 1..unbounded, ordered) | Yes |  |
+
+### statement.rate_based_statement.custom_keys.query_string.text_transformations
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `priority` | `Int (range: 0..unbounded)` | Yes |  |
+| `type` | [TextTransformationType](#statementrate_based_statementcustom_keysquery_stringtext_transformationstype-texttransformationtype) | Yes |  |
 
 ### statement.rate_based_statement.custom_keys.uri_path
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#statementrate_based_statementcustom_keysuri_pathtext_transformations)\> (items: 1..unbounded, ordered) | Yes |  |
+
+### statement.rate_based_statement.custom_keys.uri_path.text_transformations
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `priority` | `Int (range: 0..unbounded)` | Yes |  |
+| `type` | [TextTransformationType](#statementrate_based_statementcustom_keysuri_pathtext_transformationstype-texttransformationtype) | Yes |  |
 
 ### statement.regex_match_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
-| `regex_string` | String(len: 1..=512) | Yes |  |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
+| `regex_string` | `String (len: 1..=512)` | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#statementregex_match_statementtext_transformations)\> (items: 1..unbounded, ordered) | Yes |  |
+
+### statement.regex_match_statement.text_transformations
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `priority` | `Int (range: 0..unbounded)` | Yes |  |
+| `type` | [TextTransformationType](#statementregex_match_statementtext_transformationstype-texttransformationtype) | Yes |  |
 
 ### statement.regex_pattern_set_reference_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | aws.Arn — identity: String(pattern); member: String(len: 20..=2048) | Yes |  |
+| `arn` | `aws.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)` | Yes |  |
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#statementregex_pattern_set_reference_statementtext_transformations)\> (items: 1..unbounded, ordered) | Yes |  |
+
+### statement.regex_pattern_set_reference_statement.text_transformations
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `priority` | `Int (range: 0..unbounded)` | Yes |  |
+| `type` | [TextTransformationType](#statementregex_pattern_set_reference_statementtext_transformationstype-texttransformationtype) | Yes |  |
 
 ### statement.rule_group_reference_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | aws.Arn — identity: String(pattern); member: String(len: 20..=2048) | Yes |  |
-| `excluded_rules` | List\<[Struct(ExcludedRule)](#excluded_rule)\> (items: ..=100) | No |  |
-| `rule_action_overrides` | List\<[Struct(RuleActionOverride)](#rule_action_override)\> (items: ..=100) | No | Action overrides for rules in the rule group. |
+| `arn` | `aws.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)` | Yes |  |
+| `excluded_rules` | List\<[Struct(ExcludedRule)](#excluded_rule)\> (items: unbounded..=100, ordered) | No |  |
+| `rule_action_overrides` | List\<[Struct(RuleActionOverride)](#rule_action_override)\> (items: unbounded..=100, ordered) | No | Action overrides for rules in the rule group. |
 
 ### statement.size_constraint_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `comparison_operator` | [Enum (ComparisonOperator)](#statementsize_constraint_statementcomparison_operator-comparisonoperator) | Yes |  |
+| `comparison_operator` | [ComparisonOperator](#statementsize_constraint_statementcomparison_operator-comparisonoperator) | Yes |  |
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
-| `size` | Float(0..=21474836480) | Yes |  |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
+| `size` | `Float (range: 0..=21474836480)` | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#statementsize_constraint_statementtext_transformations)\> (items: 1..unbounded, ordered) | Yes |  |
+
+### statement.size_constraint_statement.text_transformations
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `priority` | `Int (range: 0..unbounded)` | Yes |  |
+| `type` | [TextTransformationType](#statementsize_constraint_statementtext_transformationstype-texttransformationtype) | Yes |  |
 
 ### statement.sqli_match_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
-| `sensitivity_level` | [Enum (SensitivityLevel)](#statementsqli_match_statementsensitivity_level-sensitivitylevel) | No |  |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
+| `sensitivity_level` | [SensitivityLevel](#statementsqli_match_statementsensitivity_level-sensitivitylevel) | No |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#statementsqli_match_statementtext_transformations)\> (items: 1..unbounded, ordered) | Yes |  |
+
+### statement.sqli_match_statement.text_transformations
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `priority` | `Int (range: 0..unbounded)` | Yes |  |
+| `type` | [TextTransformationType](#statementsqli_match_statementtext_transformationstype-texttransformationtype) | Yes |  |
 
 ### statement.xss_match_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
-| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> (items: 1..) | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#statementxss_match_statementtext_transformations)\> (items: 1..unbounded, ordered) | Yes |  |
 
-### text_transformation
-
-Used by: `statement.byte_match_statement.text_transformations`, `statement.rate_based_statement.custom_keys.cookie.text_transformations`, `statement.rate_based_statement.custom_keys.header.text_transformations`, `statement.rate_based_statement.custom_keys.query_argument.text_transformations`, `statement.rate_based_statement.custom_keys.query_string.text_transformations`, `statement.rate_based_statement.custom_keys.uri_path.text_transformations`, `statement.regex_match_statement.text_transformations`, `statement.regex_pattern_set_reference_statement.text_transformations`, `statement.size_constraint_statement.text_transformations`, `statement.sqli_match_statement.text_transformations`, `statement.xss_match_statement.text_transformations`
+### statement.xss_match_statement.text_transformations
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `priority` | Int(0..) | Yes |  |
-| `type` | [Enum (TextTransformationType)](#text_transformationtype-texttransformationtype) | Yes |  |
+| `priority` | `Int (range: 0..unbounded)` | Yes |  |
+| `type` | [TextTransformationType](#statementxss_match_statementtext_transformationstype-texttransformationtype) | Yes |  |
 
 ### visibility_config
 
@@ -1460,27 +1865,27 @@ Used by: `rules.visibility_config`, `visibility_config`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cloud_watch_metrics_enabled` | Bool | Yes |  |
-| `metric_name` | `String(pattern, len: 1..=128)` | Yes |  |
-| `sampled_requests_enabled` | Bool | Yes |  |
+| `cloud_watch_metrics_enabled` | `Bool` | Yes |  |
+| `metric_name` | `String (pattern: /^[A-Za-z0-9_#:./-]+$/ (Full), len: 1..=128)` | Yes |  |
+| `sampled_requests_enabled` | `Bool` | Yes |  |
 
 ## Attribute Reference
 
 ### `arn`
 
-- **Type:** aws.wafv2.WebAcl.Arn — identity: String(pattern); member: String(len: 20..=2048)
+- **Type:** `aws.wafv2.WebAcl.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):wafv2:.*$/ (Full), member constraints: len: 20..=2048, custom validator)`
 
 ### `capacity`
 
-- **Type:** Int(0..)
+- **Type:** `Int (range: 0..unbounded)`
 
 ### `id`
 
-- **Type:** String(pattern)
+- **Type:** `String (pattern: /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/ (Full))`
 
 ### `label_namespace`
 
-- **Type:** String(pattern)
+- **Type:** `String (pattern: /^[0-9A-Za-z_:-]{1,1024}$/ (Full))`
 
 ## AWS API narrowings
 

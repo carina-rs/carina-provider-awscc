@@ -2287,8 +2287,8 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
                     child_projection.validate_array_emission()?;
                 }
                 if override_type.is_some_and(|o| {
-                    o.attribute_type_expression().is_some()
-                        || o.array_item_type_expression().is_some()
+                    o.attribute_constraint().is_some()
+                        || o.array_item_constraint().is_some()
                         || o.enum_values().is_some()
                 }) {
                     continue;
@@ -2327,8 +2327,8 @@ pub(super) fn validate_shared_queries(schema: &super::CfnSchema) -> anyhow::Resu
             projection.validate_array_emission()?;
         }
         if override_type.is_some_and(|o| {
-            o.attribute_type_expression().is_some()
-                || o.array_item_type_expression().is_some()
+            o.attribute_constraint().is_some()
+                || o.array_item_constraint().is_some()
                 || o.enum_values().is_some()
         }) {
             continue;

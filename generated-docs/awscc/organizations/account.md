@@ -29,28 +29,28 @@ awscc.organizations.Account {
 
 ### `account_name`
 
-- **Type:** `String(pattern, len: 1..=50)`
+- **Type:** `String (pattern: /^[ -~]+\z/ (Full), len: 1..=50)`
 - **Required:** Yes
 
 The friendly name of the member account.
 
 ### `email`
 
-- **Type:** aws.organizations.Account.Email — identity: String(len: 6..=64); member: String(pattern, len: 6..=64)
+- **Type:** `aws.organizations.Account.Email (identity constraints: len: 6..=64, member constraints: pattern: /[^\s@]+@[^\s@]+\.[^\s@]+/ (Full), len: 6..=64, custom validator)`
 - **Required:** Yes
 
 The email address of the owner to assign to the new member account.
 
 ### `parent_ids`
 
-- **Type:** `List<String(pattern, len: ..=100)>` (items: ..=1) (unique items)
+- **Type:** List\<`String (pattern: /^(?:r-[0-9a-z]{4,32}|ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})\z/ (Full), len: unbounded..=100)`\> (items: unbounded..=1, unique items, unordered)
 - **Required:** No
 
 List of parent nodes for the member account. Currently only one parent at a time is supported. Default is root.
 
 ### `role_name`
 
-- **Type:** aws.organizations.Account.RoleName — identity: String(pattern, len: 1..=64); member: String(pattern, len: 1..=64)
+- **Type:** `aws.organizations.Account.RoleName (identity constraints: pattern: /^[\w+=,.@-]+\z/ (Full), len: 1..=64, member constraints: pattern: /[\w+=,.@-]{1,64}/ (Full), len: 1..=64, custom validator)`
 - **Required:** No
 - **Write-only:** Yes
 - **Default:** `"OrganizationAccountAccessRole"`
@@ -59,7 +59,7 @@ The name of an IAM role that AWS Organizations automatically preconfigures in th
 
 ### `tags`
 
-- **Type:** `Map<String(pattern, len: 1..=128), String(pattern, len: ..=256)>`
+- **Type:** Map\<`String (pattern: /[\s\S]*/ (Full), len: 1..=128)`, `String (pattern: /[\s\S]*/ (Full), len: unbounded..=256)`\>
 - **Required:** No
 
 A list of tags that you want to attach to the newly created account. For each tag in the list, you must specify both a tag key and a value.
@@ -101,43 +101,43 @@ Shorthand formats: `active` or `Status.active`
 
 ### `account_id`
 
-- **Type:** aws.AccountId — identity: String(pattern, len: 12..=12); member: String(pattern, len: ..=12)
+- **Type:** `aws.AccountId (identity constraints: pattern: /^[0-9]{12}$/ (Full), len: 12..=12, member constraints: pattern: /^\d{12}$/ (Full), len: unbounded..=12)`
 
 If the account was created successfully, the unique identifier (ID) of the new account.
 
 ### `arn`
 
-- **Type:** aws.organizations.Account.Arn — identity: String(pattern); member: String(pattern)
+- **Type:** `aws.organizations.Account.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):organizations:.*$/ (Full), member constraints: pattern: /^arn:aws.*:organizations::\d{12}:account\/o-[a-z0-9]{10,32}\/\d{12}/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of the account.
 
 ### `joined_method`
 
-- **Type:** [Enum (JoinedMethod)](#joined_method-joinedmethod)
+- **Type:** [JoinedMethod](#joined_method-joinedmethod)
 
 The method by which the account joined the organization.
 
 ### `joined_timestamp`
 
-- **Type:** String
+- **Type:** `String`
 
 The date the account became a part of the organization.
 
 ### `paths`
 
-- **Type:** `List<String(pattern)>`
+- **Type:** List\<`String (pattern: /^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\d{12})*)// (Full))`\> (ordered)
 
 The paths in the organization where the account exists.
 
 ### `state`
 
-- **Type:** [Enum (State)](#state-state)
+- **Type:** [State](#state-state)
 
 The state of the account in the organization.
 
 ### `status`
 
-- **Type:** [Enum (Status)](#status-status)
+- **Type:** [Status](#status-status)
 
 The status of the account in the organization.
 

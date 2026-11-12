@@ -21,7 +21,7 @@ awscc.ec2.InternetGateway {
 
 ### `tags`
 
-- **Type:** `Map<String(len: 1..=128), String(len: ..=256)>`
+- **Type:** Map\<`String (len: 1..=128)`, `String (len: unbounded..=256)`\>
 - **Required:** No
 
 Any tags to assign to the internet gateway.
@@ -30,7 +30,7 @@ Any tags to assign to the internet gateway.
 
 ### `internet_gateway_id`
 
-- **Type:** aws.ec2.InternetGateway.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.InternetGateway.Id (pattern: /^igw-[0-9a-f]{8,}$/ (Full))`
 
 
 

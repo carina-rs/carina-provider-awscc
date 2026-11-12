@@ -135,10 +135,10 @@ Shorthand formats: `no_referrer` or `ReferrerPolicy.no_referrer`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `comment` | String | No | A comment to describe the response headers policy. The comment cannot be longer than 128 characters. |
+| `comment` | `String` | No | A comment to describe the response headers policy. The comment cannot be longer than 128 characters. |
 | `cors_config` | [Struct(CorsConfig)](#response_headers_policy_configcors_config) | No | A configuration for a set of HTTP response headers that are used for cross-origin resource sharing (CORS). |
 | `custom_headers_config` | [Struct(CustomHeadersConfig)](#response_headers_policy_configcustom_headers_config) | No | A configuration for a set of custom HTTP response headers. |
-| `name` | String | Yes | A name to identify the response headers policy. The name must be unique for response headers policies in this AWS-account. |
+| `name` | `String` | Yes | A name to identify the response headers policy. The name must be unique for response headers policies in this AWS-account. |
 | `remove_headers_config` | [Struct(RemoveHeadersConfig)](#response_headers_policy_configremove_headers_config) | No | A configuration for a set of HTTP headers to remove from the HTTP response. |
 | `security_headers_config` | [Struct(SecurityHeadersConfig)](#response_headers_policy_configsecurity_headers_config) | No | A configuration for a set of security-related HTTP response headers. |
 | `server_timing_headers_config` | [Struct(ServerTimingHeadersConfig)](#response_headers_policy_configserver_timing_headers_config) | No | A configuration for enabling the ``Server-Timing`` header in HTTP responses sent from CloudFront. |
@@ -147,63 +147,63 @@ Shorthand formats: `no_referrer` or `ReferrerPolicy.no_referrer`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `access_control_allow_credentials` | Bool | Yes | A Boolean that CloudFront uses as the value for the ``Access-Control-Allow-Credentials`` HTTP response header. For more information about the ``Access-Control-Allow-Credentials`` HTTP response header, see [Access-Control-Allow-Credentials](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Credentials) in the MDN Web Docs. |
+| `access_control_allow_credentials` | `Bool` | Yes | A Boolean that CloudFront uses as the value for the ``Access-Control-Allow-Credentials`` HTTP response header. For more information about the ``Access-Control-Allow-Credentials`` HTTP response header, see [Access-Control-Allow-Credentials](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Credentials) in the MDN Web Docs. |
 | `access_control_allow_headers` | [Struct(AccessControlAllowHeaders)](#response_headers_policy_configcors_configaccess_control_allow_headers) | Yes | A list of HTTP header names that CloudFront includes as values for the ``Access-Control-Allow-Headers`` HTTP response header. For more information about the ``Access-Control-Allow-Headers`` HTTP response header, see [Access-Control-Allow-Headers](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Headers) in the MDN Web Docs. |
 | `access_control_allow_methods` | [Struct(AccessControlAllowMethods)](#response_headers_policy_configcors_configaccess_control_allow_methods) | Yes | A list of HTTP methods that CloudFront includes as values for the ``Access-Control-Allow-Methods`` HTTP response header. For more information about the ``Access-Control-Allow-Methods`` HTTP response header, see [Access-Control-Allow-Methods](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Methods) in the MDN Web Docs. |
 | `access_control_allow_origins` | [Struct(AccessControlAllowOrigins)](#response_headers_policy_configcors_configaccess_control_allow_origins) | Yes | A list of origins (domain names) that CloudFront can use as the value for the ``Access-Control-Allow-Origin`` HTTP response header. For more information about the ``Access-Control-Allow-Origin`` HTTP response header, see [Access-Control-Allow-Origin](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Origin) in the MDN Web Docs. |
 | `access_control_expose_headers` | [Struct(AccessControlExposeHeaders)](#response_headers_policy_configcors_configaccess_control_expose_headers) | No | A list of HTTP headers that CloudFront includes as values for the ``Access-Control-Expose-Headers`` HTTP response header. For more information about the ``Access-Control-Expose-Headers`` HTTP response header, see [Access-Control-Expose-Headers](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Expose-Headers) in the MDN Web Docs. |
-| `access_control_max_age_sec` | Int | No | A number that CloudFront uses as the value for the ``Access-Control-Max-Age`` HTTP response header. For more information about the ``Access-Control-Max-Age`` HTTP response header, see [Access-Control-Max-Age](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Max-Age) in the MDN Web Docs. |
-| `origin_override` | Bool | Yes | A Boolean that determines whether CloudFront overrides HTTP response headers received from the origin with the ones specified in this response headers policy. |
+| `access_control_max_age_sec` | `Int` | No | A number that CloudFront uses as the value for the ``Access-Control-Max-Age`` HTTP response header. For more information about the ``Access-Control-Max-Age`` HTTP response header, see [Access-Control-Max-Age](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Max-Age) in the MDN Web Docs. |
+| `origin_override` | `Bool` | Yes | A Boolean that determines whether CloudFront overrides HTTP response headers received from the origin with the ones specified in this response headers policy. |
 
 ### response_headers_policy_config.cors_config.access_control_allow_headers
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `items` | `List<String>` | Yes | The list of HTTP header names. You can specify ``*`` to allow all headers. |
+| `items` | List\<`String`\> (unordered) | Yes | The list of HTTP header names. You can specify ``*`` to allow all headers. |
 
 ### response_headers_policy_config.cors_config.access_control_allow_methods
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `items` | List\<[Enum (Items)](#response_headers_policy_configcors_configaccess_control_allow_methodsitems-items)\> | Yes | The list of HTTP methods. Valid values are: + ``GET`` + ``DELETE`` + ``HEAD`` + ``OPTIONS`` + ``PATCH`` + ``POST`` + ``PUT`` + ``ALL`` ``ALL`` is a special value that includes all of the listed HTTP methods. |
+| `items` | List\<[Items](#response_headers_policy_configcors_configaccess_control_allow_methodsitems-items)\> (unordered) | Yes | The list of HTTP methods. Valid values are: + ``GET`` + ``DELETE`` + ``HEAD`` + ``OPTIONS`` + ``PATCH`` + ``POST`` + ``PUT`` + ``ALL`` ``ALL`` is a special value that includes all of the listed HTTP methods. |
 
 ### response_headers_policy_config.cors_config.access_control_allow_origins
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `items` | `List<String>` | Yes | The list of origins (domain names). You can specify ``*`` to allow all origins. |
+| `items` | List\<`String`\> (unordered) | Yes | The list of origins (domain names). You can specify ``*`` to allow all origins. |
 
 ### response_headers_policy_config.cors_config.access_control_expose_headers
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `items` | `List<String>` | Yes | The list of HTTP headers. You can specify ``*`` to expose all headers. |
+| `items` | List\<`String`\> (unordered) | Yes | The list of HTTP headers. You can specify ``*`` to expose all headers. |
 
 ### response_headers_policy_config.custom_headers_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `items` | List\<[Struct(CustomHeader)](#response_headers_policy_configcustom_headers_configitems)\> | Yes | The list of HTTP response headers and their values. |
+| `items` | List\<[Struct(CustomHeader)](#response_headers_policy_configcustom_headers_configitems)\> (unordered) | Yes | The list of HTTP response headers and their values. |
 
 ### response_headers_policy_config.custom_headers_config.items
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `header` | `String(len: ..=256)` | Yes | The HTTP response header name. |
-| `override` | Bool | Yes | A Boolean that determines whether CloudFront overrides a response header with the same name received from the origin with the header specified here. |
-| `value` | `String(len: ..=1783)` | Yes | The value for the HTTP response header. |
+| `header` | `String (len: unbounded..=256)` | Yes | The HTTP response header name. |
+| `override` | `Bool` | Yes | A Boolean that determines whether CloudFront overrides a response header with the same name received from the origin with the header specified here. |
+| `value` | `String (len: unbounded..=1783)` | Yes | The value for the HTTP response header. |
 
 ### response_headers_policy_config.remove_headers_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `items` | List\<[Struct(RemoveHeader)](#response_headers_policy_configremove_headers_configitems)\> (unique items) | Yes | The list of HTTP header names. |
+| `items` | List\<[Struct(RemoveHeader)](#response_headers_policy_configremove_headers_configitems)\> (unique items, unordered) | Yes | The list of HTTP header names. |
 
 ### response_headers_policy_config.remove_headers_config.items
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `header` | String | Yes | The HTTP header name. |
+| `header` | `String` | Yes | The HTTP header name. |
 
 ### response_headers_policy_config.security_headers_config
 
@@ -220,65 +220,65 @@ Shorthand formats: `no_referrer` or `ReferrerPolicy.no_referrer`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `content_security_policy` | String | Yes | The policy directives and their values that CloudFront includes as values for the ``Content-Security-Policy`` HTTP response header. For more information about the ``Content-Security-Policy`` HTTP response header, see [Content-Security-Policy](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy) in the MDN Web Docs. |
-| `override` | Bool | Yes | A Boolean that determines whether CloudFront overrides the ``Content-Security-Policy`` HTTP response header received from the origin with the one specified in this response headers policy. |
+| `content_security_policy` | `String` | Yes | The policy directives and their values that CloudFront includes as values for the ``Content-Security-Policy`` HTTP response header. For more information about the ``Content-Security-Policy`` HTTP response header, see [Content-Security-Policy](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy) in the MDN Web Docs. |
+| `override` | `Bool` | Yes | A Boolean that determines whether CloudFront overrides the ``Content-Security-Policy`` HTTP response header received from the origin with the one specified in this response headers policy. |
 
 ### response_headers_policy_config.security_headers_config.content_type_options
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `override` | Bool | Yes | A Boolean that determines whether CloudFront overrides the ``X-Content-Type-Options`` HTTP response header received from the origin with the one specified in this response headers policy. |
+| `override` | `Bool` | Yes | A Boolean that determines whether CloudFront overrides the ``X-Content-Type-Options`` HTTP response header received from the origin with the one specified in this response headers policy. |
 
 ### response_headers_policy_config.security_headers_config.frame_options
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `frame_option` | [Enum (FrameOption)](#response_headers_policy_configsecurity_headers_configframe_optionsframe_option-frameoption) | Yes | The value of the ``X-Frame-Options`` HTTP response header. Valid values are ``DENY`` and ``SAMEORIGIN``. For more information about these values, see [X-Frame-Options](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options) in the MDN Web Docs. |
-| `override` | Bool | Yes | A Boolean that determines whether CloudFront overrides the ``X-Frame-Options`` HTTP response header received from the origin with the one specified in this response headers policy. |
+| `frame_option` | [FrameOption](#response_headers_policy_configsecurity_headers_configframe_optionsframe_option-frameoption) | Yes | The value of the ``X-Frame-Options`` HTTP response header. Valid values are ``DENY`` and ``SAMEORIGIN``. For more information about these values, see [X-Frame-Options](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options) in the MDN Web Docs. |
+| `override` | `Bool` | Yes | A Boolean that determines whether CloudFront overrides the ``X-Frame-Options`` HTTP response header received from the origin with the one specified in this response headers policy. |
 
 ### response_headers_policy_config.security_headers_config.referrer_policy
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `override` | Bool | Yes | A Boolean that determines whether CloudFront overrides the ``Referrer-Policy`` HTTP response header received from the origin with the one specified in this response headers policy. |
-| `referrer_policy` | [Enum (ReferrerPolicy)](#response_headers_policy_configsecurity_headers_configreferrer_policyreferrer_policy-referrerpolicy) | Yes | Determines whether CloudFront includes the ``Referrer-Policy`` HTTP response header and the header's value. For more information about the ``Referrer-Policy`` HTTP response header, see [Referrer-Policy](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Referrer-Policy) in the MDN Web Docs. |
+| `override` | `Bool` | Yes | A Boolean that determines whether CloudFront overrides the ``Referrer-Policy`` HTTP response header received from the origin with the one specified in this response headers policy. |
+| `referrer_policy` | [ReferrerPolicy](#response_headers_policy_configsecurity_headers_configreferrer_policyreferrer_policy-referrerpolicy) | Yes | Determines whether CloudFront includes the ``Referrer-Policy`` HTTP response header and the header's value. For more information about the ``Referrer-Policy`` HTTP response header, see [Referrer-Policy](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Referrer-Policy) in the MDN Web Docs. |
 
 ### response_headers_policy_config.security_headers_config.strict_transport_security
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `access_control_max_age_sec` | Int | Yes | A number that CloudFront uses as the value for the ``max-age`` directive in the ``Strict-Transport-Security`` HTTP response header. |
-| `include_subdomains` | Bool | No | A Boolean that determines whether CloudFront includes the ``includeSubDomains`` directive in the ``Strict-Transport-Security`` HTTP response header. |
-| `override` | Bool | Yes | A Boolean that determines whether CloudFront overrides the ``Strict-Transport-Security`` HTTP response header received from the origin with the one specified in this response headers policy. |
-| `preload` | Bool | No | A Boolean that determines whether CloudFront includes the ``preload`` directive in the ``Strict-Transport-Security`` HTTP response header. |
+| `access_control_max_age_sec` | `Int` | Yes | A number that CloudFront uses as the value for the ``max-age`` directive in the ``Strict-Transport-Security`` HTTP response header. |
+| `include_subdomains` | `Bool` | No | A Boolean that determines whether CloudFront includes the ``includeSubDomains`` directive in the ``Strict-Transport-Security`` HTTP response header. |
+| `override` | `Bool` | Yes | A Boolean that determines whether CloudFront overrides the ``Strict-Transport-Security`` HTTP response header received from the origin with the one specified in this response headers policy. |
+| `preload` | `Bool` | No | A Boolean that determines whether CloudFront includes the ``preload`` directive in the ``Strict-Transport-Security`` HTTP response header. |
 
 ### response_headers_policy_config.security_headers_config.xss_protection
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `mode_block` | Bool | No | A Boolean that determines whether CloudFront includes the ``mode=block`` directive in the ``X-XSS-Protection`` header. For more information about this directive, see [X-XSS-Protection](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection) in the MDN Web Docs. |
-| `override` | Bool | Yes | A Boolean that determines whether CloudFront overrides the ``X-XSS-Protection`` HTTP response header received from the origin with the one specified in this response headers policy. |
-| `protection` | Bool | Yes | A Boolean that determines the value of the ``X-XSS-Protection`` HTTP response header. When this setting is ``true``, the value of the ``X-XSS-Protection`` header is ``1``. When this setting is ``false``, the value of the ``X-XSS-Protection`` header is ``0``. For more information about these settings, see [X-XSS-Protection](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection) in the MDN Web Docs. |
-| `report_uri` | String | No | A reporting URI, which CloudFront uses as the value of the ``report`` directive in the ``X-XSS-Protection`` header. You cannot specify a ``ReportUri`` when ``ModeBlock`` is ``true``. For more information about using a reporting URL, see [X-XSS-Protection](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection) in the MDN Web Docs. |
+| `mode_block` | `Bool` | No | A Boolean that determines whether CloudFront includes the ``mode=block`` directive in the ``X-XSS-Protection`` header. For more information about this directive, see [X-XSS-Protection](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection) in the MDN Web Docs. |
+| `override` | `Bool` | Yes | A Boolean that determines whether CloudFront overrides the ``X-XSS-Protection`` HTTP response header received from the origin with the one specified in this response headers policy. |
+| `protection` | `Bool` | Yes | A Boolean that determines the value of the ``X-XSS-Protection`` HTTP response header. When this setting is ``true``, the value of the ``X-XSS-Protection`` header is ``1``. When this setting is ``false``, the value of the ``X-XSS-Protection`` header is ``0``. For more information about these settings, see [X-XSS-Protection](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection) in the MDN Web Docs. |
+| `report_uri` | `String` | No | A reporting URI, which CloudFront uses as the value of the ``report`` directive in the ``X-XSS-Protection`` header. You cannot specify a ``ReportUri`` when ``ModeBlock`` is ``true``. For more information about using a reporting URL, see [X-XSS-Protection](https://docs.aws.amazon.com/https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection) in the MDN Web Docs. |
 
 ### response_headers_policy_config.server_timing_headers_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `enabled` | Bool | Yes | A Boolean that determines whether CloudFront adds the ``Server-Timing`` header to HTTP responses that it sends in response to requests that match a cache behavior that's associated with this response headers policy. |
-| `sampling_rate` | Float(0..=100, multiple of 0.0001) | No | A number 0?100 (inclusive) that specifies the percentage of responses that you want CloudFront to add the ``Server-Timing`` header to. When you set the sampling rate to 100, CloudFront adds the ``Server-Timing`` header to the HTTP response for every request that matches the cache behavior that this response headers policy is attached to. When you set it to 50, CloudFront adds the header to 50% of the responses for requests that match the cache behavior. You can set the sampling rate to any number 0?100 with up to four decimal places. |
+| `enabled` | `Bool` | Yes | A Boolean that determines whether CloudFront adds the ``Server-Timing`` header to HTTP responses that it sends in response to requests that match a cache behavior that's associated with this response headers policy. |
+| `sampling_rate` | `Float (range: 0..=100)`; multiple of 0.0001 (not enforced) | No | A number 0?100 (inclusive) that specifies the percentage of responses that you want CloudFront to add the ``Server-Timing`` header to. When you set the sampling rate to 100, CloudFront adds the ``Server-Timing`` header to the HTTP response for every request that matches the cache behavior that this response headers policy is attached to. When you set it to 50, CloudFront adds the header to 50% of the responses for requests that match the cache behavior. You can set the sampling rate to any number 0?100 with up to four decimal places. |
 
 ## Attribute Reference
 
 ### `id`
 
-- **Type:** String
+- **Type:** `String`
 
 
 
 ### `last_modified_time`
 
-- **Type:** String
+- **Type:** `String`
 
 
 

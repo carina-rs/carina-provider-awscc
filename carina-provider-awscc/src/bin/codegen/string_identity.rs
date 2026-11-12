@@ -181,6 +181,25 @@ pub(super) fn emit(identity: Option<StringIdentity>, constraints: &StringConstra
     )
 }
 
+pub(super) fn emit_type(
+    identity: Option<StringIdentity>,
+    constraints: &StringConstraints,
+) -> EmittedType {
+    let pattern = constraints
+        .pattern
+        .as_ref()
+        .map(|pattern| pattern.as_spec().clone());
+    let length = type_emission::length(constraints.min_length, constraints.max_length);
+    let ty = match identity {
+        Some(identity) => carina_core::schema::AttributeType::string_member(
+            identity.identity_layer(),
+            carina_core::schema::StringMemberConstraints::new(pattern, length),
+        ),
+        None => carina_core::schema::AttributeType::refined_string(None, pattern, length, None),
+    };
+    EmittedType::new(emit(identity, constraints), ty)
+}
+
 impl StringConstraints {
     pub(super) fn has_local_constraints(&self) -> bool {
         self.pattern.is_some()

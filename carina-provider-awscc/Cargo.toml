@@ -53,6 +53,7 @@ http = "1"
 tokio = { version = "1", features = ["full"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+comrak = { version = "=0.54.0", default-features = false }
 # Enable the native test constructor for integration tests only.
 carina-provider-awscc = { path = ".", features = ["test-utils"] }
 aws-smithy-runtime = { version = "1", features = ["client"] }

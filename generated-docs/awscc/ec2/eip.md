@@ -25,7 +25,7 @@ awscc.ec2.Eip {
 
 ### `address`
 
-- **Type:** Ipv4Address — identity: String; member: String
+- **Type:** `Ipv4Address (custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -34,21 +34,21 @@ awscc.ec2.Eip {
 
 ### `domain`
 
-- **Type:** [Enum (Domain)](#domain-domain)
+- **Type:** [Domain](#domain-domain)
 - **Required:** No
 
 The network (``vpc``). If you define an Elastic IP address and associate it with a VPC that is defined in the same template, you must declare a dependency on the VPC-gateway attachment by using the [DependsOn Attribute](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-attribute-dependson.html) on this resource.
 
 ### `instance_id`
 
-- **Type:** aws.ec2.Instance.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Instance.Id (pattern: /^i-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 The ID of the instance. Updates to the ``InstanceId`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.
 
 ### `ipam_pool_id`
 
-- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -57,7 +57,7 @@ The ID of the instance. Updates to the ``InstanceId`` property may require *some
 
 ### `network_border_group`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -65,21 +65,21 @@ A unique set of Availability Zones, Local Zones, or Wavelength Zones from which 
 
 ### `public_ipv4_pool`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** No
 
 The ID of an address pool that you own. Use this parameter to let Amazon EC2 select an address from the address pool. Updates to the ``PublicIpv4Pool`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.
 
 ### `tags`
 
-- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
+- **Type:** Map\<`String (len: unbounded..=128)`, `String (len: unbounded..=256)`\>
 - **Required:** No
 
 Any tags assigned to the Elastic IP address. Updates to the ``Tags`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.
 
 ### `transfer_address`
 
-- **Type:** Ipv4Address — identity: String; member: String
+- **Type:** `Ipv4Address (custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -101,13 +101,13 @@ Shorthand formats: `vpc` or `Domain.vpc`
 
 ### `allocation_id`
 
-- **Type:** aws.ec2.Eip.AllocationId — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Eip.AllocationId (pattern: /^eipalloc-[0-9a-f]{8,}$/ (Full))`
 
 
 
 ### `public_ip`
 
-- **Type:** Ipv4Address — identity: String; member: String
+- **Type:** `Ipv4Address (custom validator)`
 
 
 

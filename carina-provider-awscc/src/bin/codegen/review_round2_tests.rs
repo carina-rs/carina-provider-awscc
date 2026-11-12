@@ -113,7 +113,7 @@ fn review_r8_definition_outputs_keep_each_refinements_own_group_in_both_orders()
         let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
         for group in ["Exactly one", "At least one"] {
             let actual = markdown
-                .matches(&format!("{group} of `a`, `b` must be specified."))
+                .matches(&shared_field_group(if group == "Exactly one" { AlternativeKind::OneOf } else { AlternativeKind::AnyOf }, &["a", "b"]))
                 .count();
             if actual != 1 {
                 failures.push(format!(
@@ -148,7 +148,7 @@ fn review_r8_equivalent_refinements_reuse_a_key_across_distinct_sources() {
     let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
     assert_eq!(
         markdown
-            .matches("At least one of `a`, `b` must be specified.")
+            .matches(&shared_field_group(AlternativeKind::AnyOf, &["a", "b"]))
             .count(),
         1
     );
@@ -173,7 +173,7 @@ fn review_r8_materialized_tag_references_keep_merged_value_length_in_both_output
         let expected = if renderer == "Rust" {
             "Some((Some(7), None))"
         } else {
-            "String(len: 7..)"
+            "String (len: 7..unbounded)"
         };
         if !output.contains(expected) {
             failures.push(format!(
@@ -218,12 +218,12 @@ fn review_r8_number_literals_keep_float_types_direct_referenced_and_in_collectio
                 let expected = if renderer == "Rust" {
                     "AttributeType::refined_float(None,"
                 } else {
-                    "FloatEnum([1"
+                    "Float (range: 1..=1)"
                 };
                 let forbidden = if renderer == "Rust" {
                     "AttributeType::refined_int("
                 } else {
-                    "IntEnum("
+                    "Int (range:"
                 };
                 if !output.contains(expected) || output.contains(forbidden) {
                     failures.push(format!("{renderer}: {site}: {literal} lost Number"));

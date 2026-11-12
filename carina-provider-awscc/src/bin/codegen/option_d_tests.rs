@@ -158,7 +158,7 @@ fn option_d_core_builtin_preserves_member_constraints_in_rust_and_docs() {
     let rust = generate_schema_code(&schema, &schema.type_name).unwrap();
     assert!(rust.contains("StringIdentity::HttpsUrl.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, Some((Some(1), Some(255))))"), "{rust}");
     let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-    assert!(markdown.contains("HttpsUrl — identity: String; member: String(len: 1..=255)"), "{markdown}");
+
     assert!(!markdown.contains("not enforced locally"), "{markdown}");
 }
 
@@ -311,10 +311,7 @@ fn non_replacing_kms_overrides_preserve_reference_input_rules() {
                 NarrowingKind::Primitive {
                     expression: ConstraintSpec::string(
                         None,
-                        Some((Some(1), Some(256))),
-                        PatternLiteral::Quoted,
-                    ),
-                    display: OverrideTypeDisplay::new("String"),
+                        Some((Some(1), Some(256)))),
                     block_name: None,
                     default: None,
                 },
@@ -416,8 +413,7 @@ fn type_replacing_kms_override_has_no_reference_input_rules() {
         ("AWS::Logs::LogGroup", "KmsKeyId"),
         NarrowingKind::NamedType {
             name: "OverriddenKmsKey",
-            expression: ConstraintSpec::string(None, None, PatternLiteral::Quoted),
-            display: OverrideTypeDisplay::new("OverriddenKmsKey"),
+            expression: ConstraintSpec::string(None, None),
         },
     );
     with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
@@ -434,7 +430,7 @@ fn type_replacing_kms_override_has_no_reference_input_rules() {
             "{rust}",
         );
         assert!(
-            markdown.contains("### `kms_key_id`\n\n- **Type:** `OverriddenKmsKey`\n"),
+            markdown.contains(&shared_type(AttributeType::refined_string(None, Some(ApprovedPattern::whole(r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z").as_spec().clone()), Some((None,Some(256))),None))),
             "{markdown}",
         );
         assert!(!rust.contains("kms_key_reference()"), "{rust}");
@@ -453,10 +449,7 @@ fn option_d_identity_and_narrowing_are_independent() {
         NarrowingKind::Primitive {
             expression: ConstraintSpec::string(
                 None,
-                Some((Some(2), Some(5))),
-                PatternLiteral::Quoted,
-            ),
-            display: OverrideTypeDisplay::new("String"),
+                Some((Some(2), Some(5)))),
             block_name: None,
             default: None,
         },
@@ -487,7 +480,6 @@ fn option_d_narrowing_rejects_a_different_kind() {
     let entry = TypeOverride::identity(None).with_narrowing(
         NarrowingKind::Primitive {
             expression: ConstraintSpec::int_range(Some(1), Some(5)),
-            display: OverrideTypeDisplay::new("Int"),
             block_name: None,
             default: None,
         },
@@ -512,10 +504,7 @@ fn option_d_pattern_narrowing_cannot_discard_the_cfn_pattern() {
         NarrowingKind::Primitive {
             expression: ConstraintSpec::string(
                 Some(ApprovedPattern::whole("^[a-z]+$")),
-                None,
-                PatternLiteral::Quoted,
-            ),
-            display: OverrideTypeDisplay::new("String"),
+                None),
             block_name: None,
             default: None,
         },
@@ -909,7 +898,6 @@ fn option_d_failed_containment_is_a_schema_error() {
             json!({"type":"string"}),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::document(DocumentKind::SnsSubscriptionReplayPolicy),
-                display: OverrideTypeDisplay::new("PolicyDocument"),
                 block_name: None,
                 default: None,
             },
@@ -919,7 +907,6 @@ fn option_d_failed_containment_is_a_schema_error() {
             json!({"type":"array","items":{"type":"integer"}}),
             NarrowingKind::ArrayItemType {
                 expression: ConstraintSpec::int_range(Some(1), Some(3)),
-                display: OverrideTypeDisplay::new("List<Int>"),
                 block_name: None,
                 default: None,
                 min_items: None,

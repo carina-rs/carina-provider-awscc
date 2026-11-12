@@ -33,14 +33,14 @@ awscc.sns.Subscription {
 
 ### `delivery_policy`
 
-- **Type:** `Struct(SubscriptionDeliveryPolicy)`
+- **Type:** [Struct(SubscriptionDeliveryPolicy)](#delivery_policy-1)
 - **Required:** No
 
 The delivery policy JSON assigned to the subscription. Enables the subscriber to define the message delivery retry strategy in the case of an HTTP/S endpoint subscribed to the topic.
 
 ### `endpoint`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -48,14 +48,14 @@ The subscription's endpoint. The endpoint value depends on the protocol that you
 
 ### `filter_policy_scope`
 
-- **Type:** [Enum (FilterPolicyScope)](#filter_policy_scope-filterpolicyscope)
+- **Type:** [FilterPolicyScope](#filter_policy_scope-filterpolicyscope)
 - **Required:** No
 
 This attribute lets you choose the filtering scope by using one of the following string value types: MessageAttributes (default) and MessageBody.
 
 ### `protocol`
 
-- **Type:** [Enum (Protocol)](#protocol-protocol)
+- **Type:** [Protocol](#protocol-protocol)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -63,21 +63,21 @@ The subscription's protocol.
 
 ### `raw_message_delivery`
 
-- **Type:** Bool
+- **Type:** `Bool`
 - **Required:** No
 
 When set to true, enables raw message delivery. Raw messages don't contain any JSON formatting and can be sent to Amazon SQS and HTTP/S endpoints.
 
 ### `redrive_policy`
 
-- **Type:** `Struct(SubscriptionRedrivePolicy)`
+- **Type:** [Struct(SubscriptionRedrivePolicy)](#redrive_policy-1)
 - **Required:** No
 
 When specified, sends undeliverable messages to the specified Amazon SQS dead-letter queue. Messages that can't be delivered due to client errors are held in the dead-letter queue for further analysis or reprocessing.
 
 ### `region`
 
-- **Type:** aws.Region — identity: String; member: String
+- **Type:** `aws.Region (custom validator)`
 - **Required:** No
 - **Write-only:** Yes
 
@@ -85,21 +85,21 @@ For cross-region subscriptions, the region in which the topic resides.If no regi
 
 ### `replay_policy`
 
-- **Type:** `Struct(SubscriptionReplayPolicy)`
+- **Type:** [Struct(SubscriptionReplayPolicy)](#replay_policy-1)
 - **Required:** No
 
 Specifies whether Amazon SNS resends the notification to the subscription when a message's attribute changes.
 
 ### `subscription_role_arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String
+- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 - **Required:** No
 
 This property applies only to Amazon Data Firehose delivery stream subscriptions.
 
 ### `topic_arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String
+- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -112,6 +112,36 @@ These CloudFormation properties require the free-form JSON document type tracked
 - `filter_policy` — Filter keys are user-defined message attribute or body-property names, and the operator grammar nests recursively; this remains blocked on carina-rs/carina#4144.
 
 ## Enum Values
+
+### delivery_policy.healthy_retry_policy.backoff_function (BackoffFunction)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `arithmetic` | `aws.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.arithmetic` |
+| `exponential` | `aws.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.exponential` |
+| `geometric` | `aws.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.geometric` |
+| `linear` | `aws.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.linear` |
+
+Shorthand formats: `arithmetic` or `BackoffFunction.arithmetic`
+
+### delivery_policy.request_policy.header_content_type (HeaderContentType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `text/css` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_css` |
+| `text/csv` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_csv` |
+| `text/html` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_html` |
+| `text/plain` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_plain` |
+| `text/xml` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_xml` |
+| `application/atom+xml` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_atom_xml` |
+| `application/json` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_json` |
+| `application/octet-stream` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_octet_stream` |
+| `application/soap+xml` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_soap_xml` |
+| `application/x-www-form-urlencoded` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_x_www_form_urlencoded` |
+| `application/xhtml+xml` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_xhtml_xml` |
+| `application/xml` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_xml` |
+
+Shorthand formats: `text_css` or `HeaderContentType.text_css`
 
 ### filter_policy_scope (FilterPolicyScope)
 
@@ -138,11 +168,68 @@ Shorthand formats: `message_attributes` or `FilterPolicyScope.message_attributes
 
 Shorthand formats: `http` or `Protocol.http`
 
+### replay_policy.point_type (PointType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `Timestamp` | `aws.sns.Subscription.ReplayPolicy.PointType.timestamp` |
+
+Shorthand formats: `timestamp` or `PointType.timestamp`
+
+## Struct Definitions
+
+### delivery_policy
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `healthy_retry_policy` | [Struct(HealthyRetryPolicy)](#delivery_policyhealthy_retry_policy) | No | Retry timing and backoff settings for delivery failures. |
+| `throttle_policy` | [Struct(ThrottlePolicy)](#delivery_policythrottle_policy) | No | Maximum delivery rate for the subscription. |
+| `request_policy` | [Struct(RequestPolicy)](#delivery_policyrequest_policy) | No | HTTP/S request settings for notification delivery. |
+| `guaranteed` | `Bool` | No | Whether delivery uses guaranteed retries; Cloud Control may return false when omitted. |
+
+### delivery_policy.healthy_retry_policy
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `min_delay_target` | `Int (range: 1..=3600)` | No | Minimum retry delay, in seconds. |
+| `max_delay_target` | `Int (range: 1..=3600)` | No | Maximum retry delay, in seconds. |
+| `num_retries` | `Int (range: 0..=100)` | No | Total number of delivery retries. |
+| `num_no_delay_retries` | `Int (range: 0..unbounded)` | No | Number of retries attempted without delay. |
+| `num_min_delay_retries` | `Int (range: 0..unbounded)` | No | Number of retries attempted at the minimum delay. |
+| `num_max_delay_retries` | `Int (range: 0..unbounded)` | No | Number of retries attempted at the maximum delay. |
+| `backoff_function` | [BackoffFunction](#delivery_policyhealthy_retry_policybackoff_function-backofffunction) | No | Function used to calculate retry delays. |
+
+### delivery_policy.request_policy
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `header_content_type` | [HeaderContentType](#delivery_policyrequest_policyheader_content_type-headercontenttype) | No | Content-Type header used for HTTP/S notification delivery. |
+
+### delivery_policy.throttle_policy
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `max_receives_per_second` | `Int (range: 1..unbounded)` | No | Maximum delivery attempts per second. |
+
+### redrive_policy
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `dead_letter_target_arn` | `String` | Yes | ARN of the Amazon SQS queue that receives undeliverable messages. |
+
+### replay_policy
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `point_type` | [PointType](#replay_policypoint_type-pointtype) | Yes | Kind of replay start point. |
+| `starting_point` | `String` | Yes | ISO-8601 timestamp at which message replay starts. |
+| `ending_point` | `String` | No | ISO-8601 timestamp at which message replay ends. |
+
 ## Attribute Reference
 
 ### `arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String
+- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 Arn of the subscription
 

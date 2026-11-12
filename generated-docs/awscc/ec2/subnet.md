@@ -34,14 +34,14 @@ awscc.ec2.Subnet {
 
 ### `assign_ipv6_address_on_creation`
 
-- **Type:** Bool
+- **Type:** `Bool`
 - **Required:** No
 
 Indicates whether a network interface created in this subnet receives an IPv6 address. The default value is ``false``. If you specify ``AssignIpv6AddressOnCreation``, you must also specify an IPv6 CIDR block.
 
 ### `availability_zone`
 
-- **Type:** aws.AvailabilityZone.ZoneName — identity: String; member: String
+- **Type:** `aws.AvailabilityZone.ZoneName (custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -49,7 +49,7 @@ The Availability Zone of the subnet. If you update this property, you must also 
 
 ### `availability_zone_id`
 
-- **Type:** aws.AvailabilityZone.ZoneId — identity: String(pattern); member: String
+- **Type:** `aws.AvailabilityZone.ZoneId (pattern: /^[a-z]+[0-9]+-az[0-9]+$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -57,7 +57,7 @@ The AZ ID of the subnet.
 
 ### `cidr_block`
 
-- **Type:** Ipv4Cidr — identity: String; member: String
+- **Type:** `Ipv4Cidr (custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -65,14 +65,14 @@ The IPv4 CIDR block assigned to the subnet. If you update this property, we crea
 
 ### `enable_dns64`
 
-- **Type:** Bool
+- **Type:** `Bool`
 - **Required:** No
 
 Indicates whether DNS queries made to the Amazon-provided DNS Resolver in this subnet should return synthetic IPv6 addresses for IPv4-only destinations. You must first configure a NAT gateway in a public subnet (separate from the subnet containing the IPv6-only workloads). For example, the subnet containing the NAT gateway should have a ``0.0.0.0/0`` route pointing to the internet gateway. For more information, see [Configure DNS64 and NAT64](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-nat64-dns64.html#nat-gateway-nat64-dns64-walkthrough) in the *User Guide*.
 
 ### `enable_lni_at_device_index`
 
-- **Type:** Int
+- **Type:** `Int`
 - **Required:** No
 - **Write-only:** Yes
 
@@ -80,7 +80,7 @@ Indicates the device position for local network interfaces in this subnet. For e
 
 ### `ipv4_ipam_pool_id`
 
-- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -89,7 +89,7 @@ An IPv4 IPAM pool ID for the subnet.
 
 ### `ipv4_netmask_length`
 
-- **Type:** Int(16..=28)
+- **Type:** `Int (range: 16..=28)`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -98,14 +98,14 @@ An IPv4 netmask length for the subnet.
 
 ### `ipv6_cidr_block`
 
-- **Type:** Ipv6Cidr — identity: String; member: String
+- **Type:** `Ipv6Cidr (custom validator)`
 - **Required:** No
 
 The IPv6 CIDR block. If you specify ``AssignIpv6AddressOnCreation``, you must also specify an IPv6 CIDR block.
 
 ### `ipv6_ipam_pool_id`
 
-- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -114,7 +114,7 @@ An IPv6 IPAM pool ID for the subnet.
 
 ### `ipv6_native`
 
-- **Type:** Bool
+- **Type:** `Bool`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -122,7 +122,7 @@ Indicates whether this is an IPv6 only subnet. For more information, see [Subnet
 
 ### `ipv6_netmask_length`
 
-- **Type:** IntEnum([44, 48, 52, 56, 60, 64])
+- **Type:** `Int (one of: 44, 48, 52, 56, 60, 64)`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -131,14 +131,14 @@ An IPv6 netmask length for the subnet.
 
 ### `map_public_ip_on_launch`
 
-- **Type:** Bool
+- **Type:** `Bool`
 - **Required:** No
 
 Indicates whether instances launched in this subnet receive a public IPv4 address. The default value is ``false``. AWS charges for all public IPv4 addresses, including public IPv4 addresses associated with running instances and Elastic IP addresses. For more information, see the *Public IPv4 Address* tab on the [VPC pricing page](https://docs.aws.amazon.com/vpc/pricing/).
 
 ### `outpost_arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String
+- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -153,14 +153,14 @@ The hostname type for EC2 instances launched into this subnet and how DNS A and 
 
 ### `tags`
 
-- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
+- **Type:** Map\<`String (len: unbounded..=128)`, `String (len: unbounded..=256)`\>
 - **Required:** No
 
 Any tags assigned to the subnet.
 
 ### `vpc_id`
 
-- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -193,15 +193,15 @@ Shorthand formats: `ip_name` or `HostnameType.ip_name`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `internet_gateway_block_mode` | [Enum (InternetGatewayBlockMode)](#block_public_access_statesinternet_gateway_block_mode-internetgatewayblockmode) | No | The mode of VPC BPA. Options here are off, block-bidirectional, block-ingress  |
+| `internet_gateway_block_mode` | [InternetGatewayBlockMode](#block_public_access_statesinternet_gateway_block_mode-internetgatewayblockmode) | No | The mode of VPC BPA. Options here are off, block-bidirectional, block-ingress  |
 
 ### private_dns_name_options_on_launch
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `enable_resource_name_dns_aaaa_record` | Bool | No |  |
-| `enable_resource_name_dns_a_record` | Bool | No |  |
-| `hostname_type` | [Enum (HostnameType)](#private_dns_name_options_on_launchhostname_type-hostnametype) | No |  |
+| `enable_resource_name_dns_aaaa_record` | `Bool` | No |  |
+| `enable_resource_name_dns_a_record` | `Bool` | No |  |
+| `hostname_type` | [HostnameType](#private_dns_name_options_on_launchhostname_type-hostnametype) | No |  |
 
 ## Attribute Reference
 
@@ -213,19 +213,19 @@ Shorthand formats: `ip_name` or `HostnameType.ip_name`
 
 ### `ipv6_cidr_blocks`
 
-- **Type:** `List<Ipv6Cidr — identity: String; member: String>`
+- **Type:** List\<`Ipv6Cidr (custom validator)`\> (ordered)
 
 
 
 ### `network_acl_association_id`
 
-- **Type:** String
+- **Type:** `String`
 
 
 
 ### `subnet_id`
 
-- **Type:** aws.ec2.Subnet.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Subnet.Id (pattern: /^subnet-[0-9a-f]{8,}$/ (Full))`
 
 
 

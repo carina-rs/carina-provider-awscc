@@ -22,7 +22,7 @@ awscc.organizations.Organization {
 
 ### `feature_set`
 
-- **Type:** [Enum (FeatureSet)](#feature_set-featureset)
+- **Type:** [FeatureSet](#feature_set-featureset)
 - **Required:** No
 - **Default:** `"ALL"`
 
@@ -43,37 +43,37 @@ Shorthand formats: `all` or `FeatureSet.all`
 
 ### `arn`
 
-- **Type:** aws.organizations.Organization.Arn — identity: String(pattern); member: String(pattern)
+- **Type:** `aws.organizations.Organization.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):organizations:.*$/ (Full), member constraints: pattern: /^arn:aws.*:organizations::\d{12}:organization\/o-[a-z0-9]{10,32}/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of an organization.
 
 ### `id`
 
-- **Type:** String(pattern)
+- **Type:** `String (pattern: /^o-[a-z0-9]{10,32}$/ (Full))`
 
 The unique identifier (ID) of an organization.
 
 ### `management_account_arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String(pattern)
+- **Type:** `aws.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /^arn:aws.*:organizations::\d{12}:account\/o-[a-z0-9]{10,32}\/\d{12}/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of the account that is designated as the management account for the organization.
 
 ### `management_account_email`
 
-- **Type:** String(pattern, len: 6..=64)
+- **Type:** `String (pattern: /[^\s@]+@[^\s@]+\.[^\s@]+/ (Full), len: 6..=64)`
 
 The email address that is associated with the AWS account that is designated as the management account for the organization.
 
 ### `management_account_id`
 
-- **Type:** aws.AccountId — identity: String(pattern, len: 12..=12); member: String(pattern)
+- **Type:** `aws.AccountId (identity constraints: pattern: /^[0-9]{12}$/ (Full), len: 12..=12, member constraints: pattern: /^\d{12}$/ (Full))`
 
 The unique identifier (ID) of the management account of an organization.
 
 ### `root_id`
 
-- **Type:** String(pattern, len: ..=64)
+- **Type:** `String (pattern: /^r-[0-9a-z]{4,32}$/ (Full), len: unbounded..=64)`
 
 The unique identifier (ID) for the root.
 

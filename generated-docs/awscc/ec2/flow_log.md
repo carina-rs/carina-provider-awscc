@@ -31,7 +31,7 @@ awscc.ec2.FlowLog {
 
 ### `deliver_cross_account_role`
 
-- **Type:** aws.iam.Role.Arn — identity: String(pattern); member: String
+- **Type:** `aws.iam.Role.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:role/.+$/ (Full), custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -39,7 +39,7 @@ The ARN of the IAM role that allows Amazon EC2 to publish flow logs across accou
 
 ### `deliver_logs_permission_arn`
 
-- **Type:** aws.iam.Role.Arn — identity: String(pattern); member: String
+- **Type:** `aws.iam.Role.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:role/.+$/ (Full), custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -53,7 +53,7 @@ The ARN for the IAM role that permits Amazon EC2 to publish flow logs to a Cloud
 
 ### `log_destination`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String
+- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -61,7 +61,7 @@ Specifies the destination to which the flow log data is to be published. Flow lo
 
 ### `log_destination_type`
 
-- **Type:** [Enum (LogDestinationType)](#log_destination_type-logdestinationtype)
+- **Type:** [LogDestinationType](#log_destination_type-logdestinationtype)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -69,7 +69,7 @@ Specifies the type of destination to which the flow log data is to be published.
 
 ### `log_format`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -77,7 +77,7 @@ The fields to include in the flow log record, in the order in which they should 
 
 ### `log_group_name`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -85,7 +85,7 @@ The name of a new or existing CloudWatch Logs log group where Amazon EC2 publish
 
 ### `max_aggregation_interval`
 
-- **Type:** `aws.ec2.FlowLog.MaxAggregationInterval`
+- **Type:** `aws.ec2.FlowLog.MaxAggregationInterval (custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -93,7 +93,7 @@ The maximum interval of time during which a flow of packets is captured and aggr
 
 ### `resource_id`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -101,7 +101,7 @@ The ID of the subnet, network interface, or VPC for which you want to create a f
 
 ### `resource_type`
 
-- **Type:** [Enum (ResourceType)](#resource_type-resourcetype)
+- **Type:** [ResourceType](#resource_type-resourcetype)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -109,14 +109,14 @@ The type of resource for which to create the flow log. For example, if you speci
 
 ### `tags`
 
-- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
+- **Type:** Map\<`String (len: unbounded..=128)`, `String (len: unbounded..=256)`\>
 - **Required:** No
 
 The tags to apply to the flow logs.
 
 ### `traffic_type`
 
-- **Type:** [Enum (TrafficType)](#traffic_type-traffictype)
+- **Type:** [TrafficType](#traffic_type-traffictype)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -172,15 +172,15 @@ Shorthand formats: `accept` or `TrafficType.accept`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `file_format` | [Enum (FileFormat)](#destination_optionsfile_format-fileformat) | Yes |  |
-| `hive_compatible_partitions` | Bool | Yes |  |
-| `per_hour_partition` | Bool | Yes |  |
+| `file_format` | [FileFormat](#destination_optionsfile_format-fileformat) | Yes |  |
+| `hive_compatible_partitions` | `Bool` | Yes |  |
+| `per_hour_partition` | `Bool` | Yes |  |
 
 ## Attribute Reference
 
 ### `id`
 
-- **Type:** aws.ec2.FlowLog.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.FlowLog.Id (pattern: /^fl-[0-9a-f]{8,}$/ (Full))`
 
 The Flow Log ID
 

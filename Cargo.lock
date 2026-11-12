@@ -1025,7 +1025,7 @@ dependencies = [
 [[package]]
 name = "carina-aws-types"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=825757d2ed7df8b7bd7c18201b517b7839fee8ae#825757d2ed7df8b7bd7c18201b517b7839fee8ae"
+source = "git+https://github.com/carina-rs/carina-provider-aws?rev=5ad417efa197508adb99d8cc0a59e04922aec1cd#5ad417efa197508adb99d8cc0a59e04922aec1cd"
 dependencies = [
  "aws-config",
  "aws-credential-types",
@@ -1088,7 +1088,7 @@ dependencies = [
 [[package]]
 name = "carina-docgen"
 version = "0.11.0"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=825757d2ed7df8b7bd7c18201b517b7839fee8ae#825757d2ed7df8b7bd7c18201b517b7839fee8ae"
+source = "git+https://github.com/carina-rs/carina-provider-aws?rev=5ad417efa197508adb99d8cc0a59e04922aec1cd#5ad417efa197508adb99d8cc0a59e04922aec1cd"
 dependencies = [
  "anyhow",
  "carina-core",
@@ -1217,6 +1217,7 @@ dependencies = [
  "carina-provider-protocol",
  "carina-provider-resolver",
  "clap",
+ "comrak",
  "fancy-regex",
  "heck",
  "http 1.4.2",

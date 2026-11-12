@@ -23,75 +23,75 @@ awscc.ec2.TransitGateway {
 
 ### `amazon_side_asn`
 
-- **Type:** `Int(64512..=65534) | Int(4200000000..=4294967294)`
+- **Type:** [Union(amazon\_side\_asn)](#amazon_side_asn-1); CFN format: int64
 - **Required:** No
 - **Create-only:** Yes
 
 ### `association_default_route_table_id`
 
-- **Type:** aws.ec2.TransitGatewayRouteTable.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.TransitGatewayRouteTable.Id (pattern: /^tgw-rtb-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 ### `auto_accept_shared_attachments`
 
-- **Type:** [Enum (AutoAcceptSharedAttachments)](#auto_accept_shared_attachments-autoacceptsharedattachments)
+- **Type:** [AutoAcceptSharedAttachments](#auto_accept_shared_attachments-autoacceptsharedattachments)
 - **Required:** No
 
 ### `default_route_table_association`
 
-- **Type:** [Enum (DefaultRouteTableAssociation)](#default_route_table_association-defaultroutetableassociation)
+- **Type:** [DefaultRouteTableAssociation](#default_route_table_association-defaultroutetableassociation)
 - **Required:** No
 
 ### `default_route_table_propagation`
 
-- **Type:** [Enum (DefaultRouteTablePropagation)](#default_route_table_propagation-defaultroutetablepropagation)
+- **Type:** [DefaultRouteTablePropagation](#default_route_table_propagation-defaultroutetablepropagation)
 - **Required:** No
 
 ### `description`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** No
 
 ### `dns_support`
 
-- **Type:** [Enum (DnsSupport)](#dns_support-dnssupport)
+- **Type:** [DnsSupport](#dns_support-dnssupport)
 - **Required:** No
 
 ### `encryption_support`
 
-- **Type:** [Enum (EncryptionSupport)](#encryption_support-encryptionsupport)
+- **Type:** [EncryptionSupport](#encryption_support-encryptionsupport)
 - **Required:** No
 - **Write-only:** Yes
 
 ### `multicast_support`
 
-- **Type:** [Enum (MulticastSupport)](#multicast_support-multicastsupport)
+- **Type:** [MulticastSupport](#multicast_support-multicastsupport)
 - **Required:** No
 - **Create-only:** Yes
 
 ### `propagation_default_route_table_id`
 
-- **Type:** aws.ec2.TransitGatewayRouteTable.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.TransitGatewayRouteTable.Id (pattern: /^tgw-rtb-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 ### `security_group_referencing_support`
 
-- **Type:** [Enum (SecurityGroupReferencingSupport)](#security_group_referencing_support-securitygroupreferencingsupport)
+- **Type:** [SecurityGroupReferencingSupport](#security_group_referencing_support-securitygroupreferencingsupport)
 - **Required:** No
 
 ### `tags`
 
-- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
+- **Type:** Map\<`String (len: unbounded..=128)`, `String (len: unbounded..=256)`\>
 - **Required:** No
 
 ### `transit_gateway_cidr_blocks`
 
-- **Type:** `List<String>`
+- **Type:** List\<`String`\> (ordered)
 - **Required:** No
 
 ### `vpn_ecmp_support`
 
-- **Type:** [Enum (VpnEcmpSupport)](#vpn_ecmp_support-vpnecmpsupport)
+- **Type:** [VpnEcmpSupport](#vpn_ecmp_support-vpnecmpsupport)
 - **Required:** No
 
 ## Enum Values
@@ -179,19 +179,28 @@ Shorthand formats: `enable` or `SecurityGroupReferencingSupport.enable`
 
 Shorthand formats: `enable` or `VpnEcmpSupport.enable`
 
+## Union Definitions
+
+### amazon_side_asn
+
+| Member | Type |
+|--------|------|
+| `member_0` | `Int (range: 64512..=65534)` |
+| `member_1` | `Int (range: 4200000000..=4294967294)` |
+
 ## Attribute Reference
 
 ### `encryption_support_state`
 
-- **Type:** [Enum (EncryptionSupportState)](#encryption_support_state-encryptionsupportstate)
+- **Type:** [EncryptionSupportState](#encryption_support_state-encryptionsupportstate)
 
 ### `id`
 
-- **Type:** aws.ec2.TransitGateway.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.TransitGateway.Id (pattern: /^tgw-[0-9a-f]{8,}$/ (Full))`
 
 ### `transit_gateway_arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String
+- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 ## AWS API narrowings
 

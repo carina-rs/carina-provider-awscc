@@ -30,14 +30,14 @@ awscc.ecs.Cluster {
 
 ### `capacity_providers`
 
-- **Type:** `List<String>`
+- **Type:** List\<`String`\> (ordered)
 - **Required:** No
 
 The short name of one or more capacity providers to associate with the cluster. A capacity provider must be associated with a cluster before it can be included as part of the default capacity provider strategy of the cluster or used in a capacity provider strategy when calling the [CreateService](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_CreateService.html) or [RunTask](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_RunTask.html) actions. If specifying a capacity provider that uses an Auto Scaling group, the capacity provider must be created but not associated with another cluster. New Auto Scaling group capacity providers can be created with the [CreateCapacityProvider](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_CreateCapacityProvider.html) API operation. To use a FARGATElong capacity provider, specify either the ``FARGATE`` or ``FARGATE_SPOT`` capacity providers. The FARGATElong capacity providers are available to all accounts and only need to be associated with a cluster to be used. The [PutCapacityProvider](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_PutCapacityProvider.html) API operation is used to update the list of available capacity providers for a cluster after the cluster is created.
 
 ### `cluster_name`
 
-- **Type:** `String(pattern, len: 1..=255)`
+- **Type:** `String (pattern: /^[a-zA-Z0-9_-]+\z/ (Full), len: 1..=255)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -45,7 +45,7 @@ A user-generated string that you use to identify your cluster. If you don't spec
 
 ### `cluster_settings`
 
-- **Type:** List\<[Struct(ClusterSettings)](#cluster_settings-1)\>
+- **Type:** List\<[Struct(ClusterSettings)](#cluster_settings-1)\> (ordered)
 - **Required:** No
 
 The settings to use when creating a cluster. This parameter is used to turn on CloudWatch Container Insights with enhanced observability or CloudWatch Container Insights for a cluster. Container Insights with enhanced observability provides all the Container Insights metrics, plus additional task and container metrics. This version supports enhanced observability for Amazon ECS clusters using the Amazon EC2 and Fargate launch types. After you configure Container Insights with enhanced observability on Amazon ECS, Container Insights auto-collects detailed infrastructure telemetry from the cluster level down to the container level in your environment and displays these critical performance data in curated dashboards removing the heavy lifting in observability set-up. For more information, see [Monitor Amazon ECS containers using Container Insights with enhanced observability](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/cloudwatch-container-insights.html) in the *Amazon Elastic Container Service Developer Guide*.
@@ -59,7 +59,7 @@ The execute command and managed storage configuration for the cluster.
 
 ### `default_capacity_provider_strategy`
 
-- **Type:** List\<[Struct(CapacityProviderStrategyItem)](#default_capacity_provider_strategy-1)\>
+- **Type:** List\<[Struct(CapacityProviderStrategyItem)](#default_capacity_provider_strategy-1)\> (ordered)
 - **Required:** No
 
 The default capacity provider strategy for the cluster. When services or tasks are run in the cluster with no launch type or capacity provider strategy specified, the default capacity provider strategy is used.
@@ -74,7 +74,7 @@ Use this parameter to set a default Service Connect namespace. After you set a d
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** Map\<`String`, `String`\>
 - **Required:** No
 
 The metadata that you apply to the cluster to help you categorize and organize them. Each tag consists of a key and an optional value. You define both. The following basic restrictions apply to tags: + Maximum number of tags per resource - 50 + For each resource, each tag key must be unique, and each tag key can have only one value. + Maximum key length - 128 Unicode characters in UTF-8 + Maximum value length - 256 Unicode characters in UTF-8 + If your tagging schema is used across multiple services and resources, remember that other services may have restrictions on allowed characters. Generally allowed characters are: letters, numbers, and spaces representable in UTF-8, and the following characters: + - = . _ : / @. + Tag keys and values are case-sensitive. + Do not use ``aws:``, ``AWS:``, or any upper or lowercase combination of such as a prefix for either keys or values as it is reserved for AWS use. You cannot edit or delete tag keys or values with this prefix. Tags with this prefix do not count against your tags per resource limit.
@@ -115,8 +115,8 @@ Shorthand formats: `none` or `Logging.none`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | [Enum (Name)](#cluster_settingsname-name) | No | The name of the cluster setting. The value is ``containerInsights``. |
-| `value` | [Enum (Value)](#cluster_settingsvalue-value) | No | The value to set for the cluster setting. The supported values are ``enhanced``, ``enabled``, and ``disabled``. To use Container Insights with enhanced observability, set the ``containerInsights`` account setting to ``enhanced``. To use Container Insights, set the ``containerInsights`` account setting to ``enabled``. If a cluster value is specified, it will override the ``containerInsights`` value set with [PutAccountSetting](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_PutAccountSetting.html) or [PutAccountSettingDefault](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_PutAccountSettingDefault.html). |
+| `name` | [Name](#cluster_settingsname-name) | No | The name of the cluster setting. The value is ``containerInsights``. |
+| `value` | [Value](#cluster_settingsvalue-value) | No | The value to set for the cluster setting. The supported values are ``enhanced``, ``enabled``, and ``disabled``. To use Container Insights with enhanced observability, set the ``containerInsights`` account setting to ``enhanced``. To use Container Insights, set the ``containerInsights`` account setting to ``enabled``. If a cluster value is specified, it will override the ``containerInsights`` value set with [PutAccountSetting](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_PutAccountSetting.html) or [PutAccountSettingDefault](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_PutAccountSettingDefault.html). |
 
 ### configuration
 
@@ -129,46 +129,46 @@ Shorthand formats: `none` or `Logging.none`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `kms_key_id` | aws.kms.Key.Reference | No | Specify an KMSlong key ID to encrypt the data between the local client and the container. |
+| `kms_key_id` | `aws.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | Specify an KMSlong key ID to encrypt the data between the local client and the container. |
 | `log_configuration` | [Struct(ExecuteCommandLogConfiguration)](#configurationexecute_command_configurationlog_configuration) | No | The log configuration for the results of the execute command actions. The logs can be sent to CloudWatch Logs or an Amazon S3 bucket. When ``logging=OVERRIDE`` is specified, a ``logConfiguration`` must be provided. |
-| `logging` | [Enum (Logging)](#configurationexecute_command_configurationlogging-logging) | No | The log setting to use for redirecting logs for your execute command results. The following log settings are available. + ``NONE``: The execute command session is not logged. + ``DEFAULT``: The ``awslogs`` configuration in the task definition is used. If no logging parameter is specified, it defaults to this value. If no ``awslogs`` log driver is configured in the task definition, the output won't be logged. + ``OVERRIDE``: Specify the logging details as a part of ``logConfiguration``. If the ``OVERRIDE`` logging option is specified, the ``logConfiguration`` is required. |
+| `logging` | [Logging](#configurationexecute_command_configurationlogging-logging) | No | The log setting to use for redirecting logs for your execute command results. The following log settings are available. + ``NONE``: The execute command session is not logged. + ``DEFAULT``: The ``awslogs`` configuration in the task definition is used. If no logging parameter is specified, it defaults to this value. If no ``awslogs`` log driver is configured in the task definition, the output won't be logged. + ``OVERRIDE``: Specify the logging details as a part of ``logConfiguration``. If the ``OVERRIDE`` logging option is specified, the ``logConfiguration`` is required. |
 
 ### configuration.execute_command_configuration.log_configuration
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cloud_watch_encryption_enabled` | Bool | No | Determines whether to use encryption on the CloudWatch logs. If not specified, encryption will be off. |
-| `cloud_watch_log_group_name` | String | No | The name of the CloudWatch log group to send logs to. The CloudWatch log group must already be created. |
-| `s3_bucket_name` | String | No | The name of the S3 bucket to send logs to. The S3 bucket must already be created. |
-| `s3_encryption_enabled` | Bool | No | Determines whether to use encryption on the S3 logs. If not specified, encryption is not used. |
-| `s3_key_prefix` | String | No | An optional folder in the S3 bucket to place logs in. |
+| `cloud_watch_encryption_enabled` | `Bool` | No | Determines whether to use encryption on the CloudWatch logs. If not specified, encryption will be off. |
+| `cloud_watch_log_group_name` | `String` | No | The name of the CloudWatch log group to send logs to. The CloudWatch log group must already be created. |
+| `s3_bucket_name` | `String` | No | The name of the S3 bucket to send logs to. The S3 bucket must already be created. |
+| `s3_encryption_enabled` | `Bool` | No | Determines whether to use encryption on the S3 logs. If not specified, encryption is not used. |
+| `s3_key_prefix` | `String` | No | An optional folder in the S3 bucket to place logs in. |
 
 ### configuration.managed_storage_configuration
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fargate_ephemeral_storage_kms_key_id` | aws.kms.Key.Reference | No | Specify the KMSlong key ID for Fargate ephemeral storage. When you specify a ``fargateEphemeralStorageKmsKeyId``, AWS Fargate uses the key to encrypt data at rest in ephemeral storage. For more information about Fargate ephemeral storage encryption, see [Customer managed keys for Fargate ephemeral storage for Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-storage-encryption.html) in the *Amazon Elastic Container Service Developer Guide*. The key must be a single Region key. |
-| `kms_key_id` | aws.kms.Key.Reference | No | Specify a KMSlong key ID to encrypt Amazon ECS managed storage. When you specify a ``kmsKeyId``, Amazon ECS uses the key to encrypt data volumes managed by Amazon ECS that are attached to tasks in the cluster. The following data volumes are managed by Amazon ECS: Amazon EBS. For more information about encryption of Amazon EBS volumes attached to Amazon ECS tasks, see [Encrypt data stored in Amazon EBS volumes for Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ebs-kms-encryption.html) in the *Amazon Elastic Container Service Developer Guide*. The key must be a single Region key. |
+| `fargate_ephemeral_storage_kms_key_id` | `aws.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | Specify the KMSlong key ID for Fargate ephemeral storage. When you specify a ``fargateEphemeralStorageKmsKeyId``, AWS Fargate uses the key to encrypt data at rest in ephemeral storage. For more information about Fargate ephemeral storage encryption, see [Customer managed keys for Fargate ephemeral storage for Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-storage-encryption.html) in the *Amazon Elastic Container Service Developer Guide*. The key must be a single Region key. |
+| `kms_key_id` | `aws.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | Specify a KMSlong key ID to encrypt Amazon ECS managed storage. When you specify a ``kmsKeyId``, Amazon ECS uses the key to encrypt data volumes managed by Amazon ECS that are attached to tasks in the cluster. The following data volumes are managed by Amazon ECS: Amazon EBS. For more information about encryption of Amazon EBS volumes attached to Amazon ECS tasks, see [Encrypt data stored in Amazon EBS volumes for Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ebs-kms-encryption.html) in the *Amazon Elastic Container Service Developer Guide*. The key must be a single Region key. |
 
 ### default_capacity_provider_strategy
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `base` | `Int(0..=100000)` | No | The *base* value designates how many tasks, at a minimum, to run on the specified capacity provider for each service. Only one capacity provider in a capacity provider strategy can have a *base* defined. If no value is specified, the default value of ``0`` is used. Base value characteristics: + Only one capacity provider in a strategy can have a base defined + The default value is ``0`` if not specified + The valid range is 0 to 100,000 + Base requirements are satisfied first before weight distribution |
-| `capacity_provider` | String | No | The short name of the capacity provider. This can be either an AWS managed capacity provider (``FARGATE`` or ``FARGATE_SPOT``) or the name of a custom capacity provider that you created. |
-| `weight` | `Int(0..=1000)` | No | The *weight* value designates the relative percentage of the total number of tasks launched that should use the specified capacity provider. The ``weight`` value is taken into consideration after the ``base`` value, if defined, is satisfied. If no ``weight`` value is specified, the default value of ``0`` is used. When multiple capacity providers are specified within a capacity provider strategy, at least one of the capacity providers must have a weight value greater than zero and any capacity providers with a weight of ``0`` can't be used to place tasks. If you specify multiple capacity providers in a strategy that all have a weight of ``0``, any ``RunTask`` or ``CreateService`` actions using the capacity provider strategy will fail. Weight value characteristics: + Weight is considered after the base value is satisfied + The default value is ``0`` if not specified + The valid range is 0 to 1,000 + At least one capacity provider must have a weight greater than zero + Capacity providers with weight of ``0`` cannot place tasks Task distribution logic: 1. Base satisfaction: The minimum number of tasks specified by the base value are placed on that capacity provider 1. Weight distribution: After base requirements are met, additional tasks are distributed according to weight ratios Examples: Equal Distribution: Two capacity providers both with weight ``1`` will split tasks evenly after base requirements are met. Weighted Distribution: If capacityProviderA has weight ``1`` and capacityProviderB has weight ``4``, then for every 1 task on A, 4 tasks will run on B. |
+| `base` | `Int (range: 0..=100000)` | No | The *base* value designates how many tasks, at a minimum, to run on the specified capacity provider for each service. Only one capacity provider in a capacity provider strategy can have a *base* defined. If no value is specified, the default value of ``0`` is used. Base value characteristics: + Only one capacity provider in a strategy can have a base defined + The default value is ``0`` if not specified + The valid range is 0 to 100,000 + Base requirements are satisfied first before weight distribution |
+| `capacity_provider` | `String` | No | The short name of the capacity provider. This can be either an AWS managed capacity provider (``FARGATE`` or ``FARGATE_SPOT``) or the name of a custom capacity provider that you created. |
+| `weight` | `Int (range: 0..=1000)` | No | The *weight* value designates the relative percentage of the total number of tasks launched that should use the specified capacity provider. The ``weight`` value is taken into consideration after the ``base`` value, if defined, is satisfied. If no ``weight`` value is specified, the default value of ``0`` is used. When multiple capacity providers are specified within a capacity provider strategy, at least one of the capacity providers must have a weight value greater than zero and any capacity providers with a weight of ``0`` can't be used to place tasks. If you specify multiple capacity providers in a strategy that all have a weight of ``0``, any ``RunTask`` or ``CreateService`` actions using the capacity provider strategy will fail. Weight value characteristics: + Weight is considered after the base value is satisfied + The default value is ``0`` if not specified + The valid range is 0 to 1,000 + At least one capacity provider must have a weight greater than zero + Capacity providers with weight of ``0`` cannot place tasks Task distribution logic: 1. Base satisfaction: The minimum number of tasks specified by the base value are placed on that capacity provider 1. Weight distribution: After base requirements are met, additional tasks are distributed according to weight ratios Examples: Equal Distribution: Two capacity providers both with weight ``1`` will split tasks evenly after base requirements are met. Weighted Distribution: If capacityProviderA has weight ``1`` and capacityProviderB has weight ``4``, then for every 1 task on A, 4 tasks will run on B. |
 
 ### service_connect_defaults
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `namespace` | String | No | The namespace name or full Amazon Resource Name (ARN) of the CMAPlong namespace that's used when you create a service and don't specify a Service Connect configuration. The namespace name can include up to 1024 characters. The name is case-sensitive. The name can't include greater than (>), less than (<), double quotation marks ("), or slash (/). If you enter an existing namespace name or ARN, then that namespace will be used. Any namespace type is supported. The namespace must be in this account and this AWS Region. If you enter a new name, a CMAPlong namespace will be created. Amazon ECS creates a CMAP namespace with the "API calls" method of instance discovery only. This instance discovery method is the "HTTP" namespace type in the CLIlong. Other types of instance discovery aren't used by Service Connect. If you update the cluster with an empty string ``""`` for the namespace name, the cluster configuration for Service Connect is removed. Note that the namespace will remain in CMAP and must be deleted separately. For more information about CMAPlong, see [Working with Services](https://docs.aws.amazon.com/cloud-map/latest/dg/working-with-services.html) in the *Developer Guide*. |
+| `namespace` | `String` | No | The namespace name or full Amazon Resource Name (ARN) of the CMAPlong namespace that's used when you create a service and don't specify a Service Connect configuration. The namespace name can include up to 1024 characters. The name is case-sensitive. The name can't include greater than (>), less than (<), double quotation marks ("), or slash (/). If you enter an existing namespace name or ARN, then that namespace will be used. Any namespace type is supported. The namespace must be in this account and this AWS Region. If you enter a new name, a CMAPlong namespace will be created. Amazon ECS creates a CMAP namespace with the "API calls" method of instance discovery only. This instance discovery method is the "HTTP" namespace type in the CLIlong. Other types of instance discovery aren't used by Service Connect. If you update the cluster with an empty string ``""`` for the namespace name, the cluster configuration for Service Connect is removed. Note that the namespace will remain in CMAP and must be deleted separately. For more information about CMAPlong, see [Working with Services](https://docs.aws.amazon.com/cloud-map/latest/dg/working-with-services.html) in the *Developer Guide*. |
 
 ## Attribute Reference
 
 ### `arn`
 
-- **Type:** aws.ecs.Cluster.Arn — identity: String(pattern); member: String
+- **Type:** `aws.ecs.Cluster.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):ecs:[^:]*:[^:]*:cluster/.+$/ (Full), custom validator)`
 
 
 

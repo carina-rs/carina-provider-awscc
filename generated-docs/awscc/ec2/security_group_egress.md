@@ -35,7 +35,7 @@ awscc.ec2.SecurityGroupEgress {
 
 ### `cidr_ip`
 
-- **Type:** Ipv4Cidr — identity: String; member: String
+- **Type:** `Ipv4Cidr (custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -43,7 +43,7 @@ The IPv4 address range, in CIDR format. You must specify exactly one of the foll
 
 ### `cidr_ipv6`
 
-- **Type:** Ipv6Cidr — identity: String; member: String
+- **Type:** `Ipv6Cidr (custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -51,14 +51,14 @@ The IPv6 address range, in CIDR format. You must specify exactly one of the foll
 
 ### `description`
 
-- **Type:** `String(pattern, len: ..=255)`
+- **Type:** `String (pattern: /^[a-zA-Z0-9. _:/()#,@\[\]+=&;{}!$*-]*$/ (Full), len: unbounded..=255)`
 - **Required:** No
 
 The description of an egress (outbound) security group rule. Constraints: Up to 255 characters in length. Allowed characters are a-z, A-Z, 0-9, spaces, and ._-:/()#,@[]+=;{}!$*
 
 ### `destination_prefix_list_id`
 
-- **Type:** aws.ec2.PrefixList.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.PrefixList.Id (pattern: /^pl-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -66,7 +66,7 @@ The prefix list IDs for an AWS service. This is the AWS service to access throug
 
 ### `destination_security_group_id`
 
-- **Type:** aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.SecurityGroup.Id (pattern: /^sg-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -74,7 +74,7 @@ The ID of the security group. You must specify exactly one of the following: ``C
 
 ### `from_port`
 
-- **Type:** Int(-1..=65535)
+- **Type:** `Int (range: -1..=65535)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -82,7 +82,7 @@ If the protocol is TCP or UDP, this is the start of the port range. If the proto
 
 ### `group_id`
 
-- **Type:** aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.SecurityGroup.Id (pattern: /^sg-[0-9a-f]{8,}$/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -90,7 +90,7 @@ The ID of the security group. You must specify either the security group ID or t
 
 ### `ip_protocol`
 
-- **Type:** [Enum (IpProtocol)](#ip_protocol-ipprotocol)
+- **Type:** [IpProtocol](#ip_protocol-ipprotocol)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -98,7 +98,7 @@ The IP protocol name (``tcp``, ``udp``, ``icmp``, ``icmpv6``) or number (see [Pr
 
 ### `to_port`
 
-- **Type:** Int(-1..=65535)
+- **Type:** `Int (range: -1..=65535)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -378,7 +378,7 @@ Shorthand formats: `tcp` or `IpProtocol.tcp`
 
 ### `id`
 
-- **Type:** String
+- **Type:** `String`
 
 
 

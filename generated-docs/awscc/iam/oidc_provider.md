@@ -24,22 +24,22 @@ awscc.iam.OidcProvider {
 
 ### `client_id_list`
 
-- **Type:** `List<String(len: 1..=255)>` (items: ..=100)
+- **Type:** List\<`String (len: 1..=255)`\> (items: unbounded..=100, unordered)
 - **Required:** No
 
 ### `tags`
 
-- **Type:** `Map<String(len: 1..=128), String(len: 1..=256)>`
+- **Type:** Map\<`String (len: 1..=128)`, `String (len: 1..=256)`\>
 - **Required:** No
 
 ### `thumbprint_list`
 
-- **Type:** `List<String(pattern, len: 40..=40)>` (items: ..=5)
+- **Type:** List\<`String (pattern: /[0-9A-Fa-f]{40}/ (Full), len: 40..=40)`\> (items: unbounded..=5, unordered)
 - **Required:** No
 
 ### `url`
 
-- **Type:** HttpsUrl — identity: String; member: String(len: 1..=255)
+- **Type:** `HttpsUrl (member constraints: len: 1..=255, custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -47,7 +47,7 @@ awscc.iam.OidcProvider {
 
 ### `arn`
 
-- **Type:** aws.iam.OidcProvider.Arn — identity: String(pattern); member: String(len: 20..=2048)
+- **Type:** `aws.iam.OidcProvider.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:oidc-provider/.+$/ (Full), member constraints: len: 20..=2048, custom validator)`
 
 Amazon Resource Name (ARN) of the OIDC provider
 

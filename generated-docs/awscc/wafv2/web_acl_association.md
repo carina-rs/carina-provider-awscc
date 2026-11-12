@@ -98,13 +98,13 @@ awscc.wafv2.WebAclAssociation {
 
 ### `resource_arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String(len: 20..=2048)
+- **Type:** `aws.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)`
 - **Required:** Yes
 - **Create-only:** Yes
 
 ### `web_acl_arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String(len: 20..=2048)
+- **Type:** `aws.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)`
 - **Required:** Yes
 - **Create-only:** Yes
 

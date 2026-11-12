@@ -40,12 +40,6 @@ impl ReferenceKind {
         }
     }
 
-    pub fn display_name(self) -> &'static str {
-        match self {
-            Self::Key => "aws.kms.Key.Reference",
-        }
-    }
-
     pub fn input_rule_code_prefix(self) -> &'static str {
         match self {
             Self::Key => "awscc.kms_reference",

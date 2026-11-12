@@ -6,7 +6,7 @@ use super::*;
 pub(super) struct TypeOverride {
     pub(super) identity: Option<StringIdentity>,
     pub(super) narrowing: Option<Narrowing>,
-    to_dsl: Option<&'static str>,
+    to_dsl: Option<type_emission::DslTransformSpec>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -238,18 +238,15 @@ impl From<NarrowingKind> for NarrowingSpec {
 pub(super) enum NarrowingKind {
     Primitive {
         expression: ConstraintSpec,
-        display: OverrideTypeDisplay,
         block_name: Option<&'static str>,
         default: Option<AttributeTypeOverrideDefault>,
     },
     NamedType {
         name: &'static str,
         expression: ConstraintSpec,
-        display: OverrideTypeDisplay,
     },
     ArrayItemType {
         expression: ConstraintSpec,
-        display: OverrideTypeDisplay,
         block_name: Option<&'static str>,
         default: Option<AttributeTypeOverrideDefault>,
         min_items: Option<i64>,
@@ -318,13 +315,11 @@ impl TypeOverride {
         Self {
             identity: None,
             narrowing: None,
-            to_dsl: Some(
-                r#"Some(carina_core::schema::DslTransform::StripSuffix(".".to_string()))"#,
-            ),
+            to_dsl: Some(type_emission::DslTransformSpec::StripSuffix(suffix)),
         }
     }
 
-    pub(super) fn to_dsl(&self) -> Option<&'static str> {
+    pub(super) fn to_dsl(&self) -> Option<type_emission::DslTransformSpec> {
         self.to_dsl
     }
 
@@ -386,17 +381,17 @@ impl TypeOverride {
         )
     }
 
-    pub(super) fn attribute_type_expression(&self) -> Option<&str> {
+    pub(super) fn attribute_constraint(&self) -> Option<&ConstraintSpec> {
         match self.kind()? {
             NarrowingKind::Primitive { expression, .. }
-            | NarrowingKind::NamedType { expression, .. } => Some(expression.as_str()),
+            | NarrowingKind::NamedType { expression, .. } => Some(expression),
             _ => None,
         }
     }
 
-    pub(super) fn array_item_type_expression(&self) -> Option<&str> {
+    pub(super) fn array_item_constraint(&self) -> Option<&ConstraintSpec> {
         match self.item_override()? {
-            NarrowingKind::ArrayItemType { expression, .. } => Some(expression.as_str()),
+            NarrowingKind::ArrayItemType { expression, .. } => Some(expression),
             _ => None,
         }
     }
@@ -406,30 +401,6 @@ impl TypeOverride {
             NarrowingKind::Primitive { expression, .. }
             | NarrowingKind::NamedType { expression, .. }
             | NarrowingKind::ArrayItemType { expression, .. } => Some(expression),
-            _ => None,
-        }
-    }
-
-    pub(super) fn display(&self) -> Option<String> {
-        if let Some(identity) = self.identity {
-            return Some(identity.identity().to_string());
-        }
-        match self.item_override()? {
-            NarrowingKind::Primitive {
-                expression,
-                display,
-                ..
-            }
-            | NarrowingKind::NamedType {
-                expression,
-                display,
-                ..
-            }
-            | NarrowingKind::ArrayItemType {
-                expression,
-                display,
-                ..
-            } => Some(expression.normalized_display(display.as_str()).into_owned()),
             _ => None,
         }
     }
@@ -605,13 +576,35 @@ impl TypeOverride {
         property: &SchemaProperty,
         schema: &CfnSchema,
         path: CfnPropertyPath<'_>,
-    ) -> Result<String> {
-        self.expression().context("missing typed narrowing")?.emit(
-            property,
-            schema,
-            path,
-            self.identity,
-        )
+    ) -> Result<EmittedType> {
+        self.expression()
+            .context("missing typed narrowing")?
+            .emit_at(
+                property,
+                schema,
+                path,
+                self.identity,
+                matches!(self.kind(), Some(NarrowingKind::Primitive { .. })),
+            )
+    }
+
+    // A containing property owns source facts; raw delegation must not attach
+    // those facts before the property has selected its final type.
+    pub(super) fn emit_expression_unnoted(
+        &self,
+        property: &SchemaProperty,
+        schema: &CfnSchema,
+        path: CfnPropertyPath<'_>,
+    ) -> Result<EmittedType> {
+        self.expression()
+            .context("missing typed narrowing")?
+            .emit_inner(
+                property,
+                schema,
+                path,
+                self.identity,
+                matches!(self.kind(), Some(NarrowingKind::Primitive { .. })),
+            )
     }
 
     pub(super) fn string_constraints(
@@ -805,7 +798,7 @@ pub(super) fn bare_object_narrowing(
     schema: &CfnSchema,
     path: CfnPropertyPath<'_>,
     property: &SchemaProperty,
-) -> Result<String> {
+) -> Result<EmittedType> {
     static ENTRIES: LazyLock<HashMap<(&'static str, CfnPropertyPath<'static>), TypeOverride>> =
         LazyLock::new(|| {
             let empty = EMPTY_OBJECT_PROPERTIES
@@ -825,7 +818,6 @@ pub(super) fn bare_object_narrowing(
                 .map(|(entry, expression)| {
                     let kind = NarrowingKind::Primitive {
                         expression,
-                        display: OverrideTypeDisplay::new("Object"),
                         block_name: None,
                         default: None,
                     };
@@ -858,7 +850,7 @@ pub(super) fn bare_object_narrowing(
             .expect("evidenced restriction")
             .evidence,
     );
-    entry.emit_expression(property, schema, path)
+    entry.emit_expression_unnoted(property, schema, path)
 }
 
 impl TypeOverride {

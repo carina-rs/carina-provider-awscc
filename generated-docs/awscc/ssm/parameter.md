@@ -29,7 +29,7 @@ awscc.ssm.Parameter {
 
 ### `allowed_pattern`
 
-- **Type:** `String(len: ..=1024)`
+- **Type:** `String (len: unbounded..=1024)`
 - **Required:** No
 - **Write-only:** Yes
 
@@ -37,14 +37,14 @@ A regular expression used to validate the parameter value. For example, for ``St
 
 ### `data_type`
 
-- **Type:** [Enum (DataType)](#data_type-datatype)
+- **Type:** [DataType](#data_type-datatype)
 - **Required:** No
 
 The data type of the parameter, such as ``text`` or ``aws:ec2:image``. The default is ``text``.
 
 ### `description`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** No
 - **Write-only:** Yes
 
@@ -52,7 +52,7 @@ Information about the parameter.
 
 ### `name`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -60,7 +60,7 @@ The name of the parameter. The reported maximum length of 2048 characters for a 
 
 ### `policies`
 
-- **Type:** `String(len: 1..=4096)`
+- **Type:** `String (len: 1..=4096)`
 - **Required:** No
 - **Write-only:** Yes
 
@@ -68,14 +68,14 @@ Information about the policies assigned to a parameter. [Assigning parameter pol
 
 ### `tags`
 
-- **Type:** `Map<String(pattern), String>`
+- **Type:** Map\<`String (pattern: /^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$/ (Full))`, `String`\>
 - **Required:** No
 
 Optional metadata that you assign to a resource in the form of an arbitrary set of tags (key-value pairs). Tags enable you to categorize a resource in different ways, such as by purpose, owner, or environment. For example, you might want to tag a SYS parameter to identify the type of resource to which it applies, the environment, or the type of configuration data referenced by the parameter.
 
 ### `tier`
 
-- **Type:** [Enum (Tier)](#tier-tier)
+- **Type:** [Tier](#tier-tier)
 - **Required:** No
 - **Write-only:** Yes
 
@@ -83,14 +83,14 @@ The parameter tier.
 
 ### `type`
 
-- **Type:** [Enum (Type)](#type-type)
+- **Type:** [Type](#type-type)
 - **Required:** Yes
 
 The type of parameter. Parameters of type ``SecureString`` are not supported by CFNlong.
 
 ### `value`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** Yes
 
 The parameter value. If type is ``StringList``, the system returns a comma-separated string with no spaces between commas in the ``Value`` field.
@@ -129,7 +129,7 @@ Shorthand formats: `string` or `Type.string`
 
 ### `arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String(pattern)
+- **Type:** `aws.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /arn:aws(-[a-z0-9-]+)*:ssm:[a-z0-9-]+:[0-9]{12}:parameter/.+/ (Full), custom validator)`
 
 
 

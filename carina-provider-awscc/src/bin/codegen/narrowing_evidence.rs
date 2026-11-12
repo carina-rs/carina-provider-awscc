@@ -116,20 +116,13 @@ pub(super) fn reviewed(resource: &str, path: &str, mut kind: NarrowingKind) -> O
         *expression = ConstraintSpec::availability_zone_or_all();
     }
     if let Some(pattern) = adjustment["string_pattern"].as_str() {
-        let NarrowingKind::Primitive {
-            expression,
-            display,
-            ..
-        } = &mut kind
-        else {
+        let NarrowingKind::Primitive { expression, .. } = &mut kind else {
             panic!("string pattern amendment")
         };
         *expression = ConstraintSpec::string(
             Some(ApprovedPattern::whole(pattern)),
             expression.string_length(),
-            PatternLiteral::Raw,
         );
-        *display = OverrideTypeDisplay::new("String");
     }
     if let Some(bounds) = adjustment["integer_range"].as_array() {
         kind = NarrowingKind::IntRange(bounds[0].as_i64().unwrap(), bounds[1].as_i64().unwrap());
@@ -138,28 +131,16 @@ pub(super) fn reviewed(resource: &str, path: &str, mut kind: NarrowingKind) -> O
         kind = NarrowingKind::IntEnum(values.iter().map(|v| v.as_i64().unwrap()).collect());
     }
     if adjustment["string_length_only"] == true {
-        let NarrowingKind::Primitive {
-            expression,
-            display,
-            ..
-        } = &mut kind
-        else {
+        let NarrowingKind::Primitive { expression, .. } = &mut kind else {
             panic!("string amendment")
         };
         *expression = expression.without_string_pattern();
-        *display = OverrideTypeDisplay::new("String");
     }
     if let Some(min) = adjustment["min_number"].as_i64() {
-        let NarrowingKind::Primitive {
-            expression,
-            display,
-            ..
-        } = &mut kind
-        else {
+        let NarrowingKind::Primitive { expression, .. } = &mut kind else {
             panic!("numeric amendment")
         };
         *expression = expression.with_minimum(min);
-        *display = OverrideTypeDisplay::new("Int(0..)");
     }
     if let Some(values) = adjustment["enum_values"].as_array() {
         kind = NarrowingKind::Enum(
@@ -216,9 +197,7 @@ pub(super) fn restored() -> impl Iterator<Item = (&'static str, &'static str, Na
                 expression: ConstraintSpec::string(
                     c["pattern"].as_str().map(ApprovedPattern::whole),
                     c["max_length"].as_u64().map(|n| (None, Some(n))),
-                    PatternLiteral::Raw,
                 ),
-                display: OverrideTypeDisplay::new("String"),
                 block_name: None,
                 default: None,
             };

@@ -242,9 +242,9 @@ m.insert(
     TypeOverride::identity(None).with_narrowing(
         NarrowingKind::Primitive {
             expression: ConstraintSpec::string(
-                None, Some((Some(1), Some(64))), PatternLiteral::Quoted,
+                None,
+                Some((Some(1), Some(64))),
             ),
-            display: OverrideTypeDisplay::new("String(len: 1..=64)"),
             block_name: None,
             default: None,
         },
@@ -268,7 +268,7 @@ m.insert_evidenced(
 );
 ```
 
-This example requires the existing ScheduleGroup observation in `narrowing_evidence.json`. It retains the derived key/value types and tightens CFN's `maxItems: 200` to the observed service limit of 50. Both bounds reach Rust and Markdown; an implicit lower bound of zero uses the unconstrained length normal form. Generated docs display map counts as `(entries: ..=50)` or `(entries: 2..=5)`, using the same formatter as bounded lists.
+This example requires the existing ScheduleGroup observation in `narrowing_evidence.json`. It retains the derived key/value types and tightens CFN's `maxItems: 200` to the observed service limit of 50. Both bounds reach Rust and Markdown; an implicit lower bound of zero uses the unconstrained length normal form. Docgen displays map counts as `(entries: unbounded..=50)` or `(entries: 2..=5)`.
 
 Resource tagging classification uses `resource_type_overrides().classify_tagging((cfn_type, "/properties/PropertyName"), TaggingOverride::TagProperty)`. These keys are raw CFN JSON pointers. Use this declaration when CFN omits its `tagging` block; otherwise `tagging.tagProperty` identifies the property (defaulting to `/properties/Tags` for a taggable resource). A top-level property named `Tags` is also recognized without metadata. All three sources feed the same tag-map projection, constraints, `TagsProperty` wire metadata, portable `TagsKeyValueCheck` declaration, and documentation.
 
@@ -299,7 +299,7 @@ The DSL name `tags` is carina-core's contract for merging `default_tags` and exe
 
 Every emitted AWSCC string pattern uses `PatternMatch::Full`, except for an exact registered substring exception. `ApprovedPattern::whole` preserves the source verbatim; core compiles Full with absolute boundaries around the entire regex. Authored anchors and alternations do not substitute for the typed mode. `is_whole_anchored` remains a syntax-inspection utility for tests, not the approval rule. Invalid syntax is retained for diagnostics, never dropped.
 
-CFN string refinements share `string_constraints()` between Rust and Markdown. Override expressions use typed string refinements, and runtime constructors in `catalog.rs` use adapters accepting `ApprovedPattern`. Approved patterns carry `PatternSpec` with `PatternMatch::Full`, preserving the regex source while core applies absolute boundaries. The reviewed Scheduler substring exception carries `PatternMatch::Substring` with its existing non-empty `PatternReason`. Codegen emits these typed specifications for every pattern-taking constructor, including references; it adds no textual anchoring wrapper. Codegen compiles normalized patterns in Carina's schema dialect and rejects an invalid or unapproved pattern with its resource type, full JSON source pointer and regex. The recursive `all_registered_provider_schema_patterns_have_full_or_registered_substring_modes` test audits the actual provider schemas, including definitions and collection, struct and union members.
+CFN string refinements are retained in the typed emission result used by Rust and Markdown. Override expressions use typed string refinements, and runtime constructors in `catalog.rs` use adapters accepting `ApprovedPattern`. Approved patterns carry `PatternSpec` with `PatternMatch::Full`, preserving the regex source while core applies absolute boundaries. The reviewed Scheduler substring exception carries `PatternMatch::Substring` with its existing non-empty `PatternReason`. Codegen emits these typed specifications for every pattern-taking constructor, including references; it adds no textual anchoring wrapper. Codegen compiles normalized patterns in Carina's schema dialect and rejects an invalid or unapproved pattern with its resource type, full JSON source pointer and regex. The recursive `all_registered_provider_schema_patterns_have_full_or_registered_substring_modes` test audits the actual provider schemas, including definitions and collection, struct and union members.
 
 `STRING_PATTERN_REWRITES` pins resource types, full source pointers and exact source regexes. Preserve constraints when removing unsupported look-around, including ECR `RepositoryName`'s length intersection. Logs maps `\Z` to strict `\z`; that is the intended reading, not ECMAScript equivalence (`\Z` means literal `Z` there). WAFv2's 17 `.*\S.*` sites use `^[\s\S]*\S[\s\S]*\z`: both languages accept exactly values containing a `\S` character, including newlines around it. Generic wrapping would change that newline behavior. Use ASCII `[0-9]` and `[0-9A-Za-z_]` when expanding ECMAScript `\d` and `\w` in rewrites. Add accept and reject cases when changing a rewrite.
 
@@ -363,15 +363,136 @@ inside a resource body so they are retained. The docs build fails when an
 example is missing or does not declare the documented resource; the shell script
 only adds frontmatter and removes the generated H1.
 
-Struct and enum section headings use the DSL field path. A `$ref` definition
-reached from more than one path instead uses its `snake_case` definition name,
-includes a `Used by` line, and lends that heading prefix to nested sections;
-`PageBuilder` resolves any resulting slug collisions.
+[`type_emission.rs`](carina-provider-awscc/src/bin/codegen/type_emission.rs) defines
+EmittedType: the existing Rust spelling, its core AttributeType, and TypeAnnotations
+for declaration identity and provider facts. Leaf, collection, enum and struct
+emission construct both representations from the same final decisions, including
+CFN/API intersections and ordering overrides. ResourceEmission collects attributes
+and named definitions and validates a resource witness before docs rendering.
+FieldFacts carries the same provider names, descriptions, defaults and block names
+as the Rust builders. The witness also retains resource metadata, replacement
+policy, validators and input rules. The Rust writer accesses `.rust` explicitly
+and retains its existing templates and literal styles.
+
+[`type_docs.rs`](carina-provider-awscc/src/bin/codegen/type_docs.rs) supplies naming,
+reference resolution and declaration registration through TypeDocHooks. Every Type
+entry and cell comes from carina-docgen's render_attribute_type and its shared
+scalar, list and map compositors. All visible roots and reachable declarations
+are collected first. Usages and headings are finalized before declarations enter
+the page's TypeRegistry, and only then are cells rendered. Missing prepared
+headings return `TypeDocError::MissingHeading`; rendering never chooses a fallback
+scope. `DeclarationBody` admits only enum, struct and union metadata at registration;
+recursive collection registrations return a typed error before table preparation.
+`DeclarationSection` exhaustively groups those admitted bodies.
+Definition identities retain the
+emitter's reference key, including use-site refinements; names alone do not merge
+distinct definitions. Overrides have no separate display text: docs use their
+final emitted types. Single-use declaration headings use DSL field paths unless
+the last visible edge is a union member. Those declarations use their definition,
+struct/enum or readable union base name instead of `member_N`; list-item edges
+are invisible. A literal DSL field named `member_0` remains a field path.
+Only declarations registered by docgen participate in interning, headings and
+usages. Struct and union declarations are interned by their admitted body and
+annotations, including copies inside catalog constructors. Equal copies share a
+table; distinct nested enum namespaces retain separate tables. Discovery also
+uses docgen's registration callbacks in the runtime parity oracle, preserving link
+order when inline and linked types share a collection cell.
+Closed enums with the same identity and conflicting values or aliases are errors.
+Scopes distinguish literal fields from item, key, value and union-member edges.
+One set of displayed usages controls both shared headings and `Used by` lines for
+structs, unions and enums; hidden attributes do not contribute. Emitted definition
+keys remain in the annotations. Shared declarations use their definition name
+when available, otherwise a readable kind/member name such as
+`union_of_string_or_list_of_string`. Colliding names receive short ordinals in
+full-body identity order within that name group. Only declarations actually using
+a base name enter these groups: shared declarations and single union-member uses.
+Unrelated single-use siblings keep path headings and cannot renumber those groups;
+collisions with path headings are handled separately. Base-named declarations
+include `Used by`, even for a single union-member use. NodeId is a typed enum for enum
+identities, full interned body signatures, attributes, definitions and child edges.
+Union labels and headings use the same prepared name. List-item edges are implicit;
+map keys and values appear as `<key>` and `<value>`. Declaration cells render once
+and are reused in their tables.
+
+The pinned docgen renders a union inline when every member is an identity-less
+Int refinement with a singleton range in exactly one layer. It emits
+`Int (one of: 1, 3)` cells, sorted and deduplicated, without a declaration table.
+AWSCC delegates that classification and wording to docgen.
+
+The pinned docgen renders zero-field structs as links to empty declaration tables;
+it offers no inline empty-struct policy. AWS codegen at the same revision also
+emits these tables. AWSCC keeps that shared output. Struct and union recursion,
+including CFN-JSON's recursive list/map members, links to their declarations.
+Collection-only recursion such as `A = List<Ref A>` returns the typed
+`TypeDocError::RecursiveCollection`, including the scope and node identity.
+
+Provider-only CFN format labels, multiple-of obligations, NumericString annotations,
+CFN-JSON labels and CFN enum values hidden by opaque catalog types are
+ValidationNote values. `source_notes` produces source formats, numeric obligations
+and opaque-enum values; the CFN-JSON emission decision supplies its label.
+Each property owner attaches source facts once after unnoted delegates select the
+final type. Alias, override and collection wrappers do not attach those facts a
+second time. Named references use their emitted definition when inspecting
+opaque or NumericString constraints. Rendering preserves the resulting notes
+without deduplicating their text. CFN-JSON composes its Rust spelling and typed
+recursive union from the same emitted leaves, lists and maps. Catalog integer
+enums retain the constructor and attribute type returned by one row lookup.
+For example, Logs `retention_in_days` retains its CFN allowed-values array beside the
+catalog validator. Integer-enum unions use docgen's inline one-of policy described
+above. Docgen owns placement and escaping. Notes about collection children include
+their item, key or value path.
+Named override notes remain at their reference use sites. Reusing a definition
+key requires matching annotations and admitted core type bodies, including forward
+references; conflicting bodies are errors.
+Field-group prose comes from render_field_groups with the emitted DSL names;
+conditional requirements and input rules retain their existing rendering.
+Rust field-group constructors are derived from those same typed groups. Defaults
+are converted from JSON to a core Value once, normalized for the emitted type,
+and rendered as Rust from that value.
+Top-level Required, Create-only, Write-only, Identity and Default bullets read the
+validated witness. A CFN server default that core cannot install is retained by
+the emitter as `DefaultAnnotation` and labelled `CFN default`. Document emission
+also chooses its final Rust placement: IAM builders use the established seed and
+grammar extension through `EmittedType::builder_call`; compound members use the
+complete AWSCC constructor. Attribute and field writers do not replace type text.
+`AttributeMode` and `FieldMode` distinguish output, required and optional inputs;
+`Mutability` distinguishes mutable, create-only and identity input. Defaults exist
+only on optional attributes. Nested fields cannot carry defaults, and output
+attributes cannot carry unsupported write-only or block facts. Every representable
+fact is consumed by its builder. The validated witness preserves core's typed
+validation error chain. One `DefinitionRegistry` owns emitted definitions and
+pending duplicate bodies, so the enum pre-scan reset clears both atomically.
+
+For example, an anonymous bounded integer renders as `Int (range: 1..=50)`.
+An approved string pattern includes its source and match mode:
+`String (pattern: /[a-z]+/ (Full), len: 1..=64)`. Lists include effective ordering
+and combine count and uniqueness constraints in one suffix. A list with a maximum
+of 50 unique entries ends with `(items: unbounded..=50, unique items, unordered)`
+when its emitted ordering is unordered.
+
+[`doc_type_parity_tests.rs`](carina-provider-awscc/src/bin/codegen/doc_type_parity_tests.rs)
+compares generated Type entries and nested Type cells against docgen rendering of
+every cached resource's compiled runtime schema. It parses Markdown structurally,
+follows declaration links through lists, maps, unions and recursive references,
+and checks coverage in both directions, including empty declaration targets. Each
+link must reach the appropriate declaration heading or its declared shared usage,
+and one target cannot represent different runtime bodies. Runtime attribute mode
+and default bullets are compared exactly. Expected per-cell supplemental notes
+come from retained emission facts and are passed through docgen; trailing text is
+never discarded. It also compares every enum declaration's
+wire values and qualified DSL identifiers with the compiled enum, including table
+and row coverage. Deprecated top-level attributes are
+explicit exceptions; omitted fields and deprecated nested fields are absent from
+the runtime graph. Mutation tests reject changed constraints and missing cells.
+`review620_tests.rs` also compares every cached witness's complete serialized
+schema and host wait defaults with the compiled runtime config, and covers hidden
+usages, literal scope names, definition identity, reference notes and synthetic
+constructors.
 
 `carina-docgen` allocates registry-compatible heading ids when headings are
-written, resolves enum and struct links from typed targets when the page is
+written, resolves enum, struct and union links from typed targets when the page is
 finished, and checks the finished Markdown. Generation fails on a missing
 target, a dead local fragment, a Markdown link hidden inside a code span, or a
-duplicated enum/struct section heading. The docs-bundle CI job runs the same
+duplicated declaration target. The docs-bundle CI job runs the same
 checker over the shipped tarball after its pages have had their H1 headings
 reconstructed from frontmatter.
