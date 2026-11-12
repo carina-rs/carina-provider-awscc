@@ -24,7 +24,7 @@ awscc.ec2.VpnGateway {
 
 ### `amazon_side_asn`
 
-- **Type:** `Int(64512..=65534) | Int(4200000000..=4294967294)`
+- **Type:** [Union(amazon\_side\_asn)](#amazon_side_asn-1); CFN format: int64
 - **Required:** No
 - **Create-only:** Yes
 
@@ -32,14 +32,14 @@ The private Autonomous System Number (ASN) for the Amazon side of a BGP session.
 
 ### `tags`
 
-- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
+- **Type:** Map\<`String (len: unbounded..=128)`, `String (len: unbounded..=256)`\>
 - **Required:** No
 
 Any tags assigned to the virtual private gateway.
 
 ### `type`
 
-- **Type:** [Enum (Type)](#type-type)
+- **Type:** [Type](#type-type)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -55,11 +55,20 @@ The type of VPN connection the virtual private gateway supports.
 
 Shorthand formats: `ipsec_1` or `Type.ipsec_1`
 
+## Union Definitions
+
+### amazon_side_asn
+
+| Member | Type |
+|--------|------|
+| `member_0` | `Int (range: 64512..=65534)` |
+| `member_1` | `Int (range: 4200000000..=4294967294)` |
+
 ## Attribute Reference
 
 ### `vpn_gateway_id`
 
-- **Type:** aws.ec2.VpnGateway.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.VpnGateway.Id (pattern: /^vgw-[0-9a-f]{8,}$/ (Full))`
 
 
 

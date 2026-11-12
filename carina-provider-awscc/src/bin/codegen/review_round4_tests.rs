@@ -36,7 +36,7 @@ fn review_r10_bounds_only_array_narrowings_preserve_ref_site_constraints() {
                 .lines()
                 .find(|line| line.starts_with("| `cors_rules` |"))
                 .unwrap();
-            if !row.contains(&format!("(items: {min}..=100) (unique items)")) {
+            if !row.contains(&format!("(items: {min}..=100, unique items, ordered)")) {
                 failures.push(format!("Markdown lost CorsRules bounds: {row}"));
             }
         }

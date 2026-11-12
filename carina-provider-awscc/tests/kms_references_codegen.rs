@@ -367,8 +367,8 @@ fn explicitly_classified_non_reference_scalars_and_key_outputs_keep_their_types(
                 "AttributeSchema::provider_populated(\"key_id\", AttributeType::string())"
             ));
         } else {
-            assert!(output.contains("### `enabled`\n\n- **Type:** Bool"));
-            assert!(output.contains("### `arn`\n\n- **Type:** aws.kms.Key.Arn — identity: String(pattern); member: String"));
+            assert!(output.contains("### `enabled`\n\n- **Type:** `Bool`"));
+            assert!(output.contains("### `arn`\n\n- **Type:** `aws.kms.Key.Arn ("));
         }
     }
 }

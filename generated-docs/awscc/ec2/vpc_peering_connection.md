@@ -32,7 +32,7 @@ awscc.ec2.VpcPeeringConnection {
 
 ### `assume_role_region`
 
-- **Type:** aws.Region — identity: String; member: String
+- **Type:** `aws.Region (custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -41,7 +41,7 @@ The Region code to use when calling Security Token Service (STS) to assume the P
 
 ### `peer_owner_id`
 
-- **Type:** aws.AccountId — identity: String(pattern, len: 12..=12); member: String
+- **Type:** `aws.AccountId (pattern: /^[0-9]{12}$/ (Full), len: 12..=12)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -49,7 +49,7 @@ The AWS account ID of the owner of the accepter VPC.
 
 ### `peer_region`
 
-- **Type:** aws.Region — identity: String; member: String
+- **Type:** `aws.Region (custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -57,7 +57,7 @@ The Region code for the accepter VPC, if the accepter VPC is located in a Region
 
 ### `peer_role_arn`
 
-- **Type:** aws.iam.Role.Arn — identity: String(pattern); member: String
+- **Type:** `aws.iam.Role.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:role/.+$/ (Full), custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -66,7 +66,7 @@ The Amazon Resource Name (ARN) of the VPC peer role for the peering connection i
 
 ### `peer_vpc_id`
 
-- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -74,12 +74,12 @@ The ID of the VPC with which you are creating the VPC peering connection. You mu
 
 ### `tags`
 
-- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
+- **Type:** Map\<`String (len: unbounded..=128)`, `String (len: unbounded..=256)`\>
 - **Required:** No
 
 ### `vpc_id`
 
-- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -89,7 +89,7 @@ The ID of the VPC.
 
 ### `id`
 
-- **Type:** aws.ec2.VpcPeeringConnection.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.VpcPeeringConnection.Id (pattern: /^pcx-[0-9a-f]{8,}$/ (Full))`
 
 ## AWS API narrowings
 

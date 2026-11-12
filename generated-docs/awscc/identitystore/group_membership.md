@@ -32,7 +32,7 @@ awscc.identitystore.GroupMembership {
 
 ### `group_id`
 
-- **Type:** aws.sso.Principal.Id — identity: String(pattern); member: String(pattern, len: 1..=47)
+- **Type:** `aws.sso.Principal.Id (identity constraints: pattern: /^.{1,64}$/ (Full), member constraints: pattern: /^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$/ (Full), len: 1..=47)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -40,7 +40,7 @@ The unique identifier for a group in the identity store.
 
 ### `identity_store_id`
 
-- **Type:** aws.identitystore.Store.Id — identity: String(pattern); member: String(pattern, len: 1..=36)
+- **Type:** `aws.identitystore.Store.Id (identity constraints: pattern: /^(d-[0-9a-fA-F]{10}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/ (Full), member constraints: pattern: /^d-[0-9a-f]{10}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/ (Full), len: 1..=36)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -60,13 +60,13 @@ An object containing the identifier of a group member.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `user_id` | String(pattern, len: 1..=47) | Yes | The identifier for a user in the identity store. |
+| `user_id` | `String (pattern: /^([0-9a-f]{10}-\|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$/ (Full), len: 1..=47)` | Yes | The identifier for a user in the identity store. |
 
 ## Attribute Reference
 
 ### `membership_id`
 
-- **Type:** String(pattern, len: 1..=47)
+- **Type:** `String (pattern: /^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$/ (Full), len: 1..=47)`
 
 The identifier for a GroupMembership in the identity store.
 

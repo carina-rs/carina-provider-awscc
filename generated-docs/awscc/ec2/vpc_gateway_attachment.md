@@ -26,16 +26,20 @@ awscc.ec2.VpcGatewayAttachment {
 
 ## Argument Reference
 
+**Field groups:**
+
+- Exactly one of: `internet_gateway_id`, `vpn_gateway_id`.
+
 ### `internet_gateway_id`
 
-- **Type:** aws.ec2.InternetGateway.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.InternetGateway.Id (pattern: /^igw-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 The ID of the internet gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.
 
 ### `vpc_id`
 
-- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -43,7 +47,7 @@ The ID of the VPC.
 
 ### `vpn_gateway_id`
 
-- **Type:** aws.ec2.VpnGateway.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.VpnGateway.Id (pattern: /^vgw-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 The ID of the virtual private gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.
@@ -52,7 +56,7 @@ The ID of the virtual private gateway. You must specify either InternetGatewayId
 
 ### `attachment_type`
 
-- **Type:** String
+- **Type:** `String`
 
 Used to identify if this resource is an Internet Gateway or Vpn Gateway Attachment 
 

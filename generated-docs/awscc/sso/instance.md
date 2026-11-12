@@ -27,14 +27,14 @@ awscc.sso.Instance {
 
 ### `name`
 
-- **Type:** String(pattern, len: 1..=32)
+- **Type:** `String (pattern: /^[\w+=,.@-]+$/ (Full), len: 1..=32)`
 - **Required:** No
 
 The name you want to assign to this Identity Center (SSO) Instance
 
 ### `tags`
 
-- **Type:** `Map<String(pattern, len: 1..=128), String(pattern, len: ..=256)>` (entries: ..=75)
+- **Type:** Map\<`String (pattern: /[\w+=,.@-]+/ (Full), len: 1..=128)`, `String (pattern: /[\w+=,.@-]+/ (Full), len: unbounded..=256)`\> (entries: unbounded..=75)
 - **Required:** No
 
 ## Enum Values
@@ -53,25 +53,25 @@ Shorthand formats: `create_in_progress` or `Status.create_in_progress`
 
 ### `identity_store_id`
 
-- **Type:** aws.identitystore.Store.Id — identity: String(pattern); member: String(pattern, len: 1..=64)
+- **Type:** `aws.identitystore.Store.Id (identity constraints: pattern: /^(d-[0-9a-fA-F]{10}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/ (Full), member constraints: pattern: /^(d-[0-9a-f]{10}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\z/ (Full), len: 1..=64)`
 
 The ID of the identity store associated with the created Identity Center (SSO) Instance
 
 ### `instance_arn`
 
-- **Type:** aws.sso.Instance.Arn — identity: String(pattern); member: String(pattern, len: 10..=1224)
+- **Type:** `aws.sso.Instance.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::instance/.+$/ (Full), member constraints: pattern: /^arn:aws(-[a-z]{1,5}){0,3}:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}\z/ (Full), len: 10..=1224)`
 
 The SSO Instance ARN that is returned upon creation of the Identity Center (SSO) Instance
 
 ### `owner_account_id`
 
-- **Type:** aws.AccountId — identity: String(pattern, len: 12..=12); member: String(pattern, len: 12..=12)
+- **Type:** `aws.AccountId (identity constraints: pattern: /^[0-9]{12}$/ (Full), len: 12..=12, member constraints: pattern: /^\d{12}?$/ (Full), len: 12..=12)`
 
 The AWS accountId of the owner of the Identity Center (SSO) Instance
 
 ### `status`
 
-- **Type:** [Enum (Status)](#status-status)
+- **Type:** [Status](#status-status)
 
 The status of the Identity Center (SSO) Instance, create_in_progress/delete_in_progress/active
 

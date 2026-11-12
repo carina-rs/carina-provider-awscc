@@ -3,12 +3,6 @@ use super::*;
 use carina_core::schema::{AttributeType, IntIdentityParts, RawShape, StringIdentityParts};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum PatternLiteral {
-    Quoted,
-    Raw,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DocumentKind {
     IamPolicyDocument,
     S3AnalyticsDestination,
@@ -43,6 +37,19 @@ impl DocumentKind {
             Self::LogsDataProtectionPolicy => {
                 "crate::schemas::awscc_types::logs_data_protection_policy()"
             }
+        }
+    }
+
+    fn inline_constructor(self) -> &'static str {
+        match self {
+            Self::IamPolicyDocument => "crate::schemas::awscc_types::iam_policy_document()",
+            Self::S3AnalyticsDestination
+            | Self::SnsSubscriptionRedrivePolicy
+            | Self::SnsSubscriptionDeliveryPolicy
+            | Self::SnsSubscriptionReplayPolicy
+            | Self::SnsTopicArchivePolicy
+            | Self::LogsFieldIndexPolicy
+            | Self::LogsDataProtectionPolicy => self.constructor(),
         }
     }
     fn declaration(self) -> AttributeType {
@@ -81,44 +88,23 @@ enum Constraint {
     IntegerRange(Option<i64>, Option<i64>),
     NumberRange(Option<i64>, Option<i64>),
     Union(Vec<ConstraintSpec>),
-    AvailabilityZoneOrAll,
+    AvailabilityZoneOrAll(ApprovedPattern),
     Document(DocumentKind),
     Map(MapKind),
-    EmptyObject,
+    EmptyObject(String),
     StringMap,
     Enum(EnumDomain),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ConstraintSpec {
-    code: String,
-    patterns: Vec<ApprovedPattern>,
     constraint: Constraint,
 }
 
 impl ConstraintSpec {
     pub(super) fn availability_zone_or_all() -> Self {
-        let pattern = ApprovedPattern::whole(r"^all\z");
-        let zone = string_identity::emit(
-            Some(StringIdentity::AvailabilityZoneZoneName),
-            &StringConstraints {
-                pattern: None,
-                min_length: None,
-                max_length: None,
-            },
-        );
-        let all = string_identity::emit(
-            None,
-            &StringConstraints {
-                pattern: Some(pattern.clone()),
-                min_length: None,
-                max_length: None,
-            },
-        );
         Self {
-            code: format!("AttributeType::union(vec![{zone}, {all}])"),
-            patterns: vec![pattern],
-            constraint: Constraint::AvailabilityZoneOrAll,
+            constraint: Constraint::AvailabilityZoneOrAll(ApprovedPattern::whole(r"^all\z")),
         }
     }
     pub(super) fn string_length(&self) -> Option<(Option<u64>, Option<u64>)> {
@@ -131,7 +117,7 @@ impl ConstraintSpec {
         let Constraint::String { length, .. } = self.constraint else {
             panic!("reviewed string amendment requires a string constraint")
         };
-        Self::string(None, length, PatternLiteral::Quoted)
+        Self::string(None, length)
     }
 
     pub(super) fn with_minimum(&self, minimum: i64) -> Self {
@@ -145,125 +131,68 @@ impl ConstraintSpec {
     pub(super) fn string(
         pattern: Option<ApprovedPattern>,
         length: Option<(Option<u64>, Option<u64>)>,
-        literal: PatternLiteral,
     ) -> Self {
-        let emitted = pattern.as_ref().map_or_else(
-            || "None".to_string(),
-            |pattern| format!("Some({})", emit_pattern_spec(pattern.as_spec(), literal)),
-        );
-        let (min, max) = length.unwrap_or((None, None));
-        let code_length = emit_length_option(min, max);
         Self {
-            code: format!("AttributeType::refined_string(None, {emitted}, {code_length}, None)"),
-            patterns: pattern.clone().into_iter().collect(),
             constraint: Constraint::String { pattern, length },
         }
     }
     #[cfg(test)]
     pub(super) fn boolean() -> Self {
         Self {
-            code: "AttributeType::bool()".into(),
-            patterns: vec![],
             constraint: Constraint::Boolean,
         }
     }
     pub(super) fn int_range(min: Option<i64>, max: Option<i64>) -> Self {
         Self {
-            code: refined_int_type(&emit_int_range_option(min, max)),
-            patterns: vec![],
             constraint: Constraint::IntegerRange(min, max),
         }
     }
     pub(super) fn number_range(min: Option<i64>, max: Option<i64>) -> Self {
         Self {
-            code: refined_float_type("None", Some((min, max))),
-            patterns: vec![],
             constraint: Constraint::NumberRange(min, max),
         }
     }
     pub(super) fn union(members: Vec<Self>) -> Self {
         Self {
-            code: format!(
-                "AttributeType::union(vec![{}])",
-                members
-                    .iter()
-                    .map(Self::as_str)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            patterns: members.iter().flat_map(|m| m.patterns.clone()).collect(),
             constraint: Constraint::Union(members),
         }
     }
     pub(super) fn document(kind: DocumentKind) -> Self {
         Self {
-            code: kind.constructor().into(),
-            patterns: vec![],
             constraint: Constraint::Document(kind),
         }
     }
     pub(super) fn map(kind: MapKind) -> Self {
-        let code = match kind {
-            MapKind::BudgetCostFilters => {
-                "AttributeType::map(AttributeType::list(AttributeType::string()))"
-            }
-            MapKind::BudgetPlannedLimits => {
-                "AttributeType::map(AttributeType::ref_(\"Spend\".to_string()))"
-            }
-        };
         Self {
-            code: code.into(),
-            patterns: vec![],
             constraint: Constraint::Map(kind),
         }
     }
     pub(super) fn empty_object(name: &str) -> Self {
         Self {
-            code: format!(
-                "AttributeType::struct_({}.to_string(), vec![])",
-                rust_lit(&name.to_pascal_case())
-            ),
-            patterns: vec![],
-            constraint: Constraint::EmptyObject,
+            constraint: Constraint::EmptyObject(name.to_pascal_case()),
         }
     }
     pub(super) fn string_map() -> Self {
         Self {
-            code: "AttributeType::map(AttributeType::string())".into(),
-            patterns: vec![],
             constraint: Constraint::StringMap,
         }
     }
     pub(super) fn enum_domain(domain: EnumDomain) -> Self {
         Self {
-            code: "crate::schemas::awscc_types::s3_notification_event()".into(),
-            patterns: vec![],
             constraint: Constraint::Enum(domain),
         }
     }
     pub(super) fn is_string(&self) -> bool {
         matches!(self.constraint, Constraint::String { .. })
     }
-    pub(super) fn as_str(&self) -> &str {
-        &self.code
-    }
-    pub(super) fn patterns(&self) -> &[ApprovedPattern] {
-        &self.patterns
-    }
-    pub(super) fn normalized_display(&self, display: &'static str) -> Cow<'static, str> {
-        if let (Some(start), [pattern]) = (display.find("pattern: "), self.patterns.as_slice()) {
-            let start = start + "pattern: ".len();
-            let end = display.rfind(')').expect("string refinement display");
-            return Cow::Owned(format!(
-                "{}{}{}",
-                &display[..start],
-                pattern.as_str(),
-                &display[end..]
-            ));
+    pub(super) fn patterns(&self) -> Vec<&ApprovedPattern> {
+        match &self.constraint {
+            Constraint::String { pattern, .. } => pattern.iter().collect(),
+            Constraint::Union(members) => members.iter().flat_map(Self::patterns).collect(),
+            Constraint::AvailabilityZoneOrAll(pattern) => vec![pattern],
+            _ => vec![],
         }
-        Cow::Borrowed(display)
     }
-
     pub(super) fn filter_string_values(&self, values: Vec<String>) -> Result<Vec<String>> {
         let Constraint::String { pattern, length } = &self.constraint else {
             anyhow::bail!("string enum refinement requires string constraints");
@@ -351,7 +280,31 @@ impl ConstraintSpec {
         schema: &CfnSchema,
         path: CfnPropertyPath<'_>,
         identity: Option<StringIdentity>,
-    ) -> Result<String> {
+    ) -> Result<EmittedType> {
+        self.emit_at(property, schema, path, identity, true)
+    }
+
+    pub(super) fn emit_at(
+        &self,
+        property: &SchemaProperty,
+        schema: &CfnSchema,
+        path: CfnPropertyPath<'_>,
+        identity: Option<StringIdentity>,
+        builder_site: bool,
+    ) -> Result<EmittedType> {
+        let mut emitted = self.emit_inner(property, schema, path, identity, builder_site)?;
+        type_emission::source_notes(&mut emitted, property.try_query()?);
+        Ok(emitted)
+    }
+
+    pub(super) fn emit_inner(
+        &self,
+        property: &SchemaProperty,
+        schema: &CfnSchema,
+        path: CfnPropertyPath<'_>,
+        identity: Option<StringIdentity>,
+        builder_site: bool,
+    ) -> Result<EmittedType> {
         let p = property.try_query()?;
         let plan = emission_plan::lower(p)?;
         let fail = |reason: &str| p.emission_error(reason);
@@ -367,14 +320,17 @@ impl ConstraintSpec {
                 let constraints = self
                     .intersect_string(cfn)
                     .map_err(|e| fail(&e.to_string()))?;
-                Ok(string_identity::emit(identity, &constraints))
+                Ok(string_identity::emit_type(identity, &constraints))
             }
             #[cfg(test)]
             Constraint::Boolean => {
                 if plan.value_type()? != EmissionType::Boolean {
                     return Err(fail("boolean narrowing must have the same kind as CFN").into());
                 }
-                Ok(self.code.clone())
+                Ok(EmittedType::new(
+                    "AttributeType::bool()",
+                    AttributeType::bool(),
+                ))
             }
             Constraint::IntegerRange(min, max) | Constraint::NumberRange(min, max) => {
                 let expected = plan.value_type()?;
@@ -394,34 +350,36 @@ impl ConstraintSpec {
                     return Err(fail("empty numeric narrowing intersection").into());
                 }
                 plan.validate_numeric_range(min, max)?;
-                Ok(
-                    if min.is_none() && max.is_none() && plan.numeric()?.format.is_none() {
-                        if expected == EmissionType::Integer {
-                            "AttributeType::int()".into()
+                let emitted = if expected == EmissionType::Integer {
+                    let range =
+                        if min.is_none() && max.is_none() && plan.numeric()?.format.is_none() {
+                            None
                         } else {
-                            "AttributeType::float()".into()
-                        }
-                    } else if expected == EmissionType::Integer {
-                        refined_int_type(&emit_int_range_option(min, max))
-                    } else {
-                        refined_float_type("None", Some((min, max)))
-                    },
-                )
+                            Some((min, max))
+                        };
+                    EmittedType::int(range)
+                } else {
+                    let range =
+                        if min.is_none() && max.is_none() && plan.numeric()?.format.is_none() {
+                            None
+                        } else {
+                            Some((min, max))
+                        };
+                    EmittedType::float(range)
+                };
+                Ok(emitted)
             }
-            Constraint::AvailabilityZoneOrAll => {
-                let zone = Self::string(None, None, PatternLiteral::Raw).emit(
+            Constraint::AvailabilityZoneOrAll(pattern) => {
+                let zone = Self::string(None, None).emit_inner(
                     property,
                     schema,
                     path,
                     Some(StringIdentity::AvailabilityZoneZoneName),
+                    false,
                 )?;
-                let all = Self::string(
-                    Some(ApprovedPattern::whole(r"^all\z")),
-                    None,
-                    PatternLiteral::Raw,
-                )
-                .emit(property, schema, path, None)?;
-                Ok(format!("AttributeType::union(vec![{zone}, {all}])"))
+                let all = Self::string(Some(pattern.clone()), None)
+                    .emit_inner(property, schema, path, None, false)?;
+                Ok(EmittedType::union(vec![zone, all]))
             }
             Constraint::Union(members) => {
                 if members.is_empty() {
@@ -429,20 +387,50 @@ impl ConstraintSpec {
                 }
                 let expressions = members
                     .iter()
-                    .map(|m| m.emit(property, schema, path, identity))
+                    .map(|m| m.emit_inner(property, schema, path, identity, false))
                     .collect::<Result<Vec<_>>>()?;
-                Ok(format!(
-                    "AttributeType::union(vec![{}])",
-                    expressions.join(", ")
-                ))
+                Ok(EmittedType::union(expressions))
             }
             Constraint::Document(kind) => {
                 validate_document(p, &kind.declaration(), schema)?;
-                Ok(self.code.clone())
+                let rust = if builder_site {
+                    kind.constructor()
+                } else {
+                    kind.inline_constructor()
+                };
+                let mut emitted = EmittedType::new(rust, kind.declaration());
+                emitted.annotations.document_kind = Some(*kind);
+                Ok(emitted)
             }
-            Constraint::Map(_) | Constraint::EmptyObject | Constraint::StringMap => {
+            Constraint::Map(kind) => {
                 require_unconstrained_object_form(p)?;
-                Ok(self.code.clone())
+                Ok(match kind {
+                    MapKind::BudgetCostFilters => EmittedType::new(
+                        "AttributeType::map(AttributeType::list(AttributeType::string()))",
+                        AttributeType::map(AttributeType::list(AttributeType::string())),
+                    ),
+                    MapKind::BudgetPlannedLimits => EmittedType::new(
+                        "AttributeType::map(AttributeType::ref_(\"Spend\".to_string()))",
+                        AttributeType::map(AttributeType::ref_("Spend")),
+                    ),
+                })
+            }
+            Constraint::EmptyObject(name) => {
+                require_unconstrained_object_form(p)?;
+                Ok(EmittedType::inline_struct(
+                    format!(
+                        "AttributeType::struct_({}.to_string(), vec![])",
+                        rust_lit(name)
+                    ),
+                    AttributeType::struct_(name.clone(), vec![]),
+                ))
+            }
+            Constraint::StringMap => {
+                require_unconstrained_object_form(p)?;
+                Ok(EmittedType::new(
+                    "AttributeType::map(AttributeType::string())",
+                    AttributeType::map(AttributeType::string()),
+                ))
             }
             Constraint::Enum(EnumDomain::S3NotificationEvent) => {
                 let declaration =
@@ -457,15 +445,12 @@ impl ConstraintSpec {
                 plan.validate_scalar_enum_candidates(
                     &values.iter().map(String::as_str).collect::<Vec<_>>(),
                 )?;
-                Ok(self.code.clone())
+                Ok(EmittedType::new(
+                    "crate::schemas::awscc_types::s3_notification_event()",
+                    declaration,
+                ))
             }
         }
-    }
-}
-
-impl std::fmt::Display for ConstraintSpec {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
     }
 }
 
@@ -904,46 +889,6 @@ pub(super) fn loosening_example(
         }
     }
     Ok(None)
-}
-
-impl ConstraintSpec {
-    pub(super) fn numeric_display(
-        &self,
-        plan: &emission_plan::EmissionPlan<'_>,
-    ) -> Result<Option<String>> {
-        match &self.constraint {
-            Constraint::IntegerRange(min, max) | Constraint::NumberRange(min, max) => {
-                let (cmin, cmax) = plan.numeric()?.range.unwrap_or((None, None));
-                let min = match (cmin, *min) {
-                    (Some(a), Some(b)) => Some(a.max(b)),
-                    (a, b) => a.or(b),
-                };
-                let max = match (cmax, *max) {
-                    (Some(a), Some(b)) => Some(a.min(b)),
-                    (a, b) => a.or(b),
-                };
-                let kind = if plan.value_type()? == EmissionType::Integer {
-                    "Int"
-                } else {
-                    "Float"
-                };
-                let display = if min.is_none() && max.is_none() {
-                    kind.to_string()
-                } else {
-                    format!("{kind}({})", range_display_string(min, max))
-                };
-                Ok(Some(numeric_type_display(display, plan).type_text()))
-            }
-            Constraint::Union(members) => {
-                let displays = members
-                    .iter()
-                    .map(|member| member.numeric_display(plan))
-                    .collect::<Result<Option<Vec<_>>>>()?;
-                Ok(displays.map(|displays| displays.join(" | ")))
-            }
-            _ => Ok(None),
-        }
-    }
 }
 
 #[cfg(test)]

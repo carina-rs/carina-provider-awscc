@@ -46,23 +46,23 @@ The options for the transit gateway vpc attachment.
 
 ### `subnet_ids`
 
-- **Type:** `List<aws.ec2.Subnet.Id — identity: String(pattern); member: String>`
+- **Type:** List\<`aws.ec2.Subnet.Id (pattern: /^subnet-[0-9a-f]{8,}$/ (Full))`\> (unordered)
 - **Required:** Yes
 
 ### `tags`
 
-- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
+- **Type:** Map\<`String (len: unbounded..=128)`, `String (len: unbounded..=256)`\>
 - **Required:** No
 
 ### `transit_gateway_id`
 
-- **Type:** aws.ec2.TransitGateway.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.TransitGateway.Id (pattern: /^tgw-[0-9a-f]{8,}$/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
 ### `vpc_id`
 
-- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -110,16 +110,16 @@ Shorthand formats: `enable` or `SecurityGroupReferencingSupport.enable`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `appliance_mode_support` | [Enum (ApplianceModeSupport)](#optionsappliance_mode_support-appliancemodesupport) | No | Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable \| disable |
-| `dns_support` | [Enum (DnsSupport)](#optionsdns_support-dnssupport) | No | Indicates whether to enable DNS Support for Vpc Attachment. Valid Values: enable \| disable |
-| `ipv6_support` | [Enum (Ipv6Support)](#optionsipv6_support-ipv6support) | No | Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable \| disable |
-| `security_group_referencing_support` | [Enum (SecurityGroupReferencingSupport)](#optionssecurity_group_referencing_support-securitygroupreferencingsupport) | No | Indicates whether to enable Security Group referencing support for Vpc Attachment. Valid Values: enable \| disable |
+| `appliance_mode_support` | [ApplianceModeSupport](#optionsappliance_mode_support-appliancemodesupport) | No | Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable \| disable |
+| `dns_support` | [DnsSupport](#optionsdns_support-dnssupport) | No | Indicates whether to enable DNS Support for Vpc Attachment. Valid Values: enable \| disable |
+| `ipv6_support` | [Ipv6Support](#optionsipv6_support-ipv6support) | No | Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable \| disable |
+| `security_group_referencing_support` | [SecurityGroupReferencingSupport](#optionssecurity_group_referencing_support-securitygroupreferencingsupport) | No | Indicates whether to enable Security Group referencing support for Vpc Attachment. Valid Values: enable \| disable |
 
 ## Attribute Reference
 
 ### `id`
 
-- **Type:** aws.ec2.TransitGatewayAttachment.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.TransitGatewayAttachment.Id (pattern: /^tgw-attach-[0-9a-f]{8,}$/ (Full))`
 
 ## AWS API narrowings
 

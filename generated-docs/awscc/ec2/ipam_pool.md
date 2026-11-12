@@ -39,7 +39,7 @@ awscc.ec2.IpamPool {
 
 ### `address_family`
 
-- **Type:** [Enum (AddressFamily)](#address_family-addressfamily)
+- **Type:** [AddressFamily](#address_family-addressfamily)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -47,42 +47,42 @@ The address family of the address space in this pool. Either IPv4 or IPv6.
 
 ### `allocation_default_netmask_length`
 
-- **Type:** Int(0..=128)
+- **Type:** `Int (range: 0..=128)`
 - **Required:** No
 
 The default netmask length for allocations made from this pool. This value is used when the netmask length of an allocation isn't specified.
 
 ### `allocation_max_netmask_length`
 
-- **Type:** Int(0..=128)
+- **Type:** `Int (range: 0..=128)`
 - **Required:** No
 
 The maximum allowed netmask length for allocations made from this pool.
 
 ### `allocation_min_netmask_length`
 
-- **Type:** Int(0..=128)
+- **Type:** `Int (range: 0..=128)`
 - **Required:** No
 
 The minimum allowed netmask length for allocations made from this pool.
 
 ### `allocation_resource_tags`
 
-- **Type:** `List<Map<String(len: 1..=128), String(len: ..=256)>>` (unique items)
+- **Type:** List\<Map\<`String (len: 1..=128)`, `String (len: unbounded..=256)`\>\> (unique items, unordered)
 - **Required:** No
 
 When specified, an allocation will not be allowed unless a resource has a matching set of tags.
 
 ### `auto_import`
 
-- **Type:** Bool
+- **Type:** `Bool`
 - **Required:** No
 
 Determines what to do if IPAM discovers resources that haven't been assigned an allocation. If set to true, an allocation will be made automatically.
 
 ### `aws_service`
 
-- **Type:** [Enum (AwsService)](#aws_service-awsservice)
+- **Type:** [AwsService](#aws_service-awsservice)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -90,12 +90,12 @@ Limits which service in Amazon Web Services that the pool can be used in.
 
 ### `description`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** No
 
 ### `ipam_scope_id`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -111,14 +111,14 @@ The region of this pool. If not set, this will default to "None" which will disa
 
 ### `provisioned_cidrs`
 
-- **Type:** List\<[Struct(ProvisionedCidr)](#provisioned_cidrs-1)\> (unique items)
+- **Type:** List\<[Struct(ProvisionedCidr)](#provisioned_cidrs-1)\> (unique items, unordered)
 - **Required:** No
 
 A list of cidrs representing the address space available for allocation in this pool.
 
 ### `public_ip_source`
 
-- **Type:** [Enum (PublicIpSource)](#public_ip_source-publicipsource)
+- **Type:** [PublicIpSource](#public_ip_source-publicipsource)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -126,7 +126,7 @@ The IP address source for pools in the public scope. Only used for provisioning 
 
 ### `publicly_advertisable`
 
-- **Type:** Bool
+- **Type:** `Bool`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -134,7 +134,7 @@ Determines whether or not address space from this pool is publicly advertised. M
 
 ### `source_ipam_pool_id`
 
-- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -148,7 +148,7 @@ The Id of this pool's source. If set, all space provisioned in this pool must be
 
 ### `tags`
 
-- **Type:** `Map<String(len: 1..=128), String(len: ..=256)>`
+- **Type:** Map\<`String (len: 1..=128)`, `String (len: unbounded..=256)`\>
 - **Required:** No
 
 An array of key-value pairs to apply to this resource.
@@ -218,64 +218,64 @@ Shorthand formats: `create_in_progress` or `State.create_in_progress`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cidr` | Ipv4Cidr — identity: String; member: String | Yes |  |
+| `cidr` | `Ipv4Cidr (custom validator)` | Yes |  |
 
 ### source_resource
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `resource_id` | String | Yes |  |
-| `resource_owner` | String | Yes |  |
-| `resource_region` | aws.Region — identity: String; member: String | Yes |  |
-| `resource_type` | [Enum (ResourceType)](#source_resourceresource_type-resourcetype) | Yes |  |
+| `resource_id` | `String` | Yes |  |
+| `resource_owner` | `String` | Yes |  |
+| `resource_region` | `aws.Region (custom validator)` | Yes |  |
+| `resource_type` | [ResourceType](#source_resourceresource_type-resourcetype) | Yes |  |
 
 ## Attribute Reference
 
 ### `arn`
 
-- **Type:** aws.ec2.IpamPool.Arn — identity: String(pattern); member: String
+- **Type:** `aws.ec2.IpamPool.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):ec2:.*$/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of the IPAM Pool.
 
 ### `ipam_arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String
+- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of the IPAM this pool is a part of.
 
 ### `ipam_pool_id`
 
-- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
 
 Id of the IPAM Pool.
 
 ### `ipam_scope_arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String
+- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of the scope this pool is a part of.
 
 ### `ipam_scope_type`
 
-- **Type:** [Enum (IpamScopeType)](#ipam_scope_type-ipamscopetype)
+- **Type:** [IpamScopeType](#ipam_scope_type-ipamscopetype)
 
 Determines whether this scope contains publicly routable space or space for a private network
 
 ### `pool_depth`
 
-- **Type:** Int
+- **Type:** `Int`
 
 The depth of this pool in the source pool hierarchy.
 
 ### `state`
 
-- **Type:** [Enum (State)](#state-state)
+- **Type:** [State](#state-state)
 
 The state of this pool. This can be one of the following values: "create-in-progress", "create-complete", "modify-in-progress", "modify-complete", "delete-in-progress", or "delete-complete"
 
 ### `state_message`
 
-- **Type:** String
+- **Type:** `String`
 
 An explanation of how the pool arrived at it current state.
 

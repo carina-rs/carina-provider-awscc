@@ -1,5 +1,16 @@
 ### `field_index_policies`
 
-- **Type:** `List<Struct(FieldIndexPolicy)> (items: 1..=1) (unique items)`
+- **Type:** List\<[Struct(FieldIndexPolicy)](#field_index_policies-1)\> (items: 1..=1, unique items, unordered)
 - **Required:** No
 - **Default:** `[]`
+
+### field_index_policies
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `fields` | List\<`String`\> (ordered) | No | Log-event fields for which CloudWatch Logs creates indexes. |
+| `fields_v2` | Map\<`String`, [Struct(FieldIndexConfiguration)](#field_index_policiesfields_v2value)\> | No | Log-event fields and their index or facet types. |
+
+**Field groups:**
+
+- At least one of: `fields`, `fields_v2`.

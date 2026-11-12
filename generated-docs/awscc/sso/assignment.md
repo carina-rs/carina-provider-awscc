@@ -49,7 +49,7 @@ awscc.sso.Assignment {
 
 ### `instance_arn`
 
-- **Type:** aws.sso.Instance.Arn — identity: String(pattern); member: String(pattern, len: 10..=1224)
+- **Type:** `aws.sso.Instance.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::instance/.+$/ (Full), member constraints: pattern: /^arn:aws(-[a-z]{1,5}){0,3}:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}\z/ (Full), len: 10..=1224)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -57,7 +57,7 @@ The sso instance that the permission set is owned.
 
 ### `permission_set_arn`
 
-- **Type:** aws.sso.PermissionSet.Arn — identity: String(pattern); member: String(pattern, len: 10..=1224)
+- **Type:** `aws.sso.PermissionSet.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::permissionSet/.+$/ (Full), member constraints: pattern: /^arn:aws(-[a-z]{1,5}){0,3}:sso:::permissionSet/(sso)?ins-[a-zA-Z0-9-.]{16}/ps-[a-zA-Z0-9-./]{16}\z/ (Full), len: 10..=1224)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -65,7 +65,7 @@ The permission set that the assignment will be assigned
 
 ### `principal_id`
 
-- **Type:** aws.sso.Principal.Id — identity: String(pattern); member: String(pattern, len: 1..=47)
+- **Type:** `aws.sso.Principal.Id (identity constraints: pattern: /^.{1,64}$/ (Full), member constraints: pattern: /^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$/ (Full), len: 1..=47)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -73,7 +73,7 @@ The assignee's identifier, user id/group id
 
 ### `principal_type`
 
-- **Type:** [Enum (PrincipalType)](#principal_type-principaltype)
+- **Type:** [PrincipalType](#principal_type-principaltype)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -81,7 +81,7 @@ The assignee's type, user/group
 
 ### `target_id`
 
-- **Type:** aws.AccountId — identity: String(pattern, len: 12..=12); member: String(pattern)
+- **Type:** `aws.AccountId (identity constraints: pattern: /^[0-9]{12}$/ (Full), len: 12..=12, member constraints: pattern: /\d{12}/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -89,7 +89,7 @@ The account id to be provisioned.
 
 ### `target_type`
 
-- **Type:** [Enum (TargetType)](#target_type-targettype)
+- **Type:** [TargetType](#target_type-targettype)
 - **Required:** Yes
 - **Create-only:** Yes
 

@@ -34,56 +34,56 @@ awscc.elasticloadbalancingv2.TargetGroup {
 
 ### `health_check_enabled`
 
-- **Type:** Bool
+- **Type:** `Bool`
 - **Required:** No
 
 Indicates whether health checks are enabled. If the target type is lambda, health checks are disabled by default but can be enabled. If the target type is instance, ip, or alb, health checks are always enabled and cannot be disabled.
 
 ### `health_check_interval_seconds`
 
-- **Type:** Int(5..=300)
+- **Type:** `Int (range: 5..=300)`
 - **Required:** No
 
 The approximate amount of time, in seconds, between health checks of an individual target.
 
 ### `health_check_path`
 
-- **Type:** `String(len: 1..=1024)`
+- **Type:** `String (len: 1..=1024)`
 - **Required:** No
 
 [HTTP/HTTPS health checks] The destination for health checks on the targets. [HTTP1 or HTTP2 protocol version] The ping path. The default is /. [GRPC protocol version] The path of a custom health check method with the format /package.service/method. The default is /AWS.ALB/healthcheck.
 
 ### `health_check_port`
 
-- **Type:** `String(pattern)`
+- **Type:** `String (pattern: /^(?:traffic-port|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])\z/ (Full))`
 - **Required:** No
 
 The port the load balancer uses when performing health checks on targets. 
 
 ### `health_check_protocol`
 
-- **Type:** [Enum (HealthCheckProtocol)](#health_check_protocol-healthcheckprotocol)
+- **Type:** [HealthCheckProtocol](#health_check_protocol-healthcheckprotocol)
 - **Required:** No
 
 The protocol the load balancer uses when performing health checks on targets. 
 
 ### `health_check_timeout_seconds`
 
-- **Type:** Int(2..=120)
+- **Type:** `Int (range: 2..=120)`
 - **Required:** No
 
 The amount of time, in seconds, during which no response from a target means a failed health check.
 
 ### `healthy_threshold_count`
 
-- **Type:** Int(2..=10)
+- **Type:** `Int (range: 2..=10)`
 - **Required:** No
 
 The number of consecutive health checks successes required before considering an unhealthy target healthy. 
 
 ### `ip_address_type`
 
-- **Type:** [Enum (IpAddressType)](#ip_address_type-ipaddresstype)
+- **Type:** [IpAddressType](#ip_address_type-ipaddresstype)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -98,7 +98,7 @@ The type of IP address used for this target group. The possible values are ipv4 
 
 ### `name`
 
-- **Type:** `String(pattern, len: 1..=32)`
+- **Type:** `String (pattern: /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\z/ (Full), len: 1..=32)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -106,7 +106,7 @@ The name of the target group.
 
 ### `port`
 
-- **Type:** Int(1..=65535)
+- **Type:** `Int (range: 1..=65535)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -114,7 +114,7 @@ The port on which the targets receive traffic. This port is used unless you spec
 
 ### `protocol`
 
-- **Type:** [Enum (Protocol)](#protocol-protocol)
+- **Type:** [Protocol](#protocol-protocol)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -122,7 +122,7 @@ The protocol to use for routing traffic to the targets.
 
 ### `protocol_version`
 
-- **Type:** [Enum (ProtocolVersion)](#protocol_version-protocolversion)
+- **Type:** [ProtocolVersion](#protocol_version-protocolversion)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -130,28 +130,28 @@ The protocol to use for routing traffic to the targets.
 
 ### `tags`
 
-- **Type:** `Map<String, String>`
+- **Type:** Map\<`String`, `String`\>
 - **Required:** No
 
 The tags.
 
 ### `target_control_port`
 
-- **Type:** Int(1..=65535)
+- **Type:** `Int (range: 1..=65535)`
 - **Required:** No
 
 The port that the target control agent uses to communicate the available capacity of targets to the load balancer.
 
 ### `target_group_attributes`
 
-- **Type:** List\<[Struct(TargetGroupAttribute)](#target_group_attributes-1)\> (unique items)
+- **Type:** List\<[Struct(TargetGroupAttribute)](#target_group_attributes-1)\> (unique items, unordered)
 - **Required:** No
 
 The attributes.
 
 ### `target_type`
 
-- **Type:** [Enum (TargetType)](#target_type-targettype)
+- **Type:** [TargetType](#target_type-targettype)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -159,21 +159,21 @@ The type of target that you must specify when registering targets with this targ
 
 ### `targets`
 
-- **Type:** List\<[Struct(TargetDescription)](#targets-1)\> (unique items)
+- **Type:** List\<[Struct(TargetDescription)](#targets-1)\> (unique items, unordered)
 - **Required:** No
 
 The targets.
 
 ### `unhealthy_threshold_count`
 
-- **Type:** Int(2..=10)
+- **Type:** `Int (range: 2..=10)`
 - **Required:** No
 
 The number of consecutive health check failures required before considering a target unhealthy.
 
 ### `vpc_id`
 
-- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -243,48 +243,57 @@ Shorthand formats: `instance` or `TargetType.instance`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `grpc_code` | aws.elasticloadbalancingv2.TargetGroup.GrpcCode — identity: String; member: String | No | You can specify values between 0 and 99. You can specify multiple values, or a range of values. The default value is 12. |
-| `http_code` | aws.elasticloadbalancingv2.TargetGroup.HttpCode — identity: String; member: String | No | For Application Load Balancers, you can specify values between 200 and 499, and the default value is 200. You can specify multiple values or a range of values.  |
+| `grpc_code` | `aws.elasticloadbalancingv2.TargetGroup.GrpcCode (custom validator)` | No | You can specify values between 0 and 99. You can specify multiple values, or a range of values. The default value is 12. |
+| `http_code` | `aws.elasticloadbalancingv2.TargetGroup.HttpCode (custom validator)` | No | For Application Load Balancers, you can specify values between 200 and 499, and the default value is 200. You can specify multiple values or a range of values.  |
 
 ### target_group_attributes
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key` | `String(pattern, len: ..=256)` | No | The value of the attribute. |
-| `value` | String | No | The name of the attribute. |
+| `key` | `String (pattern: /^[a-zA-Z0-9._]+\z/ (Full), len: unbounded..=256)` | No | The value of the attribute. |
+| `value` | `String` | No | The name of the attribute. |
 
 ### targets
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `availability_zone` | `aws.AvailabilityZone.ZoneName \| String (pattern: ^all\z)` | No | An Availability Zone or all. This determines whether the target receives traffic from the load balancer nodes in the specified Availability Zone or from all enabled Availability Zones for the load balancer. |
-| `id` | String | Yes | The ID of the target. If the target type of the target group is instance, specify an instance ID. If the target type is ip, specify an IP address. If the target type is lambda, specify the ARN of the Lambda function. If the target type is alb, specify the ARN of the Application Load Balancer target.  |
-| `port` | Int(1..=65535) | No | The port on which the target is listening. If the target group protocol is GENEVE, the supported port is 6081. If the target type is alb, the targeted Application Load Balancer must have at least one listener whose port matches the target group port. Not used if the target is a Lambda function. |
-| `quic_server_id` | `String(pattern)` | No | The Server ID used by targets when using QUIC or TCP_QUIC protocols. |
+| `availability_zone` | [Union(targets.availability\_zone)](#targetsavailability_zone) | No | An Availability Zone or all. This determines whether the target receives traffic from the load balancer nodes in the specified Availability Zone or from all enabled Availability Zones for the load balancer. |
+| `id` | `String` | Yes | The ID of the target. If the target type of the target group is instance, specify an instance ID. If the target type is ip, specify an IP address. If the target type is lambda, specify the ARN of the Lambda function. If the target type is alb, specify the ARN of the Application Load Balancer target.  |
+| `port` | `Int (range: 1..=65535)` | No | The port on which the target is listening. If the target group protocol is GENEVE, the supported port is 6081. If the target type is alb, the targeted Application Load Balancer must have at least one listener whose port matches the target group port. Not used if the target is a Lambda function. |
+| `quic_server_id` | `String (pattern: /^0x[0-9a-f]{16}\z/ (Full))` | No | The Server ID used by targets when using QUIC or TCP_QUIC protocols. |
+
+## Union Definitions
+
+### targets.availability_zone
+
+| Member | Type |
+|--------|------|
+| `member_0` | `aws.AvailabilityZone.ZoneName (custom validator)` |
+| `member_1` | `String (pattern: /^all\z/ (Full))` |
 
 ## Attribute Reference
 
 ### `load_balancer_arns`
 
-- **Type:** `List<aws.Arn — identity: String(pattern); member: String>` (items: ..=1)
+- **Type:** List\<`aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`\> (items: unbounded..=1, unordered)
 
 The Amazon Resource Names (ARNs) of the load balancers that route traffic to this target group.
 
 ### `target_group_arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String
+- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 The ARN of the Target Group
 
 ### `target_group_full_name`
 
-- **Type:** String
+- **Type:** `String`
 
 The full name of the target group.
 
 ### `target_group_name`
 
-- **Type:** `String(pattern, len: 1..=32)`
+- **Type:** `String (pattern: /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\z/ (Full), len: 1..=32)`
 
 The name of the target group.
 

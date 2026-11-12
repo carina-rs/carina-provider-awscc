@@ -5,9 +5,8 @@ use super::schema_layer::{
     Dependency, Layer, PropertyKeywords, RefTarget, SchemaNode, SourceEvidence, SourceReference,
 };
 use super::{
-    CfnPropertyPath, CfnSchema, ParsedCfnSchema, PatternLiteral, SchemaProperty,
-    dsl_resource_name_from_type, emit_pattern_spec, is_property_read_only,
-    project_string_constraints,
+    CfnPropertyPath, CfnSchema, ParsedCfnSchema, SchemaProperty, dsl_resource_name_from_type,
+    emit_pattern_spec, is_property_read_only, project_string_constraints,
 };
 use anyhow::{Result, bail};
 use carina_core::schema::{
@@ -216,7 +215,7 @@ impl ReferenceSlotRule {
         let predicate = match &self.predicate {
             ReferenceSlotPredicate::Matches(pattern) => format!(
                 "carina_core::schema::InputPredicate::Matches({})",
-                emit_pattern_spec(pattern, PatternLiteral::Quoted),
+                emit_pattern_spec(pattern),
             ),
             ReferenceSlotPredicate::Length { min, max } => format!(
                 "carina_core::schema::InputPredicate::Length {{ min: {min:?}, max: {max:?} }}",

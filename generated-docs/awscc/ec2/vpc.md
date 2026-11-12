@@ -26,9 +26,13 @@ awscc.ec2.Vpc {
 
 ## Argument Reference
 
+**Field groups:**
+
+- Exactly one of: `cidr_block`, `ipv4_ipam_pool_id`.
+
 ### `cidr_block`
 
-- **Type:** Ipv4Cidr — identity: String; member: String
+- **Type:** `Ipv4Cidr (custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -36,28 +40,28 @@ The IPv4 network range for the VPC, in CIDR notation. For example, ``10.0.0.0/16
 
 ### `enable_dns_hostnames`
 
-- **Type:** Bool
+- **Type:** `Bool`
 - **Required:** No
 
 Indicates whether the instances launched in the VPC get DNS hostnames. If enabled, instances in the VPC get DNS hostnames; otherwise, they do not. Disabled by default for nondefault VPCs. For more information, see [DNS attributes in your VPC](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-dns.html#vpc-dns-support). You can only enable DNS hostnames if you've enabled DNS support.
 
 ### `enable_dns_support`
 
-- **Type:** Bool
+- **Type:** `Bool`
 - **Required:** No
 
 Indicates whether the DNS resolution is supported for the VPC. If enabled, queries to the Amazon provided DNS server at the 169.254.169.253 IP address, or the reserved IP address at the base of the VPC network range "plus two" succeed. If disabled, the Amazon provided DNS service in the VPC that resolves public DNS hostnames to IP addresses is not enabled. Enabled by default. For more information, see [DNS attributes in your VPC](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-dns.html#vpc-dns-support).
 
 ### `instance_tenancy`
 
-- **Type:** [Enum (InstanceTenancy)](#instance_tenancy-instancetenancy)
+- **Type:** [InstanceTenancy](#instance_tenancy-instancetenancy)
 - **Required:** No
 
 The allowed tenancy of instances launched into the VPC. + ``default``: An instance launched into the VPC runs on shared hardware by default, unless you explicitly specify a different tenancy during instance launch. + ``dedicated``: An instance launched into the VPC runs on dedicated hardware by default, unless you explicitly specify a tenancy of ``host`` during instance launch. You cannot specify a tenancy of ``default`` during instance launch. Updating ``InstanceTenancy`` requires no replacement only if you are updating its value from ``dedicated`` to ``default``. Updating ``InstanceTenancy`` from ``default`` to ``dedicated`` requires replacement.
 
 ### `ipv4_ipam_pool_id`
 
-- **Type:** aws.ec2.IpamPool.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -66,7 +70,7 @@ The ID of an IPv4 IPAM pool you want to use for allocating this VPC's CIDR. For 
 
 ### `ipv4_netmask_length`
 
-- **Type:** Int(16..=28)
+- **Type:** `Int (range: 16..=28)`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -75,7 +79,7 @@ The netmask length of the IPv4 CIDR you want to allocate to this VPC from an Ama
 
 ### `tags`
 
-- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
+- **Type:** Map\<`String (len: unbounded..=128)`, `String (len: unbounded..=256)`\>
 - **Required:** No
 
 The tags for the VPC.
@@ -95,31 +99,31 @@ Shorthand formats: `default` or `InstanceTenancy.default`
 
 ### `cidr_block_associations`
 
-- **Type:** `List<aws.ec2.VpcCidrBlockAssociation.Id — identity: String(pattern); member: String>`
+- **Type:** List\<`aws.ec2.VpcCidrBlockAssociation.Id (pattern: /^vpc-cidr-assoc-[0-9a-f]{8,}$/ (Full))`\> (unordered)
 
 
 
 ### `default_network_acl`
 
-- **Type:** aws.ec2.NetworkAcl.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.NetworkAcl.Id (pattern: /^acl-[0-9a-f]{8,}$/ (Full))`
 
 
 
 ### `default_security_group`
 
-- **Type:** aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.SecurityGroup.Id (pattern: /^sg-[0-9a-f]{8,}$/ (Full))`
 
 
 
 ### `ipv6_cidr_blocks`
 
-- **Type:** `List<Ipv6Cidr — identity: String; member: String>`
+- **Type:** List\<`Ipv6Cidr (custom validator)`\> (unordered)
 
 
 
 ### `vpc_id`
 
-- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
 
 
 

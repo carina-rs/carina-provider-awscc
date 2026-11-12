@@ -28,47 +28,47 @@ awscc.ec2.Ipam {
 
 ### `default_resource_discovery_organizational_unit_exclusions`
 
-- **Type:** List\<[Struct(IpamOrganizationalUnitExclusion)](#default_resource_discovery_organizational_unit_exclusions-1)\> (unique items)
+- **Type:** List\<[Struct(IpamOrganizationalUnitExclusion)](#default_resource_discovery_organizational_unit_exclusions-1)\> (unique items, unordered)
 - **Required:** No
 
 A set of organizational unit (OU) exclusions for the default resource discovery, created with this IPAM.
 
 ### `description`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** No
 
 ### `enable_private_gua`
 
-- **Type:** Bool
+- **Type:** `Bool`
 - **Required:** No
 
 Enable provisioning of GUA space in private pools.
 
 ### `metered_account`
 
-- **Type:** [Enum (MeteredAccount)](#metered_account-meteredaccount)
+- **Type:** [MeteredAccount](#metered_account-meteredaccount)
 - **Required:** No
 
 A metered account is an account that is charged for active IP addresses managed in IPAM
 
 ### `operating_regions`
 
-- **Type:** List\<[Struct(IpamOperatingRegion)](#operating_regions-1)\> (unique items)
+- **Type:** List\<[Struct(IpamOperatingRegion)](#operating_regions-1)\> (unique items, unordered)
 - **Required:** No
 
 The regions IPAM is enabled for. Allows pools to be created in these regions, as well as enabling monitoring
 
 ### `tags`
 
-- **Type:** `Map<String(len: 1..=128), String(len: ..=256)>`
+- **Type:** Map\<`String (len: 1..=128)`, `String (len: unbounded..=256)`\>
 - **Required:** No
 
 An array of key-value pairs to apply to this resource.
 
 ### `tier`
 
-- **Type:** [Enum (Tier)](#tier-tier)
+- **Type:** [Tier](#tier-tier)
 - **Required:** No
 
 The tier of the IPAM.
@@ -99,61 +99,61 @@ Shorthand formats: `free` or `Tier.free`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `organizations_entity_path` | String(len: 1..) | Yes | An AWS Organizations entity path. Build the path for the OU(s) using AWS Organizations IDs separated by a '/'. Include all child OUs by ending the path with '/*'. |
+| `organizations_entity_path` | `String (len: 1..unbounded)` | Yes | An AWS Organizations entity path. Build the path for the OU(s) using AWS Organizations IDs separated by a '/'. Include all child OUs by ending the path with '/*'. |
 
 ### operating_regions
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `region_name` | aws.Region — identity: String; member: String | Yes | The name of the region. |
+| `region_name` | `aws.Region (custom validator)` | Yes | The name of the region. |
 
 ## Attribute Reference
 
 ### `arn`
 
-- **Type:** aws.ec2.Ipam.Arn — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Ipam.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):ec2:.*$/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of the IPAM.
 
 ### `default_resource_discovery_association_id`
 
-- **Type:** String
+- **Type:** `String`
 
 The Id of the default association to the default resource discovery, created with this IPAM.
 
 ### `default_resource_discovery_id`
 
-- **Type:** String
+- **Type:** `String`
 
 The Id of the default resource discovery, created with this IPAM.
 
 ### `ipam_id`
 
-- **Type:** aws.ec2.Ipam.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Ipam.Id (pattern: /^ipam-[0-9a-f]{8,}$/ (Full))`
 
 Id of the IPAM.
 
 ### `private_default_scope_id`
 
-- **Type:** String
+- **Type:** `String`
 
 The Id of the default scope for publicly routable IP space, created with this IPAM.
 
 ### `public_default_scope_id`
 
-- **Type:** String(len: ..=255)
+- **Type:** `String (len: unbounded..=255)`
 
 The Id of the default scope for publicly routable IP space, created with this IPAM.
 
 ### `resource_discovery_association_count`
 
-- **Type:** Int
+- **Type:** `Int`
 
 The count of resource discoveries associated with this IPAM.
 
 ### `scope_count`
 
-- **Type:** Int
+- **Type:** `Int`
 
 The number of scopes that currently exist in this IPAM.
 

@@ -25,13 +25,13 @@ awscc.scheduler.ScheduleGroup {
 
 ### `name`
 
-- **Type:** String(pattern, len: 1..=64)
+- **Type:** `String (pattern: /^[0-9a-zA-Z-_.]+$/ (Full), len: 1..=64)`
 - **Required:** No
 - **Create-only:** Yes
 
 ### `tags`
 
-- **Type:** `Map<String(len: 1..=128), String(len: 1..=256)>` (entries: ..=50)
+- **Type:** Map\<`String (len: 1..=128)`, `String (len: 1..=256)`\> (entries: unbounded..=50)
 - **Required:** No
 
 The list of tags to associate with the schedule group.
@@ -51,25 +51,25 @@ Shorthand formats: `active` or `ScheduleGroupState.active`
 
 ### `arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String(pattern, len: 1..=1224)
+- **Type:** `aws.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /^arn:aws[a-z-]*:scheduler:[a-z0-9\-]+:\d{12}:schedule-group\/[0-9a-zA-Z-_.]+$/ (Full), len: 1..=1224, custom validator)`
 
 The Amazon Resource Name (ARN) of the schedule group.
 
 ### `creation_date`
 
-- **Type:** String(date-time)
+- **Type:** `String (pattern: /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:(?:[0-5][0-9]|60)(?:\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\z/ (Full))`; CFN format: date-time
 
 The time at which the schedule group was created.
 
 ### `last_modification_date`
 
-- **Type:** String(date-time)
+- **Type:** `String (pattern: /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:(?:[0-5][0-9]|60)(?:\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\z/ (Full))`; CFN format: date-time
 
 The time at which the schedule group was last modified.
 
 ### `state`
 
-- **Type:** [Enum (ScheduleGroupState)](#state-schedulegroupstate)
+- **Type:** [ScheduleGroupState](#state-schedulegroupstate)
 
 ## AWS API narrowings
 

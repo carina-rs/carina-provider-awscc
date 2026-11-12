@@ -91,7 +91,7 @@ awscc.cloudfront.Distribution {
 
 ### `auto_publish`
 
-- **Type:** Bool
+- **Type:** `Bool`
 - **Required:** No
 - **Write-only:** Yes
 
@@ -99,7 +99,7 @@ A flag that determines whether to automatically publish the function to the ``LI
 
 ### `function_code`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** Yes
 
 The function code. For more information about writing a CloudFront function, see [Writing function code for CloudFront Functions](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/writing-function-code.html) in the *Amazon CloudFront Developer Guide*.
@@ -113,7 +113,7 @@ Contains configuration information about a CloudFront function.
 
 ### `name`
 
-- **Type:** `String(pattern, len: 1..=64)`
+- **Type:** `String (pattern: /^[a-zA-Z0-9_-]{1,64}\z/ (Full), len: 1..=64)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -121,7 +121,7 @@ A name to identify the function.
 
 ### `tags`
 
-- **Type:** `Map<String(pattern, len: 1..=128), String(pattern, len: ..=256)>`
+- **Type:** Map\<`String (pattern: /^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$/ (Full), len: 1..=128)`, `String (pattern: /^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$/ (Full), len: unbounded..=256)`\>
 - **Required:** No
 
 A complex type that contains zero or more ``Tag`` elements.
@@ -152,27 +152,27 @@ Shorthand formats: `development` or `Stage.development`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `comment` | String | Yes | A comment to describe the function. The comment cannot be longer than 128 characters. |
-| `key_value_store_associations` | List\<[Struct(KeyValueStoreAssociation)](#function_configkey_value_store_associations)\> (items: ..=1) (unique items) | No | The configuration for the key value store associations. |
-| `runtime` | [Enum (Runtime)](#function_configruntime-runtime) | Yes | The function's runtime environment version. |
+| `comment` | `String` | Yes | A comment to describe the function. The comment cannot be longer than 128 characters. |
+| `key_value_store_associations` | List\<[Struct(KeyValueStoreAssociation)](#function_configkey_value_store_associations)\> (items: unbounded..=1, unique items, ordered) | No | The configuration for the key value store associations. |
+| `runtime` | [Runtime](#function_configruntime-runtime) | Yes | The function's runtime environment version. |
 
 ### function_config.key_value_store_associations
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key_value_store_arn` | aws.Arn — identity: String(pattern); member: String | Yes | The Amazon Resource Name (ARN) of the key value store association. |
+| `key_value_store_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the key value store association. |
 
 ### function_metadata
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `function_arn` | aws.Arn — identity: String(pattern); member: String | No | The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function. Provider-populated; cannot be set. |
+| `function_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function. Provider-populated; cannot be set. |
 
 ## Attribute Reference
 
 ### `function_arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String
+- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 
 
@@ -184,7 +184,7 @@ Contains metadata about a CloudFront function.
 
 ### `stage`
 
-- **Type:** [Enum (Stage)](#stage-stage)
+- **Type:** [Stage](#stage-stage)
 
 
 

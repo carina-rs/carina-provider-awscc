@@ -42,7 +42,7 @@ awscc.ec2.SecurityGroup {
 
 ### `group_description`
 
-- **Type:** `String(pattern, len: ..=255)`
+- **Type:** `String (pattern: /^[a-zA-Z0-9. _:/()#,@\[\]+=&;{}!$*-]*$/ (Full), len: unbounded..=255)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -50,7 +50,7 @@ A description for the security group.
 
 ### `group_name`
 
-- **Type:** String
+- **Type:** `String`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -58,28 +58,28 @@ The name of the security group.
 
 ### `security_group_egress`
 
-- **Type:** List\<[Struct(Egress)](#security_group_egress-1)\>
+- **Type:** List\<[Struct(Egress)](#security_group_egress-1)\> (unordered)
 - **Required:** No
 
 [VPC only] The outbound rules associated with the security group. There is a short interruption during which you cannot connect to the security group.
 
 ### `security_group_ingress`
 
-- **Type:** List\<[Struct(Ingress)](#security_group_ingress-1)\>
+- **Type:** List\<[Struct(Ingress)](#security_group_ingress-1)\> (unordered)
 - **Required:** No
 
 The inbound rules associated with the security group. There is a short interruption during which you cannot connect to the security group.
 
 ### `tags`
 
-- **Type:** `Map<String(len: ..=128), String(len: ..=256)>`
+- **Type:** Map\<`String (len: unbounded..=128)`, `String (len: unbounded..=256)`\>
 - **Required:** No
 
 Any tags assigned to the security group.
 
 ### `vpc_id`
 
-- **Type:** aws.ec2.Vpc.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -629,41 +629,41 @@ Shorthand formats: `tcp` or `IpProtocol.tcp`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cidr_ip` | Ipv4Cidr — identity: String; member: String | No |  |
-| `cidr_ipv6` | Ipv6Cidr — identity: String; member: String | No |  |
-| `description` | `String(pattern, len: ..=255)` | No |  |
-| `destination_prefix_list_id` | aws.ec2.PrefixList.Id — identity: String(pattern); member: String | No |  |
-| `destination_security_group_id` | aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String | No |  |
-| `from_port` | Int(-1..=65535) | No |  |
-| `ip_protocol` | [Enum (IpProtocol)](#security_group_egressip_protocol-ipprotocol) | Yes |  |
-| `to_port` | Int(-1..=65535) | No |  |
+| `cidr_ip` | `Ipv4Cidr (custom validator)` | No |  |
+| `cidr_ipv6` | `Ipv6Cidr (custom validator)` | No |  |
+| `description` | `String (pattern: /^[a-zA-Z0-9. _:/()#,@\[\]+=&;{}!$*-]*$/ (Full), len: unbounded..=255)` | No |  |
+| `destination_prefix_list_id` | `aws.ec2.PrefixList.Id (pattern: /^pl-[0-9a-f]{8,}$/ (Full))` | No |  |
+| `destination_security_group_id` | `aws.ec2.SecurityGroup.Id (pattern: /^sg-[0-9a-f]{8,}$/ (Full))` | No |  |
+| `from_port` | `Int (range: -1..=65535)` | No |  |
+| `ip_protocol` | [IpProtocol](#security_group_egressip_protocol-ipprotocol) | Yes |  |
+| `to_port` | `Int (range: -1..=65535)` | No |  |
 
 ### security_group_ingress
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cidr_ip` | Ipv4Cidr — identity: String; member: String | No |  |
-| `cidr_ipv6` | Ipv6Cidr — identity: String; member: String | No |  |
-| `description` | `String(pattern, len: ..=255)` | No |  |
-| `from_port` | Int(-1..=65535) | No |  |
-| `ip_protocol` | [Enum (IpProtocol)](#security_group_ingressip_protocol-ipprotocol) | Yes |  |
-| `source_prefix_list_id` | aws.ec2.PrefixList.Id — identity: String(pattern); member: String | No |  |
-| `source_security_group_id` | aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String | No |  |
-| `source_security_group_name` | String | No |  |
-| `source_security_group_owner_id` | aws.AccountId — identity: String(pattern, len: 12..=12); member: String | No |  |
-| `to_port` | Int(-1..=65535) | No |  |
+| `cidr_ip` | `Ipv4Cidr (custom validator)` | No |  |
+| `cidr_ipv6` | `Ipv6Cidr (custom validator)` | No |  |
+| `description` | `String (pattern: /^[a-zA-Z0-9. _:/()#,@\[\]+=&;{}!$*-]*$/ (Full), len: unbounded..=255)` | No |  |
+| `from_port` | `Int (range: -1..=65535)` | No |  |
+| `ip_protocol` | [IpProtocol](#security_group_ingressip_protocol-ipprotocol) | Yes |  |
+| `source_prefix_list_id` | `aws.ec2.PrefixList.Id (pattern: /^pl-[0-9a-f]{8,}$/ (Full))` | No |  |
+| `source_security_group_id` | `aws.ec2.SecurityGroup.Id (pattern: /^sg-[0-9a-f]{8,}$/ (Full))` | No |  |
+| `source_security_group_name` | `String` | No |  |
+| `source_security_group_owner_id` | `aws.AccountId (pattern: /^[0-9]{12}$/ (Full), len: 12..=12)` | No |  |
+| `to_port` | `Int (range: -1..=65535)` | No |  |
 
 ## Attribute Reference
 
 ### `group_id`
 
-- **Type:** aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.SecurityGroup.Id (pattern: /^sg-[0-9a-f]{8,}$/ (Full))`
 
 The group ID of the specified security group.
 
 ### `id`
 
-- **Type:** aws.ec2.SecurityGroup.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.SecurityGroup.Id (pattern: /^sg-[0-9a-f]{8,}$/ (Full))`
 
 The group name or group ID depending on whether the SG is created in default or specific VPC
 

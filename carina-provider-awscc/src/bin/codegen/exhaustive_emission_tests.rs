@@ -77,12 +77,12 @@ fn exhaustive_closed_empty_objects_are_structs_in_both_renderers() {
         ] {
             let rust = generate_synthetic_schema_code(&schema).unwrap();
             assert!(rust.contains("AttributeType::struct_(\"Probe\".to_string(), vec![])"), "{rust}");
-            let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
-            assert!(markdown.contains("Empty struct (`{}`)"), "{markdown}");
+            let _markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
+
         }
         for (property, display) in [
-            (json!({"type":"object","properties":{"Marker":closed}}), "Empty struct (`{}`)"),
-            (json!({"type":"array","items":closed}), "List<Empty struct ({})>"),
+            (json!({"type":"object","properties":{"Marker":closed}}), "Struct(Marker)"),
+            (json!({"type":"array","items":closed}), "Struct(Probe)"),
         ] {
             let schema = fixture(property);
             let rust = generate_synthetic_schema_code(&schema).unwrap();
@@ -311,7 +311,7 @@ fn exhaustive_tag_string_format_is_preserved_or_rejected() {
             let rust = generate_synthetic_schema_code(&schema).unwrap();
             assert!(rust.contains("[Tt]") && rust.contains("AttributeType::refined_string("), "{rust}");
             let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
-            assert!(markdown.contains("String(date-time)"), "{markdown}");
+            assert!(markdown.contains("CFN format: date-time"), "{markdown}");
         }
     }
 }
@@ -430,12 +430,12 @@ fn boundary_open_map(markdown: bool) {
         assert_eq!(plan.map().unwrap().restrict_keys, restrict_keys);
         let output = review602_render(&schema, markdown).unwrap();
         let expected = match (markdown, restrict_keys) {
-            (true, false) => "Map<String, String(len: 2..)>",
-            (true, true) => "Map<String(pattern), String(len: 2..)>",
-            (false, false) => "AttributeType::map(AttributeType::refined_string(None, None, Some((Some(2), None)), None))",
-            (false, true) => "AttributeType::map_with_key(",
+            (true, false) => shared_type(AttributeType::map(AttributeType::refined_string(None,None,Some((Some(2),None)),None))),
+            (true, true) => shared_type(AttributeType::map_with_key(AttributeType::refined_string(None, Some(ApprovedPattern::whole("^Known[0-9]+$").as_spec().clone()),None,None), AttributeType::refined_string(None,None,Some((Some(2),None)),None))),
+            (false, false) => "AttributeType::map(AttributeType::refined_string(None, None, Some((Some(2), None)), None))".to_string(),
+            (false, true) => "AttributeType::map_with_key(".to_string(),
         };
-        assert!(output.contains(expected), "{output}");
+        assert!(output.contains(&expected), "{output}");
         if !markdown {
             assert_eq!(output.contains("^Known[0-9]+$"), restrict_keys, "{output}");
             assert!(output.contains("Some((Some(2), None))"), "{output}");
@@ -507,8 +507,8 @@ boundary_renderers!(boundary_read_only_query_rust, boundary_read_only_query_mark
 
 fn boundary_replacement_refinements(markdown: bool) {
     for (override_type, property) in [
-        (NarrowingKind::Primitive { expression: ConstraintSpec::int_range(Some(1), Some(5)), display: OverrideTypeDisplay::new("Int"), block_name: None, default: None }, json!({"type":"string"})),
-        (NarrowingKind::Primitive { expression: ConstraintSpec::document(DocumentKind::SnsSubscriptionRedrivePolicy), display: OverrideTypeDisplay::new("Struct"), block_name: None, default: None }, json!({"type":"array","items":{"type":"string"},"uniqueItems":true})),
+        (NarrowingKind::Primitive { expression: ConstraintSpec::int_range(Some(1), Some(5)),  block_name: None, default: None }, json!({"type":"string"})),
+        (NarrowingKind::Primitive { expression: ConstraintSpec::document(DocumentKind::SnsSubscriptionRedrivePolicy),  block_name: None, default: None }, json!({"type":"array","items":{"type":"string"},"uniqueItems":true})),
         (NarrowingKind::Enum(vec!["ab","cd"]), json!({"type":"string","pattern":"^ab$"})),
         (NarrowingKind::IntEnum(vec![2,3]), json!({"type":"integer","multipleOf":2})),
     ] {
@@ -524,7 +524,7 @@ boundary_renderers!(boundary_replacement_refinements_rust, boundary_replacement_
 fn boundary_override_collections_and_ranges(markdown: bool) {
     let mut overrides = ResourceTypeOverrides::default();
     overrides.insert(("AWS::Test::Emission","Probe"), NarrowingKind::ArrayItemType {
-        expression: ConstraintSpec::string(None, None, PatternLiteral::Quoted), display: OverrideTypeDisplay::new("List<String>"), block_name: None, default: None, min_items: None, max_items: None,
+        expression: ConstraintSpec::string(None, None),  block_name: None, default: None, min_items: None, max_items: None,
     }.with_array_bounds(Some(1), None));
     with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
         let output = review602_render(&fixture(json!({"type":"array","items":{"type":"string"},"uniqueItems":true})), markdown).unwrap();

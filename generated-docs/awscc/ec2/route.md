@@ -40,21 +40,21 @@ awscc.ec2.Route {
 
 ### `carrier_gateway_id`
 
-- **Type:** aws.ec2.CarrierGateway.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.CarrierGateway.Id (pattern: /^cagw-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 The ID of the carrier gateway. You can only use this option when the VPC contains a subnet which is associated with a Wavelength Zone.
 
 ### `core_network_arn`
 
-- **Type:** aws.Arn — identity: String(pattern); member: String
+- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 - **Required:** No
 
 The Amazon Resource Name (ARN) of the core network.
 
 ### `destination_cidr_block`
 
-- **Type:** Ipv4Cidr — identity: String; member: String
+- **Type:** `Ipv4Cidr (custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -62,7 +62,7 @@ The IPv4 CIDR address block used for the destination match. Routing decisions ar
 
 ### `destination_ipv6_cidr_block`
 
-- **Type:** Ipv6Cidr — identity: String; member: String
+- **Type:** `Ipv6Cidr (custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -70,7 +70,7 @@ The IPv6 CIDR block used for the destination match. Routing decisions are based 
 
 ### `destination_prefix_list_id`
 
-- **Type:** aws.ec2.PrefixList.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.PrefixList.Id (pattern: /^pl-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -78,7 +78,7 @@ The ID of a prefix list used for the destination match.
 
 ### `egress_only_internet_gateway_id`
 
-- **Type:** aws.ec2.EgressOnlyInternetGateway.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.EgressOnlyInternetGateway.Id (pattern: /^eigw-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 [IPv6 traffic only] The ID of an egress-only internet gateway.
@@ -92,35 +92,35 @@ The ID of an internet gateway or virtual private gateway attached to your VPC.
 
 ### `instance_id`
 
-- **Type:** aws.ec2.Instance.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.Instance.Id (pattern: /^i-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 The ID of a NAT instance in your VPC. The operation fails if you specify an instance ID unless exactly one network interface is attached.
 
 ### `local_gateway_id`
 
-- **Type:** aws.ec2.LocalGateway.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.LocalGateway.Id (pattern: /^lgw-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 The ID of the local gateway.
 
 ### `nat_gateway_id`
 
-- **Type:** aws.ec2.NatGateway.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.NatGateway.Id (pattern: /^nat-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 [IPv4 traffic only] The ID of a NAT gateway.
 
 ### `network_interface_id`
 
-- **Type:** aws.ec2.NetworkInterface.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.NetworkInterface.Id (pattern: /^eni-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 The ID of a network interface.
 
 ### `route_table_id`
 
-- **Type:** aws.ec2.RouteTable.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.RouteTable.Id (pattern: /^rtb-[0-9a-f]{8,}$/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -128,21 +128,21 @@ The ID of the route table for the route.
 
 ### `transit_gateway_id`
 
-- **Type:** aws.ec2.TransitGateway.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.TransitGateway.Id (pattern: /^tgw-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 The ID of a transit gateway.
 
 ### `vpc_endpoint_id`
 
-- **Type:** aws.ec2.VpcEndpoint.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.VpcEndpoint.Id (pattern: /^vpce-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 The ID of a VPC endpoint. Supported for Gateway Load Balancer endpoints only.
 
 ### `vpc_peering_connection_id`
 
-- **Type:** aws.ec2.VpcPeeringConnection.Id — identity: String(pattern); member: String
+- **Type:** `aws.ec2.VpcPeeringConnection.Id (pattern: /^pcx-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 The ID of a VPC peering connection.
@@ -151,7 +151,7 @@ The ID of a VPC peering connection.
 
 ### `cidr_block`
 
-- **Type:** Ipv4Cidr — identity: String; member: String
+- **Type:** `Ipv4Cidr (custom validator)`
 
 
 

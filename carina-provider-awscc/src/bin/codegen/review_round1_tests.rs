@@ -32,7 +32,6 @@ fn review_r7_document_containment_retains_string_formats() {
         TypeOverride::identity(None).with_narrowing(
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::document(DocumentKind::SnsSubscriptionRedrivePolicy),
-                display: OverrideTypeDisplay::new("RedrivePolicy"),
                 block_name: None,
                 default: None,
             },
@@ -261,6 +260,6 @@ fn review_r7_required_and_output_defaults_are_preserved_as_annotations() {
         assert!(rust.contains("CFN default: 3"));
         assert!(!rust.contains(".with_default("));
         let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
-        assert!(markdown.contains("**Default:** `3`") && markdown.contains("server default"));
+        assert!(markdown.contains("**CFN default:** `3`") && markdown.contains("server default") && !markdown.contains("**Default:**"));
     }
 }

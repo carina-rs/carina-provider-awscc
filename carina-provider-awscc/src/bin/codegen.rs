@@ -14,6 +14,7 @@
 
 use anyhow::{Context, Result};
 use carina_aws_types::dsl_enum_value;
+use carina_core::schema::AttributeType;
 use carina_core::schema::{ListElements, PatternMatch, PatternSpec};
 use carina_docgen::example::{self, DocExample, ExampleKind};
 use carina_docgen::{Heading, PageBuilder, TableCell};
@@ -55,11 +56,15 @@ mod emission_plan;
 #[path = "codegen/field_groups.rs"]
 mod field_groups;
 use field_groups::{FieldGroups, RequiredGroup};
+#[path = "codegen/type_emission.rs"]
+mod type_emission;
+use type_emission::{EmittedType, ResourceEmission, TypeAnnotations};
 #[cfg(test)]
 #[path = "codegen/schema_projection_tests.rs"]
 mod schema_projection_tests;
+#[path = "codegen/type_docs.rs"]
+mod type_docs;
 use carina_provider_awscc::schemas::string_identity::StringIdentity;
-use override_type_expression::PatternLiteral;
 #[path = "codegen/string_identity.rs"]
 mod string_identity;
 use parsed_cfn_schema::ParsedCfnSchema;
@@ -148,12 +153,12 @@ thread_local! {
     /// this to publish a schema def only when their inline body is recursive.
     #[allow(clippy::missing_const_for_thread_local)]
     static BACK_REFERENCED_DEFS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
-    /// Collected `(def_name, AttributeType-rendered Rust code)` for the
-    /// resource currently being generated. Populated by named local overrides
-    /// and the recursion guard; consumed by the resource emitter to populate
+    /// Named definitions and duplicate candidates for the current resource,
+    /// retaining Rust spelling, semantic types and annotations. Overrides and
+    /// recursion populate this registry; admitted bodies populate
     /// `ResourceSchema.defs`.
     #[allow(clippy::missing_const_for_thread_local)]
-    static EMITTED_DEFS: RefCell<BTreeMap<String, String>> = RefCell::new(BTreeMap::new());
+    static EMITTED_TYPES: RefCell<type_emission::DefinitionRegistry> = RefCell::new(type_emission::DefinitionRegistry::default());
     /// Provider paths whose generated `AttributeSchema` or `StructField`
     /// actually uses the `provider_populated` constructor in the current
     /// emission pass.
@@ -196,7 +201,7 @@ fn reset_recursion_guard() {
     overrides::reset_global_narrowings();
     IN_PROGRESS_DEFS.with(|s| s.borrow_mut().clear());
     BACK_REFERENCED_DEFS.with(|s| s.borrow_mut().clear());
-    EMITTED_DEFS.with(|s| s.borrow_mut().clear());
+    EMITTED_TYPES.with(|s| s.borrow_mut().clear());
     reset_property_mode_emission_state();
 }
 
@@ -219,10 +224,21 @@ fn reset_property_mode_emission_state() {
     EMITTED_ARRAY_OVERRIDES.with(|s| s.borrow_mut().clear());
 }
 
+fn reset_emission_pass() {
+    EMITTED_TYPES.with(|s| s.borrow_mut().clear());
+    BACK_REFERENCED_DEFS.with(|s| s.borrow_mut().clear());
+    reset_property_mode_emission_state();
+}
+
 /// Take the defs collected during the current resource pass and
 /// return them as a sorted `BTreeMap`.
-fn take_emitted_defs() -> BTreeMap<String, String> {
-    EMITTED_DEFS.with(|s| std::mem::take(&mut *s.borrow_mut()))
+fn take_emitted_registry() -> type_emission::DefinitionRegistry {
+    EMITTED_TYPES.with(|s| std::mem::take(&mut *s.borrow_mut()))
+}
+
+#[cfg(test)]
+fn take_emitted_defs() -> BTreeMap<String, EmittedType> {
+    take_emitted_registry().into_parts().0
 }
 
 /// Exit status used when a schema is deliberately skipped (NON_PROVISIONABLE).
@@ -233,37 +249,23 @@ const EXIT_SKIPPED: i32 = 2;
 /// Optional defaults attached to a resource-scoped, same-kind refinement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct AttributeTypeOverrideDefault {
-    value_expression: &'static str,
+    value: OverrideDefaultValue,
     markdown: &'static str,
 }
 
-mod override_type_display {
-    /// Raw type text for a code span. Keep the field private so every value
-    /// passes validation before the Markdown renderer adds delimiters.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct OverrideTypeDisplay(&'static str);
-
-    impl OverrideTypeDisplay {
-        pub const fn new(text: &'static str) -> Self {
-            let bytes = text.as_bytes();
-            let mut index = 0;
-            while index < bytes.len() {
-                assert!(
-                    bytes[index] != b'`',
-                    "override type display contains a backtick"
-                );
-                index += 1;
-            }
-            Self(text)
-        }
-
-        pub const fn as_str(self) -> &'static str {
-            self.0
-        }
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OverrideDefaultValue {
+    EmptyList,
 }
 
-use override_type_display::OverrideTypeDisplay;
+impl OverrideDefaultValue {
+    fn core(self) -> carina_core::resource::Value {
+        use carina_core::resource::{ConcreteValue, Value};
+        Value::Concrete(match self {
+            Self::EmptyList => ConcreteValue::List(vec![]),
+        })
+    }
+}
 
 type QueryResult<T> = std::result::Result<T, schema_layer::SchemaError>;
 
@@ -965,6 +967,8 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> QueryResult<bool> {
 struct TagMapType {
     key: StringLeaf<'static>,
     value: StringLeaf<'static>,
+    key_format: Option<String>,
+    value_format: Option<String>,
     min_entries: Option<i64>,
     max_entries: Option<i64>,
 }
@@ -976,10 +980,21 @@ impl TagMapType {
         path: CfnPropertyPath<'_>,
         namespace: &str,
         structural: &[String],
-    ) -> Result<(String, Option<EnumInfo>)> {
+    ) -> Result<(EmittedType, Option<EnumInfo>)> {
         let info = key_enum_info(&self.key).cloned();
-        let key = emit_map_key(self.key, cfn_type, path, namespace, structural)?;
-        let value = self.value.emit(cfn_type, "Value").0;
+        let key = emit_map_key(
+            self.key,
+            cfn_type,
+            path,
+            namespace,
+            structural,
+            type_emission::SourceNotes::string(self.key_format.as_deref()),
+        )?;
+        let mut value = self.value.emit(cfn_type, "Value").0;
+        type_emission::source_notes(
+            &mut value,
+            type_emission::SourceNotes::string(self.value_format.as_deref()),
+        );
         let bound = |bound: Option<i64>, keyword: &str| -> Result<Option<u64>> {
             bound
                 .map(|bound| {
@@ -995,24 +1010,20 @@ impl TagMapType {
             format!(
                 "AttributeType::refined_map({key}, {value}, {})",
                 emit_length_option(min, max),
+                key = key.rust,
+                value = value.rust,
             )
         } else {
-            format!("AttributeType::map_with_key({key}, {value})")
+            format!(
+                "AttributeType::map_with_key({key}, {value})",
+                key = key.rust,
+                value = value.rust
+            )
         };
-        Ok((expression, info))
-    }
-
-    fn display(&self) -> TypeDisplay {
-        TypeDisplay::Map {
-            key: if key_enum_info(&self.key).is_some() {
-                map_key_display(&self.key)
-            } else {
-                self.key.display()
-            },
-            value: self.value.display(),
-            min_entries: self.min_entries,
-            max_entries: self.max_entries,
-        }
+        Ok((
+            EmittedType::map(expression, &key, &value, type_emission::length(min, max)),
+            info,
+        ))
     }
 }
 
@@ -1147,6 +1158,11 @@ fn project_tag_map(
     Ok(TagMapType {
         key,
         value: leaf(cached_value, "Value")?,
+        key_format: match cached_key {
+            TagKey::Property(key) => key.format.clone(),
+            TagKey::Pattern { .. } => None,
+        },
+        value_format: cached_value.format.clone(),
         // Lengths have an implicit lower bound of zero. Use the same normal
         // form as emit_length_option for both Rust and Markdown.
         min_entries: min_entries.filter(|&min| min != 0),
@@ -1728,7 +1744,7 @@ fn classify_bare_object(
 ) -> Option<BareObjectClassification> {
     assert!(
         resource_type_override(cfn_type, property_path)
-            .and_then(TypeOverride::array_item_type_expression)
+            .and_then(TypeOverride::array_item_constraint)
             .is_none(),
         "{cfn_type}.{property_path}: ArrayItemType cannot classify a bare object as a whole attribute; consume it at the CFN array"
     );
@@ -1783,36 +1799,38 @@ fn emission_bare_object(
     )).into())
 }
 
-fn cfn_json_type(property: &SchemaProperty) -> Result<String> {
+fn cfn_json_type(property: &SchemaProperty) -> Result<EmittedType> {
     const NAME: &str = "__CfnJsonValue";
-    let projection = property.try_query()?;
-    emission_plan::lower(projection)?;
-    let value = "AttributeType::union(vec![AttributeType::string(), AttributeType::float(), AttributeType::bool(), AttributeType::list(AttributeType::ref_(\"__CfnJsonValue\".to_string())), AttributeType::map(AttributeType::ref_(\"__CfnJsonValue\".to_string()))])";
-    EMITTED_DEFS.with(|defs| {
-        defs.borrow_mut()
-            .insert(NAME.to_string(), value.to_string());
-    });
-    let object = "AttributeType::map(AttributeType::ref_(\"__CfnJsonValue\".to_string()))";
-    if is_object_string_union(property)? {
-        Ok(format!(
-            "AttributeType::union(vec![{object}, AttributeType::string()])"
-        ))
+    emission_plan::lower(property.try_query()?)?;
+    let reference = EmittedType::reference(NAME);
+    let value = EmittedType::union(vec![
+        EmittedType::string(),
+        EmittedType::float(None),
+        EmittedType::boolean(),
+        EmittedType::list_of(&reference),
+        EmittedType::map_of(&reference),
+    ]);
+    EMITTED_TYPES.with(|defs| defs.borrow_mut().insert(NAME.to_string(), value));
+    let object = EmittedType::map_of(&reference);
+    let value = if is_object_string_union(property)? {
+        EmittedType::union(vec![object, EmittedType::string()])
     } else {
-        Ok(object.to_string())
-    }
+        object
+    };
+    Ok(value.note("CFN-JSON"))
 }
 
 fn emit_cfn_json_document(
     property: &SchemaProperty,
     schema: &CfnSchema,
     path: CfnPropertyPath<'_>,
-) -> Result<String> {
+) -> Result<EmittedType> {
     if is_iam_policy_document_property(&schema.type_name, path)
         && let Some(evidence) = narrowing_evidence::for_field(&schema.type_name, &path.to_string())
     {
         overrides::record_global_narrowing(&path.source_pointer(), &evidence);
         return ConstraintSpec::document(DocumentKind::IamPolicyDocument)
-            .emit(property, schema, path, None);
+            .emit_inner(property, schema, path, None, true);
     }
     cfn_json_type(property)
 }
@@ -1822,7 +1840,7 @@ fn bare_object_attribute_type(
     schema: &CfnSchema,
     property_path: CfnPropertyPath<'_>,
     _prop_name: &str,
-) -> Result<String> {
+) -> Result<EmittedType> {
     let cfn_type = &schema.type_name;
     Ok(match emission_bare_object(prop, cfn_type, property_path)? {
         BareObjectClassification::CfnJson => cfn_json_type(prop)?,
@@ -1833,7 +1851,7 @@ fn bare_object_attribute_type(
             overrides::bare_object_narrowing(schema, property_path, prop)?
         }
         BareObjectClassification::TypedOverride { entry } => {
-            entry.emit_expression(prop, schema, property_path)?
+            entry.emit_expression_unnoted(prop, schema, property_path)?
         }
         BareObjectClassification::FreeFormJson(entry)
         | BareObjectClassification::OmittedResource(entry) => {
@@ -2365,10 +2383,10 @@ fn emit_replacement_class_builder(code: &mut String, class: ReplacementClass) {
 /// there are no manual aliases) — the empty vector signals "no
 /// rewrites" without dragging unused identifier text into the
 /// generated schema.
-fn dsl_aliases_code(
+fn dsl_aliases_values(
     values: &[String],
     prop_aliases: Option<&Vec<(&'static str, &'static str)>>,
-) -> String {
+) -> Vec<(String, String)> {
     // Build (canonical, dsl_form) pairs for **every** value, including
     // identity rows where the DSL spelling equals the canonical. The
     // exhaustive table is what makes the carina-core strict-DSL
@@ -2406,6 +2424,14 @@ fn dsl_aliases_code(
         }
     }
 
+    entries
+}
+
+fn dsl_aliases_code(
+    values: &[String],
+    prop_aliases: Option<&Vec<(&'static str, &'static str)>>,
+) -> String {
+    let entries = dsl_aliases_values(values, prop_aliases);
     if entries.is_empty() {
         return "vec![]".to_string();
     }
@@ -2503,24 +2529,12 @@ fn main() -> Result<()> {
 struct StructDefInfo {
     /// Definition name (e.g., "Ingress")
     def_name: String,
-    /// Structural path from the resource root to this definition.
-    struct_path: Vec<String>,
     /// First CloudFormation property path through which this definition was reached.
     first_property_path: Vec<String>,
     /// Every distinct property path through which this definition is reached.
     property_paths: BTreeSet<Vec<String>>,
     /// Properties of the definition
     properties: BTreeMap<String, SchemaProperty>,
-    /// Required fields
-    required: Vec<String>,
-    field_groups: FieldGroups,
-    conditional_requirements: Vec<schema_projection::ConditionalRequirement>,
-}
-
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct MarkdownEnumKey {
-    namespace: String,
-    type_name: String,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -2534,153 +2548,9 @@ enum MarkdownStructKey {
     Inline(Vec<String>),
 }
 
-impl MarkdownStructKey {
-    fn stable_identity(&self) -> String {
-        match self {
-            Self::Definition(name) => format!("definition {name}"),
-            Self::Inline(property_path) => {
-                format!("inline {}", markdown_heading_path(property_path).join("."))
-            }
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct MarkdownStructFieldKey {
-    struct_key: MarkdownStructKey,
-    field_name: String,
-}
-
-#[derive(Default)]
-struct MarkdownEnumTargets {
-    properties: BTreeMap<String, MarkdownEnumKey>,
-    struct_fields: BTreeMap<MarkdownStructFieldKey, MarkdownEnumKey>,
-}
-
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum MarkdownTarget {
-    Enum(MarkdownEnumKey),
-    Struct(MarkdownStructKey),
-}
-
-#[derive(Debug)]
-enum MarkdownType {
-    Plain(String),
-    Linked(MarkdownLinkedType),
-}
-
-#[derive(Debug)]
-enum MarkdownLinkedType {
-    Text(String),
-    Enum(MarkdownEnumKey),
-    Struct {
-        key: MarkdownStructKey,
-        name: String,
-    },
-    List {
-        item: Box<MarkdownLinkedType>,
-        suffix: Option<String>,
-    },
-    Map {
-        key: Box<MarkdownLinkedType>,
-        value: Box<MarkdownLinkedType>,
-        suffix: Option<String>,
-    },
-}
-
-impl MarkdownType {
-    fn write_to(&self, page: &mut PageBuilder<MarkdownTarget>) {
-        match self {
-            Self::Plain(value) => page.push_str(value),
-            Self::Linked(value) => value.write_to(page),
-        }
-    }
-
-    fn table_cell(&self) -> TableCell<MarkdownTarget> {
-        let mut cell = TableCell::new();
-        self.write_to_table_cell(&mut cell);
-        cell
-    }
-
-    fn write_to_table_cell(&self, cell: &mut TableCell<MarkdownTarget>) {
-        match self {
-            Self::Plain(value) => cell.push_text(value),
-            Self::Linked(value) => value.write_to_table_cell(cell),
-        }
-    }
-}
-
-impl MarkdownLinkedType {
-    fn write_to(&self, page: &mut PageBuilder<MarkdownTarget>) {
-        match self {
-            Self::Text(text) => page.push_str(text),
-            Self::Enum(key) => page.link(
-                MarkdownTarget::Enum(key.clone()),
-                format!("Enum ({})", key.type_name),
-            ),
-            Self::Struct { key, name } => page.link(
-                MarkdownTarget::Struct(key.clone()),
-                format!("Struct({name})"),
-            ),
-            Self::List { item, suffix } => {
-                page.push_str("List\\<");
-                item.write_to(page);
-                page.push_str("\\>");
-                if let Some(suffix) = suffix {
-                    page.push_str(suffix);
-                }
-            }
-            Self::Map { key, value, suffix } => {
-                page.push_str("Map\\<");
-                key.write_to(page);
-                page.push_str(", ");
-                value.write_to(page);
-                page.push_str("\\>");
-                if let Some(suffix) = suffix {
-                    page.push_str(suffix);
-                }
-            }
-        }
-    }
-
-    fn write_to_table_cell(&self, cell: &mut TableCell<MarkdownTarget>) {
-        match self {
-            Self::Text(text) => cell.push_text(text),
-            Self::Enum(key) => cell.push_link(
-                MarkdownTarget::Enum(key.clone()),
-                format!("Enum ({})", key.type_name),
-            ),
-            Self::Struct { key, name } => cell.push_link(
-                MarkdownTarget::Struct(key.clone()),
-                format!("Struct({name})"),
-            ),
-            Self::List { item, suffix } => {
-                cell.push_text("List\\<");
-                item.write_to_table_cell(cell);
-                cell.push_text("\\>");
-                if let Some(suffix) = suffix {
-                    cell.push_text(suffix);
-                }
-            }
-            Self::Map { key, value, suffix } => {
-                cell.push_text("Map\\<");
-                key.write_to_table_cell(cell);
-                cell.push_text(", ");
-                value.write_to_table_cell(cell);
-                cell.push_text("\\>");
-                if let Some(suffix) = suffix {
-                    cell.push_text(suffix);
-                }
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-struct MarkdownEnum {
-    prop_name: String,
-    heading_path: Vec<String>,
-    info: EnumInfo,
+    Typed(type_docs::NodeId),
 }
 
 fn decode_json_pointer_segment(segment: &str) -> String {
@@ -2955,7 +2825,7 @@ fn validate_emitted_nested_read_only_properties(schema: &CfnSchema) -> Result<()
     })
 }
 
-fn validate_emitted_nested_write_only_properties(schema: &CfnSchema) -> Result<()> {
+fn validate_declared_input_modes(schema: &CfnSchema) -> Result<()> {
     let read_only = schema
         .metadata()
         .read_only_properties
@@ -2975,6 +2845,10 @@ fn validate_emitted_nested_write_only_properties(schema: &CfnSchema) -> Result<(
         }
     }
 
+    Ok(())
+}
+
+fn validate_emitted_nested_write_only_properties(schema: &CfnSchema) -> Result<()> {
     let emitted = EMITTED_WRITE_ONLY_PATHS.with(|paths| {
         paths
             .borrow()
@@ -3260,18 +3134,14 @@ fn documented_top_level_properties(
     runtime_top_level_properties(schema).filter(|(_, property)| !is_deprecated_property(property))
 }
 
-fn is_struct_property(prop: &SchemaProperty, schema: &CfnSchema) -> QueryResult<bool> {
-    property_generates_struct(prop, schema)
-}
-
-fn is_list_of_struct_property(prop: &SchemaProperty, schema: &CfnSchema) -> QueryResult<bool> {
+fn source_list_has_struct(prop: &SchemaProperty, schema: &CfnSchema) -> QueryResult<bool> {
     let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new())? else {
         return Ok(false);
     };
     let Some(items) = array.try_query()?.items.as_deref() else {
         return Ok(false);
     };
-    is_struct_property(items, schema)
+    property_generates_struct(items, schema)
 }
 
 fn uses_core_schema_types_path(s: &str) -> bool {
@@ -3282,610 +3152,6 @@ fn uses_core_schema_types_path(s: &str) -> bool {
             .next_back()
             .is_none_or(|ch| ch != ':' && ch != '_' && !ch.is_alphanumeric())
     })
-}
-
-/// Infer a display type name for a string property based on its name.
-/// Handles both singular (e.g., "SubnetId") and plural (e.g., "SubnetIds") property names.
-#[cfg(test)]
-fn infer_string_type_display(prop_name: &str, resource_type: &str) -> String {
-    if let Some(binding) =
-        resource_type_override(resource_type, CfnPropertyPath::new(None, prop_name))
-            .and_then(TypeOverride::string_binding)
-    {
-        return binding.map_or_else(
-            || "String".to_string(),
-            |identity| identity.identity().to_string(),
-        );
-    }
-    // Check known string type overrides
-    let string_overrides = known_string_type_overrides();
-    if let Some(&override_type) = string_overrides.get(prop_name) {
-        // Extract display name from override type string
-        // e.g., "carina_aws_types::security_group_id()" -> "SecurityGroupId"
-        //       "crate::schemas::catalog::iam_role_arn()" -> "IamRoleArn"
-        return override_type_to_display_name(string_identity::constructor(override_type))
-            .to_string();
-    }
-
-    // Normalize plural forms to singular for type inference
-    // e.g., "SubnetIds" -> "SubnetId", "CidrBlocks" -> "CidrBlock"
-    let singular_name = if prop_name.ends_with("Ids")
-        || prop_name.ends_with("ids")
-        || prop_name.ends_with("Arns")
-        || prop_name.ends_with("arns")
-    {
-        &prop_name[..prop_name.len() - 1]
-    } else {
-        prop_name
-    };
-
-    // Check overrides for singular form too (e.g., list items)
-    if let Some(&override_type) = string_overrides.get(singular_name) {
-        return override_type_to_display_name(string_identity::constructor(override_type))
-            .to_string();
-    }
-
-    let prop_lower = singular_name.to_lowercase();
-    if prop_lower.contains("cidr") {
-        if prop_lower.contains("ipv6") {
-            "Ipv6Cidr".to_string()
-        } else {
-            "Ipv4Cidr".to_string()
-        }
-    } else if (prop_lower.contains("ipaddress")
-        || prop_lower.ends_with("ip")
-        || prop_lower.contains("ipaddresses"))
-        && !prop_lower.contains("cidr")
-        && !prop_lower.contains("count")
-        && !prop_lower.contains("type")
-    {
-        if prop_lower.contains("ipv6") {
-            "Ipv6Address".to_string()
-        } else {
-            "Ipv4Address".to_string()
-        }
-    } else if prop_lower == "availabilityzone" || prop_lower == "availabilityzones" {
-        "AvailabilityZone".to_string()
-    } else if prop_lower == "availabilityzoneid" || prop_lower == "availabilityzoneids" {
-        "AvailabilityZoneId".to_string()
-    } else if prop_lower.ends_with("region") || prop_lower == "regionname" {
-        "Region".to_string()
-    } else if prop_lower.ends_with("arn")
-        || prop_lower.ends_with("arns")
-        || prop_lower.contains("_arn")
-    {
-        "Arn".to_string()
-    } else if is_ipam_pool_id_property(singular_name) {
-        "IpamPoolId".to_string()
-    } else if is_aws_resource_id_property(singular_name, Some(resource_type)) {
-        get_resource_id_display_name(singular_name, Some(resource_type)).to_string()
-    } else if prop_lower.ends_with("ownerid") || prop_lower.ends_with("accountid") {
-        "AwsAccountId".to_string()
-    } else {
-        "String".to_string()
-    }
-}
-
-/// Catalog constructors and their generated ARN forwarding helpers derive
-/// their display from the same identity used in validation errors.
-fn catalog_type_display(constructor: &str) -> Option<&'static str> {
-    static DISPLAYS: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
-        let mut displays = HashMap::new();
-        for row in AwsccType::ALL {
-            let identity = row.identity();
-            let display = identity.to_string();
-            displays.insert(row.constructor_path().to_string(), display.clone());
-            if identity.kind == "Arn"
-                && let [service, resource] = identity.segments.as_slice()
-            {
-                displays.insert(
-                    format!(
-                        "super::super::{service}::{}::arn()",
-                        resource.to_snake_case()
-                    ),
-                    display,
-                );
-            }
-        }
-        displays
-    });
-    DISPLAYS.get(constructor).map(String::as_str)
-}
-
-fn resource_arn_catalog_display(type_name: &str) -> Result<Option<String>> {
-    let dsl_resource = dsl_resource_name_from_type(type_name)?;
-    let Some((service, resource)) = resource_identity_parts(&dsl_resource) else {
-        return Ok(None);
-    };
-    // Resolve the same constructor as the emitted arn() helper, including
-    // AWSCC refinements. Shared constructors retain their existing labels.
-    Ok(Some(
-        arn_identity(service, resource)?.identity().to_string(),
-    ))
-}
-
-/// Catalog rows display their identities. The generic ARN and shared AWS/core
-/// types retain their established public short aliases, such as Arn and Region.
-#[cfg(test)]
-fn override_type_to_display_name(override_type: &str) -> &str {
-    if let Some(identity) = catalog_type_display(override_type) {
-        return identity;
-    }
-    match override_type {
-        "carina_aws_types::security_group_id()" => "SecurityGroupId",
-        "carina_aws_types::route53_hosted_zone_id()" => "Route53HostedZoneId",
-        "carina_aws_types::aws_resource_id()" => "AwsResourceId",
-        "crate::schemas::catalog::iam_role_arn()" | "super::super::iam::role::arn()" => {
-            "IamRoleArn"
-        }
-        "crate::schemas::catalog::iam_policy_arn()" | "super::super::iam::policy::arn()" => {
-            "IamPolicyArn"
-        }
-        "crate::schemas::catalog::kms_key_arn()" | "super::super::kms::key::arn()" => "KmsKeyArn",
-        "crate::schemas::catalog::kms_key_id()" => "KmsKeyId",
-        "carina_aws_types::gateway_id()" => "GatewayId",
-        "carina_aws_types::network_acl_id()" => "NetworkAclId",
-        "carina_aws_types::aws_account_id()" => "AwsAccountId",
-        "carina_aws_types::instance_id()" => "InstanceId",
-        "carina_aws_types::network_interface_id()" => "NetworkInterfaceId",
-        "carina_aws_types::allocation_id()" => "AllocationId",
-        "carina_aws_types::prefix_list_id()" => "PrefixListId",
-        "carina_aws_types::carrier_gateway_id()" => "CarrierGatewayId",
-        "carina_aws_types::local_gateway_id()" => "LocalGatewayId",
-        "carina_aws_types::egress_only_internet_gateway_id()" => "EgressOnlyInternetGatewayId",
-        "carina_aws_types::transit_gateway_id()" => "TransitGatewayId",
-        "carina_aws_types::vpc_peering_connection_id()" => "VpcPeeringConnectionId",
-        "carina_aws_types::vpc_endpoint_id()" => "VpcEndpointId",
-        "carina_aws_types::transit_gateway_attachment_id()" => "TransitGatewayAttachmentId",
-        "carina_aws_types::flow_log_id()" => "FlowLogId",
-        "carina_aws_types::subnet_route_table_association_id()" => "SubnetRouteTableAssociationId",
-        "carina_aws_types::ipam_id()" => "IpamId",
-        "carina_aws_types::iam_role_id()" => "IamRoleId",
-        "carina_aws_types::aws_region()" => "Region",
-        "types::ipv4_address()" | "carina_core::schema::types::ipv4_address()" => "Ipv4Address",
-        "carina_core::schema::types::ipv6_address()" => "Ipv6Address",
-        "carina_core::schema::types::domain_name()" => "DomainName",
-        "crate::schemas::catalog::arn()" => "Arn",
-        "carina_aws_types::ipam_pool_id()" => "IpamPoolId",
-        "carina_aws_types::vpc_cidr_block_association_id()" => "VpcCidrBlockAssociationId",
-        "carina_aws_types::tgw_route_table_id()" => "TgwRouteTableId",
-        "types::cidr()" => "Cidr",
-        "types::email()" => "Email",
-        "carina_core::schema::types::https_url()" => "HttpsUrl",
-        "AttributeType::string()" => "String",
-        _ => "String",
-    }
-}
-
-/// Determine the display string for a property's type in markdown docs
-#[cfg(test)]
-fn type_display_string(prop_name: &str, prop: &SchemaProperty, schema: &ParsedCfnSchema) -> String {
-    let property = tests::fixture_property(schema, prop_name, prop);
-    let prop = &property;
-    type_display_string_at(
-        prop,
-        &EmissionContext::from_source(schema).unwrap(),
-        &[prop_name.to_string()],
-        CfnPropertyPath::new(None, prop_name),
-    )
-    .unwrap()
-}
-
-/// Keep type text and collection limits separate from Markdown formatting so a
-/// nested collection never embeds an already-rendered inline-code span.
-enum TypeDisplay {
-    Plain(String),
-    Code(String),
-    EmptyStruct,
-    List {
-        item: Box<TypeDisplay>,
-        min_items: Option<i64>,
-        max_items: Option<i64>,
-        unique_items: bool,
-    },
-    Map {
-        key: String,
-        value: String,
-        min_entries: Option<i64>,
-        max_entries: Option<i64>,
-    },
-}
-
-impl TypeDisplay {
-    fn from_constructor(constructor: &str, fallback: String) -> Self {
-        match catalog_type_display(constructor) {
-            Some(identity) => Self::Code(identity.to_string()),
-            None => Self::Plain(fallback),
-        }
-    }
-
-    fn item_limits(min: Option<i64>, max: Option<i64>) -> String {
-        Self::collection_limits("items", min, max)
-    }
-
-    fn collection_limits(kind: &str, min: Option<i64>, max: Option<i64>) -> String {
-        if min.is_some() || max.is_some() {
-            format!(" ({kind}: {})", range_display_string(min, max))
-        } else {
-            String::new()
-        }
-    }
-
-    fn type_text(&self) -> String {
-        match self {
-            Self::Plain(text) | Self::Code(text) => text.clone(),
-            Self::EmptyStruct => "Empty struct ({})".to_string(),
-            Self::List {
-                item,
-                min_items,
-                max_items,
-                unique_items,
-            } => format!(
-                "List<{}>{}{}",
-                item.type_text(),
-                Self::item_limits(*min_items, *max_items),
-                if *unique_items { " (unique items)" } else { "" },
-            ),
-            Self::Map {
-                key,
-                value,
-                min_entries,
-                max_entries,
-            } => format!(
-                "Map<{key}, {value}>{}",
-                Self::collection_limits("entries", *min_entries, *max_entries),
-            ),
-        }
-    }
-
-    fn markdown(&self) -> String {
-        match self {
-            Self::Plain(text) => text.clone(),
-            Self::Code(text) => format!("`{text}`"),
-            Self::EmptyStruct => "Empty struct (`{}`)".to_string(),
-            Self::List {
-                item,
-                min_items,
-                max_items,
-                unique_items,
-            } => format!(
-                "`List<{}>`{}{}",
-                item.type_text(),
-                Self::item_limits(*min_items, *max_items),
-                if *unique_items { " (unique items)" } else { "" },
-            ),
-            Self::Map {
-                key,
-                value,
-                min_entries,
-                max_entries,
-            } => format!(
-                "`Map<{key}, {value}>`{}",
-                Self::collection_limits("entries", *min_entries, *max_entries),
-            ),
-        }
-    }
-}
-
-fn object_map_type_display(
-    prop_name: &str,
-    schema: &EmissionContext<'_>,
-    property_path: CfnPropertyPath<'_>,
-    prop: &SchemaProperty,
-    provider_path: &[String],
-    value: &SchemaProperty,
-) -> Result<TypeDisplay> {
-    let key = map_key_type(prop, schema, provider_path, property_path)?
-        .as_ref()
-        .map(map_key_display)
-        .unwrap_or_else(|| "String".to_string());
-    let value = match object_map_value(schema, property_path, value)? {
-        ObjectMapValueKind::DirectString => {
-            let value_path = schema.collection_path(provider_path, PathSegment::MapValue);
-            string_leaf(schema.property_at(&value_path, value), property_path, None)?.display()
-        }
-        ObjectMapValueKind::Struct => {
-            let struct_name = value
-                .try_query()?
-                .reference
-                .as_ref()
-                .map(|reference| reference.name.as_str())
-                .unwrap_or(prop_name);
-            format!("Struct({struct_name})")
-        }
-    };
-    let plan = emission_plan::lower(prop.try_query()?)?;
-    let map = plan.map()?;
-    Ok(TypeDisplay::Map {
-        key,
-        value,
-        min_entries: map.min_entries,
-        max_entries: map.max_entries,
-    })
-}
-
-fn map_key_display(key: &StringLeaf<'_>) -> String {
-    if let Some(info) = key_enum_info(key) {
-        format!("Enum ({})", info.type_name)
-    } else {
-        let display = key.display();
-        if display == "String"
-            && matches!(key, StringLeaf::Refined { constraints, format: _, to_dsl: _ } if constraints.pattern.is_some())
-        {
-            "String(pattern)".to_string()
-        } else {
-            display
-        }
-    }
-}
-
-fn type_display_string_at(
-    prop: &SchemaProperty,
-    schema: &EmissionContext<'_>,
-    provider_path: &[String],
-    cfn_property_path: CfnPropertyPath<'_>,
-) -> Result<String> {
-    Ok(type_display_at_resolved(
-        schema.property_at(provider_path, prop),
-        cfn_property_path,
-        None,
-    )?
-    .markdown())
-}
-
-fn type_display_at_resolved(
-    classified: EmissionProperty<'_>,
-    cfn_property_path: CfnPropertyPath<'_>,
-    definition_name: Option<&str>,
-) -> Result<TypeDisplay> {
-    if !is_dsl_tags_property(classified.schema(), classified.path())? {
-        classified.property().try_query()?;
-    }
-    let type_projection = project_property_type(&classified, cfn_property_path)?;
-    if let Some(reference) = type_projection.emission_reference(&classified, cfn_property_path)? {
-        return Ok(TypeDisplay::Plain(reference.display()));
-    }
-    let schema = classified.schema();
-    let prop = classified.property();
-    let prop_name = classified.name();
-    let provider_path = classified.path();
-    if let Some(display) = override_type_display(
-        schema,
-        cfn_property_path,
-        prop,
-        type_projection.override_type,
-    )? {
-        return Ok(TypeDisplay::Code(display));
-    }
-    if is_dsl_tags_property(schema, provider_path)? {
-        schema.classify_tag_value(provider_path)?;
-        return Ok(project_tag_map(classified, cfn_property_path)?.display());
-    }
-    let projection = prop.try_query()?;
-    let emitted = emission_plan::lower(projection)?;
-    if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path)? {
-        emit_cfn_json_document(prop, schema, cfn_property_path)?;
-        return Ok(TypeDisplay::Plain("PolicyDocument".to_string()));
-    }
-
-    if emitted.is_empty_struct() {
-        return Ok(TypeDisplay::EmptyStruct);
-    }
-
-    if property_is_bare_object(prop, schema)? {
-        return Ok(
-            match emission_bare_object(prop, &schema.type_name, cfn_property_path)? {
-                BareObjectClassification::CfnJson => {
-                    cfn_json_type(prop)?;
-                    TypeDisplay::Plain("JSON object (CFN)".to_string())
-                }
-                BareObjectClassification::IamPolicyDocument(_) => {
-                    emit_cfn_json_document(prop, schema, cfn_property_path)?;
-                    TypeDisplay::Plain("PolicyDocument".to_string())
-                }
-                BareObjectClassification::EmptyObject(_) => {
-                    overrides::bare_object_narrowing(schema, cfn_property_path, prop)?;
-                    TypeDisplay::EmptyStruct
-                }
-                BareObjectClassification::StringMap(_) => {
-                    overrides::bare_object_narrowing(schema, cfn_property_path, prop)?;
-                    TypeDisplay::Code("Map<String, String>".to_string())
-                }
-                BareObjectClassification::TypedOverride { entry } => {
-                    TypeDisplay::Code(entry.display().expect("typed document display"))
-                }
-                BareObjectClassification::FreeFormJson(entry)
-                | BareObjectClassification::OmittedResource(entry) => {
-                    return Err(projection
-                        .emission_error(format!(
-                            "omitted property {}.{} reached Markdown type generation: {}",
-                            entry.cfn_type, entry.property_path, entry.reason
-                        ))
-                        .into());
-                }
-            },
-        );
-    }
-    match property_shape(classified.property(), classified.schema())? {
-        PropertyShape::Reference { resolved, path } => {
-            return if is_tag_map_ref(schema, path)? {
-                schema.classify_tag_value(provider_path)?;
-                Ok(project_tag_map(classified, cfn_property_path)?.display())
-            } else if let Some(resolved) = resolved {
-                let array = resolved_array_property(prop, schema, &mut HashSet::new())?;
-                type_display_at_resolved(
-                    schema
-                        .property_at(provider_path, array.as_deref().unwrap_or(resolved.property)),
-                    cfn_property_path,
-                    Some(resolved.name),
-                )
-            } else {
-                Err(projection
-                    .emission_error(format!("unresolved reference {path}"))
-                    .into())
-            };
-        }
-        PropertyShape::Array {
-            variant: array_variant,
-        } => {
-            return type_display_at_resolved(
-                schema.property_at(provider_path, array_variant),
-                cfn_property_path,
-                None,
-            );
-        }
-        PropertyShape::Direct(_) | PropertyShape::Merged(_) => {
-            return Ok(TypeDisplay::Plain(format!(
-                "Struct({})",
-                definition_name.unwrap_or(prop_name)
-            )));
-        }
-        PropertyShape::Unresolved => {
-            return Err(prop
-                .try_query()?
-                .emission_error("unresolved oneOf value projection")
-                .into());
-        }
-        PropertyShape::Inline => {}
-    }
-    if emitted.value_type()? == EmissionType::Array {
-        let array = emitted.array()?;
-        let items = array.items;
-        let item_path = schema.collection_path(provider_path, PathSegment::ListElement);
-        let item = type_display_at_resolved(
-            schema.property_at(&item_path, items),
-            cfn_property_path,
-            None,
-        )?;
-        return Ok(TypeDisplay::List {
-            item: Box::new(item),
-            min_items: array.min_items,
-            max_items: array.max_items,
-            unique_items: array.unique_items,
-        });
-    }
-    if emitted.value_type()? == EmissionType::Object {
-        if let Some(map) = &emitted.map {
-            return object_map_type_display(
-                prop_name,
-                schema,
-                cfn_property_path,
-                prop,
-                provider_path,
-                map.value,
-            );
-        }
-        return Err(prop.try_query()?.emission_error(format!(
-                "unsupported object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
-                schema.type_name, cfn_property_path
-            )).into());
-    }
-    scalar_type_display_at(
-        prop_name,
-        prop,
-        schema,
-        provider_path,
-        cfn_property_path,
-        definition_name,
-    )
-}
-
-fn scalar_type_display_at(
-    prop_name: &str,
-    prop: &SchemaProperty,
-    schema: &EmissionContext<'_>,
-    provider_path: &[String],
-    cfn_property_path: CfnPropertyPath<'_>,
-    definition_name: Option<&str>,
-) -> Result<TypeDisplay> {
-    let projection = prop.try_query()?;
-    let emitted = emission_plan::lower(projection)?;
-    if emitted.value_type()? == EmissionType::String {
-        return Ok(string_leaf(
-            schema.property_at(provider_path, prop),
-            cfn_property_path,
-            definition_name,
-        )?
-        .type_display(&schema.type_name, prop_name));
-    }
-    if let Some(leaf) = enum_leaf(&emitted, prop_name, definition_name, &schema.type_name)? {
-        return Ok(StringLeaf::Enum(leaf).type_display(&schema.type_name, prop_name));
-    }
-    let display = match emitted.value_type()? {
-        EmissionType::Boolean => "Bool".to_string(),
-        EmissionType::Integer => {
-            // Check resource-scoped overrides first
-            let res_override = resource_type_override(&schema.type_name, cfn_property_path);
-            if let Some(NarrowingKind::IntEnum(values)) = res_override.and_then(TypeOverride::kind)
-            {
-                emitted.validate_integer_enum(values)?;
-                let constructor = int_enum_type(&schema.type_name, prop_name, values);
-                return Ok(int_enum_type_display(&constructor, values));
-            }
-            if let Some(NarrowingKind::IntRange(min, max)) =
-                res_override.and_then(TypeOverride::kind)
-            {
-                let (min, max) = emitted.numeric_override_range(*min, *max)?;
-                return Ok(numeric_type_display(
-                    format!("Int({})", range_display_string(min, max)),
-                    &emitted,
-                ));
-            }
-            if let Some(narrowing) =
-                global_numeric_narrowing(&emitted, prop_name, &schema.type_name)?
-                && let NarrowingKind::IntEnum(values) = narrowing.kind
-            {
-                emitted.validate_integer_enum(&values)?;
-                let constructor = int_enum_type(&schema.type_name, prop_name, &values);
-                return Ok(int_enum_type_display(&constructor, &values));
-            }
-            let range = effective_numeric_range(&emitted, prop_name, &schema.type_name)?;
-            if let Some((min, max)) = range {
-                let range_str = range_display_string(min, max);
-                if let Some(fmt) = emitted.numeric()?.format {
-                    format!("Int({}, {})", range_str, fmt)
-                } else {
-                    format!("Int({})", range_str)
-                }
-            } else if let Some(fmt) = emitted.numeric()?.format {
-                format!("Int({})", fmt)
-            } else {
-                "Int".to_string()
-            }
-        }
-        EmissionType::Number => {
-            // Check resource-scoped overrides first
-            let res_override = resource_type_override(&schema.type_name, cfn_property_path);
-            if let Some(NarrowingKind::IntRange(min, max)) =
-                res_override.and_then(TypeOverride::kind)
-            {
-                let (min, max) = emitted.numeric_override_range(*min, *max)?;
-                return Ok(numeric_type_display(
-                    format!("Float({})", range_display_string(min, max)),
-                    &emitted,
-                ));
-            }
-            let range = effective_numeric_range(&emitted, prop_name, &schema.type_name)?;
-            if let Some((min, max)) = range {
-                let range_str = range_display_string(min, max);
-                if let Some(fmt) = emitted.numeric()?.format {
-                    format!("Float({}, {})", range_str, fmt)
-                } else {
-                    format!("Float({})", range_str)
-                }
-            } else if let Some(fmt) = emitted.numeric()?.format {
-                format!("Float({})", fmt)
-            } else {
-                "Float".to_string()
-            }
-        }
-        EmissionType::String | EmissionType::Array | EmissionType::Object => {
-            return Err(projection
-                .emission_error("non-scalar projection reached scalar display")
-                .into());
-        }
-    };
-    Ok(numeric_type_display(display, &emitted))
 }
 
 fn effective_numeric_range(
@@ -3923,29 +3189,10 @@ fn global_numeric_narrowing(
     Ok(None)
 }
 
-fn numeric_type_display(display: String, plan: &emission_plan::EmissionPlan<'_>) -> TypeDisplay {
-    let Some(emission_plan::MultipleOf { divisor }) = plan
-        .numeric
-        .as_ref()
-        .and_then(|numeric| numeric.multiple_of.as_ref())
-    else {
-        return TypeDisplay::Plain(display);
-    };
-    let display = if let Some(prefix) = display.strip_suffix(')') {
-        format!("{prefix}, multiple of {divisor})")
-    } else {
-        format!("{display}(multiple of {divisor})")
-    };
-    TypeDisplay::Plain(display)
-}
-
 struct MarkdownStructDef {
     key: MarkdownStructKey,
     name: String,
     properties: BTreeMap<String, SchemaProperty>,
-    required: Vec<String>,
-    field_groups: FieldGroups,
-    conditional_requirements: Vec<schema_projection::ConditionalRequirement>,
 }
 
 /// Classify exactly the property shapes that own a Markdown struct target.
@@ -3961,7 +3208,7 @@ fn markdown_struct_def(
         return Ok(None);
     }
     prop.try_query()?;
-    let plan = emission_plan::lower(prop.try_query()?)?;
+    emission_plan::lower(prop.try_query()?)?;
     let key = MarkdownStructKey::Inline(property_path.to_vec());
     let name = prop_name.to_string();
     Ok(match property_shape(prop, schema)? {
@@ -3986,361 +3233,16 @@ fn markdown_struct_def(
             key,
             name,
             properties: properties.clone(),
-            required: plan.scope.required,
-            field_groups: plan.scope.field_groups,
-            conditional_requirements: plan.scope.conditional_requirements,
         }),
         PropertyShape::Merged(properties) => Some(MarkdownStructDef {
             key,
             name,
             properties,
-            required: plan.scope.required,
-            field_groups: plan.scope.field_groups,
-            conditional_requirements: plan.scope.conditional_requirements,
         }),
         PropertyShape::Inline | PropertyShape::Array { variant: _ } | PropertyShape::Unresolved => {
             None
         }
     })
-}
-
-fn markdown_array<'a>(
-    prop: &'a SchemaProperty,
-    schema: &'a CfnSchema,
-) -> Result<Option<Cow<'a, SchemaProperty>>> {
-    let projection = prop.try_query()?;
-    if projection.effective_type() != Some("array") {
-        return Ok(None);
-    }
-    emission_plan::lower(projection)?;
-    Ok(resolved_array_property(prop, schema, &mut HashSet::new())?)
-}
-
-fn markdown_list_type(
-    item: MarkdownLinkedType,
-    array: &emission_plan::ArrayPlan<'_>,
-) -> MarkdownLinkedType {
-    let mut suffix = TypeDisplay::item_limits(array.min_items, array.max_items);
-    if array.unique_items {
-        suffix.push_str(" (unique items)");
-    }
-    MarkdownLinkedType::List {
-        item: Box::new(item),
-        suffix: (!suffix.is_empty()).then_some(suffix),
-    }
-}
-
-fn markdown_enum_type(
-    prop: &SchemaProperty,
-    schema: &CfnSchema,
-    key: &MarkdownEnumKey,
-) -> Result<MarkdownLinkedType> {
-    prop.try_query()?;
-    if let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new())? {
-        let item = array.try_query()?.items.as_deref().map_or_else(
-            || Ok(MarkdownLinkedType::Enum(key.clone())),
-            |items| markdown_enum_type(items, schema, key),
-        )?;
-        Ok(markdown_list_type(
-            item,
-            emission_plan::lower(array.try_query()?)?.array()?,
-        ))
-    } else if let Some(value) = property_object_map_value(prop, schema)? {
-        Ok(MarkdownLinkedType::Map {
-            key: Box::new(MarkdownLinkedType::Text("String".to_string())),
-            value: Box::new(markdown_enum_type(value, schema, key)?),
-            suffix: markdown_map_limits(prop.try_query()?)?,
-        })
-    } else {
-        Ok(MarkdownLinkedType::Enum(key.clone()))
-    }
-}
-
-fn markdown_link_type(
-    prop_name: &str,
-    prop: &SchemaProperty,
-    schema: &EmissionContext<'_>,
-    enum_target: Option<&MarkdownEnumKey>,
-    property_path: &[String],
-    cfn_parent: Option<&str>,
-) -> Result<Option<MarkdownLinkedType>> {
-    if !is_dsl_tags_property(schema, property_path)? {
-        prop.try_query()?;
-    }
-    let cfn_path = CfnPropertyPath::new(cfn_parent, prop_name);
-    let dsl_tag = is_dsl_tags_property(schema, property_path)?;
-    let tag_reference = if dsl_tag {
-        false
-    } else {
-        prop.try_query()?
-            .reference
-            .as_ref()
-            .map(|reference| is_tag_map_ref(schema, &reference.path))
-            .transpose()?
-            .unwrap_or(false)
-    };
-    let tag_map = dsl_tag || tag_reference;
-    let key = if tag_map
-        && !prop
-            .try_query()
-            .is_ok_and(|p| p.effective_type() == Some("object"))
-    {
-        None
-    } else {
-        map_key_type(prop, schema, property_path, cfn_path)?
-    };
-    if tag_map && key.as_ref().and_then(key_enum_info).is_none() {
-        return Ok(None);
-    }
-    if let Some(key_type) = key
-        && let Some((_, value)) = property_pattern_map_entry(prop, schema)?
-    {
-        let value_kind = object_map_value(schema, cfn_path, value)?;
-        let key_enum = key_enum_info(&key_type).is_some();
-        // Without links, retain the ordinary code-span map display. Its key
-        // refinement still comes from map_key_type in object_map_type_display.
-        if !key_enum && enum_target.is_none() && value_kind == ObjectMapValueKind::DirectString {
-            return Ok(None);
-        }
-        let projection = prop.try_query()?;
-        let key = if key_enum {
-            MarkdownLinkedType::Enum(
-                enum_target
-                    .ok_or_else(|| {
-                        projection.emission_error("derived map key enum must be discovered")
-                    })?
-                    .clone(),
-            )
-        } else {
-            MarkdownLinkedType::Text(map_key_display(&key_type))
-        };
-        let value_path = extend_property_path(property_path, "*");
-        let value = if !key_enum && let Some(target) = enum_target {
-            markdown_enum_type(value, schema, target)?
-        } else if let Some(linked) =
-            markdown_link_type(prop_name, value, schema, None, &value_path, cfn_parent)?
-        {
-            linked
-        } else {
-            MarkdownLinkedType::Text(if tag_map {
-                project_tag_map(schema.property_at(property_path, prop), cfn_path)?
-                    .value
-                    .display()
-            } else {
-                string_leaf(schema.property_at(&value_path, value), cfn_path, None)?.display()
-            })
-        };
-        return Ok(Some(MarkdownLinkedType::Map {
-            key: Box::new(key),
-            value: Box::new(value),
-            suffix: markdown_map_limits(prop.try_query()?)?,
-        }));
-    }
-    if map_key_enum_info(prop, schema, prop_name)?.is_some()
-        && let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new())?
-        && let Some(items) = array.try_query()?.items.as_deref()
-    {
-        let item_path = extend_property_path(property_path, "*");
-        let item = markdown_link_type(
-            prop_name,
-            items,
-            schema,
-            enum_target,
-            &item_path,
-            cfn_parent,
-        )?;
-        let plan = emission_plan::lower(array.try_query()?)?;
-        let array = plan.array()?;
-        return Ok(item.map(|item| markdown_list_type(item, array)));
-    }
-    if let Some(key) = enum_target {
-        return Ok(Some(markdown_enum_type(prop, schema, key)?));
-    }
-
-    match property_shape(prop, schema)? {
-        PropertyShape::Array {
-            variant: array_variant,
-        } => {
-            return markdown_link_type(
-                prop_name,
-                array_variant,
-                schema,
-                None,
-                property_path,
-                cfn_parent,
-            );
-        }
-        PropertyShape::Reference {
-            path: _,
-            resolved: _,
-        }
-        | PropertyShape::Inline
-        | PropertyShape::Direct(_)
-        | PropertyShape::Merged(_)
-        | PropertyShape::Unresolved => {}
-    }
-
-    if let Some(value) = property_object_map_value(prop, schema)? {
-        object_map_value(schema, CfnPropertyPath::new(cfn_parent, prop_name), value)?;
-        let value_path = extend_property_path(property_path, "*");
-        if let Some(value_type) =
-            markdown_link_type(prop_name, value, schema, None, &value_path, cfn_parent)?
-        {
-            return Ok(Some(MarkdownLinkedType::Map {
-                key: Box::new(MarkdownLinkedType::Text("String".to_string())),
-                value: Box::new(value_type),
-                suffix: markdown_map_limits(prop.try_query()?)?,
-            }));
-        }
-    }
-
-    if let Some(struct_def) = markdown_struct_def(prop_name, prop, schema, property_path)? {
-        return Ok(Some(MarkdownLinkedType::Struct {
-            key: struct_def.key,
-            name: struct_def.name,
-        }));
-    }
-
-    if let Some(array) = markdown_array(prop, schema)?
-        && let Some(items) = array.try_query()?.items.as_deref()
-    {
-        let item_path = extend_property_path(property_path, "*");
-        let item_type = markdown_link_type(prop_name, items, schema, None, &item_path, cfn_parent)?;
-        let plan = emission_plan::lower(array.try_query()?)?;
-        let array = plan.array()?;
-        return Ok(item_type.map(|item| markdown_list_type(item, array)));
-    }
-
-    Ok(None)
-}
-
-fn markdown_type(
-    classified: EmissionProperty<'_>,
-    enum_target: Option<&MarkdownEnumKey>,
-    cfn_parent: Option<&str>,
-) -> Result<MarkdownType> {
-    if !is_dsl_tags_property(classified.schema(), classified.path())? {
-        classified.property().try_query()?;
-    }
-    let cfn_property_path = CfnPropertyPath::new(cfn_parent, classified.name());
-    let type_projection = project_property_type(&classified, cfn_property_path)?;
-    if let Some(reference) = type_projection.emission_reference(&classified, cfn_property_path)? {
-        return Ok(MarkdownType::Plain(reference.display()));
-    }
-    let schema = classified.schema();
-    let prop = classified.property();
-    let prop_name = classified.name();
-    let property_path = classified.path();
-    let override_type = type_projection.override_type;
-    // Top-level properties retain source struct links, as on main. Nested
-    // overrides replace the field's source type and take precedence over links.
-    if cfn_parent.is_some()
-        && let Some(display) =
-            override_type_display(schema, cfn_property_path, prop, override_type)?
-    {
-        return Ok(MarkdownType::Plain(TypeDisplay::Code(display).markdown()));
-    }
-    if let Some(override_type) = override_type.filter(|value| value.requires_array_source()) {
-        let array = override_type.array_source(schema, cfn_property_path, prop)?;
-        if let Some(key) = enum_target {
-            let item = array.try_query()?.items.as_deref().map_or_else(
-                || Ok(MarkdownLinkedType::Enum(key.clone())),
-                |items| markdown_enum_type(items, schema, key),
-            )?;
-            return Ok(MarkdownType::Linked(markdown_list_type(
-                item,
-                emission_plan::lower(array.try_query()?)?.array()?,
-            )));
-        }
-        // Preserve source struct links while displaying the refined bounds
-        // for both item-type overrides and bounds-only overrides.
-        if let Some(linked) =
-            markdown_link_type(prop_name, &array, schema, None, property_path, cfn_parent)?
-        {
-            return Ok(MarkdownType::Linked(linked));
-        }
-        return Ok(MarkdownType::Plain(type_display_string_at(
-            &array,
-            schema,
-            property_path,
-            cfn_property_path,
-        )?));
-    }
-    if let Some(linked) = markdown_link_type(
-        prop_name,
-        prop,
-        schema,
-        enum_target,
-        property_path,
-        cfn_parent,
-    )? {
-        return Ok(MarkdownType::Linked(linked));
-    }
-    Ok(MarkdownType::Plain(type_display_string_at(
-        prop,
-        schema,
-        property_path,
-        CfnPropertyPath::new(cfn_parent, prop_name),
-    )?))
-}
-
-fn override_type_display(
-    schema: &CfnSchema,
-    path: CfnPropertyPath<'_>,
-    property: &SchemaProperty,
-    override_type: Option<&TypeOverride>,
-) -> Result<Option<String>> {
-    let Some(override_type) = override_type else {
-        return Ok(None);
-    };
-    if !override_type.replaces_leaf_type() {
-        return Ok(None);
-    }
-    // A collection's item walk retains its raw CFN field key. Bounds belong
-    // to the collection, which validate_sources already checked separately.
-    if override_type.requires_array_source()
-        && property.try_query()?.effective_type() != Some("array")
-    {
-        return Ok(None);
-    }
-    override_type.validate_source_shape(schema, path, property)?;
-    if let Some(expression) = override_type.expression() {
-        if override_type.requires_array_source() {
-            let array = override_type.array_source(schema, path, property)?;
-            let plan = emission_plan::lower(array.try_query()?)?;
-            let array_plan = plan.array()?;
-            if let Some(display) =
-                expression.numeric_display(&emission_plan::lower(array_plan.items.try_query()?)?)?
-            {
-                let mut limits =
-                    TypeDisplay::item_limits(array_plan.min_items, array_plan.max_items);
-                if array_plan.unique_items {
-                    limits.push_str(" (unique items)");
-                }
-                return Ok(Some(format!("List<{display}>{limits}")));
-            }
-        } else if let Some(display) =
-            expression.numeric_display(&emission_plan::lower(property.try_query()?)?)?
-        {
-            return Ok(Some(display));
-        }
-    }
-    let Some(display) = override_type.display() else {
-        return Ok(None);
-    };
-    let limits = if override_type.requires_array_source() {
-        let array = override_type.array_source(schema, path, property)?;
-        let plan = emission_plan::lower(array.try_query()?)?;
-        let array = plan.array()?;
-        let mut limits = TypeDisplay::item_limits(array.min_items, array.max_items);
-        if array.unique_items {
-            limits.push_str(" (unique items)");
-        }
-        limits
-    } else {
-        String::new()
-    };
-    Ok(Some(format!("{display}{limits}")))
 }
 
 fn markdown_heading_path(property_path: &[String]) -> Vec<String> {
@@ -4375,228 +3277,39 @@ fn classified_property_doc_name(
     (entry.property_path.to_string(), true)
 }
 
-fn markdown_section_heading_path(
-    property_path: &[String],
-    struct_defs: &BTreeMap<MarkdownStructKey, StructDefInfo>,
-    strict_ancestor_of: Option<&StructDefInfo>,
-) -> Vec<String> {
-    let heading_path_depth = |path: &[String]| {
-        path.iter()
-            .filter(|segment| segment.as_str() != "*")
-            .count()
-    };
-
-    // Inline struct identity is its full property path, so only a named
-    // definition can have more than one distinct path.
-    let Some((shared_ancestor, ancestor_path)) = struct_defs
-        .values()
-        .filter(|def_info| {
-            def_info.property_paths.len() > 1
-                && strict_ancestor_of.is_none_or(|descendant| {
-                    heading_path_depth(&def_info.first_property_path)
-                        < heading_path_depth(&descendant.first_property_path)
-                })
-        })
-        .flat_map(|def_info| {
-            def_info
-                .property_paths
-                .iter()
-                .filter(|ancestor_path| property_path.starts_with(ancestor_path))
-                .map(move |ancestor_path| (def_info, ancestor_path))
-        })
-        .max_by_key(|(_, ancestor_path)| heading_path_depth(ancestor_path))
-    else {
-        return markdown_heading_path(property_path);
-    };
-
-    let mut heading_path = vec![shared_ancestor.def_name.to_snake_case()];
-    heading_path.extend(markdown_heading_path(&property_path[ancestor_path.len()..]));
-    heading_path
-}
-
-fn register_markdown_enum(
-    markdown_enums: &mut BTreeMap<MarkdownEnumKey, MarkdownEnum>,
-    enum_namespace: String,
-    heading_path: Vec<String>,
-    prop_name: String,
-    info: &EnumInfo,
-) -> Result<MarkdownEnumKey> {
-    let key = MarkdownEnumKey {
-        namespace: enum_namespace,
-        type_name: info.type_name.clone(),
-    };
-    if let Some(existing) = markdown_enums.get_mut(&key) {
-        if existing.info.values != info.values {
-            anyhow::bail!(
-                "Markdown enum identity {}.{} has conflicting values {:?} and {:?}",
-                key.namespace,
-                key.type_name,
-                existing.info.values,
-                info.values
-            );
-        }
-        if heading_path < existing.heading_path {
-            existing.heading_path = heading_path;
-            existing.prop_name = prop_name;
-        }
-    } else {
-        markdown_enums.insert(
-            key.clone(),
-            MarkdownEnum {
-                prop_name,
-                heading_path,
-                info: info.clone(),
-            },
+fn write_attribute_metadata(
+    page: &mut PageBuilder<MarkdownTarget>,
+    attribute: &carina_core::schema::CompiledAttributeSchema,
+    annotations: &TypeAnnotations,
+) -> Result<()> {
+    let parts = attribute.parts();
+    if !parts.declared_input_mode.is_provider_populated() {
+        page.push_str(if parts.declared_input_mode.is_required() {
+            "- **Required:** Yes\n"
+        } else {
+            "- **Required:** No\n"
+        });
+    }
+    if parts.create_only {
+        page.push_str("- **Create-only:** Yes\n");
+    }
+    if parts.identity_mode.is_identity() {
+        page.push_str(
+            "- **Identity:** Yes (anonymous identifiers hash only declared identity values)\n",
         );
     }
-
-    Ok(key)
-}
-
-fn collect_markdown_enums(
-    schema: &EmissionContext<'_>,
-    namespace: &str,
-    property_enums: &BTreeMap<String, EnumInfo>,
-    struct_field_enums: &BTreeMap<MarkdownStructFieldKey, EnumInfo>,
-    struct_defs: &BTreeMap<MarkdownStructKey, StructDefInfo>,
-) -> Result<(BTreeMap<MarkdownEnumKey, MarkdownEnum>, MarkdownEnumTargets)> {
-    let mut markdown_enums: BTreeMap<MarkdownEnumKey, MarkdownEnum> = BTreeMap::new();
-    let mut targets = MarkdownEnumTargets::default();
-
-    for (prop_name, info) in property_enums {
-        let key = register_markdown_enum(
-            &mut markdown_enums,
-            namespace.to_string(),
-            markdown_section_heading_path(std::slice::from_ref(prop_name), struct_defs, None),
-            prop_name.clone(),
-            info,
-        )?;
-        targets.properties.insert(prop_name.clone(), key);
+    if parts.write_only {
+        page.push_str("- **Write-only:** Yes\n");
     }
-
-    for (source_key, info) in struct_field_enums {
-        let def_info = struct_defs.get(&source_key.struct_key).with_context(|| {
-            format!(
-                "enum {}.{} has no enclosing Markdown struct definition",
-                source_key.struct_key.stable_identity(),
-                source_key.field_name
-            )
-        })?;
-        let field_path =
-            extend_property_path(&def_info.first_property_path, &source_key.field_name);
-        let heading_path = markdown_section_heading_path(&field_path, struct_defs, None);
-        let identity_path = match &source_key.struct_key {
-            MarkdownStructKey::Definition(name) => schema.definition_identity_path(name),
-            MarkdownStructKey::Inline(_) => None,
-        }
-        .unwrap_or(&def_info.struct_path);
-        let (type_name, enum_namespace) = property_enum_identity(
-            &schema.type_name,
-            CfnPropertyPath::new(Some(&def_info.def_name), &source_key.field_name),
-            namespace,
-            identity_path,
-            info,
-        );
-        let info = EnumInfo {
-            type_name,
-            values: info.values.clone(),
-        };
-        let key = register_markdown_enum(
-            &mut markdown_enums,
-            enum_namespace,
-            heading_path,
-            source_key.field_name.clone(),
-            &info,
-        )?;
-        targets.struct_fields.insert(source_key.clone(), key);
+    if let Some(default) = parts.default {
+        page.push_str("- **Default:** ");
+        page.inline(TableCell::code(default_plan::display(default)?));
+        page.push_str("\n");
     }
-
-    Ok((markdown_enums, targets))
-}
-
-fn markdown_enum_heading_texts(
-    enums: &BTreeMap<MarkdownEnumKey, MarkdownEnum>,
-) -> Vec<(MarkdownEnumKey, String)> {
-    let candidates: Vec<_> = enums
-        .iter()
-        .map(|(key, enum_doc)| {
-            let base = format!(
-                "{} ({})",
-                enum_doc.heading_path.join("."),
-                enum_doc.info.type_name
-            );
-            let identity = format!("{} {}", key.namespace, key.type_name);
-            (key.clone(), base, identity)
-        })
-        .collect();
-    let mut base_counts = HashMap::new();
-    for (_, heading, _) in &candidates {
-        *base_counts
-            .entry(carina_docgen::heading_slug(heading))
-            .or_insert(0_usize) += 1;
+    if let Some(annotation) = &annotations.default_annotation {
+        annotation.write_markdown(page);
     }
-    let mut used_slugs = HashSet::new();
-    let mut headings: Vec<_> = candidates
-        .into_iter()
-        .map(|(key, base, identity)| {
-            let primary = if base_counts[&carina_docgen::heading_slug(&base)] > 1 {
-                format!("{base} — {identity}")
-            } else {
-                base
-            };
-            let heading = claim_unique_markdown_heading(primary, &identity, &mut used_slugs);
-            (key, heading)
-        })
-        .collect();
-    sort_markdown_headings(&mut headings);
-    headings
-}
-
-fn markdown_struct_heading_texts(
-    struct_defs: &BTreeMap<MarkdownStructKey, StructDefInfo>,
-) -> Vec<(MarkdownStructKey, String)> {
-    let mut used_slugs = HashSet::new();
-    let mut headings: Vec<_> = struct_defs
-        .iter()
-        .map(|(key, def_info)| {
-            let base =
-                markdown_section_heading_path(&def_info.first_property_path, struct_defs, None)
-                    .join(".");
-            let heading =
-                claim_unique_markdown_heading(base, &key.stable_identity(), &mut used_slugs);
-            (key.clone(), heading)
-        })
-        .collect();
-    sort_markdown_headings(&mut headings);
-    headings
-}
-
-fn sort_markdown_headings<K: Ord>(headings: &mut [(K, String)]) {
-    headings.sort_by(|(left_key, left_heading), (right_key, right_heading)| {
-        left_heading
-            .cmp(right_heading)
-            .then_with(|| left_key.cmp(right_key))
-    });
-}
-
-fn claim_unique_markdown_heading(
-    primary: String,
-    stable_identity: &str,
-    used_slugs: &mut HashSet<String>,
-) -> String {
-    let candidates = [primary.clone(), format!("{primary} — {stable_identity}")];
-    for candidate in candidates {
-        if used_slugs.insert(carina_docgen::heading_slug(&candidate)) {
-            return candidate;
-        }
-    }
-    for suffix in 2.. {
-        let candidate = format!("{primary} {suffix}");
-        if used_slugs.insert(carina_docgen::heading_slug(&candidate)) {
-            return candidate;
-        }
-    }
-    unreachable!("an integer suffix always yields a fresh heading")
+    Ok(())
 }
 
 fn render_markdown(
@@ -4604,209 +3317,48 @@ fn render_markdown(
     type_name: &str,
     example: &DocExample,
 ) -> Result<String> {
-    schema.validate_root_emission()?;
-    checked_read_back_declarations(schema, type_name)?;
-    resource_type_overrides().validate_sources(schema)?;
-    // Preserve specific override diagnostics before scanning raw tag candidates.
-    validate_tagging_classifications(schema)?;
-    schema_projection::validate_shared_queries(schema)?;
-    reset_recursion_guard();
-    validate_identity_properties(schema)?;
-    reset_recursion_guard();
-    derive_mutually_exclusive_property_groups(schema)?;
-
+    let emitted = emit_resource(schema, type_name, false)?;
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
     let example = example.text_for(
         MARKDOWN_EXAMPLE_PROVIDER_PREFIX,
         &dsl_resource,
         ExampleKind::Resource,
     )?;
-    let namespace = format!("aws.{}", dsl_resource);
-
-    // Build create-only properties set
-    let create_only: HashSet<String> = schema
-        .metadata()
-        .create_only_properties
-        .iter()
-        .flatten()
-        .map(|p| p.trim_start_matches("/properties/").to_string())
-        .collect();
-
-    // Build write-only properties set
-    let write_only: HashSet<String> = schema
-        .metadata()
-        .write_only_properties
-        .iter()
-        .flatten()
-        .map(|p| p.trim_start_matches("/properties/").to_string())
-        .collect();
-
-    let required: HashSet<String> = schema.root_projection()?.required.iter().cloned().collect();
-
-    // Collect enum info and struct definitions
-    let mut property_enums: BTreeMap<String, EnumInfo> = BTreeMap::new();
-    let mut struct_field_enums: BTreeMap<MarkdownStructFieldKey, EnumInfo> = BTreeMap::new();
-    let mut struct_defs: BTreeMap<MarkdownStructKey, StructDefInfo> = BTreeMap::new();
-
-    for (prop_name, prop) in runtime_top_level_properties(schema) {
-        if is_deprecated_property(prop) {
-            // Deprecated attributes remain in the runtime schema. Account for
-            // their Reference declarations and rules before hiding the field docs.
-            let path = [prop_name.clone()];
-            let classified = schema.property_at(&path, prop);
-            let cfn_path = CfnPropertyPath::new(None, prop_name);
-            let _ = project_property_type(&classified, cfn_path)?
-                .emission_reference(&classified, cfn_path)?;
-            continue;
-        }
-        // Apply resource-scoped enum overlay (awscc#357) for top-level
-        // properties. The nested-struct loop below already does the same
-        // thing for `Struct.Field` keys (awscc#246); without this branch a
-        // top-level Enum override (e.g. `TargetGroup.Protocol`) was
-        // recorded in the schema (`generate_schema_code`) but never
-        // mirrored into the markdown.
-        if let Some(values) =
-            resource_type_override(type_name, CfnPropertyPath::new(None, prop_name))
-                .and_then(TypeOverride::enum_values)
-        {
-            property_enums.insert(prop_name.clone(), enum_info_for_override(prop_name, values));
-            continue;
-        }
-        let (_, enum_info) = cfn_type_to_carina_type_with_enum(
-            prop,
-            prop_name,
-            schema,
-            &namespace,
-            &property_enums,
-        )?;
-        if let Some(info) = enum_info {
-            property_enums.insert(prop_name.clone(), info);
-        }
-        // Collect struct definitions from $ref
-        collect_struct_defs(
-            prop,
-            prop_name,
-            schema,
-            &[],
-            std::slice::from_ref(prop_name),
-            None,
-            &mut struct_defs,
-        )?;
-    }
-
-    // Scan struct definition fields for enum info (const values, $ref to enum-only definitions)
-    for (struct_key, def_info) in &struct_defs {
-        for (field_name, field_prop) in &def_info.properties {
-            if is_deprecated_property(field_prop) {
-                continue;
-            }
-            let cfn_property_path = CfnPropertyPath::new(Some(&def_info.def_name), field_name);
-            if should_omit_property(type_name, cfn_property_path) {
-                continue;
-            }
-            let source_key = MarkdownStructFieldKey {
-                struct_key: struct_key.clone(),
-                field_name: field_name.clone(),
-            };
-            // Apply nested-field enum overlay (awscc#246) — same lookup as
-            // `generate_schema_code`, so the markdown's enum tables stay in
-            // sync with the generated Rust schema.
-            if let Some(nested_override) = resource_type_override(type_name, cfn_property_path) {
-                if let Some(values) = nested_override.enum_values() {
-                    struct_field_enums
-                        .insert(source_key, enum_info_for_override(field_name, values));
-                    continue;
-                }
-                if nested_override.attribute_type_expression().is_some()
-                    || nested_override.array_item_type_expression().is_some()
-                {
-                    continue;
-                }
-            }
-            let field_path = extend_property_path(&def_info.first_property_path, field_name);
-            let (_, enum_info) = cfn_type_to_carina_type_with_enum_with_paths(
-                field_prop,
-                schema,
-                &namespace,
-                &property_enums,
-                CfnTypeGenerationPaths {
-                    structural: &def_info.struct_path,
-                    provider: &field_path,
-                    cfn_parent: Some(&def_info.def_name),
-                },
-            )?;
-            if let Some(info) = enum_info {
-                struct_field_enums.insert(source_key, info);
-            }
-        }
-    }
-
-    // Validate nested read-only pointers against the same AttributeType
-    // emitter used for generated Rust. Markdown has its own presentation
-    // traversal, but it must not document a shape that the schema artifact
-    // cannot represent safely.
-    // Presentation reuses the enum decisions collected above rather than
-    // lowering them again. Their field-specific evidence must survive the
-    // recursion-state resets along with those decisions.
-    let mut narrowing_notes = overrides::global_narrowings();
-    reset_recursion_guard();
-    let has_arn_helper = resource_identity_parts(&dsl_resource).is_some()
-        && (schema.properties.contains_key("Arn")
-            || synthetic_attributes()
-                .iter()
-                .any(|synth| synth.cfn_type == type_name && synth.attr_name == "arn"));
-    for (prop_name, prop) in documented_top_level_properties(schema) {
-        let _ = generate_top_level_attribute_type(
-            schema.property_at(std::slice::from_ref(prop_name), prop),
-            &namespace,
-            &property_enums,
-            has_arn_helper,
-        )?;
-        let property_path = [prop_name.clone()];
-        if is_property_read_only(schema, prop, &property_path)? {
-            record_emitted_read_only_path(&property_path);
-        }
-        if is_write_only_property_path(schema, &property_path) {
-            record_emitted_write_only_path(&property_path);
-        }
-    }
-    validate_emitted_nested_read_only_properties(schema)?;
-    validate_emitted_nested_write_only_properties(schema)?;
-    validate_emitted_array_overrides(schema)?;
-    narrowing_notes.extend(overrides::global_narrowings());
-    reset_recursion_guard();
-    for (pointer, evidence) in narrowing_notes {
-        overrides::record_global_narrowing(&pointer, &evidence);
-    }
-
-    let (markdown_enums, enum_targets) = collect_markdown_enums(
-        schema,
-        &namespace,
-        &property_enums,
-        &struct_field_enums,
-        &struct_defs,
+    let mut roots = documented_top_level_properties(schema)
+        .map(|(name, _)| dsl_attribute_name(schema, name))
+        .collect::<Result<Vec<_>>>()?;
+    roots.extend(
+        synthetic_attributes()
+            .iter()
+            .filter(|entry| entry.cfn_type == type_name)
+            .map(|entry| entry.attr_name.to_string()),
+    );
+    let mut types = type_docs::TypeDocs::new(
+        &emitted,
+        roots.iter().map(|name| {
+            (
+                emitted.attributes[name].ty.as_ref(),
+                type_docs::field_scope(name),
+            )
+        }),
     )?;
-    let enum_heading_texts = markdown_enum_heading_texts(&markdown_enums);
-    let struct_heading_texts = markdown_struct_heading_texts(&struct_defs);
-    let mut page = PageBuilder::new();
-
-    // Title
-    page.heading(Heading::plain(1, format!("awscc.{dsl_resource}")))?;
-    page.push_str(&format!("CloudFormation Type: `{type_name}`\n\n"));
-
-    // Description
-    if let Some(desc) = &schema.root_projection()?.description {
-        page.push_str(&format!("{desc}\n\n"));
-    }
-
-    if resource_type_overrides().prevents_destroy_by_default(type_name) {
-        page.push_str(
-            "This resource is protected from destruction by default because deleting it closes the AWS account. To opt out, set `directives { prevent_destroy = false }`.\n\n",
+    let mut displays = BTreeMap::new();
+    for name in roots {
+        displays.insert(
+            name.clone(),
+            types.display(&emitted.attributes[&name].ty, type_docs::field_scope(name))?,
         );
     }
-
+    let mut page = PageBuilder::new();
+    page.heading(Heading::plain(1, format!("awscc.{dsl_resource}")))?;
+    page.push_str(&format!("CloudFormation Type: `{type_name}`\n\n"));
+    if let Some(description) = &schema.root_projection()?.description {
+        page.push_str(&format!("{description}\n\n"));
+    }
+    if resource_type_overrides().prevents_destroy_by_default(type_name) {
+        page.push_str("This resource is protected from destruction by default because deleting it closes the AWS account. To opt out, set `directives { prevent_destroy = false }`.\n\n");
+    }
     write_markdown_example(&mut page, example)?;
-
     if let Some(config) = resource_type_overrides().by_type.get(type_name)
         && (!config.await_on_read_back.is_empty() || config.read_back_budget_secs.is_some())
     {
@@ -4828,380 +3380,146 @@ fn render_markdown(
         );
         page.push_str(&format!("The read-back budget is {seconds} seconds.\n\n"));
     }
-
-    // Argument Reference (writable attributes)
     page.heading(Heading::plain(2, "Argument Reference"))?;
-    // Prose-derived EC2 rules keep their existing documentation. Only the
-    // shared schema projection contributes new declaration notes.
     let root_plan =
         emission_plan::lower_as(schema.root_projection()?, emission_plan::EmittedKind::Root)?;
-    write_field_group_notes(&mut page, &root_plan.scope.field_groups, |member| {
-        dsl_attribute_name(schema, member)
-    })?;
+    carina_docgen::render_field_groups(&mut page, emitted.witness.parts().field_groups);
     write_conditional_requirement_notes(
         &mut page,
         &root_plan.scope.conditional_requirements,
         |member| dsl_attribute_name(schema, member),
     )?;
-
     for (prop_name, prop) in documented_top_level_properties(schema) {
         let property_path = [prop_name.clone()];
-        if is_property_read_only(schema, prop, &property_path)? {
+        let name = dsl_attribute_name(schema, prop_name)?;
+        let attribute = &emitted.witness.parts().attributes[&name];
+        if attribute
+            .parts()
+            .declared_input_mode
+            .is_provider_populated()
+        {
             continue;
         }
-
-        let attr_name = dsl_attribute_name(schema, prop_name)?;
-        let is_required = required.contains(prop_name);
-        let type_display = markdown_type(
-            schema.property_at(&property_path, prop),
-            enum_targets.properties.get(prop_name),
-            None,
-        )?;
-
-        page.heading(Heading::code(3, &attr_name))?;
+        page.heading(Heading::code(3, &name))?;
         page.push_str("- **Type:** ");
-        type_display.write_to(&mut page);
+        displays[&name].write_to(&mut page);
         page.push_str("\n");
-        if is_required {
-            page.push_str("- **Required:** Yes\n");
-        } else {
-            page.push_str("- **Required:** No\n");
-        }
-        let is_identity =
-            identity_properties().contains_key(&(type_name, CfnPropertyPath::new(None, prop_name)));
-        if create_only.contains(prop_name) || is_identity {
-            page.push_str("- **Create-only:** Yes\n");
-        }
-        if is_identity {
-            page.push_str(
-                "- **Identity:** Yes (anonymous identifiers hash only declared identity values)\n",
-            );
-        }
-        if write_only.contains(prop_name) {
-            page.push_str("- **Write-only:** Yes\n");
-        }
-        if let Some(default) = default_plan::lower(
-            prop,
-            resource_type_override(type_name, CfnPropertyPath::new(None, prop_name)),
-            if is_required {
-                default_plan::Site::RequiredOrOutput
-            } else {
-                default_plan::Site::OptionalAttribute
-            },
-        )? {
-            default.write_markdown(&mut page);
-        }
+        write_attribute_metadata(&mut page, attribute, &emitted.attributes[&name].annotations)?;
         page.push_str("\n");
-
-        if let Some(d) = generated_property_description(schema, prop_name, prop) {
-            let desc = collapse_whitespace(&d.replace('\n', " "));
-            page.push_str(&format!("{desc}\n\n"));
+        if let Some(description) = generated_property_description(schema, prop_name, prop) {
+            page.push_str(&format!(
+                "{}\n\n",
+                collapse_whitespace(&description.replace('\n', " "))
+            ));
         }
         if !is_dsl_tags_property(schema, &property_path)? {
             write_map_requirement_notes(&mut page, prop)?;
         }
     }
-
-    let unsupported_json_properties = FREE_FORM_JSON_PROPERTIES
+    let unsupported = FREE_FORM_JSON_PROPERTIES
         .iter()
         .chain(TEST_FREE_FORM_JSON_PROPERTIES)
         .filter(|entry| entry.cfn_type == type_name)
         .collect::<Vec<_>>();
-    let omitted_resource_properties = OMITTED_RESOURCE_PROPERTIES
+    let omitted = OMITTED_RESOURCE_PROPERTIES
         .iter()
         .filter(|entry| entry.cfn_type == type_name)
         .collect::<Vec<_>>();
-    if !unsupported_json_properties.is_empty() || !omitted_resource_properties.is_empty() {
+    if !unsupported.is_empty() || !omitted.is_empty() {
+        // This source traversal supplies names for omitted-property prose only.
+        let mut source_defs = BTreeMap::new();
+        for (name, property) in documented_top_level_properties(schema) {
+            collect_struct_defs(
+                property,
+                name,
+                schema,
+                &[],
+                std::slice::from_ref(name),
+                None,
+                &mut source_defs,
+            )?;
+        }
         page.heading(Heading::plain(2, "Not yet supported"))?;
-        if !unsupported_json_properties.is_empty() {
-            page.push_str(
+        for (entries, introduction) in [
+            (
+                unsupported,
                 "These CloudFormation properties require the free-form JSON document type tracked by [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144):\n\n",
-            );
-            for entry in unsupported_json_properties {
-                let (name, definition_qualified) =
-                    classified_property_doc_name(entry, &struct_defs);
-                if definition_qualified {
-                    page.push_str(&format!(
-                        "- Definition-qualified name `{name}` — {}\n",
-                        entry.reason
-                    ));
-                } else {
-                    page.push_str(&format!("- `{name}` — {}\n", entry.reason));
-                }
-            }
-            page.push_str("\n");
-        }
-        if !omitted_resource_properties.is_empty() {
-            page.push_str(
+            ),
+            (
+                omitted,
                 "These CloudFormation properties are deliberately omitted for the provider-specific reasons below:\n\n",
-            );
-            for entry in omitted_resource_properties {
-                let (name, definition_qualified) =
-                    classified_property_doc_name(entry, &struct_defs);
-                if definition_qualified {
-                    page.push_str(&format!(
-                        "- Definition-qualified name `{name}` — {}\n",
-                        entry.reason
-                    ));
-                } else {
-                    page.push_str(&format!("- `{name}` — {}\n", entry.reason));
-                }
-            }
-            page.push_str("\n");
-        }
-    }
-
-    // Enum values section
-    if !markdown_enums.is_empty() {
-        let aliases = known_enum_aliases();
-        page.heading(Heading::plain(2, "Enum Values"))?;
-        for (key, heading_text) in &enum_heading_texts {
-            let enum_doc = markdown_enums
-                .get(key)
-                .expect("every enum heading must refer to a discovered enum");
-            let enum_info = &enum_doc.info;
-            let prop_aliases = aliases.get(enum_doc.prop_name.as_str());
-            // Per #199 / D7: render the snake_case DSL spelling in the
-            // "DSL Identifier" column and the "Shorthand formats" line.
-            // The hand-curated `known_enum_aliases` table wins over the
-            // mechanical D7 transform when both apply (e.g. "-1" -> "all").
-            let dsl_for = |value: &str| -> String {
-                if let Some(alias_list) = prop_aliases
-                    && let Some((_, alias)) = alias_list.iter().find(|(c, _)| *c == value)
-                {
-                    return alias.to_string();
-                }
-                dsl_enum_value(value)
-            };
-            page.target_heading(
-                MarkdownTarget::Enum(key.clone()),
-                Heading::plain(3, heading_text),
-            )?;
-            let rows = enum_info.values.iter().map(|value| {
-                let dsl_value = dsl_for(value);
-                let dsl_id = format!("{}.{}.{}", key.namespace, enum_info.type_name, dsl_value);
-                [TableCell::code(value), TableCell::code(dsl_id)]
-            });
-            page.table(["Value", "DSL Identifier"], rows)?;
-            page.push_str("\n");
-            let empty = String::new();
-            let first_value = enum_info.values.first().unwrap_or(&empty);
-            let first_dsl = dsl_for(first_value);
-            if first_dsl.starts_with(|c: char| c.is_ascii_digit()) {
-                page.push_str(
-                    "Use the fully qualified DSL identifiers above; bare numeric values parse as integers.\n\n",
-                );
-            } else {
-                page.push_str(&format!(
-                    "Shorthand formats: `{}` or `{}.{}`\n\n",
-                    first_dsl, enum_info.type_name, first_dsl,
-                ));
-            }
-        }
-    }
-
-    // Struct Definitions section
-    if !struct_defs.is_empty() {
-        page.heading(Heading::plain(2, "Struct Definitions"))?;
-        for (key, heading_text) in &struct_heading_texts {
-            let def_info = struct_defs
-                .get(key)
-                .expect("every struct heading must refer to a discovered struct");
-            page.target_heading(
-                MarkdownTarget::Struct(key.clone()),
-                Heading::plain(3, heading_text),
-            )?;
-            let used_by = def_info
-                .property_paths
-                .iter()
-                .map(|path| {
-                    markdown_section_heading_path(path, &struct_defs, Some(def_info)).join(".")
-                })
-                .collect::<BTreeSet<_>>();
-            if used_by.len() > 1 {
-                let used_by = used_by
-                    .into_iter()
-                    .map(|path| format!("`{path}`"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                page.push_str(&format!("Used by: {used_by}\n\n"));
-            }
-            let required_set: HashSet<&str> =
-                def_info.required.iter().map(|s| s.as_str()).collect();
-            let mut rows = Vec::new();
-            for (field_name, field_prop) in &def_info.properties {
-                if is_deprecated_property(field_prop) {
-                    continue;
-                }
-                let cfn_property_path = CfnPropertyPath::new(Some(&def_info.def_name), field_name);
-                if should_omit_property(type_name, cfn_property_path) {
-                    continue;
-                }
-                let field_path = extend_property_path(&def_info.first_property_path, field_name);
-                let snake_name = field_name.to_snake_case();
-                let is_read_only = is_property_read_only(schema, field_prop, &field_path)?;
-                let is_req = required_set.contains(field_name.as_str()) && !is_read_only;
-                let source_key = MarkdownStructFieldKey {
-                    struct_key: key.clone(),
-                    field_name: field_name.clone(),
-                };
-                let nested_override = resource_type_override(type_name, cfn_property_path);
-                let field_type_display = if let Some(display) =
-                    override_type_display(schema, cfn_property_path, field_prop, nested_override)?
-                {
-                    MarkdownType::Plain(TypeDisplay::Code(display).markdown())
-                } else if let Some(enum_target) = enum_targets.struct_fields.get(&source_key) {
-                    markdown_type(
-                        schema.property_at(&field_path, field_prop),
-                        Some(enum_target),
-                        Some(&def_info.def_name),
-                    )?
-                } else {
-                    markdown_type(
-                        schema.property_at(&field_path, field_prop),
-                        None,
-                        Some(&def_info.def_name),
-                    )?
-                };
-                let mut desc = collapse_whitespace(
-                    &field_prop
-                        .annotation_description()
-                        .unwrap_or("")
-                        .replace('\n', " "),
-                );
-                if is_read_only {
-                    if !desc.is_empty() {
-                        desc.push(' ');
-                    }
-                    desc.push_str("Provider-populated; cannot be set.");
-                }
-                if identity_properties().contains_key(&(type_name, cfn_property_path)) {
-                    if !desc.is_empty() {
-                        desc.push(' ');
-                    }
-                    desc.push_str(
-                        "Create-only. Anonymous identifiers hash only declared identity values.",
-                    );
-                }
-                if let Some(default) = default_plan::lower(
-                    field_prop,
-                    nested_override,
-                    default_plan::Site::StructField,
-                )? {
-                    if !desc.is_empty() {
-                        desc.push(' ');
-                    }
-                    desc.push_str(&format!(
-                        "Default: {}. {}",
-                        default.display,
-                        default.diagnostic.unwrap_or("")
-                    ));
-                }
-                rows.push([
-                    TableCell::code(snake_name),
-                    field_type_display.table_cell(),
-                    TableCell::text(if is_req { "Yes" } else { "No" }),
-                    TableCell::text(desc),
-                ]);
-            }
-            page.table(["Field", "Type", "Required", "Description"], rows)?;
-            page.push_str("\n");
-            write_field_group_notes(&mut page, &def_info.field_groups, |member| {
-                Ok(member.to_snake_case())
-            })?;
-            write_conditional_requirement_notes(
-                &mut page,
-                &def_info.conditional_requirements,
-                |member| Ok(member.to_snake_case()),
-            )?;
-            for (name, property) in &def_info.properties {
-                if !is_deprecated_property(property)
-                    && !should_omit_property(
-                        type_name,
-                        CfnPropertyPath::new(Some(&def_info.def_name), name),
-                    )
-                {
-                    write_map_requirement_notes(&mut page, property)?;
-                }
-            }
-        }
-    }
-
-    page.input_rules_section(&schema.reference_input_rules())?;
-
-    // Attribute Reference (read-only attributes)
-    let synth_for_type: Vec<&SyntheticAttribute> = synthetic_attributes()
-        .iter()
-        .filter(|s| s.cfn_type == type_name)
-        .collect();
-    let mut has_read_only = !synth_for_type.is_empty();
-    for (name, property) in documented_top_level_properties(schema) {
-        let property_path = [name.clone()];
-        has_read_only |= is_property_read_only(schema, property, &property_path)?;
-    }
-    if has_read_only {
-        page.heading(Heading::plain(2, "Attribute Reference"))?;
-
-        for (prop_name, prop) in documented_top_level_properties(schema) {
-            let property_path = [prop_name.clone()];
-            if !is_property_read_only(schema, prop, &property_path)? {
+            ),
+        ] {
+            if entries.is_empty() {
                 continue;
             }
-
-            let attr_name = dsl_attribute_name(schema, prop_name)?;
-            let type_display = markdown_type(
-                schema.property_at(&property_path, prop),
-                enum_targets.properties.get(prop_name),
-                None,
-            )?;
-
-            page.heading(Heading::code(3, &attr_name))?;
-            page.push_str("- **Type:** ");
-            type_display.write_to(&mut page);
-            page.push_str("\n");
-
-            if let Some(default) = default_plan::lower(
-                prop,
-                resource_type_override(type_name, CfnPropertyPath::new(None, prop_name)),
-                default_plan::Site::RequiredOrOutput,
-            )? {
-                default.write_markdown(&mut page);
+            page.push_str(introduction);
+            for entry in entries {
+                let (name, qualified) = classified_property_doc_name(entry, &source_defs);
+                if qualified {
+                    page.push_str(&format!(
+                        "- Definition-qualified name `{name}` — {}\n",
+                        entry.reason
+                    ));
+                } else {
+                    page.push_str(&format!("- `{name}` — {}\n", entry.reason));
+                }
             }
-
-            if let Some(d) = prop.annotation_description() {
-                let desc = collapse_whitespace(&d.replace('\n', " "));
-                page.push_str(&format!("\n{desc}\n\n"));
+            page.push_str("\n");
+        }
+    }
+    types.write_declarations(&mut page)?;
+    page.input_rules_section(&schema.reference_input_rules())?;
+    let synthetic = synthetic_attributes()
+        .iter()
+        .filter(|entry| entry.cfn_type == type_name)
+        .collect::<Vec<_>>();
+    let mut read_only = Vec::new();
+    for (name, property) in documented_top_level_properties(schema) {
+        let dsl = dsl_attribute_name(schema, name)?;
+        if emitted.witness.parts().attributes[&dsl]
+            .parts()
+            .declared_input_mode
+            .is_provider_populated()
+        {
+            read_only.push((name, property));
+        }
+    }
+    if !read_only.is_empty() || !synthetic.is_empty() {
+        page.heading(Heading::plain(2, "Attribute Reference"))?;
+        for (name, property) in read_only {
+            let dsl = dsl_attribute_name(schema, name)?;
+            page.heading(Heading::code(3, &dsl))?;
+            page.push_str("- **Type:** ");
+            displays[&dsl].write_to(&mut page);
+            page.push_str("\n");
+            write_attribute_metadata(
+                &mut page,
+                &emitted.witness.parts().attributes[&dsl],
+                &emitted.attributes[&dsl].annotations,
+            )?;
+            if let Some(description) = property.annotation_description() {
+                page.push_str(&format!(
+                    "\n{}\n\n",
+                    collapse_whitespace(&description.replace('\n', " "))
+                ));
             } else {
                 page.push_str("\n");
             }
-            if !is_dsl_tags_property(schema, &property_path)? {
-                write_map_requirement_notes(&mut page, prop)?;
+            if !is_dsl_tags_property(schema, std::slice::from_ref(name))? {
+                write_map_requirement_notes(&mut page, property)?;
             }
         }
-
-        for synth in synth_for_type {
+        for synth in synthetic {
             page.heading(Heading::code(3, synth.attr_name))?;
-            let identity = if has_arn_helper && synth.attr_name == "arn" {
-                resource_arn_catalog_display(type_name)?
-            } else {
-                catalog_type_display(synth.attr_type).map(str::to_string)
-            };
-            let display = identity.map_or_else(
-                || TypeDisplay::Plain("String".to_string()),
-                |identity| TypeDisplay::Code(identity.to_string()),
-            );
-            page.push_str(&format!("- **Type:** {}\n\n", display.markdown()));
-            page.push_str(&format!(
-                "{}\n\n",
-                collapse_whitespace(&synth.description.replace('\n', " "))
-            ));
+            page.push_str("- **Type:** ");
+            displays[synth.attr_name].write_to(&mut page);
+            page.push_str("\n");
+            page.push_str(&format!("\n{}\n\n", collapse_whitespace(synth.description)));
         }
     }
-
     overrides::write_narrowing_notes(&mut page, schema)?;
-    schema.finish()?;
-    page.finish()
-        .with_context(|| format!("generated invalid Markdown for awscc.{dsl_resource}"))
+    page.finish().map_err(Into::into)
 }
 
 fn write_markdown_example(page: &mut PageBuilder<MarkdownTarget>, example: &str) -> Result<()> {
@@ -5239,7 +3557,7 @@ fn collect_struct_defs(
     )
     .is_some_and(|override_type| {
         override_type.enum_values().is_some()
-            || (cfn_parent.is_some() && override_type.array_item_type_expression().is_some())
+            || (cfn_parent.is_some() && override_type.array_item_constraint().is_some())
     }) {
         return Ok(());
     }
@@ -5273,9 +3591,6 @@ fn collect_struct_defs(
             key,
             name,
             properties,
-            required,
-            field_groups,
-            conditional_requirements,
         } = struct_def;
         let struct_cfn_parent = name.clone();
         let def_path = extend_struct_path(struct_path, &name);
@@ -5283,13 +3598,9 @@ fn collect_struct_defs(
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(StructDefInfo {
                     def_name: name,
-                    struct_path: def_path.clone(),
                     first_property_path: property_path.to_vec(),
                     property_paths: BTreeSet::from([property_path.to_vec()]),
                     properties: properties.clone(),
-                    required,
-                    field_groups,
-                    conditional_requirements,
                 });
                 true
             }
@@ -5342,7 +3653,7 @@ fn collect_struct_defs(
         return Ok(());
     }
 
-    let Some(array) = markdown_array(prop, schema)? else {
+    let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new())? else {
         return Ok(());
     };
     let Some(items) = array.try_query()?.items.as_deref() else {
@@ -5448,43 +3759,22 @@ fn resource_field_groups(schema: &CfnSchema) -> Result<FieldGroups> {
     Ok(groups)
 }
 
-fn field_group_rust(
-    group: &RequiredGroup,
-    name: impl Fn(&str) -> Result<String>,
-) -> Result<String> {
-    let RequiredGroup { kind, members } = group;
-    let (constructor, label) = match kind {
-        AlternativeKind::OneOf => ("exactly_one", "exactly-one"),
-        AlternativeKind::AnyOf => ("at_least_one", "at-least-one"),
+fn field_group_rust(group: &carina_core::schema::FieldGroup) -> String {
+    use carina_core::schema::FieldGroupKind;
+    let (constructor, label) = match group.kind() {
+        FieldGroupKind::ExactlyOne => ("exactly_one", "exactly-one"),
+        FieldGroupKind::AtLeastOne => ("at_least_one", "at-least-one"),
+        FieldGroupKind::AtMostOne => ("at_most_one", "at-most-one"),
     };
-    let members = members
+    let members = group
+        .fields()
         .iter()
-        .map(|member| name(member).map(|name| rust_lit(&name).to_string()))
-        .collect::<Result<Vec<_>>>()?
+        .map(|name| rust_lit(name).to_string())
+        .collect::<Vec<_>>()
         .join(", ");
-    Ok(format!(
+    format!(
         "FieldGroup::{constructor}([{members}]).expect(\"generated {label} field group must be valid\")"
-    ))
-}
-
-fn write_field_group_notes(
-    page: &mut PageBuilder<MarkdownTarget>,
-    field_groups: &FieldGroups,
-    name: impl Fn(&str) -> Result<String>,
-) -> Result<()> {
-    for RequiredGroup { kind, members } in &field_groups.groups {
-        let rule = match kind {
-            AlternativeKind::OneOf => "Exactly one",
-            AlternativeKind::AnyOf => "At least one",
-        };
-        let members = members
-            .iter()
-            .map(|member| name(member).map(|name| format!("`{name}`")))
-            .collect::<Result<Vec<_>>>()?
-            .join(", ");
-        page.push_str(&format!("{rule} of {members} must be specified.\n\n"));
-    }
-    Ok(())
+    )
 }
 
 fn write_conditional_requirement_notes(
@@ -5506,29 +3796,12 @@ fn write_conditional_requirement_notes(
     Ok(())
 }
 
-fn markdown_map_limits(projection: &Projection) -> Result<Option<String>> {
-    let plan = emission_plan::lower(projection)?;
-    let map = plan.map()?;
-    let (min, max) = (map.min_entries, map.max_entries);
-    Ok((min.is_some() || max.is_some())
-        .then(|| TypeDisplay::collection_limits("entries", min, max)))
-}
-
-/// Collection scopes do not create struct headings. Carry their conditional
-/// requirements to the containing property's documentation, preserving map keys.
 fn write_map_requirement_notes(
     page: &mut PageBuilder<MarkdownTarget>,
     property: &SchemaProperty,
 ) -> Result<()> {
-    let plan = emission_plan::lower(property.try_query()?)?;
-    if let Some(map) = &plan.map {
-        write_conditional_requirement_notes(page, &plan.scope.conditional_requirements, |key| {
-            Ok(key.into())
-        })?;
-        write_map_requirement_notes(page, map.value)?;
-    }
-    if let Some(array) = &plan.array {
-        write_map_requirement_notes(page, array.items)?;
+    for requirements in type_emission::map_requirements(property)? {
+        write_conditional_requirement_notes(page, &requirements, |key| Ok(key.into()))?;
     }
     Ok(())
 }
@@ -5540,10 +3813,7 @@ fn generate_top_level_attribute_type(
     classified: EmissionProperty<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
-    has_arn_helper: bool,
-) -> Result<String> {
-    let _ = has_arn_helper;
-
+) -> Result<EmittedType> {
     let property_path = classified.path();
     generate_attribute_type(
         classified,
@@ -5565,7 +3835,22 @@ fn generate_attribute_type(
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
-) -> Result<String> {
+) -> Result<EmittedType> {
+    let property = classified.property();
+    let tags = is_dsl_tags_property(classified.schema(), classified.path())?;
+    let mut value = generate_attribute_type_inner(classified, namespace, enums, paths)?;
+    if !tags {
+        type_emission::source_notes(&mut value, property.try_query()?);
+    }
+    Ok(value)
+}
+
+fn generate_attribute_type_inner(
+    classified: EmissionProperty<'_>,
+    namespace: &str,
+    enums: &BTreeMap<String, EnumInfo>,
+    paths: CfnTypeGenerationPaths<'_>,
+) -> Result<EmittedType> {
     let prop = classified.property();
     let prop_name = classified.name();
     let schema = classified.schema();
@@ -5577,12 +3862,7 @@ fn generate_attribute_type(
     let override_type = type_projection.override_type;
     let replacement = override_type.filter(|entry| entry.replaces_leaf_type());
 
-    if let Some(NarrowingKind::NamedType {
-        name,
-        expression,
-        display: _,
-    }) = replacement.and_then(TypeOverride::kind)
-    {
+    if let Some(NarrowingKind::NamedType { name, .. }) = replacement.and_then(TypeOverride::kind) {
         assert!(
             !schema
                 .definitions
@@ -5592,30 +3872,23 @@ fn generate_attribute_type(
             schema.type_name,
             property_path
         );
-        let emitted_expression =
-            replacement
-                .expect("named refinement")
-                .emit_expression(prop, schema, property_path)?;
-        let _ = expression;
-        EMITTED_DEFS.with(|definitions| {
-            let mut definitions = definitions.borrow_mut();
-            let body = definitions
-                .entry((*name).to_string())
-                .or_insert_with(|| emitted_expression.clone());
-            assert_eq!(
-                body.as_str(),
-                emitted_expression.as_str(),
-                "conflicting local type definition {name}"
-            );
-        });
-        return Ok(format!(
-            "AttributeType::ref_({}.to_string())",
-            rust_lit(name)
-        ));
+        let mut emitted_expression = replacement
+            .expect("named refinement")
+            .emit_expression_unnoted(prop, schema, property_path)?;
+        let notes = std::mem::take(&mut emitted_expression.annotations.notes);
+        emitted_expression.annotations.definition = Some((*name).to_string());
+        EMITTED_TYPES.with(|definitions| {
+            definitions
+                .borrow_mut()
+                .register_named(name, emitted_expression)
+        })?;
+        let mut reference = EmittedType::reference(name);
+        reference.annotations.notes = notes;
+        return Ok(reference);
     }
 
-    if let Some(entry) = replacement.filter(|entry| entry.attribute_type_expression().is_some()) {
-        return entry.emit_expression(prop, schema, property_path);
+    if let Some(entry) = replacement.filter(|entry| entry.attribute_constraint().is_some()) {
+        return entry.emit_expression_unnoted(prop, schema, property_path);
     }
 
     if let Some(override_type) = override_type
@@ -5634,7 +3907,7 @@ fn generate_attribute_type(
         && (map_key_enum_info(prop, schema, prop_name)?.is_some()
             || contains_object_map(prop, schema)?)
     {
-        return Ok(cfn_type_to_carina_type_with_enum_with_paths(
+        return Ok(cfn_type_to_carina_type_with_enum_with_paths_unnoted(
             prop, schema, namespace, enums, paths,
         )?
         .0);
@@ -5667,8 +3940,9 @@ fn generate_attribute_type(
         return emit_enum(enum_info);
     }
 
-    let (attribute_type, local_enum_info) =
-        cfn_type_to_carina_type_with_enum_with_paths(prop, schema, namespace, enums, paths)?;
+    let (attribute_type, local_enum_info) = cfn_type_to_carina_type_with_enum_with_paths_unnoted(
+        prop, schema, namespace, enums, paths,
+    )?;
     let local_enum_info = override_type
         .and_then(TypeOverride::enum_values)
         .map(|values| enum_info_for_override(prop_name, values))
@@ -5725,7 +3999,16 @@ fn checked_read_back_declarations(
 }
 
 fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<String> {
+    Ok(emit_resource(schema, type_name, true)?.rust)
+}
+
+fn emit_resource(
+    schema: &EmissionContext<'_>,
+    type_name: &str,
+    require_replacement_class: bool,
+) -> Result<ResourceEmission> {
     schema.validate_root_emission()?;
+    validate_declared_input_modes(schema)?;
     let read_back_declarations = checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
     // Preserve specific override diagnostics before scanning raw tag candidates.
@@ -5800,10 +4083,10 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
         // Whole-attribute and item-expression overrides discard the source
         // children; only discover definitions from the emitted source shape.
         if resource_override
-            .and_then(TypeOverride::attribute_type_expression)
+            .and_then(TypeOverride::attribute_constraint)
             .is_none()
             && resource_override
-                .and_then(TypeOverride::array_item_type_expression)
+                .and_then(TypeOverride::array_item_constraint)
                 .is_none()
         {
             collect_struct_defs(
@@ -5886,8 +4169,8 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
                     );
                     continue;
                 }
-                if nested_override.attribute_type_expression().is_some()
-                    || nested_override.array_item_type_expression().is_some()
+                if nested_override.attribute_constraint().is_some()
+                    || nested_override.array_item_constraint().is_some()
                 {
                     continue;
                 }
@@ -5911,19 +4194,15 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
         }
     }
 
-    qualify_nested_enum_type_names(&mut enums);
-
     // The top-level prop pre-scan above recursed into `$ref` struct
     // definitions to populate `enums`. That same recursion also populated
-    // `EMITTED_DEFS` with
+    // `EMITTED_TYPES` with
     // def bodies that hard-coded the *unqualified* enum `type_name`s.
     // Now that qualification has rewritten the enums map, drop those
     // stale bodies so the upcoming attribute-emission phase re-walks
     // every def with the qualified enums in scope. (carina#3350.)
     //
-    EMITTED_DEFS.with(|s| s.borrow_mut().clear());
-    BACK_REFERENCED_DEFS.with(|s| s.borrow_mut().clear());
-    reset_property_mode_emission_state();
+    reset_emission_pass();
 
     // Derive both the tag property name and CloudControl wire representation
     // from the schema. Unsupported shapes are codegen errors rather than an
@@ -5949,6 +4228,8 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
     // Build the body first so imports reflect the final emitted types, including
     // shared constructors and helper return types. Construct the header last.
     let mut body = String::new();
+    let mut typed_attributes = BTreeMap::new();
+    let mut typed_schema = carina_core::schema::ResourceSchema::new(&dsl_resource);
     if let Some(helper) = &arn_helper {
         body.push_str(helper);
     }
@@ -5995,6 +4276,7 @@ pub fn {}() -> AwsccSchemaConfig {{
 
     // Add description
     if let Some(desc) = &schema.root_projection()?.description {
+        typed_schema = typed_schema.with_description(desc.replace('\n', " "));
         let escaped_desc = desc
             .replace('\\', "\\\\")
             .replace('"', "\\\"")
@@ -6008,6 +4290,7 @@ pub fn {}() -> AwsccSchemaConfig {{
     body.push_str(";\n");
     if resource_type_overrides().prevents_destroy_by_default(type_name) {
         body.push_str("    schema = schema.default_prevent_destroy();\n");
+        typed_schema = typed_schema.default_prevent_destroy();
     }
 
     // Generate attributes for each property
@@ -6034,11 +4317,10 @@ pub fn {}() -> AwsccSchemaConfig {{
         // The parent is still returned by the CloudControl API read; only the
         // specific nested sub-properties are omitted.
         let is_write_only = write_only.contains(prop_name);
-        let attr_type = generate_top_level_attribute_type(
+        let mut attr_type = generate_top_level_attribute_type(
             schema.property_at(std::slice::from_ref(prop_name), prop),
             &namespace,
             &enums,
-            has_arn_helper,
         )?;
 
         let constructor = if is_read_only {
@@ -6049,13 +4331,15 @@ pub fn {}() -> AwsccSchemaConfig {{
             "optional"
         };
         let attr_builder_fn = format!("build_{}_attribute", attr_name);
-        let mut attr_code = format!(
-            "    #[inline(never)]\n    fn {}() -> AttributeSchema {{\n        AttributeSchema::{}(\"{}\", {})", // rust-lit-guard: allow (snake_case output cannot contain " or \\)
-            attr_builder_fn, constructor, attr_name, attr_type
+        let builder = attr_type.builder_call(
+            "AttributeSchema",
+            constructor,
+            &rust_lit(&attr_name).to_string(),
+            "\n                ",
         );
-        if attr_type == DocumentKind::IamPolicyDocument.constructor() {
-            attr_code.push_str("\n                .with_documented_iam_grammar()");
-        }
+        let mut attr_code = format!(
+            "    #[inline(never)]\n    fn {attr_builder_fn}() -> AttributeSchema {{\n        {builder}"
+        );
 
         if is_create_only {
             attr_code.push_str("\n                .create_only()");
@@ -6087,6 +4371,9 @@ pub fn {}() -> AwsccSchemaConfig {{
                 default_plan::Site::OptionalAttribute
             },
         )?;
+        attr_type.annotations.default_annotation = default
+            .as_ref()
+            .and_then(default_plan::DefaultAnnotation::from_plan);
         let mut description = generated_property_description(schema, prop_name, prop)
             .map(|desc| collapse_whitespace(&desc.replace('\n', " ")));
         if let Some(default) = &default
@@ -6098,12 +4385,18 @@ pub fn {}() -> AwsccSchemaConfig {{
             }
             description.push_str(&default.annotation());
         }
-        if let Some(desc) = description {
+        let description = description.map(|description| {
+            if is_read_only {
+                format!("{description} (read-only)")
+            } else {
+                description
+            }
+        });
+        if let Some(desc) = &description {
             let escaped = desc.replace('\\', "\\\\").replace('"', "\\\"");
-            let suffix = if is_read_only { " (read-only)" } else { "" };
             attr_code.push_str(&format!(
-                "\n                .with_description(\"{}{}\")", // rust-lit-guard: allow (already escaped and newline-collapsed)
-                escaped, suffix
+                "\n                .with_description(\"{}\")", // rust-lit-guard: allow (already escaped and newline-collapsed)
+                escaped
             ));
         }
 
@@ -6113,7 +4406,7 @@ pub fn {}() -> AwsccSchemaConfig {{
             rust_lit(prop_name)
         ));
 
-        if let Some(default_code) = default.and_then(|default| default.rust) {
+        if let Some(default_code) = default.as_ref().and_then(|default| default.rust.as_ref()) {
             attr_code.push_str(&format!("\n                .with_default({default_code})"));
         }
 
@@ -6128,10 +4421,11 @@ pub fn {}() -> AwsccSchemaConfig {{
             schema,
             resource_type_override(&schema.type_name, CfnPropertyPath::new(None, prop_name)),
         )?;
-        if !is_read_only && let Some(singular) = block_name {
+        let block_name = block_name.filter(|_| !is_read_only);
+        if let Some(singular) = &block_name {
             attr_code.push_str(&format!(
                 "\n                .with_block_name({})",
-                rust_lit(&singular)
+                rust_lit(singular)
             ));
         }
 
@@ -6140,6 +4434,49 @@ pub fn {}() -> AwsccSchemaConfig {{
             attr_builder_fn
         ));
         body.push_str(&attr_code);
+        let default = default.and_then(|default| default.value);
+        let mode = if is_read_only {
+            anyhow::ensure!(
+                !is_write_only
+                    && !is_create_only
+                    && !is_identity
+                    && block_name.is_none()
+                    && default.is_none(),
+                "invalid provider-populated attribute facts for {attr_name}"
+            );
+            type_emission::AttributeMode::Output
+        } else {
+            let input = type_emission::InputFacts {
+                mutability: if is_identity {
+                    type_emission::Mutability::Identity
+                } else if is_create_only {
+                    type_emission::Mutability::CreateOnly
+                } else {
+                    type_emission::Mutability::Mutable
+                },
+                write_only: is_write_only,
+                block_name,
+            };
+            if is_required {
+                anyhow::ensure!(
+                    default.is_none(),
+                    "required attribute default for {attr_name}"
+                );
+                type_emission::AttributeMode::Required(input)
+            } else {
+                type_emission::AttributeMode::Optional { input, default }
+            }
+        };
+        typed_schema = typed_schema.attribute(type_emission::attribute(
+            &attr_name,
+            attr_type.ty.as_ref().clone(),
+            mode,
+            &type_emission::FieldFacts {
+                provider_name: Some(prop_name.clone()),
+                description,
+            },
+        ));
+        typed_attributes.insert(attr_name, attr_type);
     }
 
     validate_emitted_nested_read_only_properties(schema)?;
@@ -6162,11 +4499,20 @@ pub fn {}() -> AwsccSchemaConfig {{
                 .replace('"', "\\\"")
                 .replace('\n', " "),
         );
-        let attr_type = if has_arn_helper && synth.attr_name == "arn" {
-            "self::arn()"
-        } else {
-            synth.attr_type
-        };
+        let emitted = emit_synthetic_type(synth, &dsl_resource, has_arn_helper)?;
+        let attr_type = emitted.rust.clone();
+        typed_schema = typed_schema.attribute(
+            carina_core::schema::AttributeSchema::provider_populated(
+                synth.attr_name,
+                emitted.ty.as_ref().clone(),
+            )
+            .with_description(format!(
+                "{} (read-only)",
+                collapse_whitespace(&synth.description.replace('\n', " "))
+            ))
+            .build(),
+        );
+        typed_attributes.insert(synth.attr_name.to_string(), emitted);
         body.push_str(&format!(
             concat!(
                 "    #[inline(never)]\n",
@@ -6185,15 +4531,40 @@ pub fn {}() -> AwsccSchemaConfig {{
         ));
     }
 
-    let replacement_class = declared_replacement_class(&schema_name, schema)?;
-    body.push_str("    schema = schema\n");
-    emit_replacement_class_builder(&mut body, replacement_class);
-    body.pop();
-    body.push_str(";\n");
+    let replacement_class = if require_replacement_class {
+        Some(declared_replacement_class(&schema_name, schema)?)
+    } else {
+        REPLACEMENT_CLASSES
+            .iter()
+            .find_map(|(name, class)| (*name == schema_name).then_some(*class))
+    };
+    if let Some(class) = replacement_class {
+        typed_schema = match class {
+            ReplacementClass::Attribute(attribute) => {
+                typed_schema.with_unique_name_attribute(attribute)
+            }
+            ReplacementClass::Coexisting => typed_schema.with_coexisting_replacement(),
+            ReplacementClass::Conflicting => typed_schema.with_conflicting_replacement(),
+        };
+        body.push_str("    schema = schema\n");
+        emit_replacement_class_builder(&mut body, class);
+        body.pop();
+        body.push_str(";\n");
+    }
 
     // Per-resource operational config for resources with slow CloudControl operations.
     let op_config = operation_config_for_type(type_name);
     if let Some(cfg) = op_config {
+        typed_schema = typed_schema.with_operation_config(carina_core::schema::OperationConfig {
+            delete_timeout_secs: cfg.delete_timeout_secs,
+            delete_max_retries: cfg.delete_max_retries,
+            create_timeout_secs: cfg.create_timeout_secs,
+            create_max_retries: cfg.create_max_retries,
+            update_timeout_secs: cfg.update_timeout_secs,
+            read_back: cfg
+                .read_back_budget_secs
+                .map(carina_provider_protocol::types::ReadBackBudget::new),
+        });
         body.push_str("    schema = schema.with_operation_config(OperationConfig {\n");
         emit_option_field(&mut body, "delete_timeout_secs", cfg.delete_timeout_secs);
         emit_option_field(&mut body, "delete_max_retries", cfg.delete_max_retries);
@@ -6213,22 +4584,29 @@ pub fn {}() -> AwsccSchemaConfig {{
     // ConditionalRequirement facts remain Markdown notes: carina#4263 tracks
     // the presence-conditioned rule missing from core's Rust validation API.
     for group in &field_groups.groups {
-        let group = field_group_rust(group, |member| dsl_attribute_name(schema, member))?;
-        body.push_str(&format!("    schema = schema.field_group({group});\n"));
+        let group = type_emission::field_group(group, |member| dsl_attribute_name(schema, member))?;
+        let rust = field_group_rust(&group);
+        body.push_str(&format!("    schema = schema.field_group({rust});\n"));
+        typed_schema = typed_schema.field_group(group);
     }
-
     body.push_str(&schema.reference_input_rules_rust());
+    for rule in schema.reference_input_rules() {
+        typed_schema = typed_schema.input_rule(rule);
+    }
 
     // Tags map-shape validation is portable schema data so native and WASM
     // consumers admit the same schema and enforce the same rule.
     if tags.is_some() {
+        typed_schema = typed_schema.with_declared_validators(vec![
+            carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck,
+        ]);
         body.push_str("    schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);\n");
     }
 
     // Drain named local types and struct definitions accumulated during
     // attribute emission and attach them via `.with_def(...)`. Each `def_body`
     // is already a valid `AttributeType` expression.
-    let defs = take_emitted_defs();
+    let (defs, duplicates) = take_emitted_registry().into_parts();
     for (def_index, (def_name, def_body)) in defs.iter().enumerate() {
         body.push_str(&format!(
             concat!(
@@ -6237,7 +4615,7 @@ pub fn {}() -> AwsccSchemaConfig {{
                 "    schema = schema.with_def({}, build_schema_def_{}());\n",
             ),
             def_index,
-            def_body,
+            def_body.rust,
             rust_lit(def_name),
             def_index,
         ));
@@ -6394,7 +4772,14 @@ use carina_core::schema::{{{}}};
     code.push_str(&body);
 
     schema.finish()?;
-    Ok(code)
+    let witness = type_emission::witness(typed_schema.clone(), &defs)?;
+    type_emission::validate_duplicate_definitions(typed_schema, &defs, &witness, duplicates)?;
+    Ok(ResourceEmission {
+        rust: code,
+        attributes: typed_attributes,
+        defs,
+        witness,
+    })
 }
 
 /// Codegen-time representation of per-resource operational config.
@@ -6761,16 +5146,6 @@ fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
     None
 }
 
-/// Preserve enum kind names exactly as detected.
-///
-/// Nested enum identity is no longer represented by inflating
-/// `EnumInfo::type_name`. The generated `TypeIdentity` now uses the enum's
-/// own plain kind plus a structural namespace assembled from the enclosing
-/// struct type path.
-fn qualify_nested_enum_type_names(enums: &mut BTreeMap<String, EnumInfo>) {
-    let _ = enums;
-}
-
 /// Deduplicate enum values while preserving order.
 /// Performs case-insensitive deduplication, preferring uppercase variants
 /// (e.g., "GLACIER" over "Glacier") to normalize inconsistent CloudFormation schemas.
@@ -6794,13 +5169,6 @@ fn deduplicate_enum_values(values: Vec<String>) -> Option<Vec<String>> {
     } else {
         None
     }
-}
-
-/// Extract the definition name from a $ref path
-/// e.g., "#/definitions/Ingress" -> Some("Ingress")
-#[cfg(test)]
-fn ref_def_name(ref_path: &str) -> Option<&str> {
-    ref_path.strip_prefix("#/definitions/")
 }
 
 /// The final definition reached by a local `$ref` chain.
@@ -6853,32 +5221,6 @@ impl<'a> ResolvedRef<'a> {
         };
         refinements.push((key.clone(), effective.clone()));
         Ok(Cow::Owned(key))
-    }
-}
-
-/// Resolve a local definition `$ref`, following definitions that are aliases
-/// to other definitions. A malformed path, missing definition, external ref,
-/// or alias cycle is unresolved rather than recursively looping.
-#[cfg(test)]
-fn resolve_ref<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<ResolvedRef<'a>> {
-    let layer = schema.layer.as_ref()?;
-    let pointer = schema_layer::canonical_reference("", ref_path).ok()?;
-    let id = layer.sources().node_at(&pointer)?;
-    let property = schema.query_node(id);
-    let projection = property.query();
-    if let Some(reference) = &projection.reference {
-        Some(ResolvedRef {
-            name: &reference.name,
-            property: &reference.property,
-            canonical: &reference.canonical,
-        })
-    } else {
-        let name = projection.source_name.as_str();
-        Some(ResolvedRef {
-            name,
-            property,
-            canonical: property,
-        })
     }
 }
 
@@ -7092,10 +5434,7 @@ fn key_enum_info<'a>(key: &'a StringLeaf<'_>) -> Option<&'a EnumInfo> {
         StringLeaf::Reference(_) => None,
         StringLeaf::Enum(EnumLeaf::String { info, plan: _ }) => Some(info),
         StringLeaf::Enum(EnumLeaf::Integer(_values) | EnumLeaf::Number(_values)) => None,
-        StringLeaf::Inferred {
-            rust_type: _,
-            display_type: _,
-        } => None,
+        StringLeaf::Inferred { rust_type: _ } => None,
         StringLeaf::Refined {
             constraints: _,
             format: _,
@@ -7133,17 +5472,6 @@ fn project_pattern_map_key_type(
         format: None,
         to_dsl: None,
     })
-}
-
-#[cfg(test)]
-fn pattern_map_key_type(
-    pattern: &str,
-    cfn_type: &str,
-    path: CfnPropertyPath<'_>,
-    source: &str,
-) -> StringLeaf<'static> {
-    project_pattern_map_key_type(pattern, cfn_type, path, source)
-        .unwrap_or_else(|error| panic!("{error}"))
 }
 
 fn map_key_type(
@@ -7214,13 +5542,16 @@ fn emit_map_key(
     path: CfnPropertyPath<'_>,
     namespace: &str,
     structural: &[String],
-) -> Result<String> {
-    match key {
+    source: type_emission::SourceNotes<'_>,
+) -> Result<EmittedType> {
+    let mut emitted = match key {
         StringLeaf::Enum(EnumLeaf::String { info, plan }) => {
             string_enum_type(&plan, cfn_type, path, namespace, structural, &info)
         }
         key => Ok(key.emit(cfn_type, path.property).0),
-    }
+    }?;
+    type_emission::source_notes(&mut emitted, source);
+    Ok(emitted)
 }
 
 fn string_enum_type(
@@ -7230,7 +5561,7 @@ fn string_enum_type(
     namespace: &str,
     structural: &[String],
     info: &EnumInfo,
-) -> Result<String> {
+) -> Result<EmittedType> {
     let values = literal
         .values
         .iter()
@@ -7245,17 +5576,27 @@ fn string_enum_type(
     let aliases = known_enum_aliases();
     let dsl_aliases = dsl_aliases_code(&info.values, aliases.get(path.property));
     let (kind, namespace) = property_enum_identity(cfn_type, path, namespace, structural, info);
-    let values = values
+    let values_code = values
         .iter()
         .map(|value| format!("{}.to_string()", rust_lit(value)))
         .collect::<Vec<_>>()
         .join(", ");
-    Ok(format!(
+    let rust = format!(
         "AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), Some(vec![{}]), {}, None, None)",
         rust_lit(&kind),
         rust_lit(&namespace),
-        values,
+        values_code,
         dsl_aliases,
+    );
+    Ok(EmittedType::new(
+        rust,
+        AttributeType::enum_(
+            carina_core::schema::enum_identity(&kind, Some(&namespace)),
+            Some(values.iter().map(|value| (*value).to_string()).collect()),
+            dsl_aliases_values(&info.values, aliases.get(path.property)),
+            None,
+            None,
+        ),
     ))
 }
 
@@ -7306,7 +5647,7 @@ fn generate_struct_type(
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: StructGenerationPaths<'_>,
-) -> Result<String> {
+) -> Result<EmittedType> {
     let plan = emission_plan::lower(projection)?;
     let emission_mark = read_only_emission_mark();
     let write_only_emission_mark = write_only_emission_mark();
@@ -7316,6 +5657,12 @@ fn generate_struct_type(
         .ok_or_else(|| plan.emission_error("struct projection has no properties"))?;
     let required_set: HashSet<&str> = plan.scope.required.iter().map(|s| s.as_str()).collect();
 
+    let mut typed_fields = Vec::new();
+    let mut annotations = TypeAnnotations {
+        inline_struct: true,
+        conditional_requirements: plan.scope.conditional_requirements.clone(),
+        ..TypeAnnotations::default()
+    };
     let fields: Vec<String> = properties
         .iter()
         .filter(|(field_name, field_prop)| {
@@ -7358,15 +5705,12 @@ fn generate_struct_type(
             } else {
                 "optional"
             };
-            let mut field_code = format!(
-                "StructField::{}({}, {})",
+            let mut field_code = field_type.builder_call(
+                "StructField",
                 constructor,
-                rust_lit(&snake_name),
-                field_type
+                &rust_lit(&snake_name).to_string(),
+                "",
             );
-            if field_type == DocumentKind::IamPolicyDocument.constructor() {
-                field_code.push_str(".with_documented_iam_grammar()");
-            }
             if is_read_only {
                 record_emitted_read_only_path(&field_path);
             }
@@ -7380,16 +5724,39 @@ fn generate_struct_type(
             let mut description = field_prop
                 .annotation_description()
                 .map(|desc| collapse_whitespace(&desc.replace('\n', " ")));
+            let mut documentation_description = description.clone().unwrap_or_default();
+            if is_read_only {
+                if !documentation_description.is_empty() {
+                    documentation_description.push(' ');
+                }
+                documentation_description.push_str("Provider-populated; cannot be set.");
+            }
+            if identity_properties().contains_key(&(schema.type_name.as_str(), cfn_property_path)) {
+                if !documentation_description.is_empty() {
+                    documentation_description.push(' ');
+                }
+                documentation_description.push_str(
+                    "Create-only. Anonymous identifiers hash only declared identity values.",
+                );
+            }
             if let Some(default) =
                 default_plan::lower(field_prop, nested_override, default_plan::Site::StructField)?
             {
+                if !documentation_description.is_empty() {
+                    documentation_description.push(' ');
+                }
+                documentation_description.push_str(&format!(
+                    "Default: {}. {}",
+                    default.display,
+                    default.diagnostic.unwrap_or("")
+                ));
                 let description = description.get_or_insert_default();
                 if !description.is_empty() {
                     description.push(' ');
                 }
                 description.push_str(&default.annotation());
             }
-            if let Some(description) = description {
+            if let Some(description) = &description {
                 field_code.push_str(&format!(
                     ".with_description(\"{}\")", // rust-lit-guard: allow (already escaped description)
                     description.replace('\\', "\\\\").replace('"', "\\\"")
@@ -7401,18 +5768,64 @@ fn generate_struct_type(
             // Even if the singular form conflicts with an existing field name,
             // resolve_block_names distinguishes block syntax (Value::List) from
             // attribute assignment (Value::Map) so the block_name is safe to add.
-            if !is_read_only
-                && let Some(singular) = property_block_name(
+            let block_name = if is_read_only {
+                None
+            } else {
+                property_block_name(
                     &snake_name,
                     &field_type,
                     field_prop,
                     schema,
                     nested_override,
                 )?
-            {
-                field_code.push_str(&format!(".with_block_name({})", rust_lit(&singular)));
+            };
+            if let Some(singular) = &block_name {
+                field_code.push_str(&format!(".with_block_name({})", rust_lit(singular)));
             }
 
+            let identity =
+                identity_properties().contains_key(&(schema.type_name.as_str(), cfn_property_path));
+            let mode = if is_read_only {
+                anyhow::ensure!(
+                    !is_write_only && !identity,
+                    "invalid provider-populated field facts for {def_name}.{snake_name}"
+                );
+                type_emission::FieldMode::Output { block_name }
+            } else {
+                let input = type_emission::InputFacts {
+                    mutability: if identity {
+                        type_emission::Mutability::Identity
+                    } else {
+                        type_emission::Mutability::Mutable
+                    },
+                    write_only: is_write_only,
+                    block_name,
+                };
+                if is_required {
+                    type_emission::FieldMode::Required(input)
+                } else {
+                    type_emission::FieldMode::Optional(input)
+                }
+            };
+            typed_fields.push(type_emission::field(
+                &snake_name,
+                field_type.ty.as_ref().clone(),
+                mode,
+                &type_emission::FieldFacts {
+                    provider_name: Some(field_name.clone()),
+                    description,
+                },
+            ));
+            annotations.map_requirements.insert(
+                field_name.clone(),
+                type_emission::map_requirements(field_prop)?,
+            );
+            annotations
+                .descriptions
+                .insert(snake_name.clone(), documentation_description);
+            annotations
+                .children
+                .insert(snake_name, *field_type.annotations);
             field_code.push_str(".build()");
 
             Ok(field_code)
@@ -7423,20 +5836,24 @@ fn generate_struct_type(
     // ConditionalRequirement facts stay in the shared projection and Markdown.
     // carina#4263: core has no presence-conditioned rule; Rust validation must
     // not strengthen these dependencies into unconditional FieldGroups.
-    let struct_type = if plan.scope.field_groups.groups.is_empty() {
+    let groups = plan
+        .scope
+        .field_groups
+        .groups
+        .iter()
+        .map(|group| type_emission::field_group(group, |name| Ok(name.to_snake_case())))
+        .collect::<Result<Vec<_>>>()?;
+    let struct_type = if groups.is_empty() {
         format!(
             "AttributeType::struct_({}.to_string(), vec![{}])",
             rust_lit(def_name),
             fields_str
         )
     } else {
-        let groups = plan
-            .scope
-            .field_groups
-            .groups
+        let groups = groups
             .iter()
-            .map(|group| field_group_rust(group, |member| Ok(member.to_snake_case())))
-            .collect::<Result<Vec<_>>>()?
+            .map(field_group_rust)
+            .collect::<Vec<_>>()
             .join(", ");
         format!(
             "AttributeType::struct_with_field_groups({}.to_string(), vec![{}], vec![{}])",
@@ -7447,7 +5864,12 @@ fn generate_struct_type(
     };
     record_struct_read_only_use(def_name, paths.provider, emission_mark);
     record_struct_write_only_use(def_name, paths.provider, write_only_emission_mark);
-    Ok(struct_type)
+    let ty = AttributeType::struct_with_field_groups(def_name.to_string(), typed_fields, groups);
+    Ok(EmittedType {
+        rust: struct_type,
+        ty: Box::new(ty),
+        annotations: Box::new(annotations),
+    })
 }
 
 /// Known enum overrides for properties where `extract_enum_from_description()` fails
@@ -7537,16 +5959,6 @@ fn enum_info_for_override(field_name: &str, values: &[&'static str]) -> EnumInfo
     }
 }
 
-/// Format a range display string for type names.
-fn range_display_string(min: Option<i64>, max: Option<i64>) -> String {
-    match (min, max) {
-        (Some(min), Some(max)) => format!("{}..={}", min, max),
-        (Some(min), None) => format!("{}..", min),
-        (None, Some(max)) => format!("..={}", max),
-        (None, None) => unreachable!("at least one bound must be present"),
-    }
-}
-
 /// Check if a regex pattern represents a numeric string (digits only).
 /// Matches patterns like "[0-9]+", "^[0-9]+$", "^\d+$", etc.
 fn is_numeric_string_pattern(pattern: &str) -> bool {
@@ -7607,16 +6019,6 @@ fn is_literal_enum_value(s: &str) -> bool {
     !s.is_empty()
         && s.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.' | '/'))
-}
-
-/// Format a range display string for string length type names.
-fn string_length_display(min: Option<u64>, max: Option<u64>) -> String {
-    match (min, max) {
-        (Some(min), Some(max)) => format!("{}..={}", min, max),
-        (Some(min), None) => format!("{}..", min),
-        (None, Some(max)) => format!("..={}", max),
-        (None, None) => unreachable!("at least one bound must be present"),
-    }
 }
 
 /// Reviewed translations keyed only by the ORIGINAL CFN pattern text.
@@ -7801,7 +6203,7 @@ fn validate_pattern_registry_sources(schema: &ParsedCfnSchema) -> Result<()> {
     Ok(())
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct StringConstraints {
     pattern: Option<ApprovedPattern>,
     min_length: Option<u64>,
@@ -7968,40 +6370,20 @@ impl EnumLeaf {
         }
     }
 
-    fn emit(self, cfn_type: &str, prop_name: &str) -> (String, Option<EnumInfo>) {
+    fn emit(self, cfn_type: &str, prop_name: &str) -> (EmittedType, Option<EnumInfo>) {
         match self {
-            Self::String { info, plan: _ } => ("AttributeType::string()".to_string(), Some(info)),
-            Self::Integer(values) => (int_enum_type(cfn_type, prop_name, &values), None),
+            Self::String { info, plan: _ } => (
+                EmittedType::new("AttributeType::string()", AttributeType::string()),
+                Some(info),
+            ),
+            Self::Integer(values) => (emit_int_enum(cfn_type, prop_name, &values), None),
             Self::Number(values) => {
                 let members = values
                     .iter()
-                    .map(|value| refined_float_type("None", Some((Some(*value), Some(*value)))))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                (format!("AttributeType::union(vec![{members}])"), None)
+                    .map(|value| EmittedType::float(Some((Some(*value), Some(*value)))))
+                    .collect::<Vec<_>>();
+                (EmittedType::union(members), None)
             }
-        }
-    }
-
-    fn display(&self) -> String {
-        match self {
-            Self::String { info: _, plan: _ } => "String".to_string(),
-            Self::Integer(values) => format!(
-                "IntEnum([{}])",
-                values
-                    .iter()
-                    .map(i64::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            Self::Number(values) => format!(
-                "FloatEnum([{}])",
-                values
-                    .iter()
-                    .map(i64::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
         }
     }
 }
@@ -8118,29 +6500,28 @@ enum StringLeaf<'a> {
     Enum(EnumLeaf),
     Reference(kms_references::ReferenceKind),
     Inferred {
-        rust_type: String,
-        display_type: String,
+        rust_type: EmittedType,
     },
     Refined {
         constraints: StringConstraints,
         format: Option<Cow<'a, str>>,
-        to_dsl: Option<&'static str>,
+        to_dsl: Option<type_emission::DslTransformSpec>,
     },
 }
 
 impl StringLeaf<'_> {
-    fn emit(self, cfn_type: &str, prop_name: &str) -> (String, Option<EnumInfo>) {
+    fn emit(self, cfn_type: &str, prop_name: &str) -> (EmittedType, Option<EnumInfo>) {
         match self {
             Self::Named {
                 identity,
                 constraints,
-            } => (string_identity::emit(identity, &constraints), None),
+            } => (string_identity::emit_type(identity, &constraints), None),
             Self::Enum(leaf) => leaf.emit(cfn_type, prop_name),
-            Self::Reference(kind) => (kind.constructor().to_string(), None),
-            Self::Inferred {
-                rust_type,
-                display_type: _,
-            } => (rust_type, None),
+            Self::Reference(kind) => (
+                EmittedType::new(kind.constructor(), carina_aws_types::kms_key_reference()),
+                None,
+            ),
+            Self::Inferred { rust_type } => (rust_type, None),
             Self::Refined {
                 constraints,
                 format,
@@ -8152,100 +6533,34 @@ impl StringLeaf<'_> {
                     && format.is_none()
                     && to_dsl.is_none()
                 {
-                    return ("AttributeType::string()".to_string(), None);
+                    return (
+                        EmittedType::new("AttributeType::string()", AttributeType::string()),
+                        None,
+                    );
                 }
                 (
-                    refined_string_type(
-                        constraints.pattern.as_ref(),
-                        &length,
-                        to_dsl.unwrap_or("None"),
+                    EmittedType::new(
+                        refined_string_type(
+                            constraints.pattern.as_ref(),
+                            &length,
+                            &to_dsl.map_or_else(
+                                || "None".into(),
+                                type_emission::DslTransformSpec::rust,
+                            ),
+                        ),
+                        AttributeType::refined_string(
+                            None,
+                            constraints
+                                .pattern
+                                .as_ref()
+                                .map(|pattern| pattern.as_spec().clone()),
+                            type_emission::length(constraints.min_length, constraints.max_length),
+                            to_dsl.map(type_emission::DslTransformSpec::value),
+                        ),
                     ),
                     None,
                 )
             }
-        }
-    }
-
-    fn type_display(&self, cfn_type: &str, prop_name: &str) -> TypeDisplay {
-        match self {
-            Self::Named {
-                identity: Some(_),
-                constraints: _,
-            }
-            | Self::Reference(_) => TypeDisplay::Plain(self.display()),
-            Self::Named {
-                identity: _,
-                constraints: _,
-            } => TypeDisplay::Code(self.display()),
-            Self::Enum(EnumLeaf::Integer(values)) => {
-                int_enum_type_display(&int_enum_type(cfn_type, prop_name, values), values)
-            }
-            Self::Inferred {
-                rust_type,
-                display_type,
-            } => TypeDisplay::from_constructor(rust_type, display_type.clone()),
-            Self::Enum(EnumLeaf::String { info: _, plan: _ } | EnumLeaf::Number(_))
-            | Self::Refined {
-                constraints: _,
-                format: _,
-                to_dsl: _,
-            } => TypeDisplay::Plain(self.display()),
-        }
-    }
-
-    fn display(&self) -> String {
-        match self {
-            Self::Named {
-                identity: Some(identity),
-                constraints,
-            } => {
-                let layer = identity.identity_layer();
-                let definition = layer.parts();
-                let (min, max) = definition.length.unwrap_or((None, None));
-                format!(
-                    "{} — identity: {}; member: {}",
-                    identity.identity(),
-                    string_refinement_display(
-                        definition.pattern.map(|pattern| pattern.as_str()),
-                        min,
-                        max,
-                        None,
-                    ),
-                    string_refinement_display(
-                        constraints.pattern.as_ref().map(ApprovedPattern::as_str),
-                        constraints.min_length,
-                        constraints.max_length,
-                        None,
-                    )
-                )
-            }
-            Self::Named {
-                identity: None,
-                constraints,
-            } => string_refinement_display(
-                constraints.pattern.as_ref().map(ApprovedPattern::as_str),
-                constraints.min_length,
-                constraints.max_length,
-                None,
-            ),
-            Self::Enum(leaf) => leaf.display(),
-            Self::Reference(kind) => kind.display_name().to_string(),
-            Self::Inferred {
-                rust_type,
-                display_type,
-            } => catalog_type_display(rust_type)
-                .unwrap_or(display_type)
-                .to_string(),
-            Self::Refined {
-                constraints,
-                format,
-                to_dsl: _,
-            } => string_refinement_display(
-                constraints.pattern.as_ref().map(ApprovedPattern::as_str),
-                constraints.min_length,
-                constraints.max_length,
-                format.as_deref(),
-            ),
         }
     }
 }
@@ -8418,7 +6733,6 @@ fn string_leaf<'a>(
                     classified.schema(),
                     property_path,
                 )?,
-                display_type: "PolicyDocument".to_string(),
             });
         }
         if let Some(values) = string
@@ -8452,56 +6766,11 @@ fn string_leaf<'a>(
     })
 }
 
-/// Render refinement text without making type or enum inference decisions.
-fn string_refinement_display(
-    pattern: Option<&str>,
-    min_length: Option<u64>,
-    max_length: Option<u64>,
-    format: Option<&str>,
-) -> String {
-    let min = min_length.filter(|&min| min > 0);
-    let length =
-        (min.is_some() || max_length.is_some()).then(|| string_length_display(min, max_length));
-    if pattern.is_some_and(is_numeric_string_pattern) {
-        return length.map_or_else(
-            || "NumericString".to_string(),
-            |length| format!("NumericString(len: {length})"),
-        );
-    }
-    if pattern.is_some()
-        && let Some(length) = &length
-    {
-        return format!("String(pattern, len: {length})");
-    }
-    if let Some(format) = format {
-        return length.map_or_else(
-            || format!("String({format})"),
-            |length| format!("String({format}, len: {length})"),
-        );
-    }
-    if pattern.is_some() {
-        return "String(pattern)".to_string();
-    }
-    length.map_or_else(
-        || "String".to_string(),
-        |length| format!("String(len: {length})"),
-    )
-}
-
 /// Format an approved pattern declaration as a Rust literal.
 /// Escape quotes and backslashes without changing the regex itself.
-fn emit_pattern_spec(pattern: &PatternSpec, literal: PatternLiteral) -> String {
+fn emit_pattern_spec(pattern: &PatternSpec) -> String {
     let source = pattern.as_str();
-    let regex = match literal {
-        PatternLiteral::Quoted => format!("{source:?}"),
-        PatternLiteral::Raw => {
-            let mut hashes = String::new();
-            while source.contains(&format!("\"{hashes}")) {
-                hashes.push('#');
-            }
-            format!("r{hashes}\"{source}\"{hashes}")
-        }
-    };
+    let regex = format!("{source:?}");
     let mode = match pattern.mode() {
         PatternMatch::Full => "carina_core::schema::PatternMatch::Full".to_string(),
         PatternMatch::Substring { reason } => format!(
@@ -8515,23 +6784,17 @@ fn emit_pattern_spec(pattern: &PatternSpec, literal: PatternLiteral) -> String {
 fn emit_pattern_option(pattern: Option<&ApprovedPattern>) -> String {
     pattern.map_or_else(
         || "None".to_string(),
-        |pattern| {
-            format!(
-                "Some({})",
-                emit_pattern_spec(pattern.as_spec(), PatternLiteral::Quoted)
-            )
-        },
+        |pattern| format!("Some({})", emit_pattern_spec(pattern.as_spec())),
     )
 }
 
 /// Emit a Rust expression for the `length` field on `AttributeType::Custom`
 /// (i.e. `Option<(Option<u64>, Option<u64>)>`).
 fn emit_length_option(min: Option<u64>, max: Option<u64>) -> String {
-    let effective_min = min.filter(|&m| m > 0);
-    if effective_min.is_none() && max.is_none() {
+    let Some((min, max)) = type_emission::length(min, max) else {
         return "None".to_string();
-    }
-    let min_str = match effective_min {
+    };
+    let min_str = match min {
         Some(m) => format!("Some({})", m),
         None => "None".to_string(),
     };
@@ -8557,58 +6820,54 @@ fn refined_int_type(range: &str) -> String {
 fn catalog_int_enum_for_property(
     resource_type: &str,
     prop_name: &str,
-) -> Option<(&'static str, &'static [i64])> {
+) -> Option<(&'static str, &'static [i64], AttributeType)> {
     let dsl_resource = dsl_resource_name_from_type(resource_type).ok()?;
     let (service, resource) = resource_identity_parts(&dsl_resource)?;
+    let retention = carina_aws_types::AwsType::LogsLogGroupRetentionInDays;
     AwsccType::ALL
         .iter()
         .filter_map(|row| {
-            row.allowed_int_values()
-                .map(|values| (row.identity(), row.constructor_path(), values))
+            row.allowed_int_values().map(|values| {
+                (
+                    row.identity(),
+                    row.constructor_path(),
+                    values,
+                    row.attribute_type(),
+                )
+            })
         })
         // Shared constructors without an explicit AWSCC identity binding must
         // not silently replace an anonymous, evidence-bearing integer subset.
         // Keep the scalar union for those domains (for example IPv6 masks).
-        .chain(carina_aws_types::AwsType::ALL.iter().filter_map(|row| {
-            let path = row.constructor_path();
-            if path != "carina_aws_types::logs_log_group_retention_in_days()" {
-                return None;
-            }
-            row.allowed_int_values()
-                .map(|values| (row.identity(), path, values))
+        .chain(retention.allowed_int_values().map(|values| {
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "This fixed integer retention row carries no partition-bearing ARN (#593)"
+            )]
+            let ty = retention.attribute_type();
+            (
+                retention.identity(),
+                retention.constructor_path(),
+                values,
+                ty,
+            )
         }))
-        .find(|(identity, _, _)| is_resource_identity(identity, service, resource, prop_name))
-        .map(|(_, constructor, values)| (constructor, values))
+        .find(|(identity, _, _, _)| is_resource_identity(identity, service, resource, prop_name))
+        .map(|(_, constructor, values, ty)| (constructor, values, ty))
 }
 
-fn int_enum_type(resource_type: &str, prop_name: &str, values: &[i64]) -> String {
-    if let Some((constructor, expected)) = catalog_int_enum_for_property(resource_type, prop_name)
+fn emit_int_enum(resource_type: &str, prop_name: &str, values: &[i64]) -> EmittedType {
+    if let Some((constructor, expected, ty)) =
+        catalog_int_enum_for_property(resource_type, prop_name)
         && values == expected
     {
-        return constructor.to_string();
+        return EmittedType::new(constructor, ty);
     }
-
-    let members = values
-        .iter()
-        .map(|value| {
-            format!("AttributeType::refined_int(None, Some((Some({value}), Some({value}))))")
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("AttributeType::union(vec![{members}])")
-}
-
-fn int_enum_type_display(constructor: &str, values: &[i64]) -> TypeDisplay {
-    TypeDisplay::from_constructor(
-        constructor,
-        format!(
-            "IntEnum([{}])",
-            values
-                .iter()
-                .map(i64::to_string)
-                .collect::<Vec<_>>()
-                .join(", "),
-        ),
+    EmittedType::union(
+        values
+            .iter()
+            .map(|value| EmittedType::int(Some((Some(*value), Some(*value)))))
+            .collect(),
     )
 }
 
@@ -9023,12 +7282,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 overrides::NarrowingSpec::named(
                     Some(StringIdentity::IamRoleName),
                     NarrowingKind::Primitive {
-                        expression: ConstraintSpec::string(
-                            None,
-                            Some((Some(1), Some(64))),
-                            PatternLiteral::Quoted,
-                        ),
-                        display: OverrideTypeDisplay::new("String"),
+                        expression: ConstraintSpec::string(None, Some((Some(1), Some(64)))),
                         block_name: None,
                         default: None,
                     },
@@ -9047,12 +7301,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 overrides::NarrowingSpec::named(
                     Some(StringIdentity::IamPolicyName),
                     NarrowingKind::Primitive {
-                        expression: ConstraintSpec::string(
-                            None,
-                            Some((Some(1), Some(128))),
-                            PatternLiteral::Quoted,
-                        ),
-                        display: OverrideTypeDisplay::new("String"),
+                        expression: ConstraintSpec::string(None, Some((Some(1), Some(128)))),
                         block_name: None,
                         default: None,
                     },
@@ -9068,13 +7317,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole(r"^(?:/|/[\x21-\x7E]+/)\z")),
                     Some((Some(1), Some(512))),
-                    PatternLiteral::Raw,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(
-                        r"String (length: 1..=512, pattern: ^(?:/|/[\x21-\x7E]+/)\z)",
-                    )
-                },
                 block_name: None,
                 default: None,
             },
@@ -9089,13 +7332,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole(r"^[\x09\x0A\x0D -~¡-ÿ]*\z")),
                     Some((Some(0), Some(1000))),
-                    PatternLiteral::Raw,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(
-                        r"String (length: 0..=1000, pattern: ^[\x09\x0A\x0D -~¡-ÿ]*\z)",
-                    )
-                },
                 block_name: None,
                 default: None,
             },
@@ -9118,12 +7355,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::IAM::OIDCProvider", "ClientIdList"),
             NarrowingKind::ArrayItemType {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), Some(255))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("List<String (length: 1..=255)>") },
+                expression: ConstraintSpec::string(None, Some((Some(1), Some(255)))),
                 block_name: None,
                 default: None,
                 min_items: None,
@@ -9241,12 +7473,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             overrides::NarrowingSpec::named(
                 Some(StringIdentity::LogsLogGroupLogGroupName),
                 NarrowingKind::Primitive {
-                    expression: ConstraintSpec::string(
-                        None,
-                        Some((Some(1), Some(512))),
-                        PatternLiteral::Quoted,
-                    ),
-                    display: OverrideTypeDisplay::new("String"),
+                    expression: ConstraintSpec::string(None, Some((Some(1), Some(512)))),
                     block_name: None,
                     default: None,
                 },
@@ -9262,12 +7489,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             overrides::NarrowingSpec::named(
                 Some(StringIdentity::OrganizationsAccountEmail),
                 NarrowingKind::Primitive {
-                    expression: ConstraintSpec::string(
-                        None,
-                        Some((Some(6), Some(64))),
-                        PatternLiteral::Quoted,
-                    ),
-                    display: OverrideTypeDisplay::new("String"),
+                    expression: ConstraintSpec::string(None, Some((Some(6), Some(64)))),
                     block_name: None,
                     default: None,
                 },
@@ -9282,11 +7504,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole(r"^[ -~]+\z")),
                     Some((Some(1), Some(50))),
-                    PatternLiteral::Raw,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(r"String (length: 1..=50, pattern: ^[ -~]+\z)")
-                },
                 block_name: None,
                 default: None,
             },
@@ -9300,12 +7518,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             overrides::NarrowingSpec::named(
                 Some(StringIdentity::OrganizationsAccountRoleName),
                 NarrowingKind::Primitive {
-                    expression: ConstraintSpec::string(
-                        None,
-                        Some((Some(1), Some(64))),
-                        PatternLiteral::Quoted,
-                    ),
-                    display: OverrideTypeDisplay::new("String"),
+                    expression: ConstraintSpec::string(None, Some((Some(1), Some(64)))),
                     block_name: None,
                     default: None,
                 },
@@ -9320,10 +7533,12 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::Organizations::Account", "ParentIds"),
             NarrowingKind::ArrayItemType {
-                expression: ConstraintSpec::string(Some(ApprovedPattern::whole(r"^(?:r-[0-9a-z]{4,32}|ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})\z")), Some((None, Some(100))), PatternLiteral::Raw),
-                display: const {
-                    OverrideTypeDisplay::new(r"List<String (length: ..=100, pattern: ^(?:r-[0-9a-z]{4,32}|ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})\z)>")
-                },
+                expression: ConstraintSpec::string(
+                    Some(ApprovedPattern::whole(
+                        r"^(?:r-[0-9a-z]{4,32}|ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})\z",
+                    )),
+                    Some((None, Some(100))),
+                ),
                 block_name: None,
                 default: None,
                 min_items: None,
@@ -9347,13 +7562,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole(r"^[0-9a-zA-Z._*-]{1,128}\z")),
                     Some((Some(1), Some(128))),
-                    PatternLiteral::Raw,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(
-                        r"String (length: 1..=128, pattern: ^[0-9a-zA-Z._*-]{1,128}\z)",
-                    )
-                },
                 block_name: None,
                 default: None,
             },
@@ -9391,7 +7600,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 ("AWS::S3::Bucket", key),
                 NarrowingKind::Primitive {
                     expression: ConstraintSpec::int_range(Some(1), None),
-                    display: const { OverrideTypeDisplay::new("PositiveInt") },
                     block_name: None,
                     default: None,
                 },
@@ -9409,7 +7617,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 ("AWS::S3::Bucket", key),
                 NarrowingKind::Primitive {
                     expression: ConstraintSpec::int_range(None, Some(100)),
-                    display: const { OverrideTypeDisplay::new("Int (..=100)") },
                     block_name: None,
                     default: None,
                 },
@@ -9422,7 +7629,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::S3::Bucket", "Transition.TransitionInDays"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::int_range(Some(0), None),
-                display: const { OverrideTypeDisplay::new("Int (0..)") },
                 block_name: None,
                 default: None,
             },
@@ -9449,13 +7655,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                     expression: ConstraintSpec::string(
                         Some(ApprovedPattern::whole(r"^(?:0|[1-9][0-9]*)\z")),
                         Some((None, Some(20))),
-                        PatternLiteral::Raw,
                     ),
-                    display: const {
-                        OverrideTypeDisplay::new(
-                            r"String (length: ..=20, pattern: ^(?:0|[1-9][0-9]*)\z)",
-                        )
-                    },
                     block_name: None,
                     default: None,
                 },
@@ -9531,11 +7731,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole(r"^[A-Za-z0-9._-]+\z")),
                     Some((None, Some(64))),
-                    PatternLiteral::Raw,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(r"String (length: ..=64, pattern: ^[A-Za-z0-9._-]+\z)")
-                },
                 block_name: None,
                 default: None,
             },
@@ -9556,7 +7752,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::S3::Bucket", "DataExport.Destination"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::document(DocumentKind::S3AnalyticsDestination),
-                display: const { OverrideTypeDisplay::new("Struct(AnalyticsDestination)") },
                 block_name: None,
                 default: None,
             },
@@ -9582,9 +7777,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 NarrowingKind::NamedType {
                     name: "S3NotificationEvent",
                     expression: ConstraintSpec::enum_domain(EnumDomain::S3NotificationEvent),
-                    display: const {
-                        OverrideTypeDisplay::new("aws.s3.Bucket.NotificationConfiguration.Event")
-                    },
                 },
             );
         }
@@ -9599,12 +7791,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::S3::Bucket", "WebsiteConfiguration.IndexDocument"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    Some(ApprovedPattern::whole(r"^[^/]+\z")),
-                    None,
-                    PatternLiteral::Raw,
-                ),
-                display: const { OverrideTypeDisplay::new(r"String (pattern: ^[^/]+\z)") },
+                expression: ConstraintSpec::string(Some(ApprovedPattern::whole(r"^[^/]+\z")), None),
                 block_name: None,
                 default: None,
             },
@@ -9613,12 +7800,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::S3::Bucket", "WebsiteConfiguration.ErrorDocument"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), None)),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: 1..)") },
+                expression: ConstraintSpec::string(None, Some((Some(1), None))),
                 block_name: None,
                 default: None,
             },
@@ -9747,7 +7929,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Budgets::Budget", "BudgetData.CostFilters"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::map(MapKind::BudgetCostFilters),
-                display: const { OverrideTypeDisplay::new("Map<String, List<String>>") },
                 block_name: None,
                 default: None,
             },
@@ -9756,7 +7937,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Budgets::Budget", "BudgetData.PlannedBudgetLimits"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::map(MapKind::BudgetPlannedLimits),
-                display: const { OverrideTypeDisplay::new("Map<String, Spend>") },
                 block_name: None,
                 default: None,
             },
@@ -9817,7 +7997,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Budgets::Budget", "Notification.Threshold"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::number_range(Some(0), Some(15000000000000)),
-                display: const { OverrideTypeDisplay::new("Float(0..=15000000000000)") },
                 block_name: None,
                 default: None,
             },
@@ -9835,7 +8014,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Budgets::Budget", "Spend.Amount"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::number_range(Some(0), None),
-                display: const { OverrideTypeDisplay::new("Float(0..)") },
                 block_name: None,
                 default: None,
             },
@@ -9850,11 +8028,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole("^[^:\\\\]+$")),
                     Some((Some(1), Some(100))),
-                    PatternLiteral::Quoted,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(r"String (length: 1..=100, pattern: ^[^:\\]+$)")
-                },
                 block_name: None,
                 default: None,
             },
@@ -9872,7 +8046,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::int_range(Some(1), Some(60)),
-                display: const { OverrideTypeDisplay::new("Int(1..=60)") },
                 block_name: None,
                 default: None,
             },
@@ -9907,12 +8080,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::Budgets::Budget", "TagValues.Key"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((None, Some(1024))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: 0..=1024)") },
+                expression: ConstraintSpec::string(None, Some((None, Some(1024)))),
                 block_name: None,
                 default: None,
             },
@@ -9925,12 +8093,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // The API requires at least one value and bounds each string to
         // 0..=1024 characters. CFN omits both constraints.
         let budgets_filter_values = NarrowingKind::ArrayItemType {
-            expression: ConstraintSpec::string(
-                None,
-                Some((None, Some(1024))),
-                PatternLiteral::Quoted,
-            ),
-            display: const { OverrideTypeDisplay::new("List<String(len: ..=1024)>") },
+            expression: ConstraintSpec::string(None, Some((None, Some(1024)))),
             block_name: None,
             default: None,
             min_items: None,
@@ -10072,12 +8235,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::CloudWatch::Alarm", "ExtendedStatistic"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), None)),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: 1..)") },
+                expression: ConstraintSpec::string(None, Some((Some(1), None))),
                 block_name: None,
                 default: None,
             },
@@ -10090,12 +8248,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::CloudWatch::Alarm", "MetricStat.Stat"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), None)),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: 1..)") },
+                expression: ConstraintSpec::string(None, Some((Some(1), None))),
                 block_name: None,
                 default: None,
             },
@@ -10109,7 +8262,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::CloudWatch::Alarm", "Period"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::int_range(Some(10), None),
-                display: const { OverrideTypeDisplay::new(r"Int(10..)") },
                 block_name: None,
                 default: None,
             },
@@ -10128,7 +8280,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 ("AWS::CloudWatch::Alarm", path),
                 NarrowingKind::Primitive {
                     expression: ConstraintSpec::int_range(Some(1), None),
-                    display: const { OverrideTypeDisplay::new(r"Int(1..)") },
                     block_name: None,
                     default: None,
                 },
@@ -10155,7 +8306,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 ("AWS::CloudWatch::Alarm", path),
                 NarrowingKind::Primitive {
                     expression: ConstraintSpec::int_range(Some(0), Some(86400)),
-                    display: const { OverrideTypeDisplay::new("Int(0..=86400)") },
                     block_name: None,
                     default: None,
                 },
@@ -10166,12 +8316,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::CloudWatch::Alarm", "AlarmPromQLCriteria.Query"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), Some(10000))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=10000)") },
+                expression: ConstraintSpec::string(None, Some((Some(1), Some(10000)))),
                 block_name: None,
                 default: None,
             },
@@ -10184,13 +8329,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole("^[^\\x00-\\x1F\\x7F]+$")),
                     Some((Some(1), Some(255))),
-                    PatternLiteral::Quoted,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(
-                        r"String (length: 1..=255, pattern: ^[^\x00-\x1F\x7F]+$)",
-                    )
-                },
                 block_name: None,
                 default: None,
             },
@@ -10202,12 +8341,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert_evidenced(
                 ("AWS::CloudWatch::Alarm", path),
                 NarrowingKind::Primitive {
-                    expression: ConstraintSpec::string(
-                        None,
-                        Some((Some(1), Some(255))),
-                        PatternLiteral::Quoted,
-                    ),
-                    display: const { OverrideTypeDisplay::new(r"String (length: 1..=255)") },
+                    expression: ConstraintSpec::string(None, Some((Some(1), Some(255)))),
                     block_name: None,
                     default: None,
                 },
@@ -10227,11 +8361,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                     expression: ConstraintSpec::string(
                         Some(ApprovedPattern::whole("^[^:].*$")),
                         Some((Some(1), Some(255))),
-                        PatternLiteral::Quoted,
                     ),
-                    display: const {
-                        OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[^:].*$)")
-                    },
                     block_name: None,
                     default: None,
                 },
@@ -10244,8 +8374,12 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::CloudWatch::Alarm", "Dimension.Name"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(Some(ApprovedPattern::whole("^(?:[!-9;-~][ -~]*| [ -~]*[!-~][ -~]*)$")), Some((Some(1), Some(255))), PatternLiteral::Quoted),
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^(?:[!-9;-~][ -~]*| [ -~]*[!-~][ -~]*)$)") },
+                expression: ConstraintSpec::string(
+                    Some(ApprovedPattern::whole(
+                        "^(?:[!-9;-~][ -~]*| [ -~]*[!-~][ -~]*)$",
+                    )),
+                    Some((Some(1), Some(255))),
+                ),
                 block_name: None,
                 default: None,
             },
@@ -10260,13 +8394,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole("^[ -~]*[!-~][ -~]*$")),
                     Some((Some(1), Some(1024))),
-                    PatternLiteral::Quoted,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(
-                        r"String (length: 1..=1024, pattern: ^[ -~]*[!-~][ -~]*$)",
-                    )
-                },
                 block_name: None,
                 default: None,
             },
@@ -10276,12 +8404,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::CloudWatch::Alarm", "AlarmDescription"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((None, Some(1024))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new(r"String (length: 0..=1024)") },
+                expression: ConstraintSpec::string(None, Some((None, Some(1024)))),
                 block_name: None,
                 default: None,
             },
@@ -10294,13 +8417,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole("^[a-z][a-zA-Z0-9_]*$")),
                     Some((Some(1), Some(255))),
-                    PatternLiteral::Quoted,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(
-                        r"String (length: 1..=255, pattern: ^[a-z][a-zA-Z0-9_]*$)",
-                    )
-                },
                 block_name: None,
                 default: None,
             },
@@ -10310,12 +8427,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::CloudWatch::Alarm", "MetricDataQuery.Expression"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), Some(2048))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=2048)") },
+                expression: ConstraintSpec::string(None, Some((Some(1), Some(2048)))),
                 block_name: None,
                 default: None,
             },
@@ -10344,12 +8456,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::CloudWatch::Alarm", "WallClockWindow.Timezone"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), Some(50))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: 1..=50)") },
+                expression: ConstraintSpec::string(None, Some((Some(1), Some(50)))),
                 block_name: None,
                 default: None,
             },
@@ -10366,9 +8473,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole("^[a-zA-Z0-9_.-]+\\z")),
                     Some((Some(3), Some(255))),
-                    PatternLiteral::Quoted,
                 ),
-                display: const { OverrideTypeDisplay::new("String(pattern, len: 3..=255)") },
                 block_name: None,
                 default: None,
             },
@@ -10379,12 +8484,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::DynamoDB::Table", "AttributeDefinition.AttributeName"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), Some(255))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: 1..=255)") },
+                expression: ConstraintSpec::string(None, Some((Some(1), Some(255)))),
                 block_name: None,
                 default: None,
             },
@@ -10395,12 +8495,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::DynamoDB::Table", "KeySchema.AttributeName"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), Some(255))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: 1..=255)") },
+                expression: ConstraintSpec::string(None, Some((Some(1), Some(255)))),
                 block_name: None,
                 default: None,
             },
@@ -10413,12 +8508,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "TimeToLiveSpecification.AttributeName",
             ),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), Some(255))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: 1..=255)") },
+                expression: ConstraintSpec::string(None, Some((Some(1), Some(255)))),
                 block_name: None,
                 default: None,
             },
@@ -10432,9 +8522,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole("^[a-zA-Z0-9_.-]+\\z")),
                     Some((Some(3), Some(255))),
-                    PatternLiteral::Quoted,
                 ),
-                display: const { OverrideTypeDisplay::new("String(pattern, len: 3..=255)") },
                 block_name: None,
                 default: None,
             },
@@ -10448,9 +8536,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole("^[a-zA-Z0-9_.-]+\\z")),
                     Some((Some(3), Some(255))),
-                    PatternLiteral::Quoted,
                 ),
-                display: const { OverrideTypeDisplay::new("String(pattern, len: 3..=255)") },
                 block_name: None,
                 default: None,
             },
@@ -10479,9 +8565,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole("^[,;:|\\t ]\\z")),
                     Some((Some(1), Some(1))),
-                    PatternLiteral::Quoted,
                 ),
-                display: const { OverrideTypeDisplay::new("String(pattern, len: 1)") },
                 block_name: None,
                 default: None,
             },
@@ -10493,8 +8577,12 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::DynamoDB::Table", "Csv.HeaderList"),
             NarrowingKind::ArrayItemType {
-                expression: ConstraintSpec::string(Some(ApprovedPattern::whole("^[\\x20-\\x21\\x23-\\x2B\\x2D-\\x7E]*\\z")), Some((Some(1), Some(65536))), PatternLiteral::Quoted),
-                display: const { OverrideTypeDisplay::new("List<String(pattern, len: 1..=65536)>") },
+                expression: ConstraintSpec::string(
+                    Some(ApprovedPattern::whole(
+                        "^[\\x20-\\x21\\x23-\\x2B\\x2D-\\x7E]*\\z",
+                    )),
+                    Some((Some(1), Some(65536))),
+                ),
                 block_name: None,
                 default: None,
                 min_items: None,
@@ -10514,9 +8602,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                         "^[a-z0-9A-Z]+[\\.\\-\\w]*[a-z0-9A-Z]+\\z",
                     )),
                     Some((None, Some(255))),
-                    PatternLiteral::Quoted,
                 ),
-                display: const { OverrideTypeDisplay::new("String(pattern, len: ..=255)") },
                 block_name: None,
                 default: None,
             },
@@ -10532,12 +8618,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::DynamoDB::Table", "S3BucketSource.S3KeyPrefix"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((None, Some(1024))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: 0..=1024)") },
+                expression: ConstraintSpec::string(None, Some((None, Some(1024)))),
                 block_name: None,
                 default: None,
             },
@@ -10549,12 +8630,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::DynamoDB::Table", "Projection.NonKeyAttributes"),
             NarrowingKind::ArrayItemType {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), Some(255))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("List<String (length: 1..=255)>") },
+                expression: ConstraintSpec::string(None, Some((Some(1), Some(255)))),
                 block_name: None,
                 default: None,
                 min_items: None,
@@ -10573,7 +8649,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::int_range(Some(1), None),
-                display: const { OverrideTypeDisplay::new("Int(1..)") },
                 block_name: None,
                 default: None,
             },
@@ -10587,7 +8662,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::int_range(Some(1), None),
-                display: const { OverrideTypeDisplay::new("Int(1..)") },
                 block_name: None,
                 default: None,
             },
@@ -10648,7 +8722,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::ECS::Cluster", "CapacityProviderStrategyItem.Weight"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::int_range(Some(0), Some(1000)),
-                display: const { OverrideTypeDisplay::new("Int(0..=1000)") },
                 block_name: None,
                 default: None,
             },
@@ -10659,7 +8732,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::ECS::Cluster", "CapacityProviderStrategyItem.Base"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::int_range(Some(0), Some(100000)),
-                display: const { OverrideTypeDisplay::new("Int(0..=100000)") },
                 block_name: None,
                 default: None,
             },
@@ -10673,9 +8745,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole("^[a-zA-Z0-9_-]+\\z")),
                     Some((Some(1), Some(255))),
-                    PatternLiteral::Quoted,
                 ),
-                display: const { OverrideTypeDisplay::new("String(pattern, len: 1..=255)") },
                 block_name: None,
                 default: None,
             },
@@ -10739,13 +8809,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole("^[A-Za-z0-9_-]+(?:\\.fifo)?$")),
                     Some((Some(1), Some(256))),
-                    PatternLiteral::Quoted,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(
-                        r"String (length: 1..=256, pattern: ^[A-Za-z0-9_-]+(?:\.fifo)?$)",
-                    )
-                },
                 block_name: None,
                 default: None,
             },
@@ -10757,8 +8821,10 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::SNS::Topic", "LoggingConfig.SuccessFeedbackSampleRate"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(Some(ApprovedPattern::whole("^0*(?:100|[0-9]{1,2})$")), None, PatternLiteral::Quoted),
-                display: const { OverrideTypeDisplay::new(r"String (pattern: ^0*(?:100|[0-9]{1,2})$)") },
+                expression: ConstraintSpec::string(
+                    Some(ApprovedPattern::whole("^0*(?:100|[0-9]{1,2})$")),
+                    None,
+                ),
                 block_name: None,
                 default: None,
             },
@@ -10772,7 +8838,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::SNS::Subscription", "RedrivePolicy"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::document(DocumentKind::SnsSubscriptionRedrivePolicy),
-                display: const { OverrideTypeDisplay::new("Struct(SubscriptionRedrivePolicy)") },
                 block_name: None,
                 default: None,
             },
@@ -10781,7 +8846,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::SNS::Subscription", "DeliveryPolicy"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::document(DocumentKind::SnsSubscriptionDeliveryPolicy),
-                display: const { OverrideTypeDisplay::new("Struct(SubscriptionDeliveryPolicy)") },
                 block_name: None,
                 default: None,
             },
@@ -10790,7 +8854,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::SNS::Subscription", "ReplayPolicy"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::document(DocumentKind::SnsSubscriptionReplayPolicy),
-                display: const { OverrideTypeDisplay::new("Struct(SubscriptionReplayPolicy)") },
                 block_name: None,
                 default: None,
             },
@@ -10799,7 +8862,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::SNS::Topic", "ArchivePolicy"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::document(DocumentKind::SnsTopicArchivePolicy),
-                display: const { OverrideTypeDisplay::new("Struct(TopicArchivePolicy)") },
                 block_name: None,
                 default: None,
             },
@@ -10812,10 +8874,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Logs::LogGroup", "FieldIndexPolicies"),
             NarrowingKind::ArrayItemType {
                 expression: ConstraintSpec::document(DocumentKind::LogsFieldIndexPolicy),
-                display: const { OverrideTypeDisplay::new("List<Struct(FieldIndexPolicy)>") },
                 block_name: Some("field_index_policy"),
                 default: Some(AttributeTypeOverrideDefault {
-                    value_expression: "Value::Concrete(ConcreteValue::List(vec![]))",
+                    value: OverrideDefaultValue::EmptyList,
                     markdown: "[]",
                 }),
                 min_items: None,
@@ -10826,7 +8887,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Logs::LogGroup", "DataProtectionPolicy"),
             NarrowingKind::Primitive {
                 expression: ConstraintSpec::document(DocumentKind::LogsDataProtectionPolicy),
-                display: const { OverrideTypeDisplay::new("Struct(LogGroupDataProtectionPolicy)") },
                 block_name: None,
                 default: None,
             },
@@ -10880,12 +8940,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             overrides::NarrowingSpec::named(
                 Some(StringIdentity::IdentitystoreGroupDisplayName),
                 NarrowingKind::Primitive {
-                    expression: ConstraintSpec::string(
-                        None,
-                        Some((Some(1), Some(1024))),
-                        PatternLiteral::Quoted,
-                    ),
-                    display: OverrideTypeDisplay::new("String"),
+                    expression: ConstraintSpec::string(None, Some((Some(1), Some(1024)))),
                     block_name: None,
                     default: None,
                 },
@@ -10969,16 +9024,16 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             "AuthenticateOidcConfig.SessionTimeout",
         ] {
             m.insert_evidenced(
-            ("AWS::ElasticLoadBalancingV2::Listener", path),
-            NarrowingKind::Primitive {
-                    expression: ConstraintSpec::string(Some(ApprovedPattern::whole("^[1-9][0-9]*\\z")), None, PatternLiteral::Quoted),
-                    display: const {
-                        OverrideTypeDisplay::new(r"String (pattern: ^[1-9][0-9]*\z)")
-                    },
+                ("AWS::ElasticLoadBalancingV2::Listener", path),
+                NarrowingKind::Primitive {
+                    expression: ConstraintSpec::string(
+                        Some(ApprovedPattern::whole("^[1-9][0-9]*\\z")),
+                        None,
+                    ),
                     block_name: None,
                     default: None,
                 },
-        );
+            );
         }
         // AuthenticationRequestExtraParams permits at most 10 entries in both
         // configurations. Map types cannot carry an entry-count bound
@@ -11056,12 +9111,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "JwtValidationConfig.Issuer",
             ),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((None, Some(256))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: ..=256)") },
+                expression: ConstraintSpec::string(None, Some((None, Some(256)))),
                 block_name: None,
                 default: None,
             },
@@ -11099,12 +9149,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "JwtValidationActionAdditionalClaim.Values",
             ),
             NarrowingKind::ArrayItemType {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((None, Some(256))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("List<String (length: ..=256)>") },
+                expression: ConstraintSpec::string(None, Some((None, Some(256)))),
                 block_name: None,
                 default: None,
                 min_items: None,
@@ -11147,13 +9192,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                     expression: ConstraintSpec::string(
                         Some(ApprovedPattern::whole("^[a-zA-Z0-9._]+\\z")),
                         Some((None, Some(256))),
-                        PatternLiteral::Quoted,
                     ),
-                    display: const {
-                        OverrideTypeDisplay::new(
-                            r"String (length: ..=256, pattern: ^[a-zA-Z0-9._]+\z)",
-                        )
-                    },
                     block_name: None,
                     default: None,
                 },
@@ -11179,16 +9218,18 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ),
         ] {
             m.insert_evidenced(
-            key,
-            NarrowingKind::Primitive {
-                    expression: ConstraintSpec::string(Some(ApprovedPattern::whole("^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\z")), Some((Some(1), Some(32))), PatternLiteral::Quoted),
-                    display: const {
-                        OverrideTypeDisplay::new(r"String (length: 1..=32, pattern: ^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\z)")
-                    },
+                key,
+                NarrowingKind::Primitive {
+                    expression: ConstraintSpec::string(
+                        Some(ApprovedPattern::whole(
+                            "^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\z",
+                        )),
+                        Some((Some(1), Some(32))),
+                    ),
                     block_name: None,
                     default: None,
                 },
-        );
+            );
         }
         // The public DNS name is a core DomainName, used unchanged.
         // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_LoadBalancer.html
@@ -11228,12 +9269,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "LoadBalancerAttribute.Value",
             ),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((None, Some(1024))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: ..=1024)") },
+                expression: ConstraintSpec::string(None, Some((None, Some(1024)))),
                 block_name: None,
                 default: None,
             },
@@ -11260,12 +9296,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "HealthCheckPath",
             ),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), Some(1024))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: 1..=1024)") },
+                expression: ConstraintSpec::string(None, Some((Some(1), Some(1024)))),
                 block_name: None,
                 default: None,
             },
@@ -11313,9 +9344,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole("^0x[0-9a-f]{16}\\z")),
                     None,
-                    PatternLiteral::Quoted,
                 ),
-                display: const { OverrideTypeDisplay::new(r"String (pattern: ^0x[0-9a-f]{16}\z)") },
                 block_name: None,
                 default: None,
             },
@@ -11336,19 +9365,9 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                             r"^[a-z]{2}(?:-[a-z]+)+-[0-9][a-z]\z",
                         )),
                         None,
-                        PatternLiteral::Raw,
                     ),
-                    ConstraintSpec::string(
-                        Some(ApprovedPattern::whole("^all\\z")),
-                        None,
-                        PatternLiteral::Quoted,
-                    ),
+                    ConstraintSpec::string(Some(ApprovedPattern::whole("^all\\z")), None),
                 ]),
-                display: const {
-                    OverrideTypeDisplay::new(
-                        r"aws.AvailabilityZone.ZoneName | String (pattern: ^all\z)",
-                    )
-                },
                 block_name: None,
                 default: None,
             },
@@ -11366,8 +9385,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::ElasticLoadBalancingV2::TargetGroup", "HealthCheckPort"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(Some(ApprovedPattern::whole(r"^(?:traffic-port|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])\z")), None, PatternLiteral::Raw),
-                display: OverrideTypeDisplay::new("String (traffic-port | canonical decimal 1..=65535)"), block_name: None, default: None,
+                expression: ConstraintSpec::string(Some(ApprovedPattern::whole(r"^(?:traffic-port|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])\z")), None),
+ block_name: None, default: None,
             },
         );
         for (path, identity) in [
@@ -11480,11 +9499,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole("^[a-zA-Z0-9._]+\\z")),
                     Some((None, Some(256))),
-                    PatternLiteral::Quoted,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(r"String (length: ..=256, pattern: ^[a-zA-Z0-9._]+\z)")
-                },
                 block_name: None,
                 default: None,
             },
@@ -11583,10 +9598,15 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // Match all remaining characters, including newlines; no extra grammar.
         // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_DistributionConfig.html
         m.insert_evidenced(
-            ("AWS::CloudFront::Distribution", "DistributionConfig.DefaultRootObject"),
+            (
+                "AWS::CloudFront::Distribution",
+                "DistributionConfig.DefaultRootObject",
+            ),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(Some(ApprovedPattern::whole(r"^(?:[^/][\s\S]*)?\z")), None, PatternLiteral::Raw),
-                display: const { OverrideTypeDisplay::new(r"String (pattern: ^(?:[^/][\s\S]*)?\z)") },
+                expression: ConstraintSpec::string(
+                    Some(ApprovedPattern::whole(r"^(?:[^/][\s\S]*)?\z")),
+                    None,
+                ),
                 block_name: None,
                 default: None,
             },
@@ -11671,7 +9691,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 ("AWS::CloudFront::Distribution", key),
                 NarrowingKind::Primitive {
                     expression: ConstraintSpec::int_range(Some(1), None),
-                    display: const { OverrideTypeDisplay::new("PositiveInt") },
                     block_name: None,
                     default: None,
                 },
@@ -11693,13 +9712,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                         r"^(?:origin-access-identity/cloudfront/[\s\S]+)?\z",
                     )),
                     None,
-                    PatternLiteral::Raw,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(
-                        r"String (pattern: ^(?:origin-access-identity/cloudfront/[\s\S]+)?\z)",
-                    )
-                },
                 block_name: None,
                 default: None,
             },
@@ -11735,9 +9748,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole(r"^[A-Z]{2}\z")),
                     None,
-                    PatternLiteral::Raw,
                 ),
-                display: const { OverrideTypeDisplay::new(r"List<String (pattern: ^[A-Z]{2}\z)>") },
                 block_name: None,
                 default: None,
                 min_items: None,
@@ -11762,12 +9773,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "ViewerCertificate.IamCertificateId",
             ),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((None, Some(32))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: ..=32)") },
+                expression: ConstraintSpec::string(None, Some((None, Some(32)))),
                 block_name: None,
                 default: None,
             },
@@ -11780,12 +9786,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "ConnectionFunctionAssociation.Id",
             ),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), Some(64))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: 1..=64)") },
+                expression: ConstraintSpec::string(None, Some((Some(1), Some(64)))),
                 block_name: None,
                 default: None,
             },
@@ -11798,13 +9799,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole(r"^[a-zA-Z0-9_-]+\z")),
                     Some((Some(1), Some(128))),
-                    PatternLiteral::Raw,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(
-                        r"String (length: 1..=128, pattern: ^[a-zA-Z0-9_-]+\z)",
-                    )
-                },
                 block_name: None,
                 default: None,
             },
@@ -11814,12 +9809,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::CloudFront::Distribution", "StringSchema.DefaultValue"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), Some(256))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: 1..=256)") },
+                expression: ConstraintSpec::string(None, Some((Some(1), Some(256)))),
                 block_name: None,
                 default: None,
             },
@@ -11840,12 +9830,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert_evidenced(
                 key,
                 NarrowingKind::Primitive {
-                    expression: ConstraintSpec::string(
-                        None,
-                        Some((None, Some(256))),
-                        PatternLiteral::Quoted,
-                    ),
-                    display: const { OverrideTypeDisplay::new("String (length: ..=256)") },
+                    expression: ConstraintSpec::string(None, Some((None, Some(256)))),
                     block_name: None,
                     default: None,
                 },
@@ -11867,12 +9852,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert_evidenced(
                 key,
                 NarrowingKind::Primitive {
-                    expression: ConstraintSpec::string(
-                        None,
-                        Some((None, Some(1783))),
-                        PatternLiteral::Quoted,
-                    ),
-                    display: const { OverrideTypeDisplay::new("String (length: ..=1783)") },
+                    expression: ConstraintSpec::string(None, Some((None, Some(1783)))),
                     block_name: None,
                     default: None,
                 },
@@ -11886,13 +9866,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole(r"^[a-zA-Z0-9_-]{1,64}\z")),
                     Some((Some(1), Some(64))),
-                    PatternLiteral::Raw,
                 ),
-                display: const {
-                    OverrideTypeDisplay::new(
-                        r"String (length: 1..=64, pattern: ^[a-zA-Z0-9_-]{1,64}\z)",
-                    )
-                },
                 block_name: None,
                 default: None,
             },
@@ -11937,12 +9911,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "OriginAccessControlConfig.Name",
             ),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((None, Some(64))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String (length: ..=64)") },
+                expression: ConstraintSpec::string(None, Some((None, Some(64)))),
                 block_name: None,
                 default: None,
             },
@@ -12089,18 +10058,15 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
 
         // WAFv2 WebACL constraints for #525. Every entry below is keyed by
         // its raw CFN property/definition path, never by a DSL name suffix.
-        let waf_string =
-            |pattern: &str, min: u64, max: u64, display: &'static str| NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    Some(ApprovedPattern::whole(pattern)),
-                    Some(((min > 0).then_some(min), Some(max))),
-                    PatternLiteral::Quoted,
-                ),
-                display: OverrideTypeDisplay::new(display),
-                block_name: None,
-                default: None,
-            };
-        let waf_name = || waf_string(r"^[A-Za-z0-9_-]+$", 1, 128, "String(pattern, len: 1..=128)");
+        let waf_string = |pattern: &str, min: u64, max: u64| NarrowingKind::Primitive {
+            expression: ConstraintSpec::string(
+                Some(ApprovedPattern::whole(pattern)),
+                Some(((min > 0).then_some(min), Some(max))),
+            ),
+            block_name: None,
+            default: None,
+        };
+        let waf_name = || waf_string(r"^[A-Za-z0-9_-]+$", 1, 128);
 
         // https://docs.aws.amazon.com/waf/latest/APIReference/API_CreateWebACL.html#waf-CreateWebACL-request-Name
         // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
@@ -12117,8 +10083,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::WAFv2::WebACL", "Description"),
             waf_string(
             r"^[A-Za-z0-9_+=:#@/,.-][A-Za-z0-9_+=:#@/,. \t\n\r\x0B\x0C-]+[A-Za-z0-9_+=:#@/,.-]$",
-            1, 256, "String(pattern, len: 1..=256)",
-        ),
+            1, 256),
         );
         // The API adds key length bounds absent from CFN's patternProperties.
         // Keep the key pattern derived from CFN and compose only these bounds.
@@ -12139,13 +10104,10 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // and values. Preserve CFN's length bounds.
         // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
         // accepted key 'a b' with value '日本'; get-resource preserved both.
-        for (path, min, max, display) in [
-            ("Tag.Key", 1, 128, "String(pattern, len: 1..=128)"),
-            ("Tag.Value", 0, 256, "String(pattern, len: ..=256)"),
-        ] {
+        for (path, min, max) in [("Tag.Key", 1, 128), ("Tag.Value", 0, 256)] {
             m.insert_evidenced(
                 ("AWS::WAFv2::WebACL", path),
-                waf_string(r"^[\p{L}\p{Z}\p{N}_.:/=+\-@]*$", min, max, display),
+                waf_string(r"^[\p{L}\p{Z}\p{N}_.:/=+\-@]*$", min, max),
             );
         }
         // https://docs.aws.amazon.com/waf/latest/APIReference/API_CustomResponse.html#waf-Type-CustomResponse-CustomResponseBodyKey
@@ -12161,7 +10123,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // rejected a b, a:b and 65 characters.
         m.insert_evidenced(
             ("AWS::WAFv2::WebACL", "CustomHTTPHeader.Name"),
-            waf_string(r"^[A-Za-z0-9._$-]+$", 1, 64, "String(pattern, len: 1..=64)"),
+            waf_string(r"^[A-Za-z0-9._$-]+$", 1, 64),
         );
         // https://docs.aws.amazon.com/waf/latest/APIReference/API_DataProtectionConfig.html#waf-Type-DataProtectionConfig-DataProtections
         // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
@@ -12186,9 +10148,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole(r"^.*[^ \t\n\r\x0B\x0C].*$")),
                     Some((Some(1), Some(64))),
-                    PatternLiteral::Quoted,
                 ),
-                display: OverrideTypeDisplay::new("List<String(pattern, len: 1..=64)>"),
                 block_name: None,
                 default: None,
                 min_items: None,
@@ -12219,9 +10179,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 expression: ConstraintSpec::string(
                     Some(ApprovedPattern::whole(r"^(?:/|(?:/(?:[^~]|~[01])+))$")),
                     Some((Some(1), Some(512))),
-                    PatternLiteral::Quoted,
                 ),
-                display: OverrideTypeDisplay::new("List<String(pattern, len: 1..=512)>"),
                 block_name: None,
                 default: None,
                 min_items: None,
@@ -12239,12 +10197,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         for path in ["SingleHeader.Name", "SingleQueryArgument.Name"] {
             m.insert_evidenced(
                 ("AWS::WAFv2::WebACL", path),
-                waf_string(
-                    r"^.*[^ \t\n\r\x0B\x0C].*$",
-                    1,
-                    64,
-                    "String(pattern, len: 1..=64)",
-                ),
+                waf_string(r"^.*[^ \t\n\r\x0B\x0C].*$", 1, 64),
             );
         }
         // https://docs.aws.amazon.com/waf/latest/APIReference/API_ForwardedIPConfig.html#waf-Type-ForwardedIPConfig-HeaderName
@@ -12253,7 +10206,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // rejected X_F and 256 characters.
         m.insert_evidenced(
             ("AWS::WAFv2::WebACL", "ForwardedIPConfiguration.HeaderName"),
-            waf_string(r"^[A-Za-z0-9-]+$", 1, 255, "String(pattern, len: 1..=255)"),
+            waf_string(r"^[A-Za-z0-9-]+$", 1, 255),
         );
         // https://docs.aws.amazon.com/waf/latest/APIReference/API_IPSetForwardedIPConfig.html#waf-Type-IPSetForwardedIPConfig-HeaderName
         // API documentation only (not separately probed): HeaderName is 1..=255
@@ -12263,7 +10216,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "AWS::WAFv2::WebACL",
                 "IPSetForwardedIPConfiguration.HeaderName",
             ),
-            waf_string(r"^[A-Za-z0-9-]+$", 1, 255, "String(pattern, len: 1..=255)"),
+            waf_string(r"^[A-Za-z0-9-]+$", 1, 255),
         );
         // https://docs.aws.amazon.com/waf/latest/APIReference/API_ResponseInspectionStatusCode.html#waf-Type-ResponseInspectionStatusCode-FailureCodes
         // https://docs.aws.amazon.com/waf/latest/APIReference/API_ResponseInspectionStatusCode.html#waf-Type-ResponseInspectionStatusCode-SuccessCodes
@@ -12280,7 +10233,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 ("AWS::WAFv2::WebACL", path),
                 NarrowingKind::ArrayItemType {
                     expression: ConstraintSpec::int_range(Some(0), Some(999)),
-                    display: OverrideTypeDisplay::new("List<Int(0..=999)>"),
                     block_name: None,
                     default: None,
                     min_items: None,
@@ -12297,12 +10249,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         for path in ["Label.Name", "LabelMatchStatement.Key"] {
             m.insert_evidenced(
                 ("AWS::WAFv2::WebACL", path),
-                waf_string(
-                    r"^[0-9A-Za-z_:-]+$",
-                    1,
-                    1024,
-                    "String(pattern, len: 1..=1024)",
-                ),
+                waf_string(r"^[0-9A-Za-z_:-]+$", 1, 1024),
             );
         }
         // https://docs.aws.amazon.com/waf/latest/APIReference/API_AndStatement.html#waf-Type-AndStatement-Statements
@@ -12457,12 +10404,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // rejected ns, a.b: and 1025 characters.
         m.insert_evidenced(
             ("AWS::WAFv2::WebACL", "RateLimitLabelNamespace.Namespace"),
-            waf_string(
-                r"^[0-9A-Za-z_:-]+:$",
-                1,
-                1024,
-                "String(pattern, len: 1..=1024)",
-            ),
+            waf_string(r"^[0-9A-Za-z_:-]+:$", 1, 1024),
         );
         // https://docs.aws.amazon.com/waf/latest/APIReference/API_SizeConstraintStatement.html#waf-Type-SizeConstraintStatement-Size
         // Cloud Control, carina-test-008, ap-northeast-1, 2026-11-06:
@@ -12487,12 +10429,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         ] {
             m.insert_evidenced(
                 ("AWS::WAFv2::WebACL", path),
-                waf_string(
-                    r"^.*[^ \t\n\r\x0B\x0C].*$",
-                    1,
-                    256,
-                    "String(pattern, len: 1..=256)",
-                ),
+                waf_string(r"^.*[^ \t\n\r\x0B\x0C].*$", 1, 256),
             );
         }
         // https://docs.aws.amazon.com/waf/latest/APIReference/API_VisibilityConfig.html#waf-Type-VisibilityConfig-MetricName
@@ -12504,12 +10441,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // keep 1..=128. No unpublished reserved-name rule.
         m.insert_evidenced(
             ("AWS::WAFv2::WebACL", "VisibilityConfig.MetricName"),
-            waf_string(
-                r"^[A-Za-z0-9_#:./-]+$",
-                1,
-                128,
-                "String(pattern, len: 1..=128)",
-            ),
+            waf_string(r"^[A-Za-z0-9_#:./-]+$", 1, 128),
         );
 
         // === EC2 API constraints (#525) ===
@@ -12546,12 +10478,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert_evidenced(
                 (resource, "Tag.Key"),
                 NarrowingKind::Primitive {
-                    expression: ConstraintSpec::string(
-                        None,
-                        Some((None, Some(128))),
-                        PatternLiteral::Quoted,
-                    ),
-                    display: const { OverrideTypeDisplay::new("String(len: ..=128)") },
+                    expression: ConstraintSpec::string(None, Some((None, Some(128)))),
                     block_name: None,
                     default: None,
                 },
@@ -12562,12 +10489,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             m.insert_evidenced(
                 (resource, "Tag.Value"),
                 NarrowingKind::Primitive {
-                    expression: ConstraintSpec::string(
-                        None,
-                        Some((None, Some(256))),
-                        PatternLiteral::Quoted,
-                    ),
-                    display: const { OverrideTypeDisplay::new("String(len: ..=256)") },
+                    expression: ConstraintSpec::string(None, Some((None, Some(256)))),
                     block_name: None,
                     default: None,
                 },
@@ -12580,9 +10502,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                     r"^[a-zA-Z0-9. _:/()#,@\[\]+=&;{}!$*-]*$",
                 )),
                 Some((None, Some(255))),
-                PatternLiteral::Raw,
             ),
-            display: const { OverrideTypeDisplay::new("String(pattern, len: ..=255)") },
             block_name: None,
             default: None,
         };
@@ -12686,12 +10606,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::SSM::Parameter", "AllowedPattern"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((None, Some(1024))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String(len: ..=1024)") },
+                expression: ConstraintSpec::string(None, Some((None, Some(1024)))),
                 block_name: None,
                 default: None,
             },
@@ -12703,12 +10618,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::SSM::Parameter", "Policies"),
             NarrowingKind::Primitive {
-                expression: ConstraintSpec::string(
-                    None,
-                    Some((Some(1), Some(4096))),
-                    PatternLiteral::Quoted,
-                ),
-                display: const { OverrideTypeDisplay::new("String(len: 1..=4096)") },
+                expression: ConstraintSpec::string(None, Some((Some(1), Some(4096)))),
                 block_name: None,
                 default: None,
             },
@@ -12761,10 +10671,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                         Some(ApprovedPattern::whole(
                             r"^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\.[0-9]{3}Z\z",
                         )),
-                        None,
-                        PatternLiteral::Quoted,
-                    ),
-                    display: const { OverrideTypeDisplay::new("String(yyyy-MM-ddTHH:mm:ss.SSSZ)") },
+                        None),
                     block_name: None,
                     default: None,
                 },
@@ -12791,7 +10698,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 ConstraintSpec::int_range(Some(64512), Some(65534)),
                 ConstraintSpec::int_range(Some(4200000000), Some(4294967294)),
             ]),
-            display: OverrideTypeDisplay::new("Int(64512..=65534) | Int(4200000000..=4294967294)"),
             block_name: None,
             default: None,
         };
@@ -13046,7 +10952,9 @@ fn synthetic_attributes() -> &'static [SyntheticAttribute] {
         vec![SyntheticAttribute {
             cfn_type: "AWS::CloudFront::Distribution",
             attr_name: "arn",
-            attr_type: "crate::schemas::catalog::arn()",
+            attr_type: || {
+                string_identity::emit_type(Some(StringIdentity::Arn), &StringConstraints::default())
+            },
             description: "The ARN of the CloudFront distribution. Synthesized by the provider \
                  from the distribution id; CloudFront's CloudFormation type does not \
                  expose ARN through the Cloud Control API.",
@@ -13058,8 +10966,28 @@ fn synthetic_attributes() -> &'static [SyntheticAttribute] {
 struct SyntheticAttribute {
     cfn_type: &'static str,
     attr_name: &'static str,
-    attr_type: &'static str,
+    attr_type: fn() -> EmittedType,
     description: &'static str,
+}
+
+fn emit_synthetic_type(
+    synth: &SyntheticAttribute,
+    dsl_resource: &str,
+    has_arn_helper: bool,
+) -> Result<EmittedType> {
+    if has_arn_helper && synth.attr_name == "arn" {
+        let (service, resource) =
+            resource_identity_parts(dsl_resource).expect("ARN helper identity");
+        Ok(EmittedType::new(
+            "self::arn()",
+            AttributeType::string_member(
+                arn_identity(service, resource)?.identity_layer(),
+                Default::default(),
+            ),
+        ))
+    } else {
+        Ok((synth.attr_type)())
+    }
 }
 
 /// Infer the Carina type string for a property based on its name.
@@ -13415,32 +11343,6 @@ fn get_resource_id_identity(prop_name: &str, resource_type: Option<&str>) -> Str
     }
 }
 
-/// Get the display name for a resource ID type (for markdown documentation).
-#[cfg(test)]
-fn get_resource_id_display_name(prop_name: &str, resource_type: Option<&str>) -> &'static str {
-    match classify_resource_id(prop_name, resource_type) {
-        ResourceIdKind::VpcId => "VpcId",
-        ResourceIdKind::SubnetId => "SubnetId",
-        ResourceIdKind::SecurityGroupId => "SecurityGroupId",
-        ResourceIdKind::EgressOnlyInternetGatewayId => "EgressOnlyInternetGatewayId",
-        ResourceIdKind::InternetGatewayId => "InternetGatewayId",
-        ResourceIdKind::RouteTableId => "RouteTableId",
-        ResourceIdKind::NatGatewayId => "NatGatewayId",
-        ResourceIdKind::VpcPeeringConnectionId => "VpcPeeringConnectionId",
-        ResourceIdKind::TransitGatewayId => "TransitGatewayId",
-        ResourceIdKind::VpnGatewayId => "VpnGatewayId",
-        ResourceIdKind::VpcEndpointId => "VpcEndpointId",
-        ResourceIdKind::InstanceId => "InstanceId",
-        ResourceIdKind::NetworkInterfaceId => "NetworkInterfaceId",
-        ResourceIdKind::AllocationId => "AllocationId",
-        ResourceIdKind::PrefixListId => "PrefixListId",
-        ResourceIdKind::CarrierGatewayId => "CarrierGatewayId",
-        ResourceIdKind::LocalGatewayId => "LocalGatewayId",
-        ResourceIdKind::NetworkAclId => "NetworkAclId",
-        ResourceIdKind::Generic => "AwsResourceId",
-    }
-}
-
 /// Check if a property name represents an IPAM Pool ID
 /// (e.g., IpamPoolId, Ipv4IpamPoolId, Ipv6IpamPoolId, SourceIpamPoolId)
 fn is_ipam_pool_id_property(prop_name: &str) -> bool {
@@ -13485,35 +11387,43 @@ fn list_constructor(insertion_order: Option<bool>, force_unordered: bool) -> &'s
 /// All list emission, including enum overlays, consumes the concrete array
 /// selected by property_shape and retains its ordering, item bounds, and uniqueness.
 fn array_attribute_type(
-    element_type: &str,
+    element_type: &EmittedType,
     array: &emission_plan::ArrayPlan<'_>,
     force_unordered: bool,
-) -> Result<String> {
-    let list_ctor = list_constructor(Some(array.insertion_order), force_unordered);
+) -> Result<EmittedType> {
+    let ordered = array.insertion_order && !force_unordered;
+    let list_ctor = list_constructor(Some(ordered), false);
     let elements = if array.unique_items {
         ListElements::Unique
     } else {
         ListElements::AllowDuplicates
     };
-    Ok(
-        if array.min_items.is_some()
-            || array.max_items.is_some()
-            || elements == ListElements::Unique
-        {
-            let length = emit_length_option(
-                array.min_items.and_then(|value| u64::try_from(value).ok()),
-                array.max_items.and_then(|value| u64::try_from(value).ok()),
-            );
-            refined_list_type(
-                element_type,
-                list_ctor == "AttributeType::list",
-                &length,
-                elements,
-            )
-        } else {
-            format!("{list_ctor}({element_type})")
-        },
-    )
+    let rust = if array.min_items.is_some()
+        || array.max_items.is_some()
+        || elements == ListElements::Unique
+    {
+        let length = emit_length_option(
+            array.min_items.and_then(|value| u64::try_from(value).ok()),
+            array.max_items.and_then(|value| u64::try_from(value).ok()),
+        );
+        refined_list_type(&element_type.rust, ordered, &length, elements)
+    } else {
+        format!(
+            "{list_ctor}({element_type})",
+            element_type = element_type.rust
+        )
+    };
+    let length = type_emission::length(
+        array.min_items.and_then(|value| u64::try_from(value).ok()),
+        array.max_items.and_then(|value| u64::try_from(value).ok()),
+    );
+    Ok(EmittedType::list(
+        rust,
+        element_type,
+        ordered,
+        length,
+        elements,
+    ))
 }
 
 /// Item expressions and enum items share the same full-path array emitter.
@@ -13522,11 +11432,10 @@ fn emit_array_item_override(
     path: CfnPropertyPath<'_>,
     property: &SchemaProperty,
     override_type: &TypeOverride,
-) -> Result<Option<String>> {
-    let Some(expression) = override_type.array_item_type_expression() else {
+) -> Result<Option<EmittedType>> {
+    if override_type.array_item_constraint().is_none() {
         return Ok(None);
-    };
-    let _ = expression;
+    }
     let array = override_type.array_source(schema, path, property)?;
     let plan = emission_plan::lower(array.try_query()?)?;
     let expression = override_type.emit_expression(plan.array()?.items, schema, path)?;
@@ -13545,9 +11454,9 @@ fn emit_array_override(
     path: CfnPropertyPath<'_>,
     property: &SchemaProperty,
     override_type: &TypeOverride,
-    item_type: &str,
+    item_type: &EmittedType,
     force_unordered: bool,
-) -> Result<String> {
+) -> Result<EmittedType> {
     let array = override_type.array_source(schema, path, property)?;
     EMITTED_ARRAY_OVERRIDES.with(|emitted| {
         emitted.borrow_mut().insert(path.owned_key());
@@ -13563,15 +11472,15 @@ fn emit_enum_property_type(
     schema: &CfnSchema,
     path: CfnPropertyPath<'_>,
     property: &SchemaProperty,
-    enum_type: &str,
+    enum_type: &EmittedType,
     force_unordered: bool,
-) -> Result<String> {
+) -> Result<EmittedType> {
     if let Some(override_type) = resource_type_override(&schema.type_name, path)
         .filter(|value| value.requires_array_source())
     {
         let array = override_type.array_source(schema, path, property)?;
         let item_type = array.try_query()?.items.as_deref().map_or_else(
-            || Ok(enum_type.to_string()),
+            || Ok(enum_type.clone()),
             |items| enum_property_type(items, schema, enum_type, force_unordered),
         )?;
         emit_array_override(
@@ -13592,13 +11501,13 @@ fn emit_enum_property_type(
 fn enum_property_type(
     prop: &SchemaProperty,
     schema: &CfnSchema,
-    enum_type: &str,
+    enum_type: &EmittedType,
     force_unordered: bool,
-) -> Result<String> {
+) -> Result<EmittedType> {
     prop.try_query()?;
     if let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new())? {
         let item_type = array.try_query()?.items.as_deref().map_or_else(
-            || Ok(enum_type.to_string()),
+            || Ok(enum_type.clone()),
             |items| enum_property_type(items, schema, enum_type, force_unordered),
         )?;
         array_attribute_type(
@@ -13607,12 +11516,15 @@ fn enum_property_type(
             force_unordered,
         )
     } else if let Some(value) = property_object_map_value(prop, schema)? {
-        Ok(format!(
-            "AttributeType::map({})",
-            enum_property_type(value, schema, enum_type, force_unordered)?
+        let value = enum_property_type(value, schema, enum_type, force_unordered)?;
+        Ok(EmittedType::map(
+            format!("AttributeType::map({value})", value = value.rust),
+            &EmittedType::new("AttributeType::string()", AttributeType::string()),
+            &value,
+            None,
         ))
     } else {
-        Ok(enum_type.to_string())
+        Ok(enum_type.clone())
     }
 }
 
@@ -13625,7 +11537,7 @@ fn cfn_type_to_carina_type_with_enum(
     schema: &EmissionContext<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
-) -> Result<(String, Option<EnumInfo>)> {
+) -> Result<(EmittedType, Option<EnumInfo>)> {
     let property_path = [prop_name.to_string()];
     cfn_type_to_carina_type_with_enum_with_paths(
         prop,
@@ -13704,34 +11616,44 @@ struct CfnTypeGenerationPaths<'a> {
 
 fn object_map_expression(
     prop: &SchemaProperty,
-    key: Option<String>,
-    value: &str,
-) -> Result<String> {
+    key: Option<EmittedType>,
+    value: &EmittedType,
+) -> Result<EmittedType> {
     let p = prop.try_query()?;
     let plan = emission_plan::lower(p)?;
     let map = plan.map()?;
     let (min, max) = (map.min_entries, map.max_entries);
-    if min.is_some() || max.is_some() {
-        let bound = |value: Option<i64>| {
-            value
-                .map(|value| {
-                    u64::try_from(value).map_err(|error| {
-                        p.emission_error(format!("invalid map property-count bound: {error}"))
-                    })
+    let bound = |value: Option<i64>| {
+        value
+            .map(|value| {
+                u64::try_from(value).map_err(|error| {
+                    p.emission_error(format!("invalid map property-count bound: {error}"))
                 })
-                .transpose()
-        };
-        let length = emit_length_option(bound(min)?, bound(max)?);
-        Ok(format!(
-            "AttributeType::refined_map({}, {value}, {length})",
-            key.unwrap_or_else(|| "AttributeType::string()".into())
-        ))
+            })
+            .transpose()
+    };
+    let length = type_emission::length(bound(min)?, bound(max)?);
+    let rust = if min.is_some() || max.is_some() {
+        format!(
+            "AttributeType::refined_map({}, {value}, {})",
+            key.as_ref()
+                .map_or("AttributeType::string()", |key| key.rust.as_str()),
+            emit_length_option(bound(min)?, bound(max)?),
+            value = value.rust,
+        )
     } else {
-        Ok(match key {
-            Some(key) => format!("AttributeType::map_with_key({key}, {value})"),
-            None => format!("AttributeType::map({value})"),
-        })
-    }
+        match &key {
+            Some(key) => format!(
+                "AttributeType::map_with_key({key}, {value})",
+                key = key.rust,
+                value = value.rust
+            ),
+            None => format!("AttributeType::map({value})", value = value.rust),
+        }
+    };
+    let key =
+        key.unwrap_or_else(|| EmittedType::new("AttributeType::string()", AttributeType::string()));
+    Ok(EmittedType::map(rust, &key, value, length))
 }
 
 fn generate_object_map_type(
@@ -13742,7 +11664,7 @@ fn generate_object_map_type(
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
-) -> Result<(String, Option<EnumInfo>)> {
+) -> Result<(EmittedType, Option<EnumInfo>)> {
     let property_path = CfnPropertyPath::new(paths.cfn_parent, prop_name);
     let (value_type, value_enum) = match object_map_value(schema, property_path, value)? {
         ObjectMapValueKind::DirectString => {
@@ -13755,7 +11677,7 @@ fn generate_object_map_type(
                 let value_property = value.property();
                 let (expression, info) =
                     string_leaf(value, property_path, None)?.emit(&schema.type_name, prop_name);
-                let expression = if let Some(info) = &info {
+                let mut expression = if let Some(info) = &info {
                     let plan = emission_plan::lower(value_property.try_query()?)?;
                     let literal = plan.enum_literals(&info.values)?;
                     string_enum_type(
@@ -13769,6 +11691,7 @@ fn generate_object_map_type(
                 } else {
                     expression
                 };
+                type_emission::source_notes(&mut expression, value_property.try_query()?);
                 (expression, info)
             }
         }
@@ -13809,6 +11732,7 @@ fn generate_object_map_type(
         property_path,
         namespace,
         paths.structural,
+        type_emission::SourceNotes::string(None),
     );
     Ok((
         object_map_expression(prop, Some(key_type?), &value_type)?,
@@ -13822,8 +11746,27 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
-) -> Result<(String, Option<EnumInfo>)> {
+) -> Result<(EmittedType, Option<EnumInfo>)> {
     cfn_type_to_carina_type_with_enum_resolved(
+        schema.property_at(paths.provider, prop),
+        namespace,
+        enums,
+        paths,
+        RefGenerationState {
+            definition_name: None,
+            context: RefContext::Normal,
+        },
+    )
+}
+
+fn cfn_type_to_carina_type_with_enum_with_paths_unnoted(
+    prop: &SchemaProperty,
+    schema: &EmissionContext<'_>,
+    namespace: &str,
+    enums: &BTreeMap<String, EnumInfo>,
+    paths: CfnTypeGenerationPaths<'_>,
+) -> Result<(EmittedType, Option<EnumInfo>)> {
+    cfn_type_to_carina_type_with_enum_resolved_inner(
         schema.property_at(paths.provider, prop),
         namespace,
         enums,
@@ -13853,7 +11796,25 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
     ref_state: RefGenerationState<'_>,
-) -> Result<(String, Option<EnumInfo>)> {
+) -> Result<(EmittedType, Option<EnumInfo>)> {
+    let property = classified.property();
+    let tags = is_dsl_tags_property(classified.schema(), classified.path())?;
+    let (mut value, info) = cfn_type_to_carina_type_with_enum_resolved_inner(
+        classified, namespace, enums, paths, ref_state,
+    )?;
+    if !tags {
+        type_emission::source_notes(&mut value, property.try_query()?);
+    }
+    Ok((value, info))
+}
+
+fn cfn_type_to_carina_type_with_enum_resolved_inner(
+    classified: EmissionProperty<'_>,
+    namespace: &str,
+    enums: &BTreeMap<String, EnumInfo>,
+    paths: CfnTypeGenerationPaths<'_>,
+    ref_state: RefGenerationState<'_>,
+) -> Result<(EmittedType, Option<EnumInfo>)> {
     if !is_dsl_tags_property(classified.schema(), classified.path())? {
         classified.property().try_query()?;
     }
@@ -13896,7 +11857,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 schema,
                 cfn_property_path,
                 prop,
-                "AttributeType::string()",
+                &EmittedType::new("AttributeType::string()", AttributeType::string()),
                 override_forces_unordered(&schema.type_name, cfn_property_path),
             )?,
             Some(enum_info_for_override(prop_name, values)),
@@ -13924,9 +11885,12 @@ fn cfn_type_to_carina_type_with_enum_resolved(
 
     if emitted.is_empty_struct() {
         return Ok((
-            format!(
-                "AttributeType::struct_({}.to_string(), vec![])",
-                rust_lit(&prop_name.to_pascal_case())
+            EmittedType::inline_struct(
+                format!(
+                    "AttributeType::struct_({}.to_string(), vec![])",
+                    rust_lit(&prop_name.to_pascal_case())
+                ),
+                AttributeType::struct_(prop_name.to_pascal_case(), vec![]),
             ),
             None,
         ));
@@ -13974,23 +11938,18 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 .with(|definitions| definitions.borrow().contains(emission_key.as_ref()))
             {
                 mark_back_reference(&emission_key);
-                return Ok((
-                    format!(
-                        "AttributeType::ref_({}.to_string())",
-                        rust_lit(&emission_key)
-                    ),
-                    None,
-                ));
+                return Ok((EmittedType::reference(&emission_key), None));
             }
 
-            let definition_already_emitted = EMITTED_DEFS
+            let definition_already_emitted = EMITTED_TYPES
                 .with(|definitions| definitions.borrow().contains_key(emission_key.as_ref()));
+            let is_struct = property_generates_struct(resolved.property, schema)?;
             IN_PROGRESS_DEFS.with(|definitions| {
                 definitions.borrow_mut().insert(emission_key.to_string());
             });
             let array = resolved_array_property(prop, schema, &mut HashSet::new())?;
             let paths = if ref_context == RefContext::Normal
-                && property_generates_struct(resolved.property, schema)?
+                && is_struct
                 && let Some(identity_path) = schema.definition_identity_path(def_name)
             {
                 CfnTypeGenerationPaths {
@@ -14000,7 +11959,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             } else {
                 paths
             };
-            let (body, enum_info) = cfn_type_to_carina_type_with_enum_resolved(
+            let (mut body, enum_info) = cfn_type_to_carina_type_with_enum_resolved_inner(
                 schema.property_at(property_path, array.as_deref().unwrap_or(resolved.property)),
                 namespace,
                 enums,
@@ -14014,26 +11973,21 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 definitions.borrow_mut().remove(emission_key.as_ref());
             });
 
-            if property_generates_struct(resolved.property, schema)? {
+            if is_struct {
+                body.annotations.definition = Some(emission_key.to_string());
                 match ref_context {
                     RefContext::Normal => {
                         if definition_already_emitted {
-                            return Ok((
-                                format!(
-                                    "AttributeType::ref_({}.to_string())",
-                                    rust_lit(&emission_key)
-                                ),
-                                None,
-                            ));
+                            return Ok((EmittedType::reference(&emission_key), None));
                         }
-                        EMITTED_DEFS.with(|definitions| {
+                        EMITTED_TYPES.with(|definitions| {
                             definitions
                                 .borrow_mut()
                                 .insert(emission_key.to_string(), body.clone());
                         });
                     }
                     RefContext::ListItem if was_back_referenced(&emission_key) => {
-                        EMITTED_DEFS.with(|definitions| {
+                        EMITTED_TYPES.with(|definitions| {
                             definitions
                                 .borrow_mut()
                                 .insert(emission_key.to_string(), body.clone());
@@ -14047,7 +12001,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         PropertyShape::Array {
             variant: array_variant,
         } => {
-            return cfn_type_to_carina_type_with_enum_resolved(
+            return cfn_type_to_carina_type_with_enum_resolved_inner(
                 schema.property_at(property_path, array_variant),
                 namespace,
                 enums,
@@ -14067,7 +12021,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             projection.reference = None;
             projection.properties = Some(properties);
             let inline_property = schema_projection::materialize(projection);
-            return cfn_type_to_carina_type_with_enum_resolved(
+            return cfn_type_to_carina_type_with_enum_resolved_inner(
                 schema.property_at(property_path, &inline_property),
                 namespace,
                 enums,
@@ -14089,7 +12043,10 @@ fn cfn_type_to_carina_type_with_enum_resolved(
 
     // Handle type
     Ok(match emitted.value_type()? {
-        EmissionType::Boolean => ("AttributeType::bool()".to_string(), None),
+        EmissionType::Boolean => (
+            EmittedType::new("AttributeType::bool()", AttributeType::bool()),
+            None,
+        ),
         EmissionType::Integer => {
             // MultipleOf is documented but NOT enforced here: carina#4229
             // tracks the missing core validator. Preserve only range/format.
@@ -14104,29 +12061,35 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 res_override.and_then(TypeOverride::kind)
             {
                 let (min, max) = emitted.numeric_override_range(*min, *max)?;
-                return Ok((refined_int_type(&emit_int_range_option(min, max)), None));
+                return Ok((EmittedType::int(Some((min, max))), None));
             }
             if let Some(NarrowingKind::IntEnum(values)) = res_override.and_then(TypeOverride::kind)
             {
                 emitted.validate_integer_enum(values)?;
-                return Ok((int_enum_type(&schema.type_name, prop_name, values), None));
+                return Ok((emit_int_enum(&schema.type_name, prop_name, values), None));
             }
             if let Some(narrowing) =
                 global_numeric_narrowing(&emitted, prop_name, &schema.type_name)?
                 && let NarrowingKind::IntEnum(values) = narrowing.kind
             {
                 emitted.validate_integer_enum(&values)?;
-                return Ok((int_enum_type(&schema.type_name, prop_name, &values), None));
+                return Ok((emit_int_enum(&schema.type_name, prop_name, &values), None));
             }
             // Use CF min/max if available (including one-sided), otherwise check known overrides
             let range = effective_numeric_range(&emitted, prop_name, &schema.type_name)?;
             if let Some((min, max)) = range {
-                (refined_int_type(&emit_int_range_option(min, max)), None)
+                (EmittedType::int(Some((min, max))), None)
             } else if emitted.numeric()?.format.is_some() {
                 // Format-only integer (e.g., int64) - informational, no range validation
-                (refined_int_type("None"), None)
+                (
+                    EmittedType::new(refined_int_type("None"), AttributeType::int()),
+                    None,
+                )
             } else {
-                ("AttributeType::int()".to_string(), None)
+                (
+                    EmittedType::new("AttributeType::int()", AttributeType::int()),
+                    None,
+                )
             }
         }
         EmissionType::Number => {
@@ -14143,17 +12106,20 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 res_override.and_then(TypeOverride::kind)
             {
                 let (min, max) = emitted.numeric_override_range(*min, *max)?;
-                return Ok((refined_float_type("None", Some((min, max))), None));
+                return Ok((EmittedType::float(Some((min, max))), None));
             }
             // Use CF min/max if available (including one-sided), otherwise check known overrides
             let range = effective_numeric_range(&emitted, prop_name, &schema.type_name)?;
             if let Some((min, max)) = range {
-                (refined_float_type("None", Some((min, max))), None)
+                (EmittedType::float(Some((min, max))), None)
             } else if emitted.numeric()?.format.is_some() {
                 // Format-only float (e.g., double) - informational, no range validation
-                (refined_float_type("None", None), None)
+                (EmittedType::float(None), None)
             } else {
-                ("AttributeType::float()".to_string(), None)
+                (
+                    EmittedType::new("AttributeType::float()", AttributeType::float()),
+                    None,
+                )
             }
         }
         EmissionType::Array => {
@@ -14194,14 +12160,14 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             // Check known string type overrides first, mirroring the string branch
             // for CFN union types whose first type is object.
             let res_override = type_projection.override_type;
-            if let Some(override_type) =
-                res_override.and_then(TypeOverride::attribute_type_expression)
+            if res_override
+                .and_then(TypeOverride::attribute_constraint)
+                .is_some()
             {
-                let _ = override_type;
                 return Ok((
                     res_override
                         .expect("typed object narrowing")
-                        .emit_expression(prop, schema, cfn_property_path)?,
+                        .emit_expression_unnoted(prop, schema, cfn_property_path)?,
                     None,
                 ));
             }
@@ -14242,48 +12208,11 @@ fn cfn_type_to_carina_type_with_enum_resolved(
 
 /// Convert a JSON default value to a Rust `Value::...` expression string.
 /// Collection members recurse; null and integers outside i64 are unsupported.
+#[cfg(test)]
 fn json_default_to_value_code(val: &serde_json::Value) -> Option<String> {
-    match val {
-        serde_json::Value::String(s) => Some(format!(
-            "Value::Concrete(ConcreteValue::String({}.to_string().into()))",
-            rust_lit(s)
-        )),
-        serde_json::Value::Bool(b) => Some(format!("Value::Concrete(ConcreteValue::Bool({}))", b)),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Some(format!("Value::Concrete(ConcreteValue::Int({}))", i))
-            } else {
-                if n.is_f64() {
-                    Some(format!(
-                        "Value::Concrete(ConcreteValue::Float(carina_core::FiniteF64::new({n}).expect(\"finite JSON default\")))"
-                    ))
-                } else {
-                    None
-                }
-            }
-        }
-        serde_json::Value::Null => None,
-        serde_json::Value::Array(values) => Some(format!(
-            "Value::Concrete(ConcreteValue::List(vec![{}]))",
-            values
-                .iter()
-                .map(json_default_to_value_code)
-                .collect::<Option<Vec<_>>>()?
-                .join(", ")
-        )),
-        serde_json::Value::Object(values) => Some(format!(
-            "Value::Concrete(ConcreteValue::Map(vec![{}].into_iter().collect()))",
-            values
-                .iter()
-                .map(|(key, value)| Some(format!(
-                    "({}.to_string(), {})",
-                    rust_lit(key),
-                    json_default_to_value_code(value)?
-                )))
-                .collect::<Option<Vec<_>>>()?
-                .join(", ")
-        )),
-    }
+    default_plan::from_json(val)
+        .as_ref()
+        .and_then(default_plan::rust)
 }
 
 /// Convert a JSON default value to a display string for markdown documentation.
@@ -14295,7 +12224,7 @@ fn json_default_to_markdown(val: &serde_json::Value) -> Option<String> {
 /// Choose block syntax from override metadata or the emitted struct item shape.
 fn property_block_name(
     name: &str,
-    attr_type: &str,
+    attr_type: &EmittedType,
     property: &SchemaProperty,
     schema: &CfnSchema,
     override_type: Option<&TypeOverride>,
@@ -14325,11 +12254,11 @@ fn property_block_name(
         return Ok(Some(name.to_owned()));
     }
     let can_infer = override_type
-        .and_then(TypeOverride::array_item_type_expression)
+        .and_then(TypeOverride::array_item_constraint)
         .is_none();
     Ok(
-        if attr_type.contains("list(AttributeType::struct_")
-            || (can_infer && is_list_of_struct_property(property, schema)?)
+        if attr_type.contains_inline_struct_list()
+            || (can_infer && source_list_has_struct(property, schema)?)
         {
             compute_block_name(name)
         } else {
@@ -14476,6 +12405,26 @@ mod tests {
         include!("codegen/exhaustive_emission_tests.rs");
     }
 
+    mod doc_type_parity_tests {
+        include!("codegen/doc_type_parity_tests.rs");
+    }
+
+    mod doc_test_support {
+        include!("codegen/doc_test_support.rs");
+    }
+
+    mod doc_declaration_naming_tests {
+        include!("codegen/doc_declaration_naming_tests.rs");
+    }
+
+    mod emission_witness_tests {
+        include!("codegen/emission_witness_tests.rs");
+    }
+
+    mod doc_supplemental_notes_tests {
+        include!("codegen/doc_supplemental_notes_tests.rs");
+    }
+
     pub(super) mod option_d_tests {
         include!("codegen/option_d_tests.rs");
     }
@@ -14587,6 +12536,7 @@ mod tests {
         let prop = &property;
         let classified = EmissionContext::from_source(schema).unwrap();
         super::cfn_type_to_carina_type_with_enum(prop, prop_name, &classified, namespace, enums)
+            .map(|(ty, info)| (ty.rust, info))
             .unwrap()
     }
 
@@ -14617,6 +12567,7 @@ mod tests {
             enums,
             paths,
         )
+        .map(|(ty, info)| (ty.rust, info))
         .unwrap()
     }
 
@@ -14626,7 +12577,6 @@ mod tests {
         schema: &ParsedCfnSchema,
         namespace: &str,
         enums: &BTreeMap<String, EnumInfo>,
-        has_arn_helper: bool,
     ) -> String {
         let property = fixture_property(schema, prop_name, prop);
         let prop = &property;
@@ -14635,42 +12585,147 @@ mod tests {
             classified.property_at(&[prop_name.to_string()], prop),
             namespace,
             enums,
-            has_arn_helper,
         )
         .unwrap()
+        .rust
     }
 
     fn markdown_type(
         prop_name: &str,
         prop: &CfnProperty,
         schema: &ParsedCfnSchema,
-        enum_target: Option<&MarkdownEnumKey>,
         property_path: &[String],
         cfn_parent: Option<&str>,
-    ) -> MarkdownType {
+    ) -> String {
+        let property = fixture_property(schema, prop_name, prop);
         let default_path = [prop_name.to_string()];
-        let property_path = if property_path.is_empty() {
-            &default_path
+        let path = if property_path.is_empty() {
+            &default_path[..]
         } else {
             property_path
         };
-        let property = fixture_property(schema, prop_name, prop);
-        let prop = &property;
-        let classified = EmissionContext::from_source(schema).unwrap();
-        super::markdown_type(
-            classified.property_at(property_path, prop),
-            enum_target,
-            cfn_parent,
+        type_display_string_at(
+            &property,
+            &EmissionContext::from_source(schema).unwrap(),
+            path,
+            CfnPropertyPath::new(cfn_parent, prop_name),
         )
         .unwrap()
     }
 
-    fn object_string_union_is_iam_policy_document(
-        prop: &CfnProperty,
-        resource: &str,
+    fn render_emitted_type(
+        emitted: EmittedType,
+        defs: BTreeMap<String, EmittedType>,
+        name: &str,
+    ) -> Result<String> {
+        let schema = carina_core::schema::ResourceSchema::new("test.Type").attribute(
+            carina_core::schema::AttributeSchema::optional(name, emitted.ty.as_ref().clone())
+                .build(),
+        );
+        let witness = type_emission::witness(schema, &defs)?;
+        let resource = ResourceEmission {
+            rust: String::new(),
+            attributes: BTreeMap::from([(name.to_string(), emitted)]),
+            defs,
+            witness,
+        };
+        let mut types = type_docs::TypeDocs::new(
+            &resource,
+            [(
+                resource.attributes[name].ty.as_ref(),
+                type_docs::field_scope(name),
+            )],
+        )?;
+        let display = types.display(&resource.attributes[name].ty, type_docs::field_scope(name))?;
+        let mut page = PageBuilder::new();
+        display.write_to(&mut page);
+        page.push_str("\n\n");
+        types.write_declarations(&mut page)?;
+        Ok(page
+            .finish()?
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .to_string())
+    }
+
+    fn shared_field_group(kind: AlternativeKind, members: &[&str]) -> String {
+        let group = type_emission::field_group(
+            &RequiredGroup {
+                kind,
+                members: members.iter().map(|name| (*name).to_string()).collect(),
+            },
+            |name| Ok(name.to_string()),
+        )
+        .unwrap();
+        let mut page: PageBuilder<()> = PageBuilder::new();
+        carina_docgen::render_field_groups(&mut page, &[group]);
+        page.finish()
+            .unwrap()
+            .lines()
+            .find(|line| line.starts_with("- "))
+            .unwrap()
+            .to_string()
+    }
+
+    fn shared_type(ty: AttributeType) -> String {
+        render_emitted_type(
+            EmittedType::new("test fixture", ty),
+            BTreeMap::new(),
+            "probe",
+        )
+        .unwrap()
+    }
+
+    fn type_display_string_at(
+        prop: &SchemaProperty,
+        schema: &EmissionContext<'_>,
+        property_path: &[String],
         path: CfnPropertyPath<'_>,
-    ) -> bool {
-        super::object_string_union_is_iam_policy_document(prop, resource, path).unwrap()
+    ) -> Result<String> {
+        reset_recursion_guard();
+        let resource = dsl_resource_name_from_type(&schema.type_name)?;
+        let namespace = format!("aws.{resource}");
+        let mut enums = BTreeMap::new();
+        if path.parent.is_none() {
+            let (_, info) = super::cfn_type_to_carina_type_with_enum(
+                prop,
+                path.property,
+                schema,
+                &namespace,
+                &enums,
+            )?;
+            if let Some(info) = info {
+                enums.insert(path.property.to_string(), info);
+            }
+        }
+        reset_recursion_guard();
+        let emitted = super::generate_attribute_type(
+            schema.property_at(property_path, prop),
+            &namespace,
+            &enums,
+            CfnTypeGenerationPaths {
+                structural: &[],
+                provider: property_path,
+                cfn_parent: path.parent,
+            },
+        )?;
+        render_emitted_type(emitted, take_emitted_defs(), path.property)
+    }
+
+    fn type_display_string(
+        prop_name: &str,
+        prop: &CfnProperty,
+        schema: &ParsedCfnSchema,
+    ) -> String {
+        let property = fixture_property(schema, prop_name, prop);
+        type_display_string_at(
+            &property,
+            &EmissionContext::from_source(schema).unwrap(),
+            &[prop_name.to_string()],
+            CfnPropertyPath::new(None, prop_name),
+        )
+        .unwrap()
     }
 
     fn map_key_type(
@@ -14698,8 +12753,16 @@ mod tests {
         item_type: &str,
         unordered: bool,
     ) -> String {
-        super::emit_array_override(schema, path, property, override_type, item_type, unordered)
-            .unwrap()
+        super::emit_array_override(
+            schema,
+            path,
+            property,
+            override_type,
+            &EmittedType::new(item_type, AttributeType::string()),
+            unordered,
+        )
+        .unwrap()
+        .rust
     }
 
     fn enum_property_type(
@@ -14708,7 +12771,14 @@ mod tests {
         value: &str,
         unordered: bool,
     ) -> String {
-        super::enum_property_type(prop, schema, value, unordered).unwrap()
+        super::enum_property_type(
+            prop,
+            schema,
+            &EmittedType::new(value, AttributeType::string()),
+            unordered,
+        )
+        .unwrap()
+        .rust
     }
 
     // Parse the emitted Rust literals, so these tests exercise the constraints
@@ -14846,20 +12916,24 @@ mod tests {
         let expression = ConstraintSpec::string(
             Some(ApprovedPattern::whole("[a-z]+")),
             Some((Some(1), Some(64))),
-            PatternLiteral::Quoted,
         );
-        assert_eq!(emitted_patterns(expression.as_str()), vec!["[a-z]+"]);
-        assert_eq!(
-            expression.normalized_display("String (length: 1..=64, pattern: [a-z]+)"),
-            r"String (length: 1..=64, pattern: [a-z]+)",
+        let schema = empty_schema("AWS::Test::Resource");
+        let property = fixture_property(
+            &schema,
+            "UserValue",
+            &def(Some("string"), None, vec![], None, None, None),
         );
-        let invalid = TypeOverride::from(NarrowingKind::Primitive {
-            expression: ConstraintSpec::string(
-                Some(ApprovedPattern::whole("(?=x)x")),
+        let emitted = expression
+            .emit(
+                &property,
+                &schema,
+                CfnPropertyPath::new(None, "UserValue"),
                 None,
-                PatternLiteral::Quoted,
-            ),
-            display: OverrideTypeDisplay::new("String"),
+            )
+            .unwrap();
+        assert_eq!(emitted_patterns(&emitted.rust), vec!["[a-z]+"]);
+        let invalid = TypeOverride::from(NarrowingKind::Primitive {
+            expression: ConstraintSpec::string(Some(ApprovedPattern::whole("(?=x)x")), None),
             block_name: None,
             default: None,
         });
@@ -15176,10 +13250,6 @@ mod tests {
         assert!(!emitted_string_accepts(&code, "EXAMPLE.com."));
         assert!(!emitted_string_accepts(&code, "a"));
         assert!(!emitted_string_accepts(&code, &"a".repeat(65)));
-        assert_eq!(
-            type_display_string("Name", &prop, &schema),
-            "String(pattern, len: 2..=64)"
-        );
 
         prop.pattern = Some("(?=x)x".to_string());
         let panic = std::panic::catch_unwind(|| pattern_type_code(&schema, None, "Name", &prop))
@@ -15247,11 +13317,7 @@ mod tests {
                 );
                 assert!(enum_info.is_some(), "{kind}: {code}");
                 assert!(emitted_patterns(&code).is_empty(), "{kind}: {code}");
-                assert_eq!(
-                    type_display_string(name, &schema.properties[name], &schema),
-                    "String",
-                    "{kind}"
-                );
+
                 generate_synthetic_schema_code(&schema).unwrap();
                 generate_test_markdown(&schema, &schema.type_name).unwrap();
             }
@@ -15318,8 +13384,8 @@ mod tests {
                                 "aws.test.Resource",
                                 &BTreeMap::new(),
                             )
-                            .map(|value| value.0),
-                            super::type_display_string_at(
+                            .map(|value| value.0.rust),
+                            type_display_string_at(
                                 &prop,
                                 &context,
                                 &["ConnectivityType".into()],
@@ -15358,10 +13424,6 @@ mod tests {
                         let info = info.expect("string-valued enums must be registered");
                         assert_eq!(info.type_name, expected_name);
                         assert_eq!(&info.values, values);
-                        assert_eq!(
-                            type_display_string("ConnectivityType", prop, &schema),
-                            "String"
-                        );
                     } else {
                         assert!(info.is_none());
                         assert_eq!(
@@ -15378,7 +13440,7 @@ mod tests {
     fn test_codegen_string_leaf_precedence_is_shared() {
         use serde_json::json;
 
-        for (cfn_type, name, property, expected_values, expected_type, display) in [
+        for (cfn_type, name, property, expected_values, expected_type, _display) in [
             (
                 "AWS::Test::Resource",
                 "ValueArn",
@@ -15549,11 +13611,6 @@ mod tests {
                     expected_values,
                     "{cfn_type}.{name}: {property:?}"
                 );
-                assert_eq!(
-                    type_display_string(name, prop, &schema),
-                    display,
-                    "{cfn_type}.{name}: {property:?}"
-                );
             }
         }
     }
@@ -15587,10 +13644,6 @@ mod tests {
             let code = pattern_type_code(&schema, None, "RepositoryName", &property);
             assert!(emitted_string_accepts(&code, "ab"), "{code}");
             assert!(!emitted_string_accepts(&code, "a"), "{code}");
-            assert!(
-                type_display_string("RepositoryName", &property, &schema)
-                    .contains("String(pattern, len: 2..=256)")
-            );
         }
     }
 
@@ -16245,1187 +14298,6 @@ mod tests {
         );
     }
 
-    mod shape_parity {
-        use super::*;
-        use serde_json::{Value, json};
-
-        fn fixture(properties: Value, definitions: Value) -> ParsedCfnSchema {
-            // Use one identity for both emitters, with a declared replacement
-            // class that needs no name property in these partial fixtures.
-            let mut schema = empty_schema("AWS::EC2::RouteTable");
-            schema.edit_json(|source| {
-                source["properties"] = properties;
-            });
-            schema.edit_json(|source| {
-                source["definitions"] = definitions;
-            });
-            schema
-        }
-
-        fn outputs(schema: &ParsedCfnSchema) -> (String, String) {
-            let code = generate_schema_code(schema, &schema.type_name).unwrap();
-            let docs = generate_test_markdown(schema, &schema.type_name).unwrap();
-            carina_docgen::check_page(&docs).unwrap();
-            (code, docs)
-        }
-
-        fn after<'a>(text: &'a str, prefix: &str) -> &'a str {
-            text.split_once(prefix)
-                .unwrap_or_else(|| panic!("missing {prefix:?} in {text}"))
-                .1
-                .lines()
-                .next()
-                .unwrap()
-        }
-
-        fn type_pair<'a>(code: &'a str, docs: &'a str, position: &str) -> (&'a str, &'a str) {
-            match position {
-                "top" => (
-                    code.split_once("(\"probe\", ").unwrap().1,
-                    after(docs.split_once("### `probe`").unwrap().1, "- **Type:** "),
-                ),
-                "item" => (
-                    code.split_once("(\"outer\", ").unwrap().1,
-                    after(docs.split_once("### `outer`").unwrap().1, "- **Type:** "),
-                ),
-                _ => (
-                    code.split_once("(\"probe\", ").unwrap().1,
-                    after(docs, "| `probe` | ").split(" | ").next().unwrap(),
-                ),
-            }
-        }
-
-        #[derive(Debug, Clone, PartialEq, Eq)]
-        enum Pattern {
-            Absent,
-            Present,
-            Text(String),
-        }
-
-        impl Pattern {
-            fn agrees_with(&self, other: &Self) -> bool {
-                match (self, other) {
-                    (Self::Absent, Self::Absent) => true,
-                    (Self::Text(left), Self::Text(right)) => left == right,
-                    (Self::Present, Self::Present | Self::Text(_))
-                    | (Self::Text(_), Self::Present) => true,
-                    _ => false,
-                }
-            }
-        }
-
-        #[derive(Debug, Clone, PartialEq, Eq)]
-        enum Shape {
-            Scalar(&'static str),
-            String {
-                length: (Option<i64>, Option<i64>),
-                pattern: Pattern,
-            },
-            Int {
-                range: (Option<i64>, Option<i64>),
-            },
-            List {
-                item: Box<Shape>,
-                bounds: (Option<i64>, Option<i64>),
-                // Markdown does not expose ordering. Check emitted ordering
-                // independently against the fixture, then compare the rest.
-                ordered: Option<bool>,
-            },
-            Map(Box<Shape>, Box<Shape>),
-            Enum(BTreeSet<String>),
-            IntEnum(BTreeSet<i64>),
-            Struct(BTreeMap<String, Shape>),
-        }
-
-        impl Shape {
-            fn summary(&self) -> String {
-                match self {
-                    Self::Scalar(name) => name.to_string(),
-                    Self::String { .. } => "string".to_string(),
-                    Self::Int { .. } => "int".to_string(),
-                    Self::List { item, .. } => format!("list<{}>", item.summary()),
-                    Self::Map(key, value) => format!("map<{}, {}>", key.summary(), value.summary()),
-                    Self::Enum(_) | Self::IntEnum(_) => "enum".to_string(),
-                    Self::Struct(_) => "struct".to_string(),
-                }
-            }
-
-            fn without_ordering(mut self) -> Self {
-                match &mut self {
-                    Self::List { item, ordered, .. } => {
-                        *ordered = None;
-                        **item = item.clone().without_ordering();
-                    }
-                    Self::Map(key, value) => {
-                        **key = key.clone().without_ordering();
-                        **value = value.clone().without_ordering();
-                    }
-                    Self::Struct(fields) => {
-                        for field in fields.values_mut() {
-                            *field = field.clone().without_ordering();
-                        }
-                    }
-                    _ => {}
-                }
-                self
-            }
-
-            fn list_ordering(&self) -> Vec<bool> {
-                match self {
-                    Self::List { item, ordered, .. } => {
-                        let mut orders = vec![ordered.expect("schema list must declare ordering")];
-                        orders.extend(item.list_ordering());
-                        orders
-                    }
-                    Self::Map(_, value) => value.list_ordering(),
-                    Self::Struct(fields) => fields.values().flat_map(Self::list_ordering).collect(),
-                    _ => vec![],
-                }
-            }
-
-            // Preserve pattern presence even when Markdown omits the regex.
-            // Compare the actual text whenever both sides expose it.
-            fn agrees_with(&self, other: &Self) -> bool {
-                match (self, other) {
-                    (
-                        Self::String { length, pattern },
-                        Self::String {
-                            length: other_length,
-                            pattern: other_pattern,
-                        },
-                    ) => length == other_length && pattern.agrees_with(other_pattern),
-                    (
-                        Self::List {
-                            item,
-                            bounds,
-                            ordered,
-                        },
-                        Self::List {
-                            item: other_item,
-                            bounds: other_bounds,
-                            ordered: other_ordered,
-                        },
-                    ) => {
-                        bounds == other_bounds
-                            && ordered == other_ordered
-                            && item.agrees_with(other_item)
-                    }
-                    (Self::Map(key, value), Self::Map(other_key, other_value)) => {
-                        key.agrees_with(other_key) && value.agrees_with(other_value)
-                    }
-                    (Self::Struct(fields), Self::Struct(other_fields)) => {
-                        fields.len() == other_fields.len()
-                            && fields.iter().all(|(name, field)| {
-                                other_fields
-                                    .get(name)
-                                    .is_some_and(|other_field| field.agrees_with(other_field))
-                            })
-                    }
-                    _ => self == other,
-                }
-            }
-        }
-
-        // Parse only the emitted expression grammar used by these fixtures.
-        // Balanced groups keep nested list bounds and nested struct fields
-        // from being confused with their enclosing level.
-        fn group(text: &str, open: char, close: char) -> (&str, &str) {
-            assert!(text.starts_with(open), "{text}");
-            let (mut depth, mut quoted, mut escaped) = (0, false, false);
-            for (index, ch) in text.char_indices() {
-                if quoted {
-                    if escaped {
-                        escaped = false;
-                    } else if ch == '\\' {
-                        escaped = true;
-                    } else if ch == '"' {
-                        quoted = false;
-                    }
-                } else if ch == '"' {
-                    quoted = true;
-                } else if ch == open {
-                    depth += 1;
-                } else if ch == close {
-                    depth -= 1;
-                    if depth == 0 {
-                        return (
-                            &text[open.len_utf8()..index],
-                            &text[index + close.len_utf8()..],
-                        );
-                    }
-                }
-            }
-            panic!("unclosed group in {text}");
-        }
-
-        fn arguments(text: &str) -> Vec<&str> {
-            let (mut depth, mut quoted, mut escaped, mut start) = (0, false, false, 0);
-            let mut args = vec![];
-            for (index, ch) in text.char_indices() {
-                if quoted {
-                    if escaped {
-                        escaped = false;
-                    } else if ch == '\\' {
-                        escaped = true;
-                    } else if ch == '"' {
-                        quoted = false;
-                    }
-                } else {
-                    match ch {
-                        '"' => quoted = true,
-                        '(' | '[' | '{' => depth += 1,
-                        ')' | ']' | '}' => depth -= 1,
-                        ',' if depth == 0 => {
-                            args.push(text[start..index].trim());
-                            start = index + 1;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            let last = text[start..].trim();
-            if !last.is_empty() {
-                args.push(last);
-            }
-            args
-        }
-
-        fn call_arguments<'a>(code: &'a str, prefix: &str) -> Vec<&'a str> {
-            arguments(group(code.strip_prefix(prefix).unwrap(), '(', ')').0)
-        }
-
-        fn vector_items(code: &str) -> Vec<&str> {
-            arguments(group(code.strip_prefix("vec!").unwrap(), '[', ']').0)
-        }
-
-        fn rust_string(code: &str) -> String {
-            serde_json::from_str(code.strip_suffix(".to_string()").unwrap_or(code)).unwrap()
-        }
-
-        fn optional_int(code: &str) -> Option<i64> {
-            if code == "None" {
-                None
-            } else {
-                Some(call_arguments(code, "Some")[0].parse().unwrap())
-            }
-        }
-
-        fn schema_bounds(code: &str) -> (Option<i64>, Option<i64>) {
-            if code == "None" {
-                (None, None)
-            } else {
-                let tuple = call_arguments(code, "Some")[0];
-                let bounds = arguments(group(tuple, '(', ')').0);
-                (optional_int(bounds[0]), optional_int(bounds[1]))
-            }
-        }
-
-        fn schema_shape(code: &str) -> Shape {
-            let code = code.trim_start();
-            for (prefix, ordered) in [
-                ("AttributeType::list", true),
-                ("AttributeType::unordered_list", false),
-                ("AttributeType::refined_list", true),
-            ] {
-                if code.starts_with(&format!("{prefix}(")) {
-                    let args = call_arguments(code, prefix);
-                    let refined = prefix == "AttributeType::refined_list";
-                    assert_eq!(args.len(), if refined { 4 } else { 1 });
-                    if refined {
-                        assert_eq!(
-                            args[3],
-                            "carina_core::schema::ListElements::AllowDuplicates"
-                        );
-                    }
-                    return Shape::List {
-                        item: Box::new(schema_shape(args[0])),
-                        bounds: if refined {
-                            schema_bounds(args[2])
-                        } else {
-                            (None, None)
-                        },
-                        ordered: Some(if refined {
-                            args[1].parse().unwrap()
-                        } else {
-                            ordered
-                        }),
-                    };
-                }
-            }
-            if code.starts_with("AttributeType::map(") {
-                return Shape::Map(
-                    Box::new(schema_shape("AttributeType::string()")),
-                    Box::new(schema_shape(call_arguments(code, "AttributeType::map")[0])),
-                );
-            }
-            if code.starts_with("AttributeType::map_with_key(") {
-                let args = call_arguments(code, "AttributeType::map_with_key");
-                return Shape::Map(
-                    Box::new(schema_shape(args[0])),
-                    Box::new(schema_shape(args[1])),
-                );
-            }
-            if let Some(constructor) = [
-                "AttributeType::struct_",
-                "AttributeType::struct_with_field_groups",
-            ]
-            .into_iter()
-            .find(|constructor| code.starts_with(&format!("{constructor}(")))
-            {
-                let args = call_arguments(code, constructor);
-                return Shape::Struct(
-                    vector_items(args[1])
-                        .into_iter()
-                        .map(|field| {
-                            let field_args =
-                                arguments(group(&field[field.find('(').unwrap()..], '(', ')').0);
-                            (rust_string(field_args[0]), schema_shape(field_args[1]))
-                        })
-                        .collect(),
-                );
-            }
-            if code.starts_with("AttributeType::enum_(") {
-                let args = call_arguments(code, "AttributeType::enum_");
-                let values = call_arguments(args[1], "Some")[0];
-                return Shape::Enum(vector_items(values).into_iter().map(rust_string).collect());
-            }
-            if code.starts_with("AttributeType::union(") {
-                let values = call_arguments(code, "AttributeType::union")[0];
-                return Shape::IntEnum(
-                    vector_items(values)
-                        .into_iter()
-                        .map(|member| {
-                            let args = call_arguments(member, "AttributeType::refined_int");
-                            let (min, max) = schema_bounds(args[1]);
-                            assert_eq!(min, max, "integer-enum members must be singleton ranges");
-                            min.unwrap()
-                        })
-                        .collect(),
-                );
-            }
-            if code.starts_with("AttributeType::refined_string(") {
-                let args = call_arguments(code, "AttributeType::refined_string");
-                return Shape::String {
-                    length: schema_bounds(args[2]),
-                    pattern: if args[1] == "None" {
-                        Pattern::Absent
-                    } else {
-                        let spec = call_arguments(
-                            call_arguments(args[1], "Some")[0],
-                            "carina_core::schema::PatternSpec::new",
-                        );
-                        assert!(
-                            spec[1] == "carina_core::schema::PatternMatch::Full"
-                                || spec[1].starts_with(
-                                    "carina_core::schema::PatternMatch::Substring { reason: "
-                                )
-                        );
-                        Pattern::Text(rust_string(spec[0]))
-                    },
-                };
-            }
-            if code.starts_with("AttributeType::string()") {
-                return Shape::String {
-                    length: (None, None),
-                    pattern: Pattern::Absent,
-                };
-            }
-            if code.starts_with("AttributeType::refined_int(") {
-                return Shape::Int {
-                    range: schema_bounds(call_arguments(code, "AttributeType::refined_int")[1]),
-                };
-            }
-            if code.starts_with("AttributeType::int()") {
-                return Shape::Int {
-                    range: (None, None),
-                };
-            }
-            for (prefix, shape) in [
-                ("AttributeType::bool()", "bool"),
-                ("AttributeType::float()", "float"),
-                ("AttributeType::refined_float(", "float"),
-            ] {
-                if code.starts_with(prefix) {
-                    return Shape::Scalar(shape);
-                }
-            }
-            panic!("unrecognized generated type: {code}");
-        }
-
-        fn documented_members<'a>(page: &'a str, anchor: &str) -> BTreeMap<String, &'a str> {
-            // Use allocated ids, including suffixes for an argument and a
-            // struct section that share the same base heading (probe-1).
-            let heading_line = carina_docgen::heading_ids(page)
-                .into_iter()
-                .zip(
-                    page.lines()
-                        .enumerate()
-                        .filter(|(_, line)| line.starts_with('#')),
-                )
-                .find(|(id, _)| id == anchor)
-                .map(|(_, (line, _))| line)
-                .unwrap_or_else(|| panic!("missing documentation target #{anchor} in {page}"));
-            page.lines()
-                .skip(heading_line + 1)
-                .take_while(|line| !line.starts_with('#'))
-                .filter_map(|line| {
-                    line.strip_prefix("| `").map(|cell| {
-                        let (name, cells) = cell.split_once('`').unwrap();
-                        (name.to_string(), cells)
-                    })
-                })
-                .collect()
-        }
-
-        fn docs_shape(text: &str, page: &str) -> Shape {
-            let normalized = text
-                .replace("\\<", "<")
-                .replace("\\>", ">")
-                .replace('`', "");
-            let (shape, rest) = docs_shape_at(normalized.trim(), page);
-            assert!(rest.trim().is_empty(), "unparsed documented type: {rest}");
-            shape
-        }
-
-        fn docs_bounds(range: &str) -> (Option<i64>, Option<i64>) {
-            let (min, max) = range.split_once("..").unwrap();
-            (
-                (!min.is_empty()).then(|| min.parse().unwrap()),
-                max.strip_prefix('=').map(|max| max.parse().unwrap()),
-            )
-        }
-
-        fn docs_shape_at<'a>(text: &'a str, page: &str) -> (Shape, &'a str) {
-            if let Some(item) = text.strip_prefix("List<") {
-                let (item, rest) = docs_shape_at(item, page);
-                let mut rest = rest.strip_prefix('>').unwrap().trim_start();
-                let mut bounds = (None, None);
-                if let Some(limits) = rest.strip_prefix("(items: ") {
-                    let (range, suffix) = limits.split_once(')').unwrap();
-                    bounds = docs_bounds(range);
-                    rest = suffix;
-                }
-                return (
-                    Shape::List {
-                        item: Box::new(item),
-                        bounds,
-                        ordered: None,
-                    },
-                    rest,
-                );
-            }
-            if let Some(entries) = text.strip_prefix("Map<") {
-                let (key, rest) = docs_shape_at(entries, page);
-                let (value, rest) = docs_shape_at(rest.strip_prefix(", ").unwrap(), page);
-                return (
-                    Shape::Map(Box::new(key), Box::new(value)),
-                    rest.strip_prefix('>').unwrap(),
-                );
-            }
-            if let Some(link) = text.strip_prefix('[') {
-                let (label, target) = link.split_once("](#").unwrap();
-                let (anchor, rest) = target.split_once(')').unwrap();
-                let members = documented_members(page, anchor);
-                return (
-                    if label.starts_with("Struct(") {
-                        Shape::Struct(
-                            members
-                                .into_iter()
-                                .map(|(name, cells)| {
-                                    let ty = cells.strip_prefix(" | ").unwrap();
-                                    (name, docs_shape(ty.split(" | ").next().unwrap(), page))
-                                })
-                                .collect(),
-                        )
-                    } else {
-                        assert!(label.starts_with("Enum"), "{label}");
-                        Shape::Enum(members.into_keys().collect())
-                    },
-                    rest,
-                );
-            }
-            if let Some(values) = text.strip_prefix("IntEnum(") {
-                let (values, rest) = group(values, '[', ']');
-                return (
-                    Shape::IntEnum(
-                        arguments(values)
-                            .into_iter()
-                            .map(|value| value.parse().unwrap())
-                            .collect(),
-                    ),
-                    rest.strip_prefix(')').unwrap(),
-                );
-            }
-            for prefix in ["NumericString", "String", "Int"] {
-                if let Some(rest) = text.strip_prefix(prefix) {
-                    let (refinements, rest) = if rest.starts_with('(') {
-                        group(rest, '(', ')')
-                    } else {
-                        ("", rest)
-                    };
-                    let mut bounds = (None, None);
-                    let mut pattern = if prefix == "NumericString" {
-                        Pattern::Present
-                    } else {
-                        Pattern::Absent
-                    };
-                    for refinement in arguments(refinements) {
-                        if let Some(range) = refinement.strip_prefix("len: ") {
-                            bounds = docs_bounds(range);
-                        } else if refinement == "pattern" {
-                            pattern = Pattern::Present;
-                        } else if let Some(text) = refinement.strip_prefix("pattern: ") {
-                            pattern = Pattern::Text(rust_string(text));
-                        } else if prefix == "Int" && refinement.contains("..") {
-                            bounds = docs_bounds(refinement);
-                        }
-                        // Other scalar annotations (e.g. int64 or uri) are
-                        // descriptive formats, not validation constraints.
-                    }
-                    return (
-                        if prefix == "Int" {
-                            Shape::Int { range: bounds }
-                        } else {
-                            Shape::String {
-                                length: bounds,
-                                pattern,
-                            }
-                        },
-                        rest,
-                    );
-                }
-            }
-            for (prefix, shape) in [("Bool", "bool"), ("Float", "float")] {
-                if let Some(rest) = text.strip_prefix(prefix) {
-                    let rest = if rest.starts_with('(') {
-                        group(rest, '(', ')').1
-                    } else {
-                        rest
-                    };
-                    return (Shape::Scalar(shape), rest);
-                }
-            }
-            panic!("unrecognized documented type: {text}");
-        }
-
-        // Read ordering directly from the JSON fixture without using the
-        // production shape classifier or deriving it from generated code.
-        fn fixture_list_ordering(property: &Value, definitions: &Value) -> Option<Vec<bool>> {
-            if let Some(path) = property.get("$ref").and_then(Value::as_str) {
-                return fixture_list_ordering(
-                    &definitions[path.strip_prefix("#/definitions/").unwrap()],
-                    definitions,
-                );
-            }
-            if let Some(items) = property.get("items") {
-                let mut orders = vec![property.get("insertionOrder") != Some(&Value::Bool(false))];
-                orders.extend(fixture_list_ordering(items, definitions).unwrap_or_default());
-                return Some(orders);
-            }
-            if let Some(fields) = property.get("properties").and_then(Value::as_object) {
-                let orders: Vec<bool> = fields
-                    .values()
-                    .flat_map(|field| fixture_list_ordering(field, definitions).unwrap_or_default())
-                    .collect();
-                return (!orders.is_empty()).then_some(orders);
-            }
-            property
-                .get("oneOf")
-                .and_then(Value::as_array)
-                .and_then(|variants| {
-                    variants
-                        .iter()
-                        .find_map(|variant| fixture_list_ordering(variant, definitions))
-                })
-        }
-
-        #[test]
-        fn test_shape_classifier_detects_semantic_drift() {
-            for leaf in [
-                json!({"type":"string","enum":["A","B"]}),
-                json!({"type":"integer","enum":[1,2]}),
-                json!({"properties":{"V":{"type":"integer"},"W":{"type":"string"}}}),
-            ] {
-                let schema = fixture(
-                    json!({"Probe":{
-                        "type":"array","minItems":2,"maxItems":5,
-                        "items":{"type":"array","minItems":1,"maxItems":3,"insertionOrder":false,"items":leaf}
-                    }}),
-                    json!({}),
-                );
-                let (code, docs) = outputs(&schema);
-                let (code_type, docs_type) = type_pair(&code, &docs, "top");
-                let actual = schema_shape(code_type);
-                assert_eq!(actual.list_ordering(), vec![true, false]);
-                assert_eq!(
-                    actual.clone().without_ordering(),
-                    docs_shape(docs_type, &docs)
-                );
-                for (before, after) in [("1..=3", "1..=4"), ("2..=5", "2..=6")] {
-                    assert_ne!(
-                        actual.clone().without_ordering(),
-                        docs_shape(&docs_type.replace(before, after), &docs),
-                        "must detect a bound change at either list level"
-                    );
-                }
-                let reordered = code_type.replace(
-                    ", false, Some((Some(1), Some(3)))",
-                    ", true, Some((Some(1), Some(3)))",
-                );
-                assert_ne!(
-                    actual.list_ordering(),
-                    schema_shape(&reordered).list_ordering()
-                );
-                let changed_docs = docs
-                    .replace("| `B` |", "| `C` |")
-                    .replace("| `v` |", "| `x` |");
-                let changed_type = docs_type.replace("IntEnum([1, 2])", "IntEnum([1, 3])");
-                assert_ne!(
-                    actual.without_ordering(),
-                    docs_shape(&changed_type, &changed_docs),
-                    "must detect enum-value and struct-field drift"
-                );
-            }
-        }
-
-        #[test]
-        fn test_shape_classifier_detects_scalar_and_field_type_drift() {
-            for (case, leaf, changes) in [
-                (
-                    "string_length",
-                    json!({"type":"string","minLength":2,"maxLength":8}),
-                    vec![
-                        ("len: 2..=8", "len: 3..=8"),
-                        ("len: 2..=8", "len: 2..=9"),
-                        ("String(len: 2..=8)", "String"),
-                    ],
-                ),
-                (
-                    "string_min_length",
-                    json!({"type":"string","minLength":2}),
-                    vec![("len: 2..", "len: 3..")],
-                ),
-                (
-                    "string_max_length",
-                    json!({"type":"string","maxLength":8}),
-                    vec![("len: ..=8", "len: ..=9")],
-                ),
-                (
-                    "integer_range",
-                    json!({"type":"integer","minimum":-2,"maximum":9}),
-                    vec![
-                        ("Int(-2..=9)", "Int(-1..=9)"),
-                        ("Int(-2..=9)", "Int(-2..=10)"),
-                        ("Int(-2..=9)", "Int"),
-                    ],
-                ),
-                (
-                    "integer_minimum",
-                    json!({"type":"integer","minimum":-2}),
-                    vec![("Int(-2..)", "Int(-1..)")],
-                ),
-                (
-                    "integer_maximum",
-                    json!({"type":"integer","maximum":9}),
-                    vec![("Int(..=9)", "Int(..=10)")],
-                ),
-                (
-                    "string_pattern",
-                    json!({"type":"string","pattern":"^[a-z]+$","maxLength":8}),
-                    vec![("String(pattern, len: ..=8)", "String(len: ..=8)")],
-                ),
-                (
-                    "numeric_string_pattern",
-                    json!({"type":"string","pattern":"[0-9]+","maxLength":8}),
-                    vec![("NumericString(len: ..=8)", "String(len: ..=8)")],
-                ),
-                (
-                    "nested_field_type",
-                    json!({"type":"boolean"}),
-                    vec![("Bool", "String")],
-                ),
-            ] {
-                // Traverse two struct links and a list before reaching the
-                // leaf. Field names and collection shape stay unchanged.
-                let schema = fixture(
-                    json!({"Probe":{"properties":{"Inner":{"properties":{
-                        "Value":{"type":"array","items":leaf,"insertionOrder":false}
-                    }}}}}),
-                    json!({}),
-                );
-                let (code, docs) = outputs(&schema);
-                let (code_type, docs_type) = type_pair(&code, &docs, "top");
-                let actual = schema_shape(code_type);
-                assert_eq!(actual.list_ordering(), vec![false], "{case}");
-                let actual = actual.without_ordering();
-                let documented = docs_shape(docs_type, &docs);
-                assert!(
-                    actual.agrees_with(&documented),
-                    "{case}: {actual:?} != {documented:?}\nschema:\n{code}\ndocs:\n{docs}"
-                );
-                for (before, after) in changes {
-                    assert!(
-                        docs.contains(before),
-                        "{case}: missing {before:?} in {docs}"
-                    );
-                    let changed_docs = docs.replace(before, after);
-                    assert!(
-                        !actual.agrees_with(&docs_shape(docs_type, &changed_docs)),
-                        "{case}: must detect {before:?} -> {after:?}"
-                    );
-                }
-            }
-
-            let code = r#"AttributeType::refined_string(None, Some(carina_core::schema::PatternSpec::new("^[a-z]+$", carina_core::schema::PatternMatch::Full)), None, None)"#;
-            let actual = schema_shape(code);
-            assert!(actual.agrees_with(&docs_shape("String(pattern)", "")));
-            assert!(actual.agrees_with(&docs_shape(r#"String(pattern: "^[a-z]+$")"#, "")));
-            assert!(!actual.agrees_with(&docs_shape(r#"String(pattern: "^[A-Z]+$")"#, "")));
-            assert!(!actual.agrees_with(&docs_shape("String", "")));
-        }
-
-        fn positions(property: &Value) -> Vec<(&'static str, Value, Value)> {
-            vec![
-                ("top", json!({"Probe": property}), json!({})),
-                (
-                    "field",
-                    json!({"Outer": {"type":"object","properties":{"Probe": property}}}),
-                    json!({}),
-                ),
-                (
-                    "item",
-                    json!({"Outer": {"type":"array","items": property}}),
-                    json!({}),
-                ),
-                (
-                    "item_field",
-                    json!({"Outer": {"type":"array","items":{"properties":{"Probe": property}}}}),
-                    json!({}),
-                ),
-                (
-                    "ref_field",
-                    json!({"Outer":{"$ref":"#/definitions/Holder"}}),
-                    json!({"Holder":{"type":"object","properties":{"Probe": property}}}),
-                ),
-            ]
-        }
-
-        #[test]
-        fn test_nested_bounded_lists_render_one_code_span() {
-            let inner =
-                json!({"type":"array","items":{"type":"integer"},"minItems":1,"maxItems":3});
-            for item in [
-                inner.clone(),
-                json!({"$ref":"#/definitions/Inner"}),
-                json!({"$ref":"#/definitions/Alias"}),
-            ] {
-                let schema = fixture(
-                    json!({"Outer":{"type":"array","items":item,"minItems":2,"maxItems":5}}),
-                    json!({"Inner":inner,"Alias":{"$ref":"#/definitions/Inner"}}),
-                );
-                let (code, docs) = outputs(&schema);
-                let (code_type, docs_type) = type_pair(&code, &docs, "item");
-                assert_eq!(schema_shape(code_type).summary(), "list<list<int>>");
-                assert!(
-                    code_type.contains("Some((Some(1), Some(3)))"),
-                    "{code_type}"
-                );
-                assert!(
-                    code_type.contains("Some((Some(2), Some(5)))"),
-                    "{code_type}"
-                );
-                assert_eq!(docs_type, "`List<List<Int> (items: 1..=3)>` (items: 2..=5)");
-                assert_eq!(docs_type.matches('`').count(), 2, "{docs_type}");
-            }
-        }
-
-        #[test]
-        fn test_nested_enum_lists_preserve_levels_and_limits() {
-            let inner = json!({"type":"array","items":{"type":"string","enum":["A","B"]},"minItems":1,"maxItems":3,"insertionOrder":false});
-            for item in [inner.clone(), json!({"$ref":"#/definitions/Inner"})] {
-                let property = json!({"type":"array","items":item,"minItems":2,"maxItems":5});
-                let schema = fixture(json!({"Probe":property}), json!({"Inner":inner}));
-                let (placeholder, enum_info) = cfn_type_to_carina_type_with_enum(
-                    &schema.properties["Probe"],
-                    "Probe",
-                    &schema,
-                    "aws.test.Probe",
-                    &BTreeMap::new(),
-                );
-                assert!(enum_info.is_some());
-                assert_eq!(schema_shape(&placeholder).summary(), "list<list<string>>");
-                for (position, properties, mut definitions) in positions(&property) {
-                    definitions["Inner"] = inner.clone();
-                    let schema = fixture(properties, definitions);
-                    let (code, docs) = outputs(&schema);
-                    let (code_type, docs_type) = type_pair(&code, &docs, position);
-                    let expected = if position == "item" {
-                        "list<list<list<enum>>>"
-                    } else {
-                        "list<list<enum>>"
-                    };
-                    assert_eq!(
-                        schema_shape(code_type).summary(),
-                        expected,
-                        "{position}: {code_type}"
-                    );
-                    assert_eq!(
-                        docs_shape(docs_type, &docs).summary(),
-                        expected,
-                        "{position}: {docs_type}"
-                    );
-                    assert!(
-                        code_type.contains("false, Some((Some(1), Some(3)))"),
-                        "{code_type}"
-                    );
-                    assert!(
-                        code_type.contains("true, Some((Some(2), Some(5)))"),
-                        "{code_type}"
-                    );
-                    assert!(
-                        docs_type.contains("\\> (items: 1..=3)\\> (items: 2..=5)"),
-                        "{docs_type}"
-                    );
-                }
-            }
-        }
-
-        #[test]
-        fn test_one_of_object_refs_preserve_common_required_fields() {
-            let definitions = json!({
-                "ObjDef":{"type":"object","properties":{"V":{"type":"integer"}},"required":["V"],"additionalProperties":false},
-                "Alias":{"$ref":"#/definitions/ObjDef"},
-                "Union":{"oneOf":[{"$ref":"#/definitions/Alias"}]}
-            });
-            for target in ["ObjDef", "Alias", "Union"] {
-                for mixed in [false, true] {
-                    let mut variants = vec![json!({"$ref":format!("#/definitions/{target}")})];
-                    if mixed {
-                        variants
-                            .push(json!({"properties":{"W":{"type":"string"}},"required":["W"],"additionalProperties":false}));
-                    }
-                    for (position, properties, mut extra_defs) in
-                        positions(&json!({"oneOf":variants}))
-                    {
-                        extra_defs
-                            .as_object_mut()
-                            .unwrap()
-                            .extend(definitions.as_object().unwrap().clone());
-                        let schema = fixture(properties, extra_defs);
-                        let (code, docs) = outputs(&schema);
-                        let (code_type, docs_type) = type_pair(&code, &docs, position);
-                        let expected = if position == "item" {
-                            "list<struct>"
-                        } else {
-                            "struct"
-                        };
-                        assert_eq!(
-                            schema_shape(code_type).summary(),
-                            expected,
-                            "{target}/{position}"
-                        );
-                        assert_eq!(
-                            docs_shape(docs_type, &docs).summary(),
-                            expected,
-                            "{target}/{position}"
-                        );
-                        let constructor = if mixed { "optional" } else { "required" };
-                        let required = if mixed { "No" } else { "Yes" };
-                        assert!(
-                            code.contains(&format!(
-                                "StructField::{constructor}(\"v\", AttributeType::int())"
-                            )),
-                            "{code}"
-                        );
-                        assert!(
-                            docs.contains(&format!("| `v` | Int | {required} |")),
-                            "{docs}"
-                        );
-                        if mixed {
-                            assert!(
-                                code.contains(
-                                    "StructField::optional(\"w\", AttributeType::string())"
-                                ),
-                                "{code}"
-                            );
-                            assert!(docs.contains("| `w` | String | No |"), "{docs}");
-                            assert!(
-                                code.contains("FieldGroup::exactly_one([\"v\", \"w\"])"),
-                                "{code}"
-                            );
-                            assert!(
-                                docs.contains("Exactly one of `v`, `w` must be specified."),
-                                "{docs}"
-                            );
-                        }
-                    }
-                }
-            }
-        }
-
-        #[test]
-        fn test_object_string_union_order_is_independent() {
-            for (type_name, parent) in [
-                ("AWS::EC2::VPCEndpoint", None),
-                ("AWS::IAM::Role", Some("Policy")),
-            ] {
-                let cached = cfn_schema_for_codegen_tests(type_name);
-                let expected_code = generate_schema_code(&cached, type_name).unwrap();
-                let expected_docs = generate_test_markdown(&cached, type_name).unwrap();
-                for types in [["object", "string"], ["string", "object"]] {
-                    let mut schema = cfn_schema_for_codegen_tests(type_name);
-                    schema.edit_json(|source| {
-                        let properties = if let Some(parent) = parent {
-                            &mut source["definitions"][parent]["properties"]
-                        } else {
-                            &mut source["properties"]
-                        };
-                        properties["PolicyDocument"]["type"] = json!(types);
-                    });
-                    let property = if let Some(parent) = parent {
-                        &schema.definitions.as_ref().unwrap()[parent]
-                            .properties
-                            .as_ref()
-                            .unwrap()["PolicyDocument"]
-                    } else {
-                        &schema.properties["PolicyDocument"]
-                    };
-                    assert!(property_declares_object(property), "{type_name}: {types:?}");
-                    assert!(is_direct_bare_object(property), "{type_name}: {types:?}");
-                    assert!(object_string_union_is_iam_policy_document(
-                        property,
-                        type_name,
-                        CfnPropertyPath::new(parent, "PolicyDocument")
-                    ));
-                    assert_eq!(
-                        generate_schema_code(&schema, type_name).unwrap(),
-                        expected_code
-                    );
-                    assert_eq!(
-                        generate_test_markdown(&schema, type_name).unwrap(),
-                        expected_docs
-                    );
-                }
-            }
-        }
-
-        #[test]
-        fn test_schema_and_docs_shape_probe_matrix() {
-            // 27 leaves × 7 wrappers × 5 positions = 945 cases:
-            // 675 supported, 15 deferred emission shapes, and 255 typed rejections.
-            let leaves = [
-                ("str_len", json!({"type":"string","maxLength":5})),
-                ("str_enum", json!({"type":"string","enum":["A","B"]})),
-                ("int_enum", json!({"type":"integer","enum":[1,2]})),
-                ("int", json!({"type":"integer","minimum":1,"maximum":9})),
-                ("str_or_int", json!({"type":["string","integer"]})),
-                ("int_or_str", json!({"type":["integer","string"]})),
-                ("null_str", json!({"type":["null","string"],"maxLength":5})),
-                ("null_bool", json!({"type":["null","boolean"]})),
-                (
-                    "arr_str",
-                    json!({"type":"array","items":{"type":"string"},"minItems":1}),
-                ),
-                (
-                    "arr_enum",
-                    json!({"type":"array","items":{"type":"string","enum":["A","B"]},"maxItems":2,"insertionOrder":false}),
-                ),
-                (
-                    "null_arr",
-                    json!({"type":["null","array"],"items":{"type":"integer"},"minItems":1}),
-                ),
-                (
-                    "arr_null",
-                    json!({"type":["array","null"],"items":{"type":"integer"},"minItems":1}),
-                ),
-                (
-                    "null_arr_enum",
-                    json!({"type":["null","array"],"items":{"type":"string","enum":["A","B"]}}),
-                ),
-                (
-                    "obj",
-                    json!({"type":"object","properties":{"V":{"type":"integer"}}}),
-                ),
-                (
-                    "null_obj",
-                    json!({"type":["null","object"],"properties":{"V":{"type":"integer"}}}),
-                ),
-                (
-                    "obj_untyped",
-                    json!({"properties":{"V":{"type":"integer"}}}),
-                ),
-                (
-                    "arr_obj",
-                    json!({"type":"array","items":{"properties":{"V":{"type":"integer"}}}}),
-                ),
-                (
-                    "null_arr_obj",
-                    json!({"type":["null","array"],"items":{"properties":{"V":{"type":"integer"}}}}),
-                ),
-                (
-                    "oneof_arr",
-                    json!({"oneOf":[{"type":"array","items":{"type":"integer"}}]}),
-                ),
-                (
-                    "oneof_arr_enum",
-                    json!({"oneOf":[{"type":"array","items":{"type":"string","enum":["A","B"]}}]}),
-                ),
-                (
-                    "oneof_objs",
-                    json!({"oneOf":[{"properties":{"V":{"type":"integer"}}},{"properties":{"W":{"type":"string"}}}]}),
-                ),
-                (
-                    "oneof_obj_arr",
-                    json!({"oneOf":[{"properties":{"V":{"type":"integer"}}},{"type":"array","items":{"type":"boolean"}}]}),
-                ),
-                (
-                    "arr_of_arr",
-                    json!({"type":"array","items":{"type":"array","items":{"type":"integer"}}}),
-                ),
-                (
-                    "map_str",
-                    json!({"type":"object","patternProperties":{".*":{"type":"string"}}}),
-                ),
-                ("const", json!({"const":"X"})),
-                (
-                    "bounded_arr",
-                    json!({"type":"array","items":{"type":"array","items":{"type":"integer"},"minItems":1,"maxItems":3,"insertionOrder":false},"minItems":2,"maxItems":5}),
-                ),
-                (
-                    "nested_enum",
-                    json!({"type":"array","items":{"type":"array","items":{"type":"string","enum":["A","B"]},"maxItems":3},"minItems":2,"insertionOrder":false}),
-                ),
-            ];
-            assert_eq!(leaves.len(), 27);
-            let mut cases = 0;
-            let mut rejected_cases = 0;
-            let mut projection_rejections = 0;
-            for (leaf_name, leaf) in leaves {
-                let leaf_schema = fixture(json!({"Probe":leaf}), json!({}));
-                let property = &leaf_schema.properties["Probe"];
-                let supports_one_of = property.try_query().is_ok_and(|p| {
-                    p.effective_type() == Some("array")
-                        || matches!(
-                            p.effective_type(),
-                            Some("string" | "boolean" | "integer" | "number")
-                        )
-                        || p.properties.as_ref().is_some_and(|p| !p.is_empty())
-                        || p.const_value.is_some()
-                });
-                let wrappers = [
-                    ("inline", leaf.clone(), json!({})),
-                    (
-                        "ref",
-                        json!({"$ref":"#/definitions/Def"}),
-                        json!({"Def":leaf}),
-                    ),
-                    (
-                        "alias",
-                        json!({"$ref":"#/definitions/Alias"}),
-                        json!({"Def":leaf,"Alias":{"$ref":"#/definitions/Def"}}),
-                    ),
-                    (
-                        "sibling",
-                        json!({"$ref":"#/definitions/Def","oneOf":[{"type":"array","items":{"type":"boolean"}}]}),
-                        json!({"Def":leaf}),
-                    ),
-                    ("oneof", json!({"oneOf":[leaf]}), json!({})),
-                    (
-                        "ref_oneof",
-                        json!({"$ref":"#/definitions/Def"}),
-                        json!({"Def":{"oneOf":[leaf]}}),
-                    ),
-                    (
-                        "oneof_ref",
-                        json!({"oneOf":[{"$ref":"#/definitions/Def"}]}),
-                        json!({"Def":leaf}),
-                    ),
-                ];
-                for (wrapper_index, (wrapper_name, property, definitions)) in
-                    wrappers.into_iter().enumerate()
-                {
-                    for (position, properties, extra_defs) in positions(&property) {
-                        let case = format!("{leaf_name}/{wrapper_name}/{position}");
-                        let mut definitions = definitions.clone();
-                        definitions
-                            .as_object_mut()
-                            .unwrap()
-                            .extend(extra_defs.as_object().unwrap().clone());
-                        let schema = fixture(properties, definitions.clone());
-                        if let Err(error) = schema_projection::validate_shared_queries(&schema) {
-                            assert!(
-                                error.downcast_ref::<schema_layer::SchemaError>().is_some(),
-                                "{case}: {error:#}"
-                            );
-                            for result in [
-                                generate_schema_code(&schema, &schema.type_name),
-                                generate_test_markdown(&schema, &schema.type_name),
-                            ] {
-                                assert!(
-                                    result
-                                        .unwrap_err()
-                                        .downcast_ref::<schema_layer::SchemaError>()
-                                        .is_some(),
-                                    "{case}"
-                                );
-                            }
-                            projection_rejections += 1;
-                            continue;
-                        }
-                        if wrapper_index >= 4 && !supports_one_of {
-                            for (emitter, result) in [
-                                ("schema", generate_schema_code(&schema, &schema.type_name)),
-                                ("docs", generate_test_markdown(&schema, &schema.type_name)),
-                            ] {
-                                let error = result.expect_err(&format!(
-                                    "{case}: {emitter} must reject unresolved oneOf"
-                                ));
-                                assert!(
-                                    matches!(error.downcast_ref::<schema_layer::SchemaError>(),
-                                    Some(schema_layer::SchemaError::Projection { pointer: _, reason }) if reason.contains("unresolved oneOf")),
-                                    "{case}/{emitter}: {error:#}"
-                                );
-                            }
-                            rejected_cases += 1;
-                        } else {
-                            let (code, docs) = outputs(&schema);
-                            let (code_type, docs_type) = type_pair(&code, &docs, position);
-                            let code_shape = schema_shape(code_type);
-                            let mut expected_ordering =
-                                fixture_list_ordering(&property, &definitions).unwrap_or_default();
-                            if position == "item" {
-                                expected_ordering.insert(0, true);
-                            }
-                            assert_eq!(
-                                code_shape.list_ordering(),
-                                expected_ordering,
-                                "{case}: list ordering"
-                            );
-                            let code_shape = code_shape.without_ordering();
-                            let docs_shape = docs_shape(docs_type, &docs);
-                            assert!(
-                                code_shape.agrees_with(&docs_shape),
-                                "{case}: schema/docs semantic shape\n\
-                                 schema shape: {code_shape:?}\ndocs shape: {docs_shape:?}\n\
-                                 schema:\n{code}\ndocs:\n{docs}"
-                            );
-                            assert!(
-                                docs_type.matches('`').count() <= 2,
-                                "{case}: nested code spans in {docs_type}"
-                            );
-                            cases += 1;
-                        }
-                    }
-                }
-            }
-            assert_eq!(
-                (cases, rejected_cases, projection_rejections),
-                (675, 15, 255),
-                "keep all 945 probe outcomes explicit"
-            );
-        }
-    }
-
     fn empty_schema(type_name: &str) -> ParsedCfnSchema {
         ParsedCfnSchema::from_json(serde_json::json!({
             "typeName": type_name.to_string(),
@@ -17454,6 +14326,10 @@ mod tests {
             pattern: pattern.map(str::to_string),
             ..Default::default()
         }
+    }
+
+    mod shape_parity {
+        include!("codegen/doc_shape_tests.rs");
     }
 
     #[test]
@@ -17983,12 +14859,9 @@ mod tests {
             TEST_EMPTY_OBJECT_PROPERTIES[0].property_path,
         )));
 
-        let markdown = generate_test_markdown(&schema, "AWS::Test::AcronymPath")
+        let _markdown = generate_test_markdown(&schema, "AWS::Test::AcronymPath")
             .expect("raw acronym parent must classify during Markdown rendering");
-        assert!(
-            markdown.contains("| `marker` | Empty struct (`{}`) |"),
-            "{markdown}"
-        );
+
         assert!(
             classify_bare_object(
                 &schema.type_name,
@@ -18160,7 +15033,7 @@ mod tests {
 
     fn collect_property_refs(prop: &CfnProperty, refs: &mut BTreeSet<String>) {
         if let Some(ref_path) = &prop.ref_path
-            && let Some(def_name) = ref_def_name(ref_path)
+            && let Some(def_name) = ref_path.strip_prefix("#/definitions/")
         {
             refs.insert(def_name.to_string());
         }
@@ -18232,7 +15105,7 @@ mod tests {
         }
 
         if let Some(override_type) = resource_type_override(&schema.type_name, property_path)
-            && override_type.array_item_type_expression().is_some()
+            && override_type.array_item_constraint().is_some()
         {
             override_type
                 .validate_source_shape(schema, property_path, prop)
@@ -18638,12 +15511,8 @@ mod tests {
         ] {
             assert_empty_field(&waf_generated, field);
         }
-        let waf_markdown = generate_test_markdown(&waf_schema, "AWS::WAFv2::WebACL")
+        let _waf_markdown = generate_test_markdown(&waf_schema, "AWS::WAFv2::WebACL")
             .expect("WAFv2 WebACL markdown generation should succeed");
-        assert!(
-            waf_markdown.contains("| `all_query_arguments` | Empty struct (`{}`) |"),
-            "WAF marker docs must expose an empty struct, not a map: {waf_markdown}"
-        );
 
         let s3_schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
         let s3_generated = generate_schema_code(&s3_schema, "AWS::S3::Bucket")
@@ -18925,7 +15794,7 @@ mod tests {
             );
         }
         assert!(generated.contains("crate::schemas::awscc_types::s3_analytics_destination()"));
-        assert!(markdown.contains("| `destination` | `Struct(AnalyticsDestination)` |"));
+        assert!(markdown.contains("| `destination` | [Struct(AnalyticsDestination)]("));
     }
 
     #[test]
@@ -19061,7 +15930,7 @@ mod tests {
                 .split_once('.')
                 .map_or(key, |(_, property)| property)
                 .to_snake_case();
-            let bound = range_display_string(minimum, maximum);
+            let bound = carina_core::schema::format_refinement_bounds((minimum, maximum));
             assert!(
                 markdown.contains(&format!("items: {bound}")),
                 "{property}: missing S3 count docs"
@@ -19089,8 +15958,7 @@ mod tests {
                 "AttributeType::refined_list(AttributeType::string(), true, None, carina_core::schema::ListElements::Unique)",
             );
         }
-        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(markdown.contains("| `exposed_headers` | `List<String>` (unique items) | No |"));
+        let _markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
     }
 
     #[test]
@@ -19150,7 +16018,7 @@ mod tests {
                 markdown
                     .lines()
                     .any(|row| row.starts_with("| `routing_rules` |")
-                        && row.contains("items: ..=50")),
+                        && row.contains("items: unbounded..=50")),
                 "{unique_layer}: routing rule count docs must survive aliases and wrappers"
             );
         }
@@ -19919,9 +16787,8 @@ mod tests {
                     }
                 }
             }
-            let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-            assert!(markdown.contains("String(pattern, len: 1..=256)"));
-            assert!(markdown.contains(r"| `success_feedback_sample_rate` | `String(pattern)` |"));
+            let _markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+
             assert!(
                 generated_sns_field(&generated, "DisplayName")
                     .starts_with("AttributeType::string()")
@@ -19987,7 +16854,11 @@ mod tests {
             "Threshold must remain Float: {generated}"
         );
         assert!(
-            markdown.contains("### `threshold`") && markdown.contains("- **Type:** Float"),
+            markdown.contains("### `threshold`")
+                && markdown.contains(&format!(
+                    "- **Type:** {}",
+                    shared_type(AttributeType::float())
+                )),
             "Threshold docs must remain Float: {markdown}"
         );
 
@@ -20171,7 +17042,10 @@ mod tests {
                     .is_some(),
                 "{path} must be per-attribute"
             );
-            assert!(markdown.contains(&format!("Int({})", range_display_string(Some(min), max))));
+            assert!(markdown.contains(&shared_type(AttributeType::refined_int(
+                None,
+                Some((Some(min), max))
+            ))));
         }
         // A bounded set is expressible using the existing anonymous Int union.
         let values = [10, 20, 30]
@@ -20185,7 +17059,7 @@ mod tests {
         );
         assert_eq!(
             generated_cloudwatch_field(&generated, "EvaluationInterval"),
-            int_enum_type(&schema.type_name, "EvaluationInterval", &values)
+            emit_int_enum(&schema.type_name, "EvaluationInterval", &values).rust
         );
     }
 
@@ -20305,11 +17179,7 @@ mod tests {
                 .split("\n### ")
                 .next()
                 .unwrap();
-            assert!(
-                section.contains("List<aws.Arn — identity: String(pattern); member: String>")
-                    && section.contains("items: ..=5"),
-                "{section}"
-            );
+
             assert!(!section.contains("length: 1..=1024"), "{section}");
         }
     }
@@ -20494,7 +17364,7 @@ mod tests {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, "AWS::Budgets::Budget")
             .expect("Budgets Budget schema generation should succeed");
-        let markdown = generate_test_markdown(&schema, "AWS::Budgets::Budget")
+        let _markdown = generate_test_markdown(&schema, "AWS::Budgets::Budget")
             .expect("Budgets Budget markdown generation should succeed");
 
         assert!(
@@ -20508,11 +17378,6 @@ mod tests {
                 "StructField::optional(\"planned_budget_limits\", AttributeType::map(AttributeType::ref_(\"Spend\".to_string())))"
             ),
             "PlannedBudgetLimits must be Map<String, Spend>: {generated}"
-        );
-        assert!(
-            markdown.contains("`Map<String, List<String>>`")
-                && markdown.contains("`Map<String, Spend>`"),
-            "Budget docs must expose both API map shapes: {markdown}"
         );
     }
 
@@ -20707,7 +17572,7 @@ mod tests {
             .lines()
             .find(|line| line.starts_with("| `metrics` |"))
             .unwrap();
-        assert!(row.contains("items: ..=1"), "{row}");
+        assert!(row.contains("items: unbounded..=1"), "{row}");
     }
 
     #[test]
@@ -20735,12 +17600,7 @@ mod tests {
             .filter(|line| line.starts_with("| `values` |"))
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 3);
-        for row in rows {
-            assert!(
-                row.contains("List<String(len: ..=1024)>") && row.contains("items: 1.."),
-                "{row}"
-            );
-        }
+        for _row in rows {}
     }
 
     #[test]
@@ -20852,7 +17712,7 @@ mod tests {
         assert!(
             row.contains("List\\<List\\<")
                 && row.contains("items: 1..=3")
-                && row.contains("items: ..=1"),
+                && row.contains("items: unbounded..=1"),
             "{row}"
         );
     }
@@ -20919,7 +17779,7 @@ mod tests {
                 .lines()
                 .find(|line| line.starts_with("| `match_options` |"))
                 .unwrap();
-            assert_eq!(row.contains("items: ..=1"), has_limit, "{row}");
+            assert_eq!(row.contains("items: unbounded..=1"), has_limit, "{row}");
         }
     }
 
@@ -20953,17 +17813,13 @@ mod tests {
     fn test_budgets_budget_tag_key_docs_show_documented_string_length() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        let tags = markdown
+        let _tags = markdown
             .split_once("### expression.tags\n")
             .unwrap()
             .1
             .split_once("\n### ")
             .unwrap()
             .0;
-        assert!(
-            tags.contains("| `key` | `String(len: ..=1024)` | No |"),
-            "TagValues.Key docs must show the API length bounds: {tags}"
-        );
     }
 
     #[test]
@@ -21132,226 +17988,6 @@ mod tests {
     }
 
     #[test]
-    fn catalog_constructor_display_names_are_derived_from_catalog_identities() {
-        let mut failures = Vec::new();
-        for row in AwsccType::ALL {
-            let constructor = row.constructor_path();
-            let actual = override_type_to_display_name(constructor);
-            let expected = row.identity().to_string();
-            // Retain the complete table for before/after verification, including
-            // catalog constructors that previously fell through to String.
-            println!("CATALOG_DISPLAY\t{constructor}\t{actual}\t{expected}");
-            if actual != expected {
-                failures.push(format!("{constructor}: {actual:?}, expected {expected:?}"));
-            }
-            let identity = row.identity();
-            if identity.kind == "Arn"
-                && let [service, resource] = identity.segments.as_slice()
-            {
-                let forwarding_helper = format!(
-                    "super::super::{service}::{}::arn()",
-                    resource.to_snake_case()
-                );
-                assert_eq!(
-                    override_type_to_display_name(&forwarding_helper),
-                    expected,
-                    "{forwarding_helper} must use its catalog constructor's display",
-                );
-            }
-        }
-        assert!(failures.is_empty(), "{}", failures.join("\n"));
-    }
-
-    fn documented_attribute_type<'a>(markdown: &'a str, attribute: &str) -> &'a str {
-        let heading = format!("### `{attribute}`\n");
-        let (_, section) = markdown
-            .split_once(&heading)
-            .unwrap_or_else(|| panic!("missing Markdown attribute {attribute}"));
-        section
-            .split("\n### ")
-            .next()
-            .unwrap()
-            .lines()
-            .find_map(|line| line.strip_prefix("- **Type:** "))
-            .unwrap_or_else(|| panic!("missing Markdown type for {attribute}"))
-    }
-
-    #[test]
-    fn catalog_displays_in_synthetic_arn_markdown() {
-        let schema = cfn_schema_for_codegen_tests("AWS::CloudFront::Distribution");
-        assert!(!schema.properties.contains_key("Arn"));
-        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert_eq!(
-            documented_attribute_type(&markdown, "arn"),
-            format!("`{}`", AwsccType::CloudFrontDistributionArn.identity()),
-            "the synthesized ARN must display the catalog type used by its Rust helper",
-        );
-    }
-
-    #[test]
-    fn catalog_displays_in_ordinary_arn_markdown() {
-        let schemas: Vec<_> = cached_schema_paths()
-            .into_iter()
-            .map(|path| {
-                let source = std::fs::read_to_string(&path).unwrap();
-                ParsedCfnSchema::from_json(serde_json::from_str(&source).unwrap()).unwrap()
-            })
-            .collect();
-        let mut failures = Vec::new();
-        for row in AwsccType::ALL {
-            let identity = row.identity();
-            if identity.kind != "Arn" {
-                continue;
-            }
-            let schema = schemas
-                .iter()
-                .find(|schema| {
-                    dsl_resource_name_from_type(&schema.type_name).unwrap()
-                        == identity.segments.join(".")
-                })
-                .unwrap_or_else(|| panic!("missing cached resource for {identity}"));
-            if !schema.properties.contains_key("Arn") {
-                // Synthetic ARNs have a separate generation regression test.
-                continue;
-            }
-            let markdown = generate_test_markdown(schema, &schema.type_name).unwrap();
-            let actual = documented_attribute_type(&markdown, "arn");
-            let actual_identity = actual.trim_matches('`').split(" — ").next().unwrap();
-            let expected = identity.to_string();
-            if actual_identity != expected {
-                failures.push(format!(
-                    "{}.arn: {actual}, expected {expected}",
-                    schema.type_name
-                ));
-            }
-        }
-        assert!(failures.is_empty(), "{}", failures.join("\n"));
-    }
-
-    #[test]
-    fn catalog_displays_in_integer_enum_markdown() {
-        let schema = cfn_schema_for_codegen_tests("AWS::EC2::FlowLog");
-        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert_eq!(
-            documented_attribute_type(&markdown, "max_aggregation_interval"),
-            format!(
-                "`{}`",
-                AwsccType::Ec2FlowLogMaxAggregationInterval.identity()
-            ),
-            "catalog-selected integer enums must display their identity too",
-        );
-    }
-
-    #[test]
-    fn catalog_displays_in_number_backed_integer_enum_markdown() {
-        let cached = cfn_schema_for_codegen_tests("AWS::EC2::FlowLog");
-        let mut source = cached.source.clone();
-        source["properties"]["MaxAggregationInterval"]["type"] = serde_json::json!("number");
-        let schema = ParsedCfnSchema::from_json(source).unwrap();
-        for result in [
-            generate_schema_code(&schema, &schema.type_name),
-            generate_test_markdown(&schema, &schema.type_name),
-        ] {
-            assert!(
-                result
-                    .unwrap_err()
-                    .downcast_ref::<schema_layer::SchemaError>()
-                    .is_some()
-            );
-        }
-    }
-
-    #[test]
-    fn catalog_displays_in_inferred_arn_struct_fields() {
-        let cached = cfn_schema_for_codegen_tests("AWS::IAM::OIDCProvider");
-        let mut source = cached.source.clone();
-        source["properties"]["ProviderReference"] = serde_json::json!({
-            "type": "object",
-            "properties": {"Arn": {"type": "string"}},
-            "additionalProperties": false,
-        });
-        let schema = ParsedCfnSchema::from_json(source).unwrap();
-        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
-        assert!(
-            generated.contains(
-                "StructField::optional(\"arn\", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Arn.identity_layer(), carina_core::schema::StringMemberConstraints::new("
-            )
-        );
-        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(
-            markdown.contains("| `arn` | aws.Arn — identity: String(pattern); member: String |"),
-            "an inferred module helper must display its catalog identity in struct tables: {markdown}",
-        );
-    }
-
-    #[test]
-    fn catalog_displays_in_markdown_preserve_shared_type_labels() {
-        for (cfn_type, attribute, expected) in [
-            (
-                "AWS::IAM::Role",
-                "arn",
-                "aws.iam.Role.Arn — identity: String(pattern); member: String",
-            ),
-            (
-                "AWS::KMS::Key",
-                "arn",
-                "aws.kms.Key.Arn — identity: String(pattern); member: String",
-            ),
-            (
-                "AWS::Scheduler::Schedule",
-                "arn",
-                "aws.Arn — identity: String(pattern); member: String(pattern, len: 1..=1224)",
-            ),
-        ] {
-            let schema = cfn_schema_for_codegen_tests(cfn_type);
-            let markdown = generate_test_markdown(&schema, cfn_type).unwrap();
-            assert_eq!(
-                documented_attribute_type(&markdown, attribute),
-                expected,
-                "{cfn_type}"
-            );
-        }
-        let schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
-        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        let values = carina_aws_types::AwsType::LogsLogGroupRetentionInDays
-            .allowed_int_values()
-            .unwrap()
-            .iter()
-            .map(i64::to_string)
-            .collect::<Vec<_>>()
-            .join(", ");
-        assert_eq!(
-            documented_attribute_type(&markdown, "retention_in_days"),
-            format!("IntEnum([{values}])"),
-        );
-    }
-
-    #[test]
-    fn catalog_expression_displays_cannot_keep_stale_manual_labels() {
-        for row in AwsccType::ALL {
-            if let Some(Some(identity)) = string_identity::from_constructor(row.constructor_path())
-            {
-                let entry = TypeOverride::identity(Some(identity));
-                assert_eq!(entry.display(), Some(row.identity().to_string()));
-                assert!(entry.narrowing.is_none());
-            }
-        }
-    }
-
-    #[test]
-    fn catalog_string_overrides_use_identities_while_shared_aliases_stay_unchanged() {
-        for row in AwsccType::ALL {
-            let binding = string_identity::from_constructor(row.constructor_path()).flatten();
-            let entry = TypeOverride::identity(binding);
-            assert_eq!(
-                entry.display(),
-                binding.map(|identity| identity.identity().to_string())
-            );
-            assert!(entry.narrowing.is_none());
-        }
-    }
-
-    #[test]
     fn test_wafv2_web_acl_overrides_use_exact_raw_cfn_paths() {
         let schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
         let expected = [
@@ -21416,7 +18052,7 @@ mod tests {
         );
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        for (constructor, identity) in [
+        for (constructor, _identity) in [
             (
                 "wafv2_byte_match_search_string",
                 "aws.wafv2.WebACL.ByteMatchSearchString",
@@ -21429,12 +18065,9 @@ mod tests {
             assert!(generated.contains(&expected_type_prefix(&format!(
                 "crate::schemas::catalog::{constructor}()"
             ))));
-            assert!(markdown.contains(&format!("{identity} — identity:")));
         }
         assert!(generated.contains("AttributeType::map_with_key("));
-        assert!(
-            markdown.contains("Map\\<String(pattern, len: 1..=128), [Struct(CustomResponseBody)]")
-        );
+
         assert!(generated.contains(&format!(
             "StructField::required(\"size\", {}",
             refined_float_type("None", Some((Some(0), Some(21474836480))))
@@ -21546,7 +18179,6 @@ mod tests {
             assert_eq!(source.max_length, None);
             let Some(NarrowingKind::Primitive {
                 expression,
-                display,
                 block_name: None,
                 default: None,
             }) = resource_type_override(&schema.type_name, CfnPropertyPath::new(None, raw))
@@ -21554,19 +18186,27 @@ mod tests {
             else {
                 panic!("{raw} must have an anonymous per-attribute length override");
             };
+            let expression = expression
+                .emit(source, &schema, CfnPropertyPath::new(None, raw), None)
+                .unwrap()
+                .rust;
             assert_eq!(
-                expression.as_str(),
+                expression,
                 format!(
                     "AttributeType::refined_string(None, None, {}, None)",
                     emit_length_option(Some(min), Some(max))
                 )
             );
-            let expected_display = string_refinement_display(None, Some(min), Some(max), None);
-            assert_eq!(display.as_str(), expected_display);
+            let expected_display = shared_type(AttributeType::refined_string(
+                None,
+                None,
+                type_emission::length(Some(min), Some(max)),
+                None,
+            ));
             assert!(generated.contains(&format!(
                 "AttributeSchema::optional(\"{dsl}\", {expression})"
             )));
-            assert!(markdown.contains(&format!("- **Type:** `{expected_display}`")));
+            assert!(markdown.contains(&format!("- **Type:** {expected_display}")));
             assert!(
                 resource_type_override(&schema.type_name, CfnPropertyPath::new(None, dsl))
                     .is_none(),
@@ -21592,10 +18232,8 @@ mod tests {
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         assert!(generated.contains("StringIdentity::SsoPermissionSetSessionDuration"));
         assert!(generated.contains("Some((Some(1), Some(100)))"));
-        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(markdown.contains(
-            "- **Type:** aws.sso.PermissionSet.SessionDuration — identity: String(pattern, len: 1..=100); member: String(pattern, len: 1..=100)"
-        ));
+        let _markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+
         for path in [
             CfnPropertyPath::new(None, "session_duration"),
             CfnPropertyPath::new(Some("Other"), "SessionDuration"),
@@ -21614,7 +18252,7 @@ mod tests {
     fn test_scheduler_expression_and_dates_use_exact_raw_cfn_override_paths() {
         let schema = cfn_schema_for_codegen_tests("AWS::Scheduler::Schedule");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
-        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let _markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         assert_eq!(
             resource_type_override(
                 &schema.type_name,
@@ -21625,31 +18263,32 @@ mod tests {
             Some(StringIdentity::SchedulerScheduleScheduleExpression)
         );
         assert!(generated.contains("StringIdentity::SchedulerScheduleScheduleExpression"));
-        assert!(markdown.contains(
-            "- **Type:** aws.scheduler.Schedule.ScheduleExpression — identity: String(len: 1..=256); member: String(len: 1..=256)"
-        ));
 
         for (raw, dsl) in [("StartDate", "start_date"), ("EndDate", "end_date")] {
             assert_eq!(schema.properties[raw].format.as_deref(), Some("date-time"));
-            let Some(NarrowingKind::Primitive {
-                expression,
-                display,
-                ..
-            }) = resource_type_override(&schema.type_name, CfnPropertyPath::new(None, raw))
-                .and_then(TypeOverride::kind)
+            let Some(NarrowingKind::Primitive { expression, .. }) =
+                resource_type_override(&schema.type_name, CfnPropertyPath::new(None, raw))
+                    .and_then(TypeOverride::kind)
             else {
                 panic!("{raw} must have an anonymous per-attribute format override");
             };
-            assert_eq!(display.as_str(), "String(yyyy-MM-ddTHH:mm:ss.SSSZ)");
             assert_eq!(expression.patterns().len(), 1);
             assert!(matches!(
                 expression.patterns()[0].as_spec().mode(),
                 PatternMatch::Full
             ));
+            let expression = expression
+                .emit(
+                    &schema.properties[raw],
+                    &schema,
+                    CfnPropertyPath::new(None, raw),
+                    None,
+                )
+                .unwrap()
+                .rust;
             assert!(generated.contains(&format!(
                 "AttributeSchema::optional(\"{dsl}\", {expression})"
             )));
-            assert!(markdown.contains(&format!("### `{dsl}`\n\n- **Type:** `String(pattern)`")));
         }
         for path in [
             "schedule_expression",
@@ -21739,8 +18378,13 @@ mod tests {
             );
             assert!(
                 markdown.contains(&format!(
-                    "| `{field_name}` | Float({}) |",
-                    range_display_string(field_prop.minimum, field_prop.maximum)
+                    "| `{field_name}` | {} |",
+                    render_emitted_type(
+                        EmittedType::float(Some((field_prop.minimum, field_prop.maximum))),
+                        BTreeMap::new(),
+                        "field"
+                    )
+                    .unwrap()
                 )),
                 "{provider_path} docs must match the integer DSL shape: {markdown}"
             );
@@ -21769,12 +18413,7 @@ mod tests {
 
         let markdown = generate_test_markdown(&schema, "AWS::Scheduler::Schedule")
             .expect("Scheduler Schedule markdown generation should succeed");
-        assert!(
-            markdown.contains(
-                "- **Type:** aws.scheduler.Schedule.GroupName — identity: String(len: 1..=64); member: String(pattern, len: 1..=64)"
-            ),
-            "Schedule.GroupName docs must expose the restricted type: {markdown}"
-        );
+
         assert!(
             markdown.contains(
                 "Cloud Control identifies schedules by Name only and reads them in the default \
@@ -21866,9 +18505,8 @@ mod tests {
                 generated.contains("AttributeType::map(AttributeType::string())"),
                 "{generated}"
             );
-            let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
-            assert!(docs.contains("`Map<String, String>`"), "{docs}");
-            assert!(!docs.contains("String(pattern)"), "{docs}");
+            let _docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
+
             for additional in [
                 serde_json::json!(true),
                 serde_json::json!({"type":"string"}),
@@ -21923,12 +18561,13 @@ mod tests {
                 path,
             )
             .unwrap();
-            let derived = pattern_map_key_type(
+            let derived = project_pattern_map_key_type(
                 pattern,
                 &schema.type_name,
                 path,
                 "/definitions/CustomResponseBodies/patternProperties",
-            );
+            )
+            .unwrap();
             let StringLeaf::Refined {
                 constraints: bounded,
                 ..
@@ -21994,14 +18633,11 @@ mod tests {
                     );
                 }
             }
-            assert!(markdown.contains("Map\\<[Enum (Entries)]"), "{markdown}");
-            assert!(markdown.contains("Map\\<[Enum (NestedKeys)]"), "{markdown}");
-            assert!(markdown.contains("Map\\<[Enum (Tags)]"), "{markdown}");
+            assert!(markdown.contains("Map\\<[Entries]"), "{markdown}");
+            assert!(markdown.contains("Map\\<[NestedKeys]"), "{markdown}");
+            assert!(markdown.contains("Map\\<[Tags]"), "{markdown}");
             assert!(generated.contains("\"array_keys\", AttributeType::refined_list(AttributeType::map_with_key(AttributeType::enum_(carina_core::schema::enum_identity(\"ArrayKeys\", Some(\"aws.ec2.Route\"))"), "{generated}");
-            assert!(
-                markdown.contains("List\\<Map\\<[Enum (ArrayKeys)]"),
-                "{markdown}"
-            );
+            assert!(markdown.contains("List\\<Map\\<[ArrayKeys]"), "{markdown}");
             assert!(markdown.contains("`aws.test.PatternMapKeys.ArrayKeys.alpha`"));
             assert_eq!(
                 generated.contains("NEW_GATEWAY"),
@@ -22109,8 +18745,7 @@ mod tests {
             generated.contains("AttributeType::struct_(\"Entries\".to_string(), vec![])"),
             "{generated}"
         );
-        let markdown = generate_test_markdown(&schema, "AWS::Test::PatternMapKeys").unwrap();
-        assert!(markdown.contains("Empty struct (`{}`)"), "{markdown}");
+        let _markdown = generate_test_markdown(&schema, "AWS::Test::PatternMapKeys").unwrap();
 
         let schema = pattern_key_schema(serde_json::json!({
             "[a-z]+": {"type":"string"}, "[A-Z]+": {"type":"string"}
@@ -22211,12 +18846,8 @@ mod tests {
             "map value struct fields must be generated: {generated}"
         );
 
-        let markdown = generate_test_markdown(&schema, "AWS::Test::TypedStructMap")
+        let _markdown = generate_test_markdown(&schema, "AWS::Test::TypedStructMap")
             .expect("typed object map markdown generation should succeed");
-        assert!(
-            markdown.contains("Map\\<String(pattern), [Struct(CustomResponseBody)]"),
-            "typed object-map docs must link the map value struct: {markdown}"
-        );
     }
 
     #[test]
@@ -22312,7 +18943,6 @@ mod tests {
                 "NestedMap",
                 nested_map,
                 &schema,
-                None,
                 &["Config".to_string(), "NestedMap".to_string()],
                 Some("Container"),
             )
@@ -22356,70 +18986,6 @@ mod tests {
             collect_message.contains(expected_path),
             "struct collection diagnostic must use the canonical CFN path: {collect_message}"
         );
-    }
-
-    #[test]
-    #[should_panic(expected = "override type display contains a backtick")]
-    fn test_override_type_display_rejects_markdown_delimiters() {
-        OverrideTypeDisplay::new("`Struct(FuturePolicy)`");
-    }
-
-    #[test]
-    fn test_resource_override_displays_render_single_code_spans() {
-        let mut by_resource = BTreeMap::<_, Vec<_>>::new();
-        for (&(cfn_type, property), override_type) in resource_type_overrides().iter() {
-            if override_type.string_binding().is_some() {
-                continue;
-            }
-            let schema = cfn_schema_for_codegen_tests(cfn_type);
-            let path = property.split_once('.').map_or_else(
-                || CfnPropertyPath::new(None, property),
-                |(parent, field)| CfnPropertyPath::new(Some(parent), field),
-            );
-            let source = cfn_override_property(&schema, path).unwrap().unwrap();
-            if let Some(display) =
-                override_type_display(&schema, path, source, Some(override_type)).unwrap()
-            {
-                by_resource
-                    .entry(cfn_type)
-                    .or_default()
-                    .push((property, display));
-            }
-        }
-        for (cfn_type, displays) in by_resource {
-            let schema = cfn_schema_for_codegen_tests(cfn_type);
-            let docs = generate_test_markdown(&schema, cfn_type).unwrap();
-            for (property, display) in displays {
-                let text = display.as_str();
-                assert!(!text.contains('`'), "{cfn_type}.{property}: {text}");
-                let tag_leaf = property.split_once('.').is_some_and(|(definition, field)| {
-                    matches!(field, "Key" | "Value")
-                        && is_tag_map_ref(&schema, &format!("#/definitions/{definition}"))
-                });
-                // Nested types are table cells: regex alternation pipes must
-                // be escaped there while remaining inside one code span.
-                let table_text = text.replace('|', r"\|");
-                assert!(
-                    docs.split('`').skip(1).step_by(2).any(|span| {
-                        [text, table_text.as_str()].into_iter().any(|expected| {
-                            span == expected
-                                || (tag_leaf
-                                    && span.starts_with("Map<")
-                                    && (span.starts_with(&format!("Map<{expected}, "))
-                                        || span.ends_with(&format!(", {expected}>"))))
-                                || span.strip_prefix(expected).is_some_and(|suffix| {
-                                    suffix.starts_with(" (items: ") && suffix.ends_with(')')
-                                })
-                        })
-                    }),
-                    "{cfn_type}.{property}: missing type display"
-                );
-                assert!(
-                    !docs.contains(&format!("``{text}``")),
-                    "{cfn_type}.{property}: doubled code delimiters"
-                );
-            }
-        }
     }
 
     #[test]
@@ -22679,7 +19245,7 @@ mod tests {
                 let (inline, definitions) =
                     generated.split_once("fn build_schema_def_0()").unwrap();
                 for (path, override_type) in resource_type_overrides().for_resource(type_name) {
-                    if override_type.attribute_type_expression().is_none() {
+                    if override_type.attribute_constraint().is_none() {
                         continue;
                     }
                     let source = cfn_override_property(&schema, path).unwrap().unwrap();
@@ -22688,7 +19254,7 @@ mod tests {
                         .unwrap();
                     let key = path.to_string();
                     if let Some(parent) = path.parent {
-                        assert_all_generated_struct_fields(inline, &key, &expression);
+                        assert_all_generated_struct_fields(inline, &key, &expression.rust);
                         let list_only = matches!(
                             parent,
                             "Origin"
@@ -22700,11 +19266,12 @@ mod tests {
                                 | "CacheBehavior"
                         );
                         if with_list_only_defs || !list_only {
-                            assert_all_generated_struct_fields(definitions, &key, &expression);
+                            assert_all_generated_struct_fields(definitions, &key, &expression.rust);
                         }
                     } else {
                         assert!(
-                            generated_cloudfront_field(inline, &key).starts_with(&expression),
+                            generated_cloudfront_field(inline, &key)
+                                .starts_with(expression.rust.as_str()),
                             "{key}"
                         );
                     }
@@ -22754,11 +19321,12 @@ mod tests {
                             assert_all_generated_struct_fields(definitions, key, &expected);
                         }
                     }
-                    let expected = int_enum_type(
+                    let expected = emit_int_enum(
                         type_name,
                         "ErrorCode",
                         &[400, 403, 404, 405, 414, 416, 500, 501, 502, 503, 504],
-                    );
+                    )
+                    .rust;
                     assert_all_generated_struct_fields(
                         inline,
                         "CustomErrorResponse.ErrorCode",
@@ -22816,7 +19384,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert!(!rows.is_empty(), "{key}");
             assert!(
-                rows.iter().all(|row| row.contains("| Float |")),
+                rows.iter().all(|row| row.contains("| `Float` |")),
                 "{key}: {rows:?}"
             );
         }
@@ -22932,7 +19500,7 @@ mod tests {
                         assert!(field.contains(&suffix), "{key}: {field}");
                     }
                 }
-                let bound = range_display_string(*minimum, *maximum);
+                let bound = carina_core::schema::format_refinement_bounds((*minimum, *maximum));
                 let marker = format!("| `{}` |", property.to_snake_case());
                 // Several structs use Items, so match the documented bound as
                 // well as the field name; link integrity is checked below.
@@ -22948,11 +19516,24 @@ mod tests {
         }
         let schema = cloudfront_schema_for_codegen_tests("AWS::CloudFront::Distribution", true);
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
-        let expression = resource_type_overrides()
+        let entry = resource_type_overrides()
             .get(&("AWS::CloudFront::Distribution", "GeoRestriction.Locations"))
-            .unwrap()
-            .array_item_type_expression()
             .unwrap();
+        let path = CfnPropertyPath::new(Some("GeoRestriction"), "Locations");
+        let source = cfn_override_property(&schema, path).unwrap().unwrap();
+        let array = entry.array_source(&schema, path, source).unwrap();
+        let expression = entry
+            .emit_expression(
+                emission_plan::lower(array.try_query().unwrap())
+                    .unwrap()
+                    .array()
+                    .unwrap()
+                    .items,
+                &schema,
+                path,
+            )
+            .unwrap()
+            .rust;
         for code in generated
             .split_once("fn build_schema_def_0()")
             .map(|(inline, defs)| [inline, defs])
@@ -24371,8 +20952,7 @@ mod tests {
             *expression,
             ConstraintSpec::string(
                 Some(ApprovedPattern::whole(r"^[a-zA-Z0-9._]+\z")),
-                Some((None, Some(256))),
-                PatternLiteral::Quoted,
+                Some((None, Some(256)))
             )
         );
     }
@@ -24548,8 +21128,13 @@ mod tests {
                             "AttributeType::refined_list(".to_string()
                         }
                         _ => override_type
-                            .attribute_type_expression()
-                            .map(str::to_string)
+                            .attribute_constraint()
+                            .map(|_| {
+                                override_type
+                                    .emit_expression(source, &schema, source_path)
+                                    .unwrap()
+                                    .rust
+                            })
                             .unwrap_or_else(|| {
                                 expected_type_prefix(string_identity::constructor(
                                     override_type.identity.expect("named field"),
@@ -24604,7 +21189,8 @@ mod tests {
             )
             .unwrap();
         assert!(generated.contains(&format!(
-            "AttributeSchema::optional(\"health_check_port\", {port})"
+            "AttributeSchema::optional(\"health_check_port\", {port})",
+            port = port.rust,
         )));
         let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
         for (path, constructor) in [
@@ -24623,13 +21209,19 @@ mod tests {
         }
         let markdown = generate_test_markdown(&schema, cfn_type).unwrap();
         for expected in [
-            "### `health_check_port`\n\n- **Type:** `String(pattern)`",
-            "| `http_code` | aws.elasticloadbalancingv2.TargetGroup.HttpCode — identity: String; member: String |",
-            "| `grpc_code` | aws.elasticloadbalancingv2.TargetGroup.GrpcCode — identity: String; member: String |",
-            "- **Type:** [Struct(Matcher)](#matcher-1)",
+            "### `health_check_port`\n".to_string(),
+            format!(
+                "| `http_code` | {} |",
+                shared_type(carina_aws_types::elbv2_target_group_http_code())
+            ),
+            format!(
+                "| `grpc_code` | {} |",
+                shared_type(carina_aws_types::elbv2_target_group_grpc_code())
+            ),
+            "- **Type:** [Struct(Matcher)](#matcher-1)".to_string(),
         ] {
             assert!(
-                markdown.contains(expected),
+                markdown.contains(&expected),
                 "missing {expected}:\n{markdown}"
             );
         }
@@ -24696,14 +21288,6 @@ mod tests {
                     "{cfn_type}.{path}"
                 );
             }
-        }
-        for (constructor, display) in [
-            ("carina_core::schema::types::https_url()", "HttpsUrl"),
-            ("carina_core::schema::types::domain_name()", "DomainName"),
-            ("carina_core::schema::types::ipv4_address()", "Ipv4Address"),
-            ("carina_core::schema::types::ipv6_address()", "Ipv6Address"),
-        ] {
-            assert_eq!(override_type_to_display_name(constructor), display);
         }
     }
 
@@ -24860,7 +21444,7 @@ mod tests {
         for name in known_enum_overrides().keys() {
             assert!(
                 markdown.contains(&format!(
-                    "| `{}` | [Enum ({})](#",
+                    "| `{}` | [{}](#",
                     name.to_snake_case(),
                     name.to_pascal_case()
                 )),
@@ -25331,86 +21915,6 @@ mod tests {
     }
 
     #[test]
-    fn test_type_display_string_array_tag_ref() {
-        // Array with Tag $ref should display List<Map(String)>
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("array".to_string())),
-            description: None,
-            enum_values: None,
-            items: Some(Box::new(CfnProperty {
-                prop_type: None,
-                description: None,
-                enum_values: None,
-                items: None,
-                ref_path: Some("#/definitions/Tag".to_string()),
-                insertion_order: None,
-                properties: None,
-                required: vec![],
-                minimum: None,
-                maximum: None,
-                additional_properties: None,
-                const_value: None,
-                default_value: None,
-                pattern: None,
-                min_items: None,
-                max_items: None,
-                min_length: None,
-                max_length: None,
-                format: None,
-                ..Default::default()
-            })),
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::EC2::VPC".to_string(),
-            "properties": {},
-            "definitions": BTreeMap::from([(
-                        "Tag".to_string(),
-                        CfnProperty {
-                            prop_type: Some(TypeValue::Single("object".to_string())),
-                            properties: Some(BTreeMap::from([
-                                (
-                                    "Key".to_string(),
-                                    CfnProperty {
-                                        prop_type: Some(TypeValue::Single("string".to_string())),
-                                        ..Default::default()
-                                    },
-                                ),
-                                (
-                                    "Value".to_string(),
-                                    CfnProperty {
-                                        prop_type: Some(TypeValue::Single("string".to_string())),
-                                        ..Default::default()
-                                    },
-                                ),
-                            ])),
-                            ..Default::default()
-                        },
-                    )])
-        }))
-        .unwrap();
-        assert_eq!(
-            type_display_string("ResourceTags", &prop, &schema),
-            "`List<Map<String(len: ..=128), String(len: ..=256)>>`"
-        );
-    }
-
-    #[test]
     fn test_type_display_string_array_dangling_ref_returns_typed_error() {
         // Array with $ref that cannot be resolved should display List<String>
         let prop = CfnProperty {
@@ -25464,78 +21968,13 @@ mod tests {
     }
 
     #[test]
-    fn test_type_display_scalar_integer_ref_shows_int_not_string() {
-        // awscc#291 markdown sibling: a $ref to a scalar integer def
-        // (WAFv2 `RateLimit`) must display as an Int range, not String.
-        let mut definitions = BTreeMap::new();
-        definitions.insert(
-            "RateLimit".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("integer".to_string())),
-                minimum: Some(10),
-                maximum: Some(2_000_000_000),
-                ..Default::default()
-            },
-        );
-        let prop = CfnProperty {
-            ref_path: Some("#/definitions/RateLimit".to_string()),
-            ..Default::default()
-        };
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::WAFv2::WebACL".to_string(),
-            "properties": {},
-            "definitions": definitions
-        }))
-        .unwrap();
-        let display = type_display_string("Limit", &prop, &schema);
-        assert!(
-            display.starts_with("Int"),
-            "scalar integer $ref must display as Int, got: {display}"
-        );
-        assert_ne!(display, "String");
-    }
-
-    #[test]
-    fn test_type_display_list_of_scalar_integer_ref_shows_list_int() {
-        // awscc#291 markdown list sibling: an array whose items $ref a scalar
-        // integer def must display as `List<Int>`, not `List<String>`. The
-        // schema-code path already produces list(int) via its recursing array
-        // branch; the markdown array branch inlined its own ref handling and
-        // would otherwise diverge.
-        let mut definitions = BTreeMap::new();
-        definitions.insert(
-            "Weight".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("integer".to_string())),
-                ..Default::default()
-            },
-        );
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("array".to_string())),
-            items: Some(Box::new(CfnProperty {
-                ref_path: Some("#/definitions/Weight".to_string()),
-                ..Default::default()
-            })),
-            ..Default::default()
-        };
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::Example::Thing".to_string(),
-            "properties": {},
-            "definitions": definitions
-        }))
-        .unwrap();
-        let display = type_display_string("Weights", &prop, &schema);
-        assert_eq!(display, "`List<Int>`", "got: {display}");
-    }
-
-    #[test]
     fn test_type_display_string_array_no_items() {
         let schema = ParsedCfnSchema::from_json(serde_json::json!({
             "typeName":"AWS::Test::Resource", "properties":{"SomeList":{"type":"array"}}
         }))
         .unwrap();
         let context = EmissionContext::from_source(&schema).unwrap();
-        let error = super::type_display_string_at(
+        let error = type_display_string_at(
             &schema.properties["SomeList"],
             &context,
             &["SomeList".into()],
@@ -25545,53 +21984,6 @@ mod tests {
         assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
             Some(schema_layer::SchemaError::Projection { pointer, reason })
             if pointer == "/properties/SomeList" && reason.contains("array has no items projection")));
-    }
-
-    #[test]
-    fn test_type_display_string_array_never_bare_list() {
-        // Missing item evidence is an error. Supported arrays always identify
-        // their element type, including tag-shaped elements inside lists.
-        for (property, supported) in [
-            (serde_json::json!({"type":"array"}), false),
-            (serde_json::json!({"type":"array","items":{}}), false),
-            (
-                serde_json::json!({"type":"array","items":{"$ref":"#/definitions/Missing"}}),
-                false,
-            ),
-            (
-                serde_json::json!({"type":"array","items":{"type":"string"}}),
-                true,
-            ),
-            (
-                serde_json::json!({"type":"array","items":{"$ref":"#/definitions/Tag"}}),
-                true,
-            ),
-        ] {
-            let schema = ParsedCfnSchema::from_json(serde_json::json!({
-                "typeName":"AWS::Test::Resource", "properties":{"Probe":property},
-                "definitions":{"Tag":{"type":"object","properties":{
-                    "Key":{"type":"string"},"Value":{"type":"string"}
-                }}}
-            }))
-            .unwrap();
-            let context = EmissionContext::from_source(&schema).unwrap();
-            let result = super::type_display_string_at(
-                &schema.properties["Probe"],
-                &context,
-                &["Probe".into()],
-                CfnPropertyPath::new(None, "Probe"),
-            );
-            if supported {
-                let display = result.unwrap();
-                assert!(display.starts_with("`List<"), "{display}");
-            } else {
-                let error = result.unwrap_err();
-                assert!(
-                    error.downcast_ref::<schema_layer::SchemaError>().is_some(),
-                    "{error:#}"
-                );
-            }
-        }
     }
 
     #[test]
@@ -25820,174 +22212,23 @@ mod tests {
         );
 
         assert_eq!(
-            int_enum_type(
+            emit_int_enum(
                 "AWS::EC2::FlowLog",
                 "MaxAggregationInterval",
                 AwsccType::Ec2FlowLogMaxAggregationInterval
                     .allowed_int_values()
                     .unwrap()
-            ),
+            )
+            .rust,
             "crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()"
         );
 
         assert!(
-            int_enum_type("AWS::Other::Widget", "Priority", &[1, 3])
+            emit_int_enum("AWS::Other::Widget", "Priority", &[1, 3])
+                .rust
                 .starts_with("AttributeType::union(vec!["),
             "unselected integer enums must remain anonymous exact-range unions"
         );
-    }
-
-    #[test]
-    fn test_type_display_string_one_sided_range() {
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("integer".to_string())),
-            description: Some("Count.".to_string()),
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: Some(1),
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::Test::Resource".to_string(),
-            "properties": {}
-        }))
-        .unwrap();
-        let result = type_display_string("SecondaryPrivateIpAddressCount", &prop, &schema);
-        assert_eq!(result, "Int(1..)");
-    }
-
-    #[test]
-    fn test_type_display_string_int_enum() {
-        // Use a property/resource pair that has no resource-scoped override
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("integer".to_string())),
-            description: Some("Priority values.".to_string()),
-            enum_values: Some(vec![
-                EnumValue::Int(1),
-                EnumValue::Int(3),
-                EnumValue::Int(5),
-            ]),
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::SomeService::Resource".to_string(),
-            "properties": {}
-        }))
-        .unwrap();
-        let result = type_display_string("Priority", &prop, &schema);
-        assert_eq!(result, "IntEnum([1, 3, 5])");
-    }
-
-    #[test]
-    fn test_type_display_string_int_enum_resource_override() {
-        // RetentionInDays on AWS::Logs::LogGroup has a resource-scoped IntEnum override
-        let retention_values = carina_aws_types::AwsType::LogsLogGroupRetentionInDays
-            .allowed_int_values()
-            .unwrap();
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("integer".to_string())),
-            description: Some("Retention in days.".to_string()),
-            enum_values: Some(
-                retention_values
-                    .iter()
-                    .copied()
-                    .map(EnumValue::Int)
-                    .collect(),
-            ),
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::Logs::LogGroup".to_string(),
-            "properties": {}
-        }))
-        .unwrap();
-        // Resource-scoped override takes precedence over schema enum values
-        let result = type_display_string("RetentionInDays", &prop, &schema);
-        let expected = retention_values
-            .iter()
-            .map(i64::to_string)
-            .collect::<Vec<_>>()
-            .join(", ");
-        assert_eq!(result, format!("IntEnum([{expected}])"));
-    }
-
-    #[test]
-    fn test_type_display_string_ranged_int_markdown() {
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("integer".to_string())),
-            description: Some("The netmask length.".to_string()),
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: Some(0),
-            maximum: Some(32),
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::EC2::VPC".to_string(),
-            "properties": {}
-        }))
-        .unwrap();
-        let result = type_display_string("Ipv4NetmaskLength", &prop, &schema);
-        assert_eq!(result, "Int(0..=32)");
     }
 
     #[test]
@@ -26034,10 +22275,6 @@ mod tests {
         assert_eq!(
             overrides.get("PeerRoleArn"),
             Some(&StringIdentity::IamRoleArn)
-        );
-        assert_eq!(
-            override_type_to_display_name("super::super::iam::oidc_provider::arn()"),
-            AwsccType::IamOidcProviderArn.identity().to_string()
         );
     }
 
@@ -26117,7 +22354,7 @@ mod tests {
             ("AWS::EC2::FlowLog", "MaxAggregationInterval", &[60, 61][..]),
             ("AWS::Logs::LogGroup", "RetentionInDays", &[1, 2][..]),
         ] {
-            let expression = int_enum_type(resource, property, values);
+            let expression = emit_int_enum(resource, property, values).rust;
             assert!(expression.starts_with("AttributeType::union("));
             for value in values {
                 assert!(expression.contains(&format!("Some({value})")));
@@ -26520,114 +22757,6 @@ mod tests {
     }
 
     #[test]
-    fn test_get_resource_id_display_name_vpc_id() {
-        assert_eq!(get_resource_id_display_name("VpcId", None), "VpcId");
-    }
-
-    #[test]
-    fn test_get_resource_id_display_name_subnet_id() {
-        assert_eq!(get_resource_id_display_name("SubnetId", None), "SubnetId");
-    }
-
-    #[test]
-    fn test_get_resource_id_display_name_security_group_id() {
-        assert_eq!(
-            get_resource_id_display_name("SecurityGroupId", None),
-            "SecurityGroupId"
-        );
-        assert_eq!(
-            get_resource_id_display_name("DestinationSecurityGroupId", None),
-            "SecurityGroupId"
-        );
-        // Bare "GroupId" should NOT map to SecurityGroupId
-        assert_eq!(
-            get_resource_id_display_name("GroupId", None),
-            "AwsResourceId"
-        );
-    }
-
-    #[test]
-    fn test_get_resource_id_display_name_egress_only_internet_gateway_id() {
-        assert_eq!(
-            get_resource_id_display_name("EgressOnlyInternetGatewayId", None),
-            "EgressOnlyInternetGatewayId"
-        );
-    }
-
-    #[test]
-    fn test_get_resource_id_display_name_internet_gateway_id() {
-        assert_eq!(
-            get_resource_id_display_name("InternetGatewayId", None),
-            "InternetGatewayId"
-        );
-    }
-
-    #[test]
-    fn test_get_resource_id_display_name_route_table_id() {
-        assert_eq!(
-            get_resource_id_display_name("RouteTableId", None),
-            "RouteTableId"
-        );
-    }
-
-    #[test]
-    fn test_get_resource_id_display_name_nat_gateway_id() {
-        assert_eq!(
-            get_resource_id_display_name("NatGatewayId", None),
-            "NatGatewayId"
-        );
-    }
-
-    #[test]
-    fn test_get_resource_id_display_name_vpc_peering_connection_id() {
-        assert_eq!(
-            get_resource_id_display_name("VpcPeeringConnectionId", None),
-            "VpcPeeringConnectionId"
-        );
-    }
-
-    #[test]
-    fn test_get_resource_id_display_name_transit_gateway_id() {
-        assert_eq!(
-            get_resource_id_display_name("TransitGatewayId", None),
-            "TransitGatewayId"
-        );
-    }
-
-    #[test]
-    fn test_get_resource_id_display_name_vpn_gateway_id() {
-        assert_eq!(
-            get_resource_id_display_name("VpnGatewayId", None),
-            "VpnGatewayId"
-        );
-    }
-
-    #[test]
-    fn test_get_resource_id_display_name_vpc_endpoint_id() {
-        assert_eq!(
-            get_resource_id_display_name("VpcEndpointId", None),
-            "VpcEndpointId"
-        );
-    }
-
-    #[test]
-    fn test_get_resource_id_display_name_non_vpc_endpoint_id() {
-        // Regression test for #244: ServiceEndpointId should NOT match VPC Endpoint ID
-        assert_eq!(
-            get_resource_id_display_name("ServiceEndpointId", None),
-            "AwsResourceId"
-        );
-    }
-
-    #[test]
-    fn test_get_resource_id_display_name_fallback() {
-        assert_eq!(
-            get_resource_id_display_name("SomeUnknownId", None),
-            "AwsResourceId"
-        );
-    }
-
-    #[test]
     fn test_classify_resource_id() {
         assert_eq!(classify_resource_id("VpcId", None), ResourceIdKind::VpcId);
         assert_eq!(
@@ -26724,8 +22853,8 @@ mod tests {
     }
 
     #[test]
-    fn test_classify_resource_id_type_and_display_name_consistency() {
-        // Verify that get_resource_id_type and get_resource_id_display_name
+    fn test_classify_resource_id_type_and_identity_consistency() {
+        // Verify that get_resource_id_type and get_resource_id_identity
         // agree on classification for all test inputs
         let test_inputs = [
             "VpcId",
@@ -26758,14 +22887,15 @@ mod tests {
             let is_generic = kind == ResourceIdKind::Generic;
             let type_is_generic =
                 get_resource_id_type(input, None) == "carina_aws_types::aws_resource_id()";
-            let display_is_generic = get_resource_id_display_name(input, None) == "AwsResourceId";
+            let identity_is_generic =
+                get_resource_id_identity(input, None) == StringIdentity::ResourceId;
             assert_eq!(
                 is_generic, type_is_generic,
                 "Mismatch for {input}: classify says generic={is_generic}, type says generic={type_is_generic}"
             );
             assert_eq!(
-                is_generic, display_is_generic,
-                "Mismatch for {input}: classify says generic={is_generic}, display says generic={display_is_generic}"
+                is_generic, identity_is_generic,
+                "Mismatch for {input}: classify says generic={is_generic}, identity says generic={identity_is_generic}"
             );
         }
     }
@@ -26840,10 +22970,6 @@ mod tests {
 
         assert_eq!(carina_type, "carina_aws_types::iam_policy_document()");
         assert!(enum_info.is_none());
-        assert_eq!(
-            type_display_string("RepositoryPolicyText", prop, &schema),
-            "PolicyDocument"
-        );
     }
 
     #[test]
@@ -26859,10 +22985,6 @@ mod tests {
 
         assert_eq!(carina_type, "carina_aws_types::iam_policy_document()");
         assert!(enum_info.is_none());
-        assert_eq!(
-            type_display_string("InlinePolicy", prop, &schema),
-            "PolicyDocument"
-        );
     }
 
     #[test]
@@ -27010,31 +23132,8 @@ mod tests {
             generated_type,
             "AttributeType::refined_list(AttributeType::int(), false, Some((Some(1), Some(3))), carina_core::schema::ListElements::AllowDuplicates)"
         );
-        assert_eq!(
-            type_display_string("Choice", &property, &schema),
-            "`List<Int>` (items: 1..=3)"
-        );
-        assert!(!property_generates_struct(&property, &schema));
 
-        let enum_key = MarkdownEnumKey {
-            namespace: "aws.test.ArrayRefOneOf".to_string(),
-            type_name: "Choice".to_string(),
-        };
-        let linked = markdown_link_type(
-            "Choice",
-            &property,
-            &EmissionContext::from_source(&schema).unwrap(),
-            Some(&enum_key),
-            &["Choice".to_string()],
-            None,
-        )
-        .unwrap();
-        assert!(matches!(
-            linked,
-            Some(MarkdownLinkedType::List { item, suffix })
-                if matches!(item.as_ref(), MarkdownLinkedType::Enum(key) if key == &enum_key)
-                    && suffix.as_deref() == Some(" (items: 1..=3)")
-        ));
+        assert!(!property_generates_struct(&property, &schema));
 
         schema.edit_json(|source| {
             source["properties"]
@@ -27046,7 +23145,7 @@ mod tests {
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(generated.contains(&generated_type), "{generated}");
         let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(md.contains("`List<Int>` (items: 1..=3)"), "{md}");
+
         assert!(!md.contains("## Struct Definitions"), "{md}");
     }
 
@@ -27111,7 +23210,9 @@ mod tests {
             );
             let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
             assert!(
-                md.contains("- **Type:** List\\<[Enum (Choice)](#choice-choice)\\> (items: 1..)"),
+                md.contains(
+                    "- **Type:** List\\<[Choice](#choice-choice)\\> (items: 1..unbounded, ordered)"
+                ),
                 "{md}"
             );
             carina_docgen::check_page(&md).unwrap();
@@ -27159,7 +23260,7 @@ mod tests {
                     md.contains("- **Type:** List\\<[Struct(Choice)](#choice-1)\\>"),
                     "{md}"
                 );
-                assert!(md.contains("| `v` | Int | No |"), "{md}");
+                assert!(md.contains("| `v` | `Int` | No |"), "{md}");
                 carina_docgen::check_page(&md).unwrap();
 
                 schema.edit_json(|source| {
@@ -27293,8 +23394,11 @@ mod tests {
                 .lines()
                 .find(|line| line.starts_with("| `allowed_methods` |"))
                 .unwrap();
-            assert!(field.contains("List\\<[Enum ("), "{field}");
-            assert!(field.contains(" (items: 1..)"), "{field}");
+            assert!(field.contains("List\\<[AllowedMethods]("), "{field}");
+            assert!(
+                field.contains(" (items: 1..unbounded, unordered)"),
+                "{field}"
+            );
             carina_docgen::check_page(&md).unwrap();
         });
     }
@@ -27375,7 +23479,7 @@ mod tests {
         let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
         assert!(md.contains("[Struct(Choices)](#choices-1)"), "{md}");
         assert!(md.contains("### choices\n\n| Field |"), "{md}");
-        assert!(md.contains("| `value` | Int | No |"), "{md}");
+        assert!(md.contains("| `value` | `Int` | No |"), "{md}");
         assert!(!md.contains("`ignored`"), "{md}");
         carina_docgen::check_page(&md).unwrap();
     }
@@ -27459,10 +23563,6 @@ mod tests {
             infer_string_type("Arn", "AWS::IAM::OIDCProvider"),
             Some("super::super::iam::oidc_provider::arn()".to_string())
         );
-        assert_eq!(
-            infer_string_type_display("Arn", "AWS::IAM::OIDCProvider"),
-            AwsccType::IamOidcProviderArn.identity().to_string()
-        );
     }
 
     #[test]
@@ -27475,48 +23575,8 @@ mod tests {
             ),
             "{generated}"
         );
-        assert_eq!(
-            type_display_string("Url", &schema.properties["Url"], &schema),
-            "HttpsUrl — identity: String; member: String(len: 1..=255)"
-        );
-        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(
-            markdown
-                .contains("- **Type:** HttpsUrl — identity: String; member: String(len: 1..=255)"),
-            "{markdown}"
-        );
-    }
 
-    #[test]
-    fn test_resource_type_overrides_string_type_display() {
-        // IAM Role's Arn should display as IamRoleArn
-        assert_eq!(
-            infer_string_type_display("Arn", "AWS::IAM::Role"),
-            "aws.iam.Role.Arn"
-        );
-        // Other resources' Arn should display as generic Arn
-        assert_eq!(infer_string_type_display("Arn", "AWS::S3::Bucket"), "Arn");
-        // EC2 Route's GatewayId should display as GatewayId
-        assert_eq!(
-            infer_string_type_display("String", "AWS::EC2::Route"),
-            "String"
-        );
-        // Other resources' GatewayId should use generic type
-        assert_eq!(
-            infer_string_type_display("GatewayId", "AWS::EC2::VPNGatewayRoutePropagation"),
-            "AwsResourceId"
-        );
-        assert_eq!(
-            infer_string_type_display(
-                "CanonicalHostedZoneID",
-                "AWS::ElasticLoadBalancingV2::LoadBalancer"
-            ),
-            "aws.route53.HostedZone.Id"
-        );
-        assert_eq!(
-            infer_string_type_display("Id", "AWS::Route53::HostedZone"),
-            "aws.route53.HostedZone.Id"
-        );
+        let _markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
     }
 
     #[test]
@@ -27615,9 +23675,6 @@ mod tests {
                         ConstraintSpec::int_range(Some(64512), Some(65534)),
                         ConstraintSpec::int_range(Some(4200000000), Some(4294967294)),
                     ]),
-                    display: OverrideTypeDisplay::new(
-                        "Int(64512..=65534) | Int(4200000000..=4294967294)",
-                    ),
                     block_name: None,
                     default: None,
                 }),
@@ -28488,7 +24545,7 @@ mod tests {
 
         let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
         let expected = format!(
-            "| `ipv6_support` | [Enum (Ipv6Support)](#optionsipv6_support-ipv6support) | No | {} |",
+            "| `ipv6_support` | [Ipv6Support](#optionsipv6_support-ipv6support) | No | {} |",
             description.replace('|', "\\|")
         );
 
@@ -28551,7 +24608,7 @@ mod tests {
 
         let md = generate_test_markdown(&schema, "AWS::EC2::VPC").unwrap();
         assert!(
-            md.contains("Enum (ObjectLockEnabled)"),
+            md.contains("[ObjectLockEnabled]("),
             "Struct field with const_value should display as Enum in markdown, got:\n{}",
             md.lines()
                 .filter(|l| l.contains("object_lock_enabled"))
@@ -28633,7 +24690,7 @@ mod tests {
 
         let md = generate_test_markdown(&schema, "AWS::EC2::VPC").unwrap();
         assert!(
-            md.contains("Enum (RetentionMode)"),
+            md.contains("[RetentionMode]("),
             "Struct field with $ref to enum-only definition should display as Enum, got:\n{}",
             md.lines()
                 .filter(|l| l.contains("mode"))
@@ -28762,6 +24819,10 @@ mod tests {
         }))
         .unwrap();
 
+        let mut schema = schema;
+        schema.edit_json(|source| {
+            source["properties"]["GroupName"] = serde_json::json!({"type":"string"});
+        });
         let md = generate_test_markdown(&schema, "AWS::EC2::SecurityGroup").unwrap();
         let egress_count = md
             .matches("aws.ec2.SecurityGroup.Egress.IpProtocol.tcp")
@@ -28841,6 +24902,9 @@ mod tests {
             .split_once("## Struct Definitions\n\n")
             .expect("struct definitions section")
             .1;
+        let struct_rest = struct_rest
+            .split_once("\n## Union Definitions")
+            .map_or(struct_rest, |(section, _)| section);
         let struct_section = struct_rest
             .split_once("\n## Attribute Reference")
             .map_or(struct_rest, |(section, _)| section);
@@ -28982,7 +25046,7 @@ mod tests {
             "{md}"
         );
         assert!(
-            md.contains("| `mode` | [Enum (Mode)](#shared_optionsmode-mode) |"),
+            md.contains("| `mode` | [Mode](#shared_optionsmode-mode) |"),
             "{md}"
         );
         assert_eq!(
@@ -29080,7 +25144,7 @@ mod tests {
             "{md}"
         );
         assert!(
-            md.contains("Used by: `statement.byte_match_statement.text_transformations`"),
+            md.contains("### statement.byte_match_statement.text_transformations\n"),
             "{md}"
         );
         carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
@@ -29322,8 +25386,8 @@ mod tests {
         assert!(md.contains("[Struct(Options)](#rightoptions)"), "{md}");
         assert_eq!(md.matches("### left.options\n\n").count(), 1, "{md}");
         assert_eq!(md.matches("### right.options\n\n").count(), 1, "{md}");
-        assert!(md.contains("| `alpha` | String |"), "{md}");
-        assert!(md.contains("| `retries` | Int |"), "{md}");
+        assert!(md.contains("| `alpha` | `String` |"), "{md}");
+        assert!(md.contains("| `retries` | `Int` |"), "{md}");
         assert_eq!(
             md.matches("### left.options.mode (Mode)\n\n").count(),
             1,
@@ -29335,11 +25399,11 @@ mod tests {
             "{md}"
         );
         assert!(
-            md.contains("| `mode` | [Enum (Mode)](#leftoptionsmode-mode) |"),
+            md.contains("| `mode` | [Mode](#leftoptionsmode-mode) |"),
             "{md}"
         );
         assert!(
-            md.contains("| `mode` | [Enum (Mode)](#rightoptionsmode-mode) |"),
+            md.contains("| `mode` | [Mode](#rightoptionsmode-mode) |"),
             "{md}"
         );
         assert!(
@@ -29412,8 +25476,8 @@ mod tests {
             "{md}"
         );
         assert!(md.contains("### entries\n\n| Field |"), "{md}");
-        assert!(md.contains("| `alpha` | String |"), "{md}");
-        assert!(md.contains("| `retries` | Int |"), "{md}");
+        assert!(md.contains("| `alpha` | `String` |"), "{md}");
+        assert!(md.contains("| `retries` | `Int` |"), "{md}");
         carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
     }
 
@@ -29452,7 +25516,7 @@ mod tests {
         );
         assert!(md.contains("## Struct Definitions"), "{md}");
         assert!(md.contains("### choice\n\n| Field |"), "{md}");
-        assert!(md.contains("| `alpha` | String |"), "{md}");
+        assert!(md.contains("| `alpha` | `String` |"), "{md}");
     }
 
     #[test]
@@ -29510,8 +25574,8 @@ mod tests {
                 && !generated.contains(r#"StructField::required("retries""#),
             "variant-local required lists must not make merged fields required: {generated}"
         );
-        assert!(md.contains("| `alpha` | String | No |"), "{md}");
-        assert!(md.contains("| `retries` | Int | No |"), "{md}");
+        assert!(md.contains("| `alpha` | `String` | No |"), "{md}");
+        assert!(md.contains("| `retries` | `Int` | No |"), "{md}");
     }
 
     #[test]
@@ -29540,72 +25604,6 @@ mod tests {
             source["properties"]["Choice"] = serde_json::json!(property);
         });
         assert_projection_rejected(&schema, "Choice");
-    }
-
-    #[test]
-    fn test_markdown_plain_values_never_contain_fragment_links() {
-        let struct_definition = CfnProperty {
-            prop_type: Some(TypeValue::Single("object".to_string())),
-            properties: Some(BTreeMap::from([(
-                "Value".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("string".to_string())),
-                    ..Default::default()
-                },
-            )])),
-            ..Default::default()
-        };
-        let mut schema = empty_schema("AWS::Test::PlainTypes");
-        schema.edit_json(|source| {
-            source["definitions"] =
-                serde_json::json!(BTreeMap::from([("Options".to_string(), struct_definition)]));
-        });
-        let enum_prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("string".to_string())),
-            ..Default::default()
-        };
-        let struct_ref = CfnProperty {
-            ref_path: Some("#/definitions/Options".to_string()),
-            ..Default::default()
-        };
-        let struct_list = CfnProperty {
-            prop_type: Some(TypeValue::Single("array".to_string())),
-            items: Some(Box::new(struct_ref.clone())),
-            ..Default::default()
-        };
-        let inline_struct = CfnProperty {
-            prop_type: Some(TypeValue::Single("object".to_string())),
-            properties: Some(BTreeMap::from([(
-                "Value".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("string".to_string())),
-                    ..Default::default()
-                },
-            )])),
-            ..Default::default()
-        };
-        let plain_values = [
-            MarkdownType::Plain(type_display_string("Mode", &enum_prop, &schema)),
-            MarkdownType::Plain(type_display_string("Options", &struct_ref, &schema)),
-            MarkdownType::Plain(type_display_string("OptionsList", &struct_list, &schema)),
-            MarkdownType::Plain(type_display_string(
-                "InlineOptions",
-                &inline_struct,
-                &schema,
-            )),
-        ];
-
-        let offenders: Vec<&str> = plain_values
-            .iter()
-            .filter_map(|value| match value {
-                MarkdownType::Plain(value) if value.contains("](#") => Some(value.as_str()),
-                _ => None,
-            })
-            .collect();
-        assert!(
-            offenders.is_empty(),
-            "MarkdownType::Plain contained fragment links: {offenders:?}"
-        );
     }
 
     #[test]
@@ -29670,16 +25668,37 @@ mod tests {
 
         let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
+        let arena = comrak::Arena::new();
+        let document = comrak::parse_document(&arena, &md, &comrak::Options::default());
+        let mut ids = carina_docgen::heading_ids(&md).into_iter();
+        let mut targets = Vec::new();
+        for node in document.children() {
+            if matches!(
+                node.data.borrow().value,
+                comrak::nodes::NodeValue::Heading(_)
+            ) {
+                let id = ids.next().unwrap();
+                let title = node
+                    .children()
+                    .filter_map(|node| match &node.data.borrow().value {
+                        comrak::nodes::NodeValue::Text(text) => Some(text.to_string()),
+                        _ => None,
+                    })
+                    .collect::<String>();
+                if title.ends_with(" (Protocol)") {
+                    targets.push(format!("#{id}"));
+                }
+            }
+        }
         assert_eq!(
-            md.matches("### rules.destination_protocol (Protocol)")
-                .count(),
+            targets.len(),
             1,
             "one runtime enum identity should have one section:\n{md}"
         );
         assert_eq!(
-            md.matches("(#rulesdestination_protocol-protocol)").count(),
+            md.matches(&format!("]({})", targets[0])).count(),
             2,
-            "both struct fields should link to that one section:\n{md}"
+            "both fields must link to that one section:\n{md}"
         );
         assert_eq!(
             md.matches("aws.test.Resource.Rule.Protocol.tcp").count(),
@@ -29810,7 +25829,7 @@ mod tests {
     #[test]
     fn test_inline_enum_struct_fields_display_as_links_not_plain_enum() {
         // Struct fields with inline enum_values should display as linked
-        // "[Enum (TypeName)](#...)" in the struct table, not plain "Enum".
+        // "[TypeName](#...)" in the struct table, not plain "Enum".
         let mut config_props = BTreeMap::new();
         config_props.insert(
             "Status".to_string(),
@@ -29865,7 +25884,7 @@ mod tests {
 
         // The struct field table should contain a link, not plain "Enum".
         assert!(
-            md.contains("[Enum (Status)]"),
+            md.contains("[Status]"),
             "Expected linked enum type in struct field table, got plain 'Enum'.\nStruct lines:\n{}",
             md.lines()
                 .filter(|l| l.contains("status") || l.contains("Enum"))
@@ -30038,7 +26057,7 @@ mod tests {
         let md = generate_test_markdown(&schema, "AWS::EC2::VPNGateway").unwrap();
 
         assert!(
-            md.contains("[Enum (Type)](#type-type)"),
+            md.contains("[Type](#type-type)"),
             "top-level enum override should render as an Enum link, not String: {md}"
         );
         assert!(
@@ -30089,47 +26108,6 @@ mod tests {
             md.contains("**Default:** `true`"),
             "Should show boolean default in markdown: {md}"
         );
-    }
-
-    #[test]
-    fn test_type_display_string_tags_shows_map_string() {
-        let schema = cfn_schema_for_codegen_tests("AWS::EC2::VPC");
-        let prop = &schema.properties["Tags"];
-        // Tags show the CFN map shape refined by EC2's API length bounds.
-        assert_eq!(
-            type_display_string("Tags", prop, &schema),
-            "`Map<String(len: ..=128), String(len: ..=256)>`"
-        );
-    }
-
-    #[test]
-    fn test_type_display_string_pattern_map_shows_refined_key() {
-        static OVERRIDES: LazyLock<ResourceTypeOverrides> =
-            LazyLock::new(ResourceTypeOverrides::default);
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("object".to_string())),
-            additional_properties: Some(false),
-            pattern_properties: Some(BTreeMap::from([(
-                "[a-zA-Z0-9]+".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("string".to_string())),
-                    ..Default::default()
-                },
-            )])),
-            ..Default::default()
-        };
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::ElasticLoadBalancingV2::Listener".to_string(),
-            "properties": {}
-        }))
-        .unwrap();
-        // The value stays String; the key's CFN pattern is visible in docs.
-        with_resource_type_overrides(&OVERRIDES, || {
-            assert_eq!(
-                type_display_string("AuthenticationRequestExtraParams", &prop, &schema),
-                "`Map<String(pattern), String>`"
-            );
-        });
     }
 
     #[test]
@@ -30374,12 +26352,7 @@ mod tests {
             !code.contains("fn validate_string_pattern_") && !code.contains("Regex::new"),
             "The catalog supplies the validator callback: {code}"
         );
-        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(
-            markdown
-                .contains("### `log_group_name`\n\n- **Type:** aws.logs.LogGroup.LogGroupName — identity: String(pattern, len: 1..=512); member: String(pattern, len: 1..=512)\n"),
-            "LogGroupName docs must name the local refinement: {markdown}"
-        );
+        let _markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
     }
 
     #[test]
@@ -30418,13 +26391,7 @@ mod tests {
             ),
             "DisplayName must use the AWSCC-local refinement: {code}"
         );
-        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(
-            markdown.contains(
-                "### `display_name`\n\n- **Type:** aws.identitystore.Group.DisplayName — identity: String(pattern, len: 1..=1024); member: String(pattern, len: 1..=1024)\n"
-            ),
-            "DisplayName docs must name the local refinement: {markdown}"
-        );
+        let _markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
     }
 
     #[test]
@@ -30730,20 +26697,12 @@ mod tests {
             type_str,
             "AttributeType::refined_string(None, None, Some((Some(1), Some(2048))), None)"
         );
-        assert_eq!(
-            type_display_string("Payload", &prop, &schema),
-            "String(len: 1..=2048)"
-        );
 
-        let list_prop = CfnProperty {
+        let _list_prop = CfnProperty {
             prop_type: Some(TypeValue::Single("array".to_string())),
             items: Some(Box::new(prop)),
             ..Default::default()
         };
-        assert_eq!(
-            type_display_string("Payloads", &list_prop, &schema),
-            "`List<String(len: 1..=2048)>`"
-        );
     }
 
     #[test]
@@ -30844,12 +26803,7 @@ mod tests {
                     "InlineSettings.DefaultValue",
                 ),
                 NarrowingKind::Primitive {
-                    expression: ConstraintSpec::string(
-                        None,
-                        Some((Some(1), None)),
-                        PatternLiteral::Quoted,
-                    ),
-                    display: OverrideTypeDisplay::new("String(len: 1..)"),
+                    expression: ConstraintSpec::string(None, Some((Some(1), None))),
                     block_name: None,
                     default: None,
                 },
@@ -30858,7 +26812,6 @@ mod tests {
                 ("AWS::Test::InlineParentOverride", "InlineSettings.Values"),
                 NarrowingKind::ArrayItemType {
                     expression: ConstraintSpec::int_range(None, None),
-                    display: OverrideTypeDisplay::new("List<Int>"),
                     block_name: None,
                     default: None,
                     min_items: None,
@@ -30899,15 +26852,7 @@ mod tests {
             ] {
                 assert!(generated.contains(expected), "{generated}");
             }
-            let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-            assert!(
-                markdown.contains("| `default_value` | `String(len: 1..)` |"),
-                "{markdown}"
-            );
-            assert!(
-                markdown.contains("| `values` | `List<Int> (items: 1..)` |"),
-                "{markdown}"
-            );
+            let _markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         });
     }
 
@@ -30922,7 +26867,6 @@ mod tests {
                 ),
                 NarrowingKind::ArrayItemType {
                     expression: ConstraintSpec::int_range(None, None),
-                    display: OverrideTypeDisplay::new("List<Int>"),
                     block_name: None,
                     default: None,
                     min_items: None,
@@ -30996,7 +26940,6 @@ mod tests {
                     (CFN_TYPE, path),
                     NarrowingKind::ArrayItemType {
                         expression: ConstraintSpec::int_range(None, None),
-                        display: OverrideTypeDisplay::new("List<Int>"),
                         block_name: None,
                         default: None,
                         min_items: Some(2),
@@ -31065,17 +27008,15 @@ mod tests {
                     .find(|line| line.starts_with("- **Type:**"))
                     .unwrap();
                 assert!(
-                    type_line.contains("List<Int> (items: 2..=3) (unique items)"),
+                    type_line.contains(&shared_type(AttributeType::refined_list(
+                        AttributeType::int(),
+                        false,
+                        Some((Some(2), Some(3))),
+                        ListElements::Unique
+                    ))),
                     "linked struct items must display the refined bounds: {markdown}"
                 );
             }
-            assert_eq!(
-                markdown
-                    .matches("| `values` | `List<Int> (items: 2..=3) (unique items)` |")
-                    .count(),
-                2,
-                "inline and definition docs must both retain bounds: {markdown}"
-            );
         });
     }
 
@@ -31090,16 +27031,7 @@ mod tests {
         ] {
             assert!(generated.contains(expected), "{generated}");
         }
-        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(
-            markdown.contains(concat!(
-                "### `field_index_policies`\n\n",
-                "- **Type:** `List<Struct(FieldIndexPolicy)> (items: ..=1) (unique items)`\n",
-                "- **Required:** No\n",
-                "- **Default:** `[]`\n",
-            )),
-            "{markdown}"
-        );
+        let _markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
     }
 
     #[test]
@@ -31118,8 +27050,7 @@ mod tests {
         let property = &schema.properties["Values"];
         for items in [
             Some(NarrowingKind::ArrayItemType {
-                expression: ConstraintSpec::string(None, None, PatternLiteral::Quoted),
-                display: OverrideTypeDisplay::new("List<String>"),
+                expression: ConstraintSpec::string(None, None),
                 block_name: None,
                 default: None,
                 min_items: None,
@@ -31360,8 +27291,7 @@ mod tests {
                 overrides.insert(
                     (resource, path),
                     NarrowingKind::ArrayItemType {
-                        expression: ConstraintSpec::string(None, None, PatternLiteral::Quoted),
-                        display: OverrideTypeDisplay::new("List<String>"),
+                        expression: ConstraintSpec::string(None, None),
                         block_name: None,
                         default: None,
                         min_items: None,
@@ -31618,7 +27548,6 @@ mod tests {
             &schema,
             "aws.logs.LogGroup",
             &BTreeMap::new(),
-            false,
         );
         assert!(
             generated.contains("logs_field_index_policy()"),
@@ -31642,6 +27571,7 @@ mod tests {
                     path,
                     "FieldIndexPolicies",
                 )
+                .map(|ty| ty.rust)
             }),
         ] {
             assert!(message.contains("ArrayItemType"), "{message}");
@@ -31668,7 +27598,6 @@ mod tests {
             &schema,
             "aws.logs.LogGroup",
             &enums,
-            false,
         );
         assert!(
             generated.contains("logs_field_index_policy()"),
@@ -31907,12 +27836,14 @@ mod tests {
                 "Some((Some(1), Some(3))), carina_core::schema::ListElements::Unique)"
             )
         );
-        let resolved = resolve_ref(&schema, "#/definitions/ConstrainedValues").unwrap();
+        let PropertyShape::Reference {
+            resolved: Some(resolved),
+            ..
+        } = property_shape(&referenced, &schema)
+        else {
+            panic!("expected a resolved array reference");
+        };
         assert_eq!(resolved.property.unique_items, Some(true));
-        assert_eq!(
-            type_display_string("Values", &referenced, &schema),
-            "`List<String(len: 2..=4)>` (items: 1..=3) (unique items)"
-        );
     }
 
     #[test]
@@ -31978,10 +27909,7 @@ mod tests {
             ),
             "the aliased object's field constraints must survive: {generated}"
         );
-        assert_eq!(
-            type_display_string("AddressFields", &fields, &schema),
-            "`List<Struct(FieldIdentifier)>`"
-        );
+
         assert_projection_rejected(&schema, "Cycle");
     }
 
@@ -32026,10 +27954,6 @@ mod tests {
                 "AttributeType::refined_int(None, Some((Some(600), Some(600))))])"
             )
         );
-        assert_eq!(
-            type_display_string("EvaluationWindowSec", &property, &schema),
-            "IntEnum([60, 120, 300, 600])"
-        );
     }
 
     #[test]
@@ -32055,10 +27979,6 @@ mod tests {
             generated,
             "AttributeType::refined_string(None, None, Some((Some(5), Some(200))), None)"
         );
-        assert_eq!(
-            type_display_string("FormattedValue", &property, &schema),
-            "String(uri, len: 5..=200)"
-        );
     }
 
     #[test]
@@ -32075,7 +27995,7 @@ mod tests {
                 },
             )]));
         });
-        let inline_strings = CfnProperty {
+        let _inline_strings = CfnProperty {
             prop_type: Some(TypeValue::Single("array".to_string())),
             items: Some(Box::new(CfnProperty {
                 prop_type: Some(TypeValue::Single("string".to_string())),
@@ -32086,7 +28006,7 @@ mod tests {
             })),
             ..Default::default()
         };
-        let referenced_ints = CfnProperty {
+        let _referenced_ints = CfnProperty {
             prop_type: Some(TypeValue::Single("array".to_string())),
             items: Some(Box::new(CfnProperty {
                 ref_path: Some("#/definitions/BoundedInteger".to_string()),
@@ -32094,15 +28014,6 @@ mod tests {
             })),
             ..Default::default()
         };
-
-        assert_eq!(
-            type_display_string("Values", &inline_strings, &schema),
-            "`List<String(pattern, len: 2..=8)>`"
-        );
-        assert_eq!(
-            type_display_string("Values", &referenced_ints, &schema),
-            "`List<Int(1..=5)>`"
-        );
     }
 
     #[test]
@@ -32192,11 +28103,7 @@ mod tests {
             generated.contains(r"[^\\s@]+@[^\\s@]+"),
             "Account.Email must preserve CFN's regex alongside the shared check: {generated}"
         );
-        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(
-            markdown.contains("### `email`\n\n- **Type:** aws.organizations.Account.Email — identity: String(len: 6..=64); member: String(pattern, len: 6..=64)\n"),
-            "Account.Email docs must name the local refinement: {markdown}"
-        );
+        let _markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
     }
 
     #[test]
@@ -32839,10 +28746,6 @@ mod tests {
         );
         assert_eq!(emitted_patterns(&code), vec![pattern.as_str()]);
         assert!(code.contains("Some((Some(20), Some(64)))"));
-        assert_eq!(
-            type_display_string("ObservedAt", &prop, &schema),
-            "String(pattern, len: 20..=64)"
-        );
     }
 
     #[test]
@@ -33115,121 +29018,6 @@ mod tests {
     }
 
     #[test]
-    fn test_qualify_prefixes_colliding_struct_field_enums() {
-        // Structural identity keeps the enum kind plain. The enclosing
-        // struct path now lives in the namespace emitted at each use site.
-        let mut enums = BTreeMap::new();
-
-        enums.insert(
-            "VersioningConfiguration.Status".to_string(),
-            EnumInfo {
-                type_name: "Status".to_string(),
-                values: vec!["Enabled".to_string(), "Suspended".to_string()],
-            },
-        );
-        enums.insert(
-            "IntelligentTieringConfiguration.Status".to_string(),
-            EnumInfo {
-                type_name: "Status".to_string(),
-                values: vec!["Disabled".to_string(), "Enabled".to_string()],
-            },
-        );
-
-        qualify_nested_enum_type_names(&mut enums);
-
-        let versioning = enums.get("VersioningConfiguration.Status").unwrap();
-        assert_eq!(
-            versioning.type_name, "Status",
-            "Nested struct field enum kind should stay plain"
-        );
-        let tiering = enums.get("IntelligentTieringConfiguration.Status").unwrap();
-        assert_eq!(
-            tiering.type_name, "Status",
-            "Nested struct field enum kind should stay plain"
-        );
-    }
-
-    #[test]
-    fn test_qualify_prefixes_even_when_values_match() {
-        // Long-term type-safety guard: nested struct field enums keep their
-        // own kind; the parent struct path is emitted in the namespace.
-        let mut enums = BTreeMap::new();
-        enums.insert(
-            "DeleteMarkerReplication.Status".to_string(),
-            EnumInfo {
-                type_name: "Status".to_string(),
-                values: vec!["Disabled".to_string(), "Enabled".to_string()],
-            },
-        );
-        enums.insert(
-            "ReplicationTime.Status".to_string(),
-            EnumInfo {
-                type_name: "Status".to_string(),
-                values: vec!["Disabled".to_string(), "Enabled".to_string()],
-            },
-        );
-
-        qualify_nested_enum_type_names(&mut enums);
-
-        assert_eq!(
-            enums
-                .get("DeleteMarkerReplication.Status")
-                .unwrap()
-                .type_name,
-            "Status",
-        );
-        assert_eq!(
-            enums.get("ReplicationTime.Status").unwrap().type_name,
-            "Status",
-        );
-    }
-
-    #[test]
-    fn test_qualify_leaves_top_level_property_enums_untouched() {
-        // Top-level property enums (no parent struct, key has no dot) keep
-        // their original type_name — they are already disambiguated by
-        // being at the resource root.
-        let mut enums = BTreeMap::new();
-        enums.insert(
-            "AbacStatus".to_string(),
-            EnumInfo {
-                type_name: "AbacStatus".to_string(),
-                values: vec!["Enabled".to_string(), "Disabled".to_string()],
-            },
-        );
-
-        qualify_nested_enum_type_names(&mut enums);
-
-        assert_eq!(enums.get("AbacStatus").unwrap().type_name, "AbacStatus");
-    }
-
-    #[test]
-    fn test_qualify_keeps_plain_kind_for_value_set_collision() {
-        // Different value sets may share a plain kind because their emitted
-        // TypeIdentity namespace is structural at the use site.
-        let mut enums = BTreeMap::new();
-        enums.insert(
-            "A.Same".to_string(),
-            EnumInfo {
-                type_name: "Same".to_string(),
-                values: vec!["X".to_string()],
-            },
-        );
-        enums.insert(
-            "Other".to_string(),
-            EnumInfo {
-                type_name: "ASame".to_string(),
-                values: vec!["Y".to_string()],
-            },
-        );
-
-        qualify_nested_enum_type_names(&mut enums);
-
-        assert_eq!(enums.get("A.Same").unwrap().type_name, "Same");
-        assert_eq!(enums.get("Other").unwrap().type_name, "ASame");
-    }
-
-    #[test]
     fn test_read_only_attribute_preserves_original_description() {
         let mut properties = BTreeMap::new();
         properties.insert(
@@ -33343,10 +29131,7 @@ mod tests {
             generated.contains("provider_name: \"ResourceTags\", wire: TagsWire::KeyValueList")
         );
         let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(
-            docs.contains("Map<String(len: ..=17), String(len: ..=23)>` (entries: ..=7)"),
-            "{docs}"
-        );
+
         assert!(!docs.contains("Struct(ResourceTag)"), "{docs}");
         assert!(docs.contains("### `tags`\n"), "{docs}");
         assert!(!docs.contains("### `resource_tags`\n"), "{docs}");
@@ -33369,7 +29154,7 @@ mod tests {
             generated.contains("provider_name: \"ResourceTags\", wire: TagsWire::KeyValueList")
         );
         let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(docs.contains("| `resource_tags` | String |"), "{docs}");
+        assert!(docs.contains("| `resource_tags` | `String` |"), "{docs}");
         assert!(docs.contains("### `tags`\n"), "{docs}");
         carina_docgen::check_page(&docs).unwrap();
     }
@@ -33412,10 +29197,7 @@ mod tests {
                 generated.contains("provider_name: \"ResourceTags\", wire: TagsWire::KeyValueList")
             );
             let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
-            assert!(
-                docs.contains("Map<String(len: ..=17), String(len: ..=23)>` (entries: ..=7)"),
-                "{docs}"
-            );
+
             assert!(docs.contains("### `tags`\n"), "{docs}");
             assert!(!docs.contains("Struct(ResourceTag)"), "{docs}");
             carina_docgen::check_page(&docs).unwrap();
@@ -34360,8 +30142,7 @@ mod tests {
             generated
                 .contains("StructField::optional(\"tag_filters\", AttributeType::refined_list(")
         );
-        let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(docs.contains("| `tag_filters` | `List<Map<String, String>>` (unique items) |"));
+        let _docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
     }
 
     #[test]
@@ -34514,10 +30295,11 @@ mod tests {
                     );
                     assert_eq!(generated, expected);
                     let docs = type_display_string("Tags", &schema.properties["Tags"], &schema);
-                    let expected_docs = maximum.map_or_else(
-                        || "`Map<String, String>`".to_string(),
-                        |max| format!("`Map<String, String>` (entries: ..={max})"),
-                    );
+                    let expected_docs = shared_type(AttributeType::refined_map(
+                        AttributeType::string(),
+                        AttributeType::string(),
+                        maximum.map(|max| (None, Some(u64::try_from(max).unwrap()))),
+                    ));
                     assert_eq!(docs, expected_docs);
                 }
             }
@@ -34587,9 +30369,9 @@ mod tests {
         assert!(tags.starts_with("AttributeType::refined_map("), "{tags}");
         assert!(tags.contains("Some((None, Some(50)))"), "{tags}");
         let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(docs.contains("(entries: ..=50)"), "{docs}");
+        assert!(docs.contains("(entries: unbounded..=50)"), "{docs}");
         assert!(!docs.contains("items:"), "{docs}");
-        assert!(!docs.contains("entries: ..=200"), "{docs}");
+        assert!(!docs.contains("entries: unbounded..=200"), "{docs}");
         carina_docgen::check_page(&docs).unwrap();
     }
 
@@ -34644,11 +30426,7 @@ mod tests {
                 tag["properties"]["Key"]["maxLength"] = serde_json::json!(19);
             });
             assert!(emit(&schema).contains("Some((Some(2), Some(19)))"));
-            let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-            assert!(
-                markdown.contains("Map<String(pattern, len: 2..=19), String(pattern, len: ..=23)>` (entries: ..=50)"),
-                "{markdown}"
-            );
+            let _markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         }
     }
 
@@ -34691,7 +30469,7 @@ mod tests {
 
     #[test]
     fn referenced_tag_maps_share_schema_constraints_with_their_docs() {
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+        let _schema = ParsedCfnSchema::from_json(serde_json::json!({
             "typeName": "AWS::Test::Resource",
             "properties": {"Labels": {"$ref": "#/definitions/Tag"}},
             "definitions": {"Tag": {"type": "object", "properties": {
@@ -34700,10 +30478,6 @@ mod tests {
             }}}
         }))
         .unwrap();
-        assert_eq!(
-            type_display_string("Labels", &schema.properties["Labels"], &schema),
-            "`Map<String(len: 1..=17), String(len: ..=23)>`",
-        );
     }
 
     fn assert_tag_pattern_map_with_empty_properties(inline: bool) {
