@@ -32,11 +32,20 @@ jobs:
       - name: Test acceptance run registry
         run: bash acceptance-tests/shared/tests/run_registry_test.sh
       - run: cargo build -p carina-provider-awscc --target wasm32-wasip2 --release
+      - name: Disk usage (temporary, carina-provider-aws#696)
+        if: always()
+        run: df -h / && du -sh target
       - run: cargo test --no-run
+      - name: Disk usage (temporary, carina-provider-aws#696)
+        if: always()
+        run: df -h / && du -sh target
       # Bound test execution (including real-time waits); compilation above keeps
       # cold caches from tripping this limit.
       - run: cargo test
         timeout-minutes: 15
+      - name: Disk usage (temporary, carina-provider-aws#696)
+        if: always()
+        run: df -h / && du -sh target
 
   validate-examples:
     name: Validate Examples
