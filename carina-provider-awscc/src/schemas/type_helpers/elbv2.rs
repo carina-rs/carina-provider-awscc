@@ -1,5 +1,6 @@
+use crate::schemas::namespace::AwsccIdentity;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{TypeIdentity, legacy_validator};
+use carina_core::schema::legacy_validator;
 
 // Real-AWS probe by the awscc agent in carina-test-001, 2026-11-04:
 // HTTP 0200, 200-0299, 200,0302 and gRPC 00-05, 0,05 were rejected.
@@ -7,7 +8,7 @@ use carina_core::schema::{TypeIdentity, legacy_validator};
 // zeros in all three types to avoid phantom diffs. Equal range endpoints are accepted.
 
 pub(crate) fn elbv2_matcher_codes(
-    identity: TypeIdentity,
+    identity: AwsccIdentity,
     min: u16,
     max: u16,
 ) -> crate::schemas::catalog_definition::IdentityDefinition {

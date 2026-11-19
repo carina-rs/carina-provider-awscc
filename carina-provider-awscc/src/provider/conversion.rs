@@ -909,14 +909,13 @@ mod tests {
 
     #[test]
     fn reference_leaves_use_string_list_conversion_in_lists_and_unions() {
-        use carina_core::schema::TypeIdentity;
-
         let reference = CompiledAttributeType::reference(
-            TypeIdentity {
-                provider: Some("test".into()),
-                segments: vec!["Widget".into()],
-                kind: "Reference".into(),
-            },
+            crate::schemas::namespace::awscc_identity(
+                "Reference",
+                &crate::schemas::namespace::AwsccNamespace::new("test.Widget").unwrap(),
+            )
+            .unwrap()
+            .into_core(),
             None,
             None,
         );
@@ -988,22 +987,11 @@ mod tests {
     }
 
     fn test_enum(
-        name: &str,
         values: Vec<String>,
-        identity: Option<carina_core::schema::TypeIdentity>,
+        identity: crate::schemas::namespace::AwsccIdentity,
         dsl_aliases: Vec<(String, String)>,
     ) -> AttributeType {
-        AttributeType::enum_(
-            identity.unwrap_or_else(|| carina_core::schema::TypeIdentity {
-                provider: None,
-                segments: Vec::new(),
-                kind: name.into(),
-            }),
-            Some(values),
-            dsl_aliases,
-            None,
-            None,
-        )
+        AttributeType::enum_(identity.into_core(), Some(values), dsl_aliases, None, None)
     }
 
     fn assert_canonical_enum(value: &Value, identity: &str, api_value: &str) {
@@ -1025,20 +1013,17 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_string_enum_returns_api_canonical_value() {
         let attr_type = test_enum(
-            "ViewerProtocolPolicy",
             vec![
                 "allow-all".to_string(),
                 "redirect-to-https".to_string(),
                 "https-only".to_string(),
             ],
-            Some(
-                crate::schemas::namespace::awscc_identity(
-                    "ViewerProtocolPolicy",
-                    &crate::schemas::namespace::AwsccNamespace::new("cloudfront.Distribution")
-                        .expect("valid AWSCC namespace"),
-                )
-                .expect("valid AWSCC identity"),
-            ),
+            crate::schemas::namespace::awscc_identity(
+                "ViewerProtocolPolicy",
+                &crate::schemas::namespace::AwsccNamespace::new("cloudfront.Distribution")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![(
                 "redirect-to-https".to_string(),
                 "redirect_to_https".to_string(),
@@ -1395,20 +1380,17 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_keeps_string_literal_at_enum_position() {
         let attr_type = test_enum(
-            "LogGroupClass",
             vec![
                 "STANDARD".to_string(),
                 "INFREQUENT_ACCESS".to_string(),
                 "DELIVERY".to_string(),
             ],
-            Some(
-                crate::schemas::namespace::awscc_identity(
-                    "LogGroupClass",
-                    &crate::schemas::namespace::AwsccNamespace::new("logs.LogGroup")
-                        .expect("valid AWSCC namespace"),
-                )
-                .expect("valid AWSCC identity"),
-            ),
+            crate::schemas::namespace::awscc_identity(
+                "LogGroupClass",
+                &crate::schemas::namespace::AwsccNamespace::new("logs.LogGroup")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let value = Value::Concrete(ConcreteValue::String(
@@ -1489,16 +1471,13 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_list_string_enum() {
         let inner = test_enum(
-            "AllowedMethod",
             vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
-            Some(
-                crate::schemas::namespace::awscc_identity(
-                    "AllowedMethod",
-                    &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
-                        .expect("valid AWSCC namespace"),
-                )
-                .expect("valid AWSCC identity"),
-            ),
+            crate::schemas::namespace::awscc_identity(
+                "AllowedMethod",
+                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let enum_schema = test_rootless_type(inner.clone());
@@ -1531,16 +1510,13 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_list_string_enum() {
         let inner = test_enum(
-            "AllowedMethod",
             vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
-            Some(
-                crate::schemas::namespace::awscc_identity(
-                    "AllowedMethod",
-                    &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
-                        .expect("valid AWSCC namespace"),
-                )
-                .expect("valid AWSCC identity"),
-            ),
+            crate::schemas::namespace::awscc_identity(
+                "AllowedMethod",
+                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let attr_type = AttributeType::list(inner);
@@ -1569,16 +1545,13 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_list_string_enum_roundtrip() {
         let inner = test_enum(
-            "AllowedMethod",
             vec!["GET".to_string(), "PUT".to_string()],
-            Some(
-                crate::schemas::namespace::awscc_identity(
-                    "AllowedMethod",
-                    &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
-                        .expect("valid AWSCC namespace"),
-                )
-                .expect("valid AWSCC identity"),
-            ),
+            crate::schemas::namespace::awscc_identity(
+                "AllowedMethod",
+                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let attr_type = AttributeType::list(inner);
@@ -1612,16 +1585,13 @@ mod tests {
     fn test_dsl_value_to_aws_union_keeps_string_literal() {
         let attr_type = AttributeType::union(vec![
             test_enum(
-                "Protocol",
                 vec!["tcp".to_string(), "udp".to_string()],
-                Some(
-                    crate::schemas::namespace::awscc_identity(
-                        "Protocol",
-                        &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
-                            .expect("valid AWSCC namespace"),
-                    )
-                    .expect("valid AWSCC identity"),
-                ),
+                crate::schemas::namespace::awscc_identity(
+                    "Protocol",
+                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
                 vec![],
             ),
             AttributeType::string(),
@@ -1686,16 +1656,13 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_map_recurses_into_values() {
         let inner_type = test_enum(
-            "Status",
             vec!["Active".to_string(), "Inactive".to_string()],
-            Some(
-                crate::schemas::namespace::awscc_identity(
-                    "Status",
-                    &crate::schemas::namespace::AwsccNamespace::new("test.resource")
-                        .expect("valid AWSCC namespace"),
-                )
-                .expect("valid AWSCC identity"),
-            ),
+            crate::schemas::namespace::awscc_identity(
+                "Status",
+                &crate::schemas::namespace::AwsccNamespace::new("test.resource")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let enum_schema = test_rootless_type(inner_type.clone());
@@ -1778,16 +1745,13 @@ mod tests {
     fn test_aws_value_to_dsl_union_with_string_enum() {
         let attr_type = AttributeType::union(vec![
             test_enum(
-                "Protocol",
                 vec!["tcp".to_string(), "udp".to_string()],
-                Some(
-                    crate::schemas::namespace::awscc_identity(
-                        "Protocol",
-                        &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
-                            .expect("valid AWSCC namespace"),
-                    )
-                    .expect("valid AWSCC identity"),
-                ),
+                crate::schemas::namespace::awscc_identity(
+                    "Protocol",
+                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
                 vec![],
             ),
             AttributeType::string(),
@@ -1817,16 +1781,13 @@ mod tests {
     fn test_aws_value_to_dsl_union_fallback() {
         let attr_type = AttributeType::union(vec![
             test_enum(
-                "Protocol",
                 vec!["tcp".to_string(), "udp".to_string()],
-                Some(
-                    crate::schemas::namespace::awscc_identity(
-                        "Protocol",
-                        &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
-                            .expect("valid AWSCC namespace"),
-                    )
-                    .expect("valid AWSCC identity"),
-                ),
+                crate::schemas::namespace::awscc_identity(
+                    "Protocol",
+                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
                 vec![],
             ),
             AttributeType::int(),
@@ -2494,16 +2455,13 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_enum_value_with_dot() {
         let attr_type = test_enum(
-            "Type",
             vec!["ipsec.1".to_string()],
-            Some(
-                crate::schemas::namespace::awscc_identity(
-                    "Type",
-                    &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
-                        .expect("valid AWSCC namespace"),
-                )
-                .expect("valid AWSCC identity"),
-            ),
+            crate::schemas::namespace::awscc_identity(
+                "Type",
+                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let json_val = json!("ipsec.1");
@@ -2533,16 +2491,13 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_keeps_namespaced_dotted_string_literal() {
         let attr_type = test_enum(
-            "Type",
             vec!["ipsec.1".to_string()],
-            Some(
-                crate::schemas::namespace::awscc_identity(
-                    "Type",
-                    &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
-                        .expect("valid AWSCC namespace"),
-                )
-                .expect("valid AWSCC identity"),
-            ),
+            crate::schemas::namespace::awscc_identity(
+                "Type",
+                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let value = Value::Concrete(ConcreteValue::String(
@@ -2567,16 +2522,13 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_enum_plain_dot_value() {
         let attr_type = test_enum(
-            "Type",
             vec!["ipsec.1".to_string()],
-            Some(
-                crate::schemas::namespace::awscc_identity(
-                    "Type",
-                    &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
-                        .expect("valid AWSCC namespace"),
-                )
-                .expect("valid AWSCC identity"),
-            ),
+            crate::schemas::namespace::awscc_identity(
+                "Type",
+                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let value = Value::Concrete(ConcreteValue::String("ipsec.1".to_string().into()));
@@ -2599,16 +2551,13 @@ mod tests {
     #[test]
     fn test_enum_round_trip_with_dotted_value() {
         let attr_type = test_enum(
-            "Type",
             vec!["ipsec.1".to_string()],
-            Some(
-                crate::schemas::namespace::awscc_identity(
-                    "Type",
-                    &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
-                        .expect("valid AWSCC namespace"),
-                )
-                .expect("valid AWSCC identity"),
-            ),
+            crate::schemas::namespace::awscc_identity(
+                "Type",
+                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
 
@@ -2698,7 +2647,8 @@ mod tests {
                 &crate::schemas::namespace::AwsccNamespace::new("iam.PolicyDocument")
                     .expect("valid AWSCC namespace"),
             )
-            .expect("valid AWSCC identity"),
+            .expect("valid AWSCC identity")
+            .into_core(),
             Some(vec!["Allow".to_string(), "Deny".to_string()]),
             vec![
                 ("Allow".to_string(), "allow".to_string()),
@@ -3189,11 +3139,12 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_custom_without_to_dsl_passes_through() {
         let attr_type = AttributeType::refined_string_with_validator(
-            carina_core::schema::TypeIdentity {
-                provider: None,
-                segments: Vec::new(),
-                kind: "DnsName".into(),
-            },
+            crate::schemas::namespace::awscc_identity(
+                "DnsName",
+                &crate::schemas::namespace::AwsccNamespace::new("test").unwrap(),
+            )
+            .unwrap()
+            .into_core(),
             None,
             None,
             legacy_validator(|_| Ok(())),

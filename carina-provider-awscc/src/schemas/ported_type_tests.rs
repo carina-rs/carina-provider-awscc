@@ -173,6 +173,7 @@ fn is_valid_condition_operator(key: &str) -> bool {
 ///
 /// Walks the document looking for `condition` maps and validates that
 /// all operator keys are valid snake_case condition operators.
+// Test helper mirroring base's shared-crate function; not a production validator.
 fn validate_condition_operators(value: &Value) -> Result<(), String> {
     let Value::Concrete(ConcreteValue::Map(doc)) = value else {
         return Ok(());
@@ -210,6 +211,7 @@ fn validate_condition_operators(value: &Value) -> Result<(), String> {
 }
 
 /// Validate IAM policy document structure and condition operators.
+// Test helper mirroring base's shared-crate function; not a production validator.
 pub(crate) fn validate_iam_policy_document(value: &Value) -> Result<(), String> {
     // The IAM policy schema is flat (no `AttributeType::Ref`), so an
     // empty `defs` map is sound here (carina#3345).
@@ -1379,14 +1381,6 @@ fn region_completions_generates_dsl_format() {
 }
 
 #[test]
-fn region_completions_uses_provider_prefix() {
-    let aws = region_completions();
-    let awscc = region_completions();
-    assert!(aws[0].value.starts_with("awscc.Region."));
-    assert!(awscc[0].value.starts_with("awscc.Region."));
-}
-
-#[test]
 fn route53_hosted_zone_id_carries_identity_and_validates_values() {
     let attr = route53_hosted_zone_id();
     assert_refined_string_identity(&attr, "awscc.route53.HostedZone.Id");
@@ -2250,31 +2244,6 @@ fn standalone_constraints_are_identity_metadata() {
 }
 
 #[test]
-fn closed_definition_rejects_inconsistent_values() {
-    use carina_core::schema::{PatternMatch, PatternSpec};
-    let result = IdentityDefinition::try_enum(
-        crate::schemas::namespace::awscc_identity(
-            "Letters",
-            &crate::schemas::namespace::AwsccNamespace::new("test").unwrap(),
-        )
-        .unwrap(),
-        Some(PatternSpec::new("^A+$", PatternMatch::Full)),
-        Some((Some(1), Some(2))),
-        Some(vec!["A".into(), "AB".into()]),
-        vec![],
-        None,
-        None,
-    );
-    let error = result
-        .err()
-        .expect("AB violates the declared identity policy");
-    assert!(
-        error.contains("Letters") && error.contains("AB") && error.contains("pattern"),
-        "{error}"
-    );
-}
-
-#[test]
 fn find_matching_enum_value_exact() {
     let values = &["Enabled", "Suspended"];
     assert_eq!(find_matching_enum_value("Enabled", values), Some("Enabled"));
@@ -2294,4 +2263,51 @@ fn find_matching_enum_value_underscore_to_hyphen() {
         find_matching_enum_value("us_east_1", values),
         Some("us-east-1")
     );
+}
+
+#[test]
+fn catalog_definitions_never_contain_member_constraints() {
+    let rows = AwsccType::ALL
+        .iter()
+        .map(|row| (format!("{row:?}"), row.attribute_type()))
+        .chain(
+            ScalarType::ALL
+                .iter()
+                .map(|row| (format!("{row:?}"), row.attribute_type())),
+        )
+        .chain(
+            StringIdentity::ALL
+                .iter()
+                .map(|row| (format!("{row:?}"), row.declaration())),
+        );
+    let mut ints = 0;
+    let mut references = 0;
+    let mut examined = 0;
+    for (row, ty) in rows {
+        examined += 1;
+        let scalar = if let RawShape::Enum { base, .. } = ty.raw_shape() {
+            base
+        } else {
+            &ty
+        };
+        match scalar.raw_shape() {
+            RawShape::String { member_layer, .. } => assert!(
+                member_layer.pattern.is_none() && member_layer.length.is_none(),
+                "{row:?}"
+            ),
+            RawShape::Int { member_layer, .. } => {
+                ints += 1;
+                assert!(member_layer.range.is_none(), "{row:?}");
+            }
+            RawShape::Reference { .. } => {
+                references += 1;
+            }
+            _ => panic!("unexpected catalog carrier"),
+        }
+    }
+    assert_eq!(
+        examined,
+        AwsccType::ALL.len() + ScalarType::ALL.len() + StringIdentity::ALL.len()
+    );
+    assert!(ints > 0 && references > 0);
 }

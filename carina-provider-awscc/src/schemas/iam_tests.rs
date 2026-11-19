@@ -227,14 +227,9 @@ fn oidc_url_reuses_core_https_url_through_the_provider_registry() {
     else {
         panic!("OIDC URL must preserve core HttpsUrl with CFN member length");
     };
-    assert_eq!(
-        identity,
-        &carina_core::schema::TypeIdentity {
-            provider: None,
-            segments: Vec::new(),
-            kind: "HttpsUrl".into()
-        }
-    );
+    assert_eq!(identity.provider, None);
+    assert!(identity.segments.is_empty());
+    assert_eq!(identity.kind, "HttpsUrl");
     let builtin = builtin_type_registry().get(identity).unwrap();
     let RawShape::String {
         identity_layer:

@@ -5577,7 +5577,7 @@ fn string_enum_type(
         )
     };
     let rust = format!(
-        "AttributeType::enum_(crate::schemas::namespace::awscc_identity({}, &{}).expect(\"valid AWSCC identity\"), Some(vec![{}]), {}, None, None)",
+        "AttributeType::enum_(crate::schemas::namespace::awscc_identity({}, &{}).expect(\"valid AWSCC identity\").into_core(), Some(vec![{}]), {}, None, None)",
         rust_lit(&kind),
         namespace_code,
         values_code,
@@ -5586,7 +5586,7 @@ fn string_enum_type(
     Ok(EmittedType::new(
         rust,
         AttributeType::enum_(
-            awscc_identity(&kind, &namespace)?,
+            awscc_identity(&kind, &namespace)?.into_core(),
             Some(values.iter().map(|value| (*value).to_string()).collect()),
             dsl_aliases_values(&info.values, aliases.get(path.property)),
             None,
@@ -13878,7 +13878,7 @@ mod tests {
         }
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let field = generated_budgets_field(&generated, "VPC.VPCRegion");
-        assert!(field.starts_with("AttributeType::enum_(crate::schemas::namespace::awscc_identity(\"VPCRegion\", &crate::schemas::namespace::AwsccNamespace::new(\"route53.HostedZone\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\")"));
+        assert!(field.starts_with("AttributeType::enum_(crate::schemas::namespace::awscc_identity(\"VPCRegion\", &crate::schemas::namespace::AwsccNamespace::new(\"route53.HostedZone\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()"));
         assert!(!generated.contains("crate::schemas::catalog::aws_region()"));
         assert!(
             generate_test_markdown(&schema, &schema.type_name)
@@ -15778,10 +15778,10 @@ mod tests {
         let namespace =
             "awscc.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination";
         let expected = format!(
-            "awscc_identity(\"Format\", &crate::schemas::namespace::AwsccNamespace::new(\"{}\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\")",
+            "awscc_identity(\"Format\", &crate::schemas::namespace::AwsccNamespace::new(\"{}\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()",
             namespace.strip_prefix("awscc.").unwrap()
         );
-        let identities = Regex::new(r#"awscc_identity\("Format", &crate::schemas::namespace::AwsccNamespace::new\("[^"]+"\)\.expect\("valid AWSCC namespace"\)\)\.expect\("valid AWSCC identity"\)"#).unwrap();
+        let identities = Regex::new(r#"awscc_identity\("Format", &crate::schemas::namespace::AwsccNamespace::new\("[^"]+"\)\.expect\("valid AWSCC namespace"\)\)\.expect\("valid AWSCC identity"\)\.into_core\(\)"#).unwrap();
         let emitted: Vec<_> = identities.find_iter(&generated).collect();
         assert!(!emitted.is_empty());
         for identity in emitted {
@@ -15819,7 +15819,7 @@ mod tests {
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         for parent in ["Left", "Right"] {
             assert!(generated.contains(&format!(
-                "crate::schemas::namespace::awscc_identity(\"Mode\", &crate::schemas::namespace::AwsccNamespace::new(\"ec2.Route.{parent}.Entry\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\")"
+                "crate::schemas::namespace::awscc_identity(\"Mode\", &crate::schemas::namespace::AwsccNamespace::new(\"ec2.Route.{parent}.Entry\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()"
             )));
         }
         assert!(!collect_definition_identity_paths(&schema).contains_key("Entry"));
@@ -16694,7 +16694,7 @@ mod tests {
         }
         assert!(
             generated_sns_field(&generated, "SignatureVersion")
-                .contains("crate::schemas::namespace::awscc_identity(\"SignatureVersion\", &crate::schemas::namespace::AwsccNamespace::new(\"sns.Topic\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\")")
+                .contains("crate::schemas::namespace::awscc_identity(\"SignatureVersion\", &crate::schemas::namespace::AwsccNamespace::new(\"sns.Topic\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()")
         );
         for value in ["1", "2"] {
             assert_eq!(dsl_enum_value(value), value);
@@ -18624,7 +18624,7 @@ mod tests {
                 // Markdown keeps the fixture's source resource identity.
                 let namespace = format!("ec2.Route{suffix}");
                 assert!(generated.contains(&format!(
-                    "(\"{property}\", AttributeType::map_with_key(AttributeType::enum_(crate::schemas::namespace::awscc_identity(\"{kind}\", &crate::schemas::namespace::AwsccNamespace::new(\"{namespace}\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\")"
+                    "(\"{property}\", AttributeType::map_with_key(AttributeType::enum_(crate::schemas::namespace::awscc_identity(\"{kind}\", &crate::schemas::namespace::AwsccNamespace::new(\"{namespace}\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()"
                 )), "key enum must preserve its property's identity: {generated}");
                 let namespace = format!("awscc.test.PatternMapKeys{suffix}");
                 for (wire, dsl) in [("ALPHA", "alpha"), ("BETA_2", "beta_2"), ("C3", "c3")] {
@@ -18637,7 +18637,7 @@ mod tests {
             assert!(markdown.contains("Map\\<[Entries]"), "{markdown}");
             assert!(markdown.contains("Map\\<[NestedKeys]"), "{markdown}");
             assert!(markdown.contains("Map\\<[Tags]"), "{markdown}");
-            assert!(generated.contains("\"array_keys\", AttributeType::refined_list(AttributeType::map_with_key(AttributeType::enum_(crate::schemas::namespace::awscc_identity(\"ArrayKeys\", &crate::schemas::namespace::AwsccNamespace::new(\"ec2.Route\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\")"), "{generated}");
+            assert!(generated.contains("\"array_keys\", AttributeType::refined_list(AttributeType::map_with_key(AttributeType::enum_(crate::schemas::namespace::awscc_identity(\"ArrayKeys\", &crate::schemas::namespace::AwsccNamespace::new(\"ec2.Route\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()"), "{generated}");
             assert!(markdown.contains("List\\<Map\\<[ArrayKeys]"), "{markdown}");
             assert!(markdown.contains("`awscc.test.PatternMapKeys.ArrayKeys.alpha`"));
             assert_eq!(

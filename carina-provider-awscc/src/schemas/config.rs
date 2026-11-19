@@ -140,8 +140,9 @@ pub(crate) fn validate_namespaced_enum(
 ) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
         let s = s.expose_plaintext();
-        let identity =
-            super::namespace::awscc_identity(type_name, namespace).expect("valid AWSCC identity");
+        let identity = super::namespace::awscc_identity(type_name, namespace)
+            .expect("valid AWSCC identity")
+            .into_core();
         validate_enum_namespace(s, &identity)?;
 
         let normalized = strip_enum_identity_prefix(s, &identity);

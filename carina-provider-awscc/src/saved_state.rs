@@ -141,7 +141,8 @@ mod tests {
                             "Effect",
                             &AwsccNamespace::new("test.Saved").expect("valid AWSCC namespace"),
                         )
-                        .expect("valid AWSCC identity"),
+                        .expect("valid AWSCC identity")
+                        .into_core(),
                         Some(vec!["Allow".into()]),
                         Vec::new(),
                         None,

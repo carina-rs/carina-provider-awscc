@@ -5,7 +5,7 @@ use super::catalog_definition::{
     IdentityDefinition, catalog_definition, catalog_values, define_awscc_type_catalog,
 };
 pub use super::catalog_scalar::*;
-use super::namespace::{AwsccNamespace, awscc_identity};
+use super::namespace::{AwsccIdentity, AwsccNamespace, awscc_identity};
 use super::pattern::{
     ApprovedPattern, refined_string, refined_string_with_validator,
     string_definition_with_validator,
@@ -371,7 +371,7 @@ fn validate_iam_arn(arn: &str, resource_prefix: &str) -> Result<(), String> {
 }
 
 fn validated_service_arn(
-    identity: TypeIdentity,
+    identity: AwsccIdentity,
     pattern: ApprovedPattern,
     service: &'static str,
     resource_prefix: Option<&'static str>,
@@ -397,7 +397,7 @@ fn validated_service_arn(
 }
 
 fn validated_iam_arn(
-    identity: TypeIdentity,
+    identity: AwsccIdentity,
     pattern: ApprovedPattern,
     resource_prefix: &'static str,
     label: &'static str,
@@ -421,7 +421,7 @@ fn validated_iam_arn(
     )
 }
 
-fn validated_int_enum(identity: TypeIdentity, valid_values: &'static [i64]) -> IdentityDefinition {
+fn validated_int_enum(identity: AwsccIdentity, valid_values: &'static [i64]) -> IdentityDefinition {
     IdentityDefinition::int(
         identity,
         None,
@@ -439,7 +439,7 @@ fn validated_int_enum(identity: TypeIdentity, valid_values: &'static [i64]) -> I
     )
 }
 
-fn validated_identitystore_group_display_name(identity: TypeIdentity) -> IdentityDefinition {
+fn validated_identitystore_group_display_name(identity: AwsccIdentity) -> IdentityDefinition {
     // Preserve CFN's exact pattern and character bounds; reserved names are case-sensitive.
     // https://docs.aws.amazon.com/singlesignon/latest/IdentityStoreAPIReference/API_CreateGroup.html#IdentityStore-CreateGroup-request-DisplayName
     let pattern = ApprovedPattern::whole(r"^[\p{L}\p{M}\p{S}\p{N}\p{P}\t\n\r  ]+$");
@@ -481,7 +481,7 @@ fn validated_identitystore_group_display_name(identity: TypeIdentity) -> Identit
     )
 }
 
-fn validated_logs_log_group_name(identity: TypeIdentity) -> IdentityDefinition {
+fn validated_logs_log_group_name(identity: AwsccIdentity) -> IdentityDefinition {
     // Preserve CFN's pattern and bounds; check the reserved prefix case-insensitively.
     // https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_CreateLogGroup.html
     // Live CreateLogGroup, carina-test-001, 2026-11-05: InvalidParameterException:
@@ -523,7 +523,7 @@ fn validated_logs_log_group_name(identity: TypeIdentity) -> IdentityDefinition {
     )
 }
 
-fn validated_organizations_account_email(identity: TypeIdentity) -> IdentityDefinition {
+fn validated_organizations_account_email(identity: AwsccIdentity) -> IdentityDefinition {
     // Use the AWSCC identity so core Email stays unbounded. Preserve
     // core's grammar for historical reads, without CreateAccount-only rules.
     // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-Email
@@ -551,7 +551,7 @@ fn validated_organizations_account_email(identity: TypeIdentity) -> IdentityDefi
     )
 }
 
-fn validated_organizations_account_role_name(identity: TypeIdentity) -> IdentityDefinition {
+fn validated_organizations_account_role_name(identity: AwsccIdentity) -> IdentityDefinition {
     // The reserved prefix is a callback check; the pattern needs no lookaround.
     // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-RoleName
     // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#API_CreateAccount_Errors
@@ -587,7 +587,7 @@ fn validated_organizations_account_role_name(identity: TypeIdentity) -> Identity
     )
 }
 
-fn validated_s3_lifecycle_date(identity: TypeIdentity) -> IdentityDefinition {
+fn validated_s3_lifecycle_date(identity: AwsccIdentity) -> IdentityDefinition {
     // Both actions require a calendar date at midnight UTC.
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_LifecycleExpiration.html
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_Transition.html
@@ -646,7 +646,7 @@ fn validated_s3_lifecycle_date(identity: TypeIdentity) -> IdentityDefinition {
     )
 }
 
-fn validated_sso_permission_set_session_duration(identity: TypeIdentity) -> IdentityDefinition {
+fn validated_sso_permission_set_session_duration(identity: AwsccIdentity) -> IdentityDefinition {
     // Keep the existing CFN grammar, spelling out ECMAScript's ASCII \d.
     // Fractions are allowed only on seconds; date components may be zero.
     let pattern = ApprovedPattern::whole(concat!(
@@ -717,7 +717,7 @@ fn validated_sso_permission_set_session_duration(identity: TypeIdentity) -> Iden
     )
 }
 
-fn validated_scheduler_schedule_expression(identity: TypeIdentity) -> IdentityDefinition {
+fn validated_scheduler_schedule_expression(identity: AwsccIdentity) -> IdentityDefinition {
     string_definition_with_validator(
         identity,
         None,
@@ -733,7 +733,7 @@ fn validated_scheduler_schedule_expression(identity: TypeIdentity) -> IdentityDe
     )
 }
 
-fn validated_wafv2_byte_match_search_string(identity: TypeIdentity) -> IdentityDefinition {
+fn validated_wafv2_byte_match_search_string(identity: AwsccIdentity) -> IdentityDefinition {
     // Core refined_string length counts characters, but this API counts UTF-8 bytes.
     // https://docs.aws.amazon.com/waf/latest/APIReference/API_ByteMatchStatement.html#waf-Type-ByteMatchStatement-SearchString
     // direct CreateWebACL, carina-test-008, ap-northeast-1, 2026-11-06:
@@ -761,7 +761,7 @@ fn validated_wafv2_byte_match_search_string(identity: TypeIdentity) -> IdentityD
     )
 }
 
-fn validated_wafv2_byte_match_search_string_base64(identity: TypeIdentity) -> IdentityDefinition {
+fn validated_wafv2_byte_match_search_string_base64(identity: AwsccIdentity) -> IdentityDefinition {
     use base64::Engine;
     use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD};
 
@@ -797,7 +797,7 @@ fn validated_wafv2_byte_match_search_string_base64(identity: TypeIdentity) -> Id
     )
 }
 
-fn validated_scheduler_schedule_group_name(identity: TypeIdentity) -> IdentityDefinition {
+fn validated_scheduler_schedule_group_name(identity: AwsccIdentity) -> IdentityDefinition {
     // Measured with carina-test-008 in ap-northeast-1 on 2026-10-30: creating
     // AWS::Scheduler::Schedule in a non-default group succeeded, but Carina's
     // post-create read returned not_found. The direct checks were:
@@ -1471,7 +1471,8 @@ mod catalog_seam_tests {
             "Arn",
             &AwsccNamespace::new("sns.Topic").unwrap(),
         )
-        .unwrap();
+        .unwrap()
+        .into_core();
         let services = derive_arn_services([added]);
         assert_eq!(
             services,
@@ -1489,7 +1490,13 @@ mod catalog_seam_tests {
         // every variant/identity pair, mapping only provider aws to awscc.
         let expected = include_str!("../../tests/fixtures/string_identity_variants_before_572.tsv")
             .lines()
-            .map(str::to_string)
+            .map(|row| {
+                let (variant, identity) = row.split_once('\t').expect("base variant/identity pair");
+                let identity = identity
+                    .strip_prefix("aws.")
+                    .map_or_else(|| identity.to_string(), |suffix| format!("awscc.{suffix}"));
+                format!("{variant}\t{identity}")
+            })
             .collect::<std::collections::BTreeSet<_>>();
         let actual = StringIdentity::ALL
             .iter()

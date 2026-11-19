@@ -118,7 +118,8 @@ pub(crate) fn condition_type() -> AttributeType {
                 )
                 .expect("valid AWSCC namespace"),
             )
-            .expect("valid AWSCC identity"),
+            .expect("valid AWSCC identity")
+            .into_core(),
             Some(operator_values),
             operator_aliases,
             None,

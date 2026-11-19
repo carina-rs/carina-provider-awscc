@@ -1,8 +1,7 @@
 //! AWSCC-owned reusable identity definitions, separate from CFN member layers.
 
-use carina_core::schema::{
-    AttributeType, CustomValidator, DslTransform, PatternSpec, TypeIdentity, ValidatedConfigSchema,
-};
+use super::namespace::AwsccIdentity;
+use carina_core::schema::{AttributeType, CustomValidator, DslTransform, PatternSpec};
 
 #[derive(Clone)]
 pub struct IdentityDefinition(AttributeType);
@@ -12,12 +11,13 @@ type Range = Option<(Option<i64>, Option<i64>)>;
 
 impl IdentityDefinition {
     pub fn string(
-        identity: TypeIdentity,
+        identity: AwsccIdentity,
         pattern: Option<PatternSpec>,
         length: Length,
         semantic: Option<CustomValidator>,
         to_dsl: Option<DslTransform>,
     ) -> Self {
+        let identity = identity.into_core();
         Self(match semantic {
             Some(check) => AttributeType::refined_string_with_validator(
                 identity, pattern, length, check, to_dsl,
@@ -26,90 +26,40 @@ impl IdentityDefinition {
         })
     }
 
-    pub fn int(identity: TypeIdentity, range: Range, semantic: Option<CustomValidator>) -> Self {
+    pub fn int(identity: AwsccIdentity, range: Range, semantic: Option<CustomValidator>) -> Self {
+        let identity = identity.into_core();
         Self(match semantic {
             Some(check) => AttributeType::refined_int_with_validator(identity, range, check),
             None => AttributeType::refined_int(Some(identity), range),
         })
     }
 
-    pub fn enum_(
-        identity: TypeIdentity,
-        pattern: Option<PatternSpec>,
-        length: Length,
-        values: Option<Vec<String>>,
-        aliases: Vec<(String, String)>,
+    /// The catalog's production enum carrier is open and has no aliases.
+    pub fn open_enum(
+        identity: AwsccIdentity,
         semantic: Option<CustomValidator>,
         to_dsl: Option<DslTransform>,
     ) -> Self {
-        Self::try_enum(identity, pattern, length, values, aliases, semantic, to_dsl)
-            .expect("invalid static enum identity definition")
-    }
-
-    pub(crate) fn try_enum(
-        identity: TypeIdentity,
-        pattern: Option<PatternSpec>,
-        length: Length,
-        values: Option<Vec<String>>,
-        aliases: Vec<(String, String)>,
-        semantic: Option<CustomValidator>,
-        to_dsl: Option<DslTransform>,
-    ) -> Result<Self, String> {
-        if values.is_none() && (pattern.is_some() || length.is_some()) {
-            return Err(format!(
-                "{identity}: core does not enforce structural constraints on open Enum bases; use a String identity"
-            ));
-        }
-        let policy = Self::string(identity.clone(), pattern, length, semantic.clone(), None);
-        let schema = ValidatedConfigSchema::validate(std::collections::BTreeMap::from([(
-            "value".into(),
-            policy.into_attribute_type(),
-        )]))
-        .map_err(|error| error.to_string())?;
-        let validator = schema.rootless_type("value").unwrap();
-        let accepts = |value: &str| {
-            let value: carina_core::resource::Value = carina_core::resource::Value::Concrete(
-                carina_core::resource::ConcreteValue::String(value.into()),
-            );
-            validator.validate(&value).is_ok()
-        };
-        if let Some(values) = &values {
-            for value in values {
-                if !accepts(value) {
-                    return Err(format!(
-                        "{identity}: enum value {value:?} violates the identity pattern/length or semantic policy"
-                    ));
-                }
-            }
-        }
-        for (canonical, _) in &aliases {
-            if values
-                .as_ref()
-                .is_some_and(|values| !values.contains(canonical))
-            {
-                return Err(format!(
-                    "{identity}: alias target {canonical:?} is absent from the enum value set"
-                ));
-            }
-            if !accepts(canonical) {
-                return Err(format!(
-                    "{identity}: alias target {canonical:?} violates the identity pattern/length or semantic policy"
-                ));
-            }
-        }
-
-        Ok(Self(AttributeType::enum_with_base(
-            identity,
+        Self(AttributeType::enum_with_base(
+            identity.into_core(),
             AttributeType::string(),
-            values,
-            aliases,
+            None,
+            Vec::new(),
             semantic,
             to_dsl,
-        )))
+        ))
     }
 
-    pub fn reference(identity: TypeIdentity, pattern: Option<PatternSpec>, length: Length) -> Self {
-        Self(AttributeType::reference(identity, pattern, length))
+    pub fn reference(
+        identity: AwsccIdentity,
+        pattern: Option<PatternSpec>,
+        length: Length,
+    ) -> Self {
+        Self(AttributeType::reference(
+            identity.into_core(),
+            pattern,
+            length,
+        ))
     }
 
     pub fn into_attribute_type(self) -> AttributeType {
@@ -163,7 +113,11 @@ macro_rules! define_awscc_type_catalog {
             pub const fn rust_variant_name(self) -> &'static str {
                 match self { $(Self::$variant => stringify!($variant)),* }
             }
+            /// Core schema/registry view; construction keeps the owned type.
             pub fn identity(self) -> carina_core::schema::TypeIdentity {
+                self.owned_identity().into_core()
+            }
+            pub fn owned_identity(self) -> $crate::schemas::namespace::AwsccIdentity {
                 match self { $(Self::$variant => {
                     let segments: &[&str] = &[$($segment),*];
                     let namespace = if segments.is_empty() {
@@ -184,7 +138,7 @@ macro_rules! define_awscc_type_catalog {
             pub fn definition(self) -> $crate::schemas::catalog_definition::IdentityDefinition {
                 match self { $(Self::$variant => {
                     static DEFINITION: std::sync::OnceLock<$crate::schemas::catalog_definition::IdentityDefinition> = std::sync::OnceLock::new();
-                    DEFINITION.get_or_init(|| catalog_definition!($constructor, self.identity() $(, $($value),+)?)).clone()
+                    DEFINITION.get_or_init(|| catalog_definition!($constructor, self.owned_identity() $(, $($value),+)?)).clone()
                 }),* }
             }
             pub fn has_validator(self) -> bool { self.definition().has_validator() }

@@ -34,7 +34,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_allocation_id_attribute());
     #[inline(never)]
     fn build_domain_attribute() -> AttributeSchema {
-        AttributeSchema::optional("domain", AttributeType::enum_(crate::schemas::namespace::awscc_identity("Domain", &crate::schemas::namespace::AwsccNamespace::new("ec2.Eip").expect("valid AWSCC namespace")).expect("valid AWSCC identity"), Some(vec!["vpc".to_string(), "standard".to_string()]), vec![("vpc".to_string(), "vpc".to_string()), ("standard".to_string(), "standard".to_string())], None, None))
+        AttributeSchema::optional("domain", AttributeType::enum_(crate::schemas::namespace::awscc_identity("Domain", &crate::schemas::namespace::AwsccNamespace::new("ec2.Eip").expect("valid AWSCC namespace")).expect("valid AWSCC identity").into_core(), Some(vec!["vpc".to_string(), "standard".to_string()]), vec![("vpc".to_string(), "vpc".to_string()), ("standard".to_string(), "standard".to_string())], None, None))
                 .with_description("The network (``vpc``). If you define an Elastic IP address and associate it with a VPC that is defined in the same template, you must declare a dependency on the VPC-gateway attachment by using the [DependsOn Attribute](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-attribute-dependson.html) on this resource.")
                 .with_provider_name("Domain")
             .build()

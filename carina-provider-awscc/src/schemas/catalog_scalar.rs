@@ -5,16 +5,15 @@ use super::catalog_definition::{
     IdentityDefinition, catalog_definition, catalog_values, define_awscc_type_catalog,
 };
 use super::type_helpers::{validate_availability_zone, validate_aws_region};
+use crate::schemas::namespace::AwsccIdentity;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    DslTransform, PatternMatch, PatternSpec, TypeIdentity, legacy_validator,
-};
+use carina_core::schema::{DslTransform, PatternMatch, PatternSpec, legacy_validator};
 
 // IAM roleNameType and policyNameType use ASCII letters, digits and _+=,.@-.
 const IAM_NAME_PATTERN: &str = r"^[A-Za-z0-9_+=,.@-]+\z";
 
 fn metadata_string(
-    identity: TypeIdentity,
+    identity: AwsccIdentity,
     pattern: PatternSpec,
     length: Option<(Option<u64>, Option<u64>)>,
 ) -> IdentityDefinition {
@@ -22,7 +21,7 @@ fn metadata_string(
 }
 
 fn validated_int_enum_definition(
-    identity: TypeIdentity,
+    identity: AwsccIdentity,
     valid_values: &'static [i64],
 ) -> IdentityDefinition {
     IdentityDefinition::int(
@@ -45,7 +44,7 @@ fn validated_int_enum_definition(
     )
 }
 
-fn prefixed_resource_id(identity: TypeIdentity, prefix: &'static str) -> IdentityDefinition {
+fn prefixed_resource_id(identity: AwsccIdentity, prefix: &'static str) -> IdentityDefinition {
     metadata_string(
         identity,
         PatternSpec::new(format!("^{prefix}-[0-9a-f]{{8,}}$"), PatternMatch::Full),
@@ -54,15 +53,11 @@ fn prefixed_resource_id(identity: TypeIdentity, prefix: &'static str) -> Identit
 }
 
 fn validated_open_enum(
-    identity: TypeIdentity,
+    identity: AwsccIdentity,
     validator: fn(&str) -> Result<(), String>,
 ) -> IdentityDefinition {
-    IdentityDefinition::enum_(
+    IdentityDefinition::open_enum(
         identity,
-        None,
-        None,
-        None,
-        vec![],
         Some(legacy_validator(move |value| {
             if let Value::Concrete(ConcreteValue::String(value)) = value {
                 validator(value.expose_plaintext()).map_err(Into::into)
@@ -74,13 +69,9 @@ fn validated_open_enum(
     )
 }
 
-fn availability_zone_type(identity: TypeIdentity) -> IdentityDefinition {
-    IdentityDefinition::enum_(
+fn availability_zone_type(identity: AwsccIdentity) -> IdentityDefinition {
+    IdentityDefinition::open_enum(
         identity,
-        None,
-        None,
-        None,
-        vec![],
         Some(legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(value)) = value {
                 let value = value.expose_plaintext();

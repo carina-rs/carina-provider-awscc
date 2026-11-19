@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeType, CompiledPattern, CustomValidator, IntIdentityParts, RawShape,
-    StringIdentityParts, TypeIdentity, legacy_validator,
+    StringIdentityParts, legacy_validator,
 };
 
 use super::catalog::{self, arn};
@@ -60,11 +60,14 @@ fn generic_arn_preserves_identity_and_validation_semantics() {
     };
     assert_eq!(
         identity,
-        Some(&TypeIdentity {
-            provider: Some("awscc".to_string()),
-            segments: Vec::new(),
-            kind: "Arn".to_string(),
-        })
+        Some(
+            &crate::schemas::namespace::awscc_identity(
+                "Arn",
+                &crate::schemas::namespace::AwsccNamespace::root()
+            )
+            .unwrap()
+            .into_core()
+        )
     );
     assert_eq!(length, None);
     let pattern = CompiledPattern::try_new(pattern).unwrap();
@@ -938,11 +941,14 @@ fn kms_key_id_accepts_every_awscc_partition() {
     };
     assert_eq!(
         identity,
-        Some(&TypeIdentity {
-            provider: Some("awscc".into()),
-            segments: vec!["kms".into(), "Key".into()],
-            kind: "Id".into()
-        })
+        Some(
+            &crate::schemas::namespace::awscc_identity(
+                "Id",
+                &crate::schemas::namespace::AwsccNamespace::new("kms.Key").unwrap()
+            )
+            .unwrap()
+            .into_core()
+        )
     );
     assert_eq!(length, None);
     let pattern = CompiledPattern::try_new(pattern).unwrap();
@@ -1124,14 +1130,14 @@ fn specialized_arn_rows_accept_every_awscc_partition() {
         };
         assert_eq!(
             identity,
-            Some(&TypeIdentity {
-                provider: Some("awscc".into()),
-                segments: segments
-                    .iter()
-                    .map(|segment| (*segment).to_string())
-                    .collect(),
-                kind: "Arn".into()
-            })
+            Some(
+                &crate::schemas::namespace::awscc_identity(
+                    "Arn",
+                    &crate::schemas::namespace::AwsccNamespace::new(&segments.join(".")).unwrap()
+                )
+                .unwrap()
+                .into_core()
+            )
         );
         assert_eq!(length, None);
         assert_eq!(

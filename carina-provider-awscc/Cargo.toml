@@ -67,6 +67,8 @@ carina-plugin-sdk = { workspace = true, features = ["test-utils"] }
 carina-provider-resolver = { workspace = true, features = ["test-utils"] }
 tokio = { version = "1", features = ["test-util"] }
 tempfile = "3"
+syn = { version = "3", features = ["full", "visit"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
 winterbaume-core = "0.2"
 winterbaume-cloudcontrol = "1"
 

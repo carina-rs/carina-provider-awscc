@@ -232,7 +232,9 @@ fn string_enum(
     values_and_aliases: &[(&str, &str)],
 ) -> AttributeType {
     AttributeType::enum_(
-        super::namespace::awscc_identity(name, namespace).expect("valid AWSCC identity"),
+        super::namespace::awscc_identity(name, namespace)
+            .expect("valid AWSCC identity")
+            .into_core(),
         Some(
             values_and_aliases
                 .iter()

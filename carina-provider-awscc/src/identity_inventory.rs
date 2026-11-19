@@ -211,14 +211,16 @@ fn assert_identity_axes(route: &str, actual: BTreeSet<TypeIdentity>, expected: B
                 });
             let mut parts = tail.split('.').map(str::to_string).collect::<Vec<_>>();
             let kind = parts.pop().expect("fixture identity kind");
-            TypeIdentity {
-                provider,
-                segments: parts,
-                kind,
-            }
+            // Independent expected axes, never schema construction. Using the
+            // seam here would make its provider-ownership backstop tautological.
+            (provider, parts, kind)
         })
         .collect::<BTreeSet<_>>();
-    assert_eq!(actual, expected, "identity axes changed on {route}");
+    let actual_axes = actual
+        .into_iter()
+        .map(|identity| (identity.provider, identity.segments, identity.kind))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(actual_axes, expected, "identity axes changed on {route}");
 }
 
 /// Preserve each published identity occurrence, not just its presence somewhere

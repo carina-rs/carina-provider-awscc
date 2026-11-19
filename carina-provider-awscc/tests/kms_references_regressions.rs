@@ -366,7 +366,7 @@ fn untyped_non_reference_properties_return_projection_errors() {
         if property.get("const").is_some() {
             let rust = rendered(&schema, "rust");
             assert!(
-                rust.contains("enum_identity(\"Plain\"")
+                rust.contains("crate::schemas::namespace::awscc_identity(\"Plain\"")
                     && rust.contains("\"enabled\".to_string()"),
                 "{rust}"
             );

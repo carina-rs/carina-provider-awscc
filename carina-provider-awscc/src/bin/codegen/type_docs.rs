@@ -1249,7 +1249,8 @@ mod tests {
             &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.Round1")
                 .expect("valid AWSCC namespace"),
         )
-        .expect("valid AWSCC identity");
+        .expect("valid AWSCC identity")
+        .into_core();
         let first = AttributeType::enum_(
             identity.clone(),
             Some(vec!["a".into()]),

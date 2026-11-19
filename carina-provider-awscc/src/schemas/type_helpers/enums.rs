@@ -84,11 +84,17 @@ pub(crate) fn dsl_aliases_for(values: &[&str]) -> Vec<(String, String)> {
 /// dynamically from a different source.
 pub(crate) fn enum_with_dsl_aliases(
     values: &[&str],
-    identity: carina_core::schema::TypeIdentity,
+    identity: crate::schemas::namespace::AwsccIdentity,
 ) -> AttributeType {
     let owned_values: Vec<String> = values.iter().map(|v| v.to_string()).collect();
     let aliases = dsl_aliases_for(values);
-    AttributeType::enum_(identity, Some(owned_values), aliases, None, None)
+    AttributeType::enum_(
+        identity.into_core(),
+        Some(owned_values),
+        aliases,
+        None,
+        None,
+    )
 }
 
 /// Check if `input` matches any of `valid_values` using enum matching rules:

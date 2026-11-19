@@ -113,10 +113,10 @@ host_credentials.rs	maps_credentials_without_token_or_expiry	not ported	SDK/cred
 host_credentials.rs	native_default_reports_the_sdk_stub_error	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
 host_credentials.rs	not_found_is_credentials_not_loaded_with_host_message	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
 host_credentials.rs	provider_failed_keeps_host_message	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-identity_layers_tests.rs	catalog_definitions_never_contain_member_constraints	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	closed_definition_rejects_inconsistent_values	ported	Original assertions/vectors; owned catalog or fallible identity-definition paths.
+identity_layers_tests.rs	catalog_definitions_never_contain_member_constraints	ported	Original String/Int member-layer assertions over every AwsccType, ScalarType and StringIdentity row; nonzero Int/Reference coverage and exact examined row count.
+identity_layers_tests.rs	closed_definition_rejects_inconsistent_values	not ported	Finite/alias/open-constraint rejection API was exercised, then removed in review round 3: production only uses open enums with no values, aliases, pattern or length; IdentityDefinition now exposes only open_enum. The corresponding test is inapplicable after this authorized API trim.
 identity_layers_tests.rs	enum_cannot_borrow_a_string_identity_callback	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	enum_definitions_validate_finite_sets_and_reject_unsupported_open_constraints	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+identity_layers_tests.rs	enum_definitions_validate_finite_sets_and_reject_unsupported_open_constraints	not ported	Finite/alias/open-constraint rejection API was exercised, then removed in review round 3: production only uses open enums with no values, aliases, pattern or length; IdentityDefinition now exposes only open_enum. The corresponding test is inapplicable after this authorized API trim.
 identity_layers_tests.rs	finite_values_encode_the_checked_policy_without_member_bases	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
 identity_layers_tests.rs	identity_layer_is_the_single_structural_owner	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
 identity_layers_tests.rs	identity_layer_reports_only_the_first_failure	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
@@ -133,7 +133,7 @@ identity_layers_tests.rs	structural_string_identity_binds_without_a_callback	not
 kms_reference.rs	alias_arn_keeps_its_own_region_and_account	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
 kms_reference.rs	aws_codes_determine_typed_outcomes_and_preserve_metadata	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
 kms_reference.rs	batch_bounds_concurrency_and_keeps_positions_when_calls_finish_out_of_order	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	batch_checks_each_identity_component_with_the_callers_provider_name	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	batch_checks_each_identity_component_with_fixed_awscc_provider	already ported	Upstream batch_checks_each_identity_component_with_the_callers_provider_name renamed to batch_checks_each_identity_component_with_fixed_awscc_provider; AWSCC owns its fixed provider name (#572).
 kms_reference.rs	core_batch_keeps_positions_around_missing_providers	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
 kms_reference.rs	core_batch_keeps_positions_around_unsupported_identity_components	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
 kms_reference.rs	core_batch_maps_wire_failures_and_preserves_their_sources_and_metadata	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
@@ -148,7 +148,7 @@ kms_reference.rs	key_arn_is_validated_without_a_call	already ported	All 24 resol
 kms_reference.rs	key_arn_preserves_authored_casing_without_a_call	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
 kms_reference.rs	key_reference_validates_offline_and_resolves_alias_arn	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
 kms_reference.rs	malformed_inputs_never_call_kms	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	resolver_errors_use_the_callers_provider_name	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	resolver_errors_are_always_scoped_to_awscc	already ported	Upstream resolver_errors_use_the_callers_provider_name renamed to resolver_errors_are_always_scoped_to_awscc; AWSCC owns its fixed provider name (#572). The upstream ["aws", "awscc"] provider loop was dropped; all original region/input/failure cases still assert awscc metadata.
 kms_reference.rs	same_partition_references_resolve_in_every_partition	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
 kms_reference.rs	sdk_failure_does_not_format_credential_sources	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
 kms_reference.rs	sdk_failure_preserves_service_message_and_metadata_without_debug	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
@@ -209,7 +209,7 @@ lib.rs	kms_key_id_carries_identity_and_validates_values	ported	Original assertio
 lib.rs	lifecycle_filter_declares_at_most_one_group_at_its_source	not ported	No ported production implementation: bucket_lifecycle_rules
 lib.rs	region_accepts_aws_format	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
 lib.rs	region_completions_generates_dsl_format	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	region_completions_uses_provider_prefix	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	region_completions_uses_provider_prefix	not ported	Removed in review round 3: fixed-provider completion calls made this a self-comparison. region_completions_generates_dsl_format retains the awscc.Region.af_south_1 pin.
 lib.rs	region_dsl_aliases_generates_api_to_dsl_pairs	not ported	No ported production implementation: region_dsl_aliases
 lib.rs	region_rejects_availability_zone	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
 lib.rs	region_rejects_invalid_region	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
@@ -287,7 +287,7 @@ member_identity_tests.rs	anonymous_shared_strings_publish_only_member_constraint
 member_identity_tests.rs	arn_and_kms_syntax_is_owned_by_the_identity_pattern	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
 member_identity_tests.rs	attaching_an_identity_rejects_disjoint_member_bounds	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
 member_identity_tests.rs	competing_reference_patterns_are_an_error_instead_of_a_dropped_check	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	enum_alias_targets_must_belong_to_the_checked_value_set	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	enum_alias_targets_must_belong_to_the_checked_value_set	not ported	Finite/alias/open-constraint rejection API was exercised, then removed in review round 3: production only uses open enums with no values, aliases, pattern or length; IdentityDefinition now exposes only open_enum. The corresponding test is inapplicable after this authorized API trim.
 member_identity_tests.rs	enum_identity_attachment_rejects_relabeling_and_conflicting_definitions	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
 member_identity_tests.rs	enum_subsets_cannot_install_values_outside_the_carrier	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
 member_identity_tests.rs	handwritten_reference_keeps_its_grammar_without_an_input_rule	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).

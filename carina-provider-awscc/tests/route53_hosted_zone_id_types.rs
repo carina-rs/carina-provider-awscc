@@ -25,7 +25,8 @@ fn hosted_zone_id_producers_share_catalog_identity_and_keep_cfn_member_bounds() 
                 &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("cloudfront")
                     .expect("valid AWSCC namespace"),
             )
-            .expect("valid AWSCC identity"),
+            .expect("valid AWSCC identity")
+            .into_core(),
             Some(vec!["Z2FDTNDATAQYW2".into()]),
             vec![("Z2FDTNDATAQYW2".into(), "global".into())],
             None,

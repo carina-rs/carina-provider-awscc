@@ -74,7 +74,7 @@ fn nested_lists_keep_both_levels_and_constraints() {
     let enum_type = AttributeType::enum_(
         carina_provider_awscc::schemas::namespace::awscc_identity("Probe", &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.DocParity").expect("valid AWSCC namespace"),
         )
-        .expect("valid AWSCC identity"),
+        .expect("valid AWSCC identity").into_core(),
         Some(vec!["alpha".into(), "beta".into()]),
         vec![
             ("alpha".into(), "alpha".into()),

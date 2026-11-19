@@ -4,6 +4,28 @@ use carina_core::schema::TypeIdentity;
 
 pub const AWSCC_PROVIDER_NAME: &str = "awscc";
 
+/// An identity constructed by AWSCC. Its private field cannot be relabelled.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AwsccIdentity(TypeIdentity);
+
+impl AwsccIdentity {
+    /// Borrow the identity at a core schema/registry inspection boundary.
+    pub fn as_core(&self) -> &TypeIdentity {
+        &self.0
+    }
+
+    /// Consume the AWSCC identity at a core schema construction boundary.
+    pub fn into_core(self) -> TypeIdentity {
+        self.0
+    }
+}
+
+impl std::fmt::Display for AwsccIdentity {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, formatter)
+    }
+}
+
 /// Service/resource segments, without a provider. Rendering owns the prefix.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AwsccNamespace(String);
@@ -75,15 +97,15 @@ pub struct InvalidAwsccKind(String);
 pub fn awscc_identity(
     kind: &str,
     namespace: &AwsccNamespace,
-) -> Result<TypeIdentity, InvalidAwsccKind> {
+) -> Result<AwsccIdentity, InvalidAwsccKind> {
     if !valid_identifier(kind) {
         return Err(InvalidAwsccKind(kind.to_string()));
     }
-    Ok(TypeIdentity::new(
+    Ok(AwsccIdentity(TypeIdentity::new(
         Some(AWSCC_PROVIDER_NAME),
         namespace.0.split('.').filter(|segment| !segment.is_empty()),
         kind,
-    ))
+    )))
 }
 
 #[cfg(test)]
@@ -125,9 +147,12 @@ mod tests {
         let namespace = root.child("ec2.Vpc").unwrap().child("Tag").unwrap();
         assert_eq!(namespace, AwsccNamespace::new("ec2.Vpc.Tag").unwrap());
         let identity = awscc_identity("Kind", &namespace).expect("valid AWSCC identity");
-        assert_eq!(identity.provider.as_deref(), Some(AWSCC_PROVIDER_NAME));
-        assert_eq!(identity.segments, ["ec2", "Vpc", "Tag"]);
-        assert_eq!(identity.kind, "Kind");
+        assert_eq!(
+            identity.as_core().provider.as_deref(),
+            Some(AWSCC_PROVIDER_NAME)
+        );
+        assert_eq!(identity.as_core().segments, ["ec2", "Vpc", "Tag"]);
+        assert_eq!(identity.as_core().kind, "Kind");
         assert_ne!(awscc_identity("OtherKind", &namespace).unwrap(), identity);
     }
 
@@ -161,7 +186,10 @@ mod kind_tests {
             assert!(awscc_identity(kind, &namespace).is_err(), "{kind:?}");
         }
         for kind in ["Arn", "Id", "_Test", "IPv6Cidr"] {
-            assert_eq!(awscc_identity(kind, &namespace).unwrap().kind, kind);
+            assert_eq!(
+                awscc_identity(kind, &namespace).unwrap().as_core().kind,
+                kind
+            );
         }
     }
 }

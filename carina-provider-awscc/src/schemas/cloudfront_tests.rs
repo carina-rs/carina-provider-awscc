@@ -724,7 +724,7 @@ fn distribution_domain_name_reuses_core_and_reference_sinks_remain_strings() {
     );
     let domain = field(schema, "domain_name");
     assert!(
-        matches!(domain.as_type().raw_shape(), RawShape::String { identity_layer: StringIdentityParts { identity: Some(identity), .. }, .. } if identity == &carina_core::schema::TypeIdentity { provider: None, segments: Vec::new(), kind: "DomainName".into() })
+        matches!(domain.as_type().raw_shape(), RawShape::String { identity_layer: StringIdentityParts { identity: Some(identity), .. }, .. } if identity.provider.is_none() && identity.segments.is_empty() && identity.kind == "DomainName")
     );
     for value in ["d111111abcdef8.cloudfront.net", "example.com."] {
         domain.validate(&string(value)).unwrap();
