@@ -103,7 +103,7 @@ echo ""
 
 # Build codegen tool first
 # Use --quiet to suppress cargo output; build only the binary (not the lib)
-cargo build -p carina-provider-awscc --bin codegen --quiet 2>/dev/null || true
+cargo build -p carina-provider-awscc --bin codegen --quiet
 
 # Find the built binary
 CODEGEN_BIN="${CARGO_TARGET_DIR:-target}/debug/codegen"

@@ -1219,6 +1219,7 @@ dependencies = [
  "clap",
  "comrak",
  "fancy-regex",
+ "futures",
  "heck",
  "http 1.4.2",
  "indexmap 2.14.0",

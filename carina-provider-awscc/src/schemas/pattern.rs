@@ -1,6 +1,6 @@
 //! Pattern approval shared by the generator and AWSCC runtime constructors.
 
-use carina_aws_types::IdentityDefinition;
+use crate::schemas::catalog_definition::IdentityDefinition;
 use carina_core::schema::{
     AttributeType, CustomValidator, DslTransform, PatternMatch, PatternReason, PatternSpec,
     TypeIdentity,

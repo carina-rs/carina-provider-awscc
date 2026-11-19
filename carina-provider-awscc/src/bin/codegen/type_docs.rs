@@ -1244,7 +1244,10 @@ mod tests {
     }
 
     fn conflicting_enum(changed_values: bool) {
-        let identity = carina_core::schema::enum_identity("Mode", Some("aws.test.Round1"));
+        let identity = carina_provider_awscc::schemas::namespace::awscc_enum_identity(
+            "Mode",
+            &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.Round1"),
+        );
         let first = AttributeType::enum_(
             identity.clone(),
             Some(vec!["a".into()]),

@@ -85,7 +85,7 @@ The metadata that you apply to the cluster to help you categorize and organize t
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `containerInsights` | `aws.ecs.Cluster.ClusterSettings.Name.container_insights` |
+| `containerInsights` | `awscc.ecs.Cluster.ClusterSettings.Name.container_insights` |
 
 Shorthand formats: `container_insights` or `Name.container_insights`
 
@@ -93,9 +93,9 @@ Shorthand formats: `container_insights` or `Name.container_insights`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enhanced` | `aws.ecs.Cluster.ClusterSettings.Value.enhanced` |
-| `enabled` | `aws.ecs.Cluster.ClusterSettings.Value.enabled` |
-| `disabled` | `aws.ecs.Cluster.ClusterSettings.Value.disabled` |
+| `enhanced` | `awscc.ecs.Cluster.ClusterSettings.Value.enhanced` |
+| `enabled` | `awscc.ecs.Cluster.ClusterSettings.Value.enabled` |
+| `disabled` | `awscc.ecs.Cluster.ClusterSettings.Value.disabled` |
 
 Shorthand formats: `enhanced` or `Value.enhanced`
 
@@ -103,9 +103,9 @@ Shorthand formats: `enhanced` or `Value.enhanced`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.ecs.Cluster.ClusterConfiguration.ExecuteCommandConfiguration.Logging.none` |
-| `DEFAULT` | `aws.ecs.Cluster.ClusterConfiguration.ExecuteCommandConfiguration.Logging.default` |
-| `OVERRIDE` | `aws.ecs.Cluster.ClusterConfiguration.ExecuteCommandConfiguration.Logging.override` |
+| `NONE` | `awscc.ecs.Cluster.ClusterConfiguration.ExecuteCommandConfiguration.Logging.none` |
+| `DEFAULT` | `awscc.ecs.Cluster.ClusterConfiguration.ExecuteCommandConfiguration.Logging.default` |
+| `OVERRIDE` | `awscc.ecs.Cluster.ClusterConfiguration.ExecuteCommandConfiguration.Logging.override` |
 
 Shorthand formats: `none` or `Logging.none`
 
@@ -129,7 +129,7 @@ Shorthand formats: `none` or `Logging.none`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `kms_key_id` | `aws.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | Specify an KMSlong key ID to encrypt the data between the local client and the container. |
+| `kms_key_id` | `awscc.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | Specify an KMSlong key ID to encrypt the data between the local client and the container. |
 | `log_configuration` | [Struct(ExecuteCommandLogConfiguration)](#configurationexecute_command_configurationlog_configuration) | No | The log configuration for the results of the execute command actions. The logs can be sent to CloudWatch Logs or an Amazon S3 bucket. When ``logging=OVERRIDE`` is specified, a ``logConfiguration`` must be provided. |
 | `logging` | [Logging](#configurationexecute_command_configurationlogging-logging) | No | The log setting to use for redirecting logs for your execute command results. The following log settings are available. + ``NONE``: The execute command session is not logged. + ``DEFAULT``: The ``awslogs`` configuration in the task definition is used. If no logging parameter is specified, it defaults to this value. If no ``awslogs`` log driver is configured in the task definition, the output won't be logged. + ``OVERRIDE``: Specify the logging details as a part of ``logConfiguration``. If the ``OVERRIDE`` logging option is specified, the ``logConfiguration`` is required. |
 
@@ -147,8 +147,8 @@ Shorthand formats: `none` or `Logging.none`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fargate_ephemeral_storage_kms_key_id` | `aws.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | Specify the KMSlong key ID for Fargate ephemeral storage. When you specify a ``fargateEphemeralStorageKmsKeyId``, AWS Fargate uses the key to encrypt data at rest in ephemeral storage. For more information about Fargate ephemeral storage encryption, see [Customer managed keys for Fargate ephemeral storage for Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-storage-encryption.html) in the *Amazon Elastic Container Service Developer Guide*. The key must be a single Region key. |
-| `kms_key_id` | `aws.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | Specify a KMSlong key ID to encrypt Amazon ECS managed storage. When you specify a ``kmsKeyId``, Amazon ECS uses the key to encrypt data volumes managed by Amazon ECS that are attached to tasks in the cluster. The following data volumes are managed by Amazon ECS: Amazon EBS. For more information about encryption of Amazon EBS volumes attached to Amazon ECS tasks, see [Encrypt data stored in Amazon EBS volumes for Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ebs-kms-encryption.html) in the *Amazon Elastic Container Service Developer Guide*. The key must be a single Region key. |
+| `fargate_ephemeral_storage_kms_key_id` | `awscc.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | Specify the KMSlong key ID for Fargate ephemeral storage. When you specify a ``fargateEphemeralStorageKmsKeyId``, AWS Fargate uses the key to encrypt data at rest in ephemeral storage. For more information about Fargate ephemeral storage encryption, see [Customer managed keys for Fargate ephemeral storage for Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-storage-encryption.html) in the *Amazon Elastic Container Service Developer Guide*. The key must be a single Region key. |
+| `kms_key_id` | `awscc.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | Specify a KMSlong key ID to encrypt Amazon ECS managed storage. When you specify a ``kmsKeyId``, Amazon ECS uses the key to encrypt data volumes managed by Amazon ECS that are attached to tasks in the cluster. The following data volumes are managed by Amazon ECS: Amazon EBS. For more information about encryption of Amazon EBS volumes attached to Amazon ECS tasks, see [Encrypt data stored in Amazon EBS volumes for Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ebs-kms-encryption.html) in the *Amazon Elastic Container Service Developer Guide*. The key must be a single Region key. |
 
 ### default_capacity_provider_strategy
 
@@ -168,7 +168,7 @@ Shorthand formats: `none` or `Logging.none`
 
 ### `arn`
 
-- **Type:** `aws.ecs.Cluster.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):ecs:[^:]*:[^:]*:cluster/.+$/ (Full), custom validator)`
+- **Type:** `awscc.ecs.Cluster.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):ecs:[^:]*:[^:]*:cluster/.+$/ (Full), custom validator)`
 
 
 

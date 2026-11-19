@@ -371,7 +371,10 @@ fn untyped_non_reference_properties_return_projection_errors() {
                 "{rust}"
             );
             let markdown = rendered(&schema, "markdown");
-            assert!(markdown.contains("aws.ec2.Vpc.Plain.enabled"), "{markdown}");
+            assert!(
+                markdown.contains("awscc.ec2.Vpc.Plain.enabled"),
+                "{markdown}"
+            );
             continue;
         }
         for format in ["rust", "markdown"] {

@@ -182,7 +182,7 @@ arguments {
 }
 
 awscc.ec2.VpnGateway {
-  type = aws.ec2.VpnGateway.Type.ipsec_1
+  type = awscc.ec2.VpnGateway.Type.ipsec_1
   amazon_side_asn = asn
 }
 
@@ -234,14 +234,14 @@ fn issue_525_ec2_enums_keep_dsl_names_and_reject_live_invalid_values() {
         (
             "IpamPool",
             "source_resource.resource_type",
-            "aws.ec2.IpamPool.SourceResource.ResourceType",
+            "awscc.ec2.IpamPool.SourceResource.ResourceType",
             vec!["vpc"],
             vec!["subnet"],
         ),
         (
             "Vpc",
             "instance_tenancy",
-            "aws.ec2.Vpc.InstanceTenancy",
+            "awscc.ec2.Vpc.InstanceTenancy",
             vec!["default", "dedicated"],
             vec!["host"],
         ),

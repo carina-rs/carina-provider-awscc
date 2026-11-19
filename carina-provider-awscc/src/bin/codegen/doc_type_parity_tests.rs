@@ -970,7 +970,10 @@ fn oracle_rejects_changed_bounds_patterns_ordering_uniqueness_and_missing_cells(
 
 #[test]
 fn enum_parity_rejects_changed_values_aliases_and_coverage() {
-    let identity = carina_core::schema::enum_identity("Mode", Some("aws.test.Round1"));
+    let identity = carina_provider_awscc::schemas::namespace::awscc_enum_identity(
+        "Mode",
+        &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.Round1"),
+    );
     let runtime = ResourceSchema::new("test.Round1")
         .attribute(
             AttributeSchema::optional(
@@ -991,23 +994,23 @@ fn enum_parity_rejects_changed_values_aliases_and_coverage() {
         "typeName":"AWS::Test::Round1", "properties":{"Mode":{"type":"string","enum":["a","b"]}}
     }))
     .unwrap();
-    let markdown = "## Argument Reference\n\n### `mode`\n\n- **Type:** [Mode](#mode-mode)\n- **Required:** No\n\n## Enum Values\n\n### mode (Mode)\n\n| Value | DSL Identifier |\n|---|---|\n| `a` | `aws.test.Round1.Mode.alpha` |\n| `b` | `aws.test.Round1.Mode.beta` |\n";
+    let markdown = "## Argument Reference\n\n### `mode`\n\n- **Type:** [Mode](#mode-mode)\n- **Required:** No\n\n## Enum Values\n\n### mode (Mode)\n\n| Value | DSL Identifier |\n|---|---|\n| `a` | `awscc.test.Round1.Mode.alpha` |\n| `b` | `awscc.test.Round1.Mode.beta` |\n";
     check_parity(runtime.as_schema(), &parsed, markdown).unwrap();
     let mutations = [
         ("wire value", markdown.replace("| `a` |", "| `changed` |")),
         ("alias", markdown.replace("Mode.alpha", "Mode.changed")),
         (
             "missing row",
-            markdown.replace("| `b` | `aws.test.Round1.Mode.beta` |\n", ""),
+            markdown.replace("| `b` | `awscc.test.Round1.Mode.beta` |\n", ""),
         ),
         (
             "extra row",
-            format!("{markdown}| `extra` | `aws.test.Round1.Mode.extra` |\n"),
+            format!("{markdown}| `extra` | `awscc.test.Round1.Mode.extra` |\n"),
         ),
         (
             "orphan table",
             format!(
-                "{markdown}\n### orphan\n\n| Value | DSL Identifier |\n|---|---|\n| `a` | `aws.test.Round1.Mode.alpha` |\n"
+                "{markdown}\n### orphan\n\n| Value | DSL Identifier |\n|---|---|\n| `a` | `awscc.test.Round1.Mode.alpha` |\n"
             ),
         ),
     ];

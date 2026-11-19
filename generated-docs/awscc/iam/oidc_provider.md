@@ -47,7 +47,7 @@ awscc.iam.OidcProvider {
 
 ### `arn`
 
-- **Type:** `aws.iam.OidcProvider.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:oidc-provider/.+$/ (Full), member constraints: len: 20..=2048, custom validator)`
+- **Type:** `awscc.iam.OidcProvider.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):iam::[^:]*:oidc-provider/.+$/ (Full), member constraints: len: 20..=2048, custom validator)`
 
 Amazon Resource Name (ARN) of the OIDC provider
 

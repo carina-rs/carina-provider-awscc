@@ -13,6 +13,7 @@
 //! - `provider` - AwsccProvider implementation
 //! - `schemas` - Auto-generated resource schemas
 
+mod kms_reference;
 mod partition;
 pub mod provider;
 mod references;
@@ -20,6 +21,10 @@ mod resend_safety;
 pub mod resources;
 pub mod schemas;
 mod sdk_config;
+
+#[cfg(any(test, feature = "test-utils"))]
+#[doc(hidden)]
+pub mod identity_inventory;
 
 #[cfg(test)]
 mod test_support;
@@ -240,7 +245,7 @@ impl ProviderFactory for AwsccProviderFactory {
     fn provider_config_attribute_types(&self) -> ValidatedConfigSchema {
         use carina_core::schema::AttributeType;
         let mut types = BTreeMap::new();
-        types.insert("region".to_string(), carina_aws_types::aws_region());
+        types.insert("region".to_string(), crate::schemas::catalog::aws_region());
         types.insert(
             "allowed_account_ids".to_string(),
             AttributeType::unordered_list(AttributeType::string()),
@@ -328,7 +333,7 @@ impl ProviderFactory for AwsccProviderFactory {
     ) -> std::collections::HashMap<String, Vec<carina_core::schema::CompletionValue>> {
         std::collections::HashMap::from([(
             "region".to_string(),
-            carina_aws_types::region_completions("awscc"),
+            crate::schemas::type_helpers::region_completions(),
         )])
     }
 
@@ -426,7 +431,7 @@ impl Provider for AwsccProvider {
                 .and_then(|client| client.instance_region().map(|region| (client, region)));
             Ok(match scope {
                 Ok((client, region)) => {
-                    carina_aws_types::kms_reference::resolve_core_reference_batch(
+                    crate::kms_reference::resolve_core_reference_batch(
                         client, "awscc", region, requests,
                     )
                     .await
@@ -657,12 +662,12 @@ mod tests {
     fn extract_region_keeps_string_literal() {
         let attributes = IndexMap::from([(
             "region".to_string(),
-            Value::Concrete(ConcreteValue::String("aws.Region.us_west_2".into())),
+            Value::Concrete(ConcreteValue::String("awscc.Region.us_west_2".into())),
         )]);
 
         assert_eq!(
             carina_core::utils::extract_region_from_attrs(&attributes, "ap-northeast-1"),
-            "aws.Region.us_west_2"
+            "awscc.Region.us_west_2"
         );
     }
 

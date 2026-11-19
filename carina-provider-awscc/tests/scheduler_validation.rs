@@ -94,7 +94,7 @@ awscc.scheduler.Schedule {{
   {group_name}
   schedule_expression = 'rate(6 hours)'
   flexible_time_window = {{
-    mode = aws.scheduler.Schedule.FlexibleTimeWindow.FlexibleTimeWindowMode.off
+    mode = awscc.scheduler.Schedule.FlexibleTimeWindow.FlexibleTimeWindowMode.off
   }}
   target = {{
     arn = 'arn:aws:lambda:ap-northeast-1:123456789012:function:example:live'
@@ -169,7 +169,7 @@ let validation_group = awscc.scheduler.ScheduleGroup {{
     let error = validate_scheduler(&source)
         .expect_err("an unresolved group_name cannot prove that the group is default");
     assert!(
-        error.contains("group_name") && error.contains("aws.scheduler.Schedule.GroupName"),
+        error.contains("group_name") && error.contains("awscc.scheduler.Schedule.GroupName"),
         "expected an identified default-group type mismatch, got: {error}"
     );
 }

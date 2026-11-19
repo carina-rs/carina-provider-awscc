@@ -27,7 +27,7 @@ let gateway_attachment = awscc.ec2.VpcGatewayAttachment {
 }
 
 let eip = awscc.ec2.Eip {
-  domain = aws.ec2.Eip.Domain.vpc
+  domain = awscc.ec2.Eip.Domain.vpc
 }
 
 awscc.ec2.NatGateway {

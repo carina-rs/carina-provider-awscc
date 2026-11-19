@@ -129,7 +129,7 @@ fn review_r7_named_string_displays_include_effective_local_constraints() {
         assert!(
             markdown
                 .lines()
-                .any(|line| line.contains("aws.ec2.Vpc.Id") && line.contains("37..=49")),
+                .any(|line| line.contains("awscc.ec2.Vpc.Id") && line.contains("37..=49")),
             "named string lost its local length constraints"
         );
     }
@@ -208,7 +208,7 @@ fn review_r7_named_string_displays_include_pattern_only_constraints() {
     assert!(
         markdown
             .lines()
-            .any(|line| line.contains("aws.ec2.Vpc.Id") && line.contains("pattern"))
+            .any(|line| line.contains("awscc.ec2.Vpc.Id") && line.contains("pattern"))
     );
 }
 
@@ -260,6 +260,10 @@ fn review_r7_required_and_output_defaults_are_preserved_as_annotations() {
         assert!(rust.contains("CFN default: 3"));
         assert!(!rust.contains(".with_default("));
         let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
-        assert!(markdown.contains("**CFN default:** `3`") && markdown.contains("server default") && !markdown.contains("**Default:**"));
+        assert!(
+            markdown.contains("**CFN default:** `3`")
+                && markdown.contains("server default")
+                && !markdown.contains("**Default:**")
+        );
     }
 }

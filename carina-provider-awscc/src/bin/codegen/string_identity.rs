@@ -5,62 +5,78 @@ use super::*;
 pub(super) fn from_constructor(source: &str) -> Option<Option<StringIdentity>> {
     Some(match source {
         "AttributeType::string()" => None,
-        "carina_aws_types::availability_zone()" => Some(StringIdentity::AvailabilityZoneZoneName),
-        "carina_aws_types::aws_region()" => Some(StringIdentity::Region),
-        "carina_aws_types::allocation_id()" => Some(StringIdentity::Ec2EipAllocationId),
-        "carina_aws_types::availability_zone_id()" => Some(StringIdentity::AvailabilityZoneZoneId),
-        "carina_aws_types::aws_account_id()" => Some(StringIdentity::AccountId),
-        "carina_aws_types::aws_resource_id()" => Some(StringIdentity::ResourceId),
-        "carina_aws_types::carrier_gateway_id()" => Some(StringIdentity::Ec2CarrierGatewayId),
-        "carina_aws_types::egress_only_internet_gateway_id()" => {
+        "crate::schemas::catalog::availability_zone()" => {
+            Some(StringIdentity::AvailabilityZoneZoneName)
+        }
+        "crate::schemas::catalog::aws_region()" => Some(StringIdentity::Region),
+        "crate::schemas::catalog::allocation_id()" => Some(StringIdentity::Ec2EipAllocationId),
+        "crate::schemas::catalog::availability_zone_id()" => {
+            Some(StringIdentity::AvailabilityZoneZoneId)
+        }
+        "crate::schemas::catalog::aws_account_id()" => Some(StringIdentity::AccountId),
+        "crate::schemas::catalog::aws_resource_id()" => Some(StringIdentity::ResourceId),
+        "crate::schemas::catalog::carrier_gateway_id()" => {
+            Some(StringIdentity::Ec2CarrierGatewayId)
+        }
+        "crate::schemas::catalog::egress_only_internet_gateway_id()" => {
             Some(StringIdentity::Ec2EgressOnlyInternetGatewayId)
         }
-        "carina_aws_types::elbv2_health_check_port()" => None,
-        "carina_aws_types::elbv2_target_group_grpc_code()" => {
+        "crate::schemas::type_helpers::elbv2_health_check_port()" => None,
+        "crate::schemas::catalog::elbv2_target_group_grpc_code()" => {
             Some(StringIdentity::Elasticloadbalancingv2TargetGroupGrpcCode)
         }
-        "carina_aws_types::elbv2_target_group_http_code()" => {
+        "crate::schemas::catalog::elbv2_target_group_http_code()" => {
             Some(StringIdentity::Elasticloadbalancingv2TargetGroupHttpCode)
         }
-        "carina_aws_types::flow_log_id()" => Some(StringIdentity::Ec2FlowLogId),
-        "carina_aws_types::iam_path()" => None,
-        "carina_aws_types::iam_policy_name()" => Some(StringIdentity::IamPolicyName),
-        "carina_aws_types::iam_role_id()" => Some(StringIdentity::IamRoleId),
-        "carina_aws_types::iam_role_name()" => Some(StringIdentity::IamRoleName),
-        "carina_aws_types::identity_store_id()" => Some(StringIdentity::IdentitystoreStoreId),
-        "carina_aws_types::instance_id()" => Some(StringIdentity::Ec2InstanceId),
-        "carina_aws_types::internet_gateway_id()" => Some(StringIdentity::Ec2InternetGatewayId),
-        "carina_aws_types::ipam_id()" => Some(StringIdentity::Ec2IpamId),
-        "carina_aws_types::ipam_pool_id()" => Some(StringIdentity::Ec2IpamPoolId),
-        "carina_aws_types::local_gateway_id()" => Some(StringIdentity::Ec2LocalGatewayId),
-        "carina_aws_types::nat_gateway_id()" => Some(StringIdentity::Ec2NatGatewayId),
-        "carina_aws_types::network_acl_id()" => Some(StringIdentity::Ec2NetworkAclId),
-        "carina_aws_types::network_interface_id()" => Some(StringIdentity::Ec2NetworkInterfaceId),
-        "carina_aws_types::prefix_list_id()" => Some(StringIdentity::Ec2PrefixListId),
-        "carina_aws_types::route53_hosted_zone_id()" => Some(StringIdentity::Route53HostedZoneId),
-        "carina_aws_types::route_table_id()" => Some(StringIdentity::Ec2RouteTableId),
-        "carina_aws_types::security_group_id()" => Some(StringIdentity::Ec2SecurityGroupId),
-        "carina_aws_types::sso_principal_id()" => Some(StringIdentity::SsoPrincipalId),
-        "carina_aws_types::subnet_id()" => Some(StringIdentity::Ec2SubnetId),
-        "carina_aws_types::subnet_route_table_association_id()" => {
+        "crate::schemas::catalog::flow_log_id()" => Some(StringIdentity::Ec2FlowLogId),
+        "crate::schemas::type_helpers::iam_path()" => None,
+        "crate::schemas::catalog::iam_policy_name()" => Some(StringIdentity::IamPolicyName),
+        "crate::schemas::catalog::iam_role_id()" => Some(StringIdentity::IamRoleId),
+        "crate::schemas::catalog::iam_role_name()" => Some(StringIdentity::IamRoleName),
+        "crate::schemas::catalog::identity_store_id()" => {
+            Some(StringIdentity::IdentitystoreStoreId)
+        }
+        "crate::schemas::catalog::instance_id()" => Some(StringIdentity::Ec2InstanceId),
+        "crate::schemas::catalog::internet_gateway_id()" => {
+            Some(StringIdentity::Ec2InternetGatewayId)
+        }
+        "crate::schemas::catalog::ipam_id()" => Some(StringIdentity::Ec2IpamId),
+        "crate::schemas::catalog::ipam_pool_id()" => Some(StringIdentity::Ec2IpamPoolId),
+        "crate::schemas::catalog::local_gateway_id()" => Some(StringIdentity::Ec2LocalGatewayId),
+        "crate::schemas::catalog::nat_gateway_id()" => Some(StringIdentity::Ec2NatGatewayId),
+        "crate::schemas::catalog::network_acl_id()" => Some(StringIdentity::Ec2NetworkAclId),
+        "crate::schemas::catalog::network_interface_id()" => {
+            Some(StringIdentity::Ec2NetworkInterfaceId)
+        }
+        "crate::schemas::catalog::prefix_list_id()" => Some(StringIdentity::Ec2PrefixListId),
+        "crate::schemas::catalog::route53_hosted_zone_id()" => {
+            Some(StringIdentity::Route53HostedZoneId)
+        }
+        "crate::schemas::catalog::route_table_id()" => Some(StringIdentity::Ec2RouteTableId),
+        "crate::schemas::catalog::security_group_id()" => Some(StringIdentity::Ec2SecurityGroupId),
+        "crate::schemas::catalog::sso_principal_id()" => Some(StringIdentity::SsoPrincipalId),
+        "crate::schemas::catalog::subnet_id()" => Some(StringIdentity::Ec2SubnetId),
+        "crate::schemas::catalog::subnet_route_table_association_id()" => {
             Some(StringIdentity::Ec2SubnetRouteTableAssociationId)
         }
-        "carina_aws_types::tgw_route_table_id()" => {
+        "crate::schemas::catalog::tgw_route_table_id()" => {
             Some(StringIdentity::Ec2TransitGatewayRouteTableId)
         }
-        "carina_aws_types::transit_gateway_attachment_id()" => {
+        "crate::schemas::catalog::transit_gateway_attachment_id()" => {
             Some(StringIdentity::Ec2TransitGatewayAttachmentId)
         }
-        "carina_aws_types::transit_gateway_id()" => Some(StringIdentity::Ec2TransitGatewayId),
-        "carina_aws_types::vpc_cidr_block_association_id()" => {
+        "crate::schemas::catalog::transit_gateway_id()" => {
+            Some(StringIdentity::Ec2TransitGatewayId)
+        }
+        "crate::schemas::catalog::vpc_cidr_block_association_id()" => {
             Some(StringIdentity::Ec2VpcCidrBlockAssociationId)
         }
-        "carina_aws_types::vpc_endpoint_id()" => Some(StringIdentity::Ec2VpcEndpointId),
-        "carina_aws_types::vpc_id()" => Some(StringIdentity::Ec2VpcId),
-        "carina_aws_types::vpc_peering_connection_id()" => {
+        "crate::schemas::catalog::vpc_endpoint_id()" => Some(StringIdentity::Ec2VpcEndpointId),
+        "crate::schemas::catalog::vpc_id()" => Some(StringIdentity::Ec2VpcId),
+        "crate::schemas::catalog::vpc_peering_connection_id()" => {
             Some(StringIdentity::Ec2VpcPeeringConnectionId)
         }
-        "carina_aws_types::vpn_gateway_id()" => Some(StringIdentity::Ec2VpnGatewayId),
+        "crate::schemas::catalog::vpn_gateway_id()" => Some(StringIdentity::Ec2VpnGatewayId),
         "carina_core::schema::types::domain_name()" => Some(StringIdentity::DomainName),
         "carina_core::schema::types::http_response_status_code()" => {
             Some(StringIdentity::HttpResponseStatusCode)
@@ -211,59 +227,61 @@ impl StringConstraints {
 #[cfg(test)]
 pub(super) fn constructor(identity: StringIdentity) -> &'static str {
     match identity {
-        StringIdentity::AccountId => "carina_aws_types::aws_account_id()",
-        StringIdentity::AvailabilityZoneZoneName => "carina_aws_types::availability_zone()",
-        StringIdentity::Region => "carina_aws_types::aws_region()",
+        StringIdentity::AccountId => "crate::schemas::catalog::aws_account_id()",
+        StringIdentity::AvailabilityZoneZoneName => "crate::schemas::catalog::availability_zone()",
+        StringIdentity::Region => "crate::schemas::catalog::aws_region()",
         StringIdentity::Arn => "crate::schemas::catalog::arn()",
-        StringIdentity::AvailabilityZoneZoneId => "carina_aws_types::availability_zone_id()",
+        StringIdentity::AvailabilityZoneZoneId => "crate::schemas::catalog::availability_zone_id()",
         StringIdentity::CloudfrontDistributionArn => {
             "crate::schemas::catalog::cloudfront_distribution_arn()"
         }
         StringIdentity::DomainName => "carina_core::schema::types::domain_name()",
         StringIdentity::DynamodbTableArn => "crate::schemas::catalog::dynamodb_table_arn()",
-        StringIdentity::Ec2CarrierGatewayId => "carina_aws_types::carrier_gateway_id()",
+        StringIdentity::Ec2CarrierGatewayId => "crate::schemas::catalog::carrier_gateway_id()",
         StringIdentity::Ec2EgressOnlyInternetGatewayId => {
-            "carina_aws_types::egress_only_internet_gateway_id()"
+            "crate::schemas::catalog::egress_only_internet_gateway_id()"
         }
-        StringIdentity::Ec2EipAllocationId => "carina_aws_types::allocation_id()",
-        StringIdentity::Ec2FlowLogId => "carina_aws_types::flow_log_id()",
-        StringIdentity::Ec2InstanceId => "carina_aws_types::instance_id()",
-        StringIdentity::Ec2InternetGatewayId => "carina_aws_types::internet_gateway_id()",
+        StringIdentity::Ec2EipAllocationId => "crate::schemas::catalog::allocation_id()",
+        StringIdentity::Ec2FlowLogId => "crate::schemas::catalog::flow_log_id()",
+        StringIdentity::Ec2InstanceId => "crate::schemas::catalog::instance_id()",
+        StringIdentity::Ec2InternetGatewayId => "crate::schemas::catalog::internet_gateway_id()",
         StringIdentity::Ec2IpamArn => "crate::schemas::catalog::ec2_ipam_arn()",
-        StringIdentity::Ec2IpamId => "carina_aws_types::ipam_id()",
+        StringIdentity::Ec2IpamId => "crate::schemas::catalog::ipam_id()",
         StringIdentity::Ec2IpamPoolArn => "crate::schemas::catalog::ec2_ipam_pool_arn()",
-        StringIdentity::Ec2IpamPoolId => "carina_aws_types::ipam_pool_id()",
-        StringIdentity::Ec2LocalGatewayId => "carina_aws_types::local_gateway_id()",
-        StringIdentity::Ec2NatGatewayId => "carina_aws_types::nat_gateway_id()",
-        StringIdentity::Ec2NetworkAclId => "carina_aws_types::network_acl_id()",
-        StringIdentity::Ec2NetworkInterfaceId => "carina_aws_types::network_interface_id()",
-        StringIdentity::Ec2PrefixListId => "carina_aws_types::prefix_list_id()",
-        StringIdentity::Ec2RouteTableId => "carina_aws_types::route_table_id()",
-        StringIdentity::Ec2SecurityGroupId => "carina_aws_types::security_group_id()",
-        StringIdentity::Ec2SubnetId => "carina_aws_types::subnet_id()",
+        StringIdentity::Ec2IpamPoolId => "crate::schemas::catalog::ipam_pool_id()",
+        StringIdentity::Ec2LocalGatewayId => "crate::schemas::catalog::local_gateway_id()",
+        StringIdentity::Ec2NatGatewayId => "crate::schemas::catalog::nat_gateway_id()",
+        StringIdentity::Ec2NetworkAclId => "crate::schemas::catalog::network_acl_id()",
+        StringIdentity::Ec2NetworkInterfaceId => "crate::schemas::catalog::network_interface_id()",
+        StringIdentity::Ec2PrefixListId => "crate::schemas::catalog::prefix_list_id()",
+        StringIdentity::Ec2RouteTableId => "crate::schemas::catalog::route_table_id()",
+        StringIdentity::Ec2SecurityGroupId => "crate::schemas::catalog::security_group_id()",
+        StringIdentity::Ec2SubnetId => "crate::schemas::catalog::subnet_id()",
         StringIdentity::Ec2SubnetRouteTableAssociationId => {
-            "carina_aws_types::subnet_route_table_association_id()"
+            "crate::schemas::catalog::subnet_route_table_association_id()"
         }
         StringIdentity::Ec2TransitGatewayAttachmentId => {
-            "carina_aws_types::transit_gateway_attachment_id()"
+            "crate::schemas::catalog::transit_gateway_attachment_id()"
         }
-        StringIdentity::Ec2TransitGatewayId => "carina_aws_types::transit_gateway_id()",
-        StringIdentity::Ec2TransitGatewayRouteTableId => "carina_aws_types::tgw_route_table_id()",
+        StringIdentity::Ec2TransitGatewayId => "crate::schemas::catalog::transit_gateway_id()",
+        StringIdentity::Ec2TransitGatewayRouteTableId => {
+            "crate::schemas::catalog::tgw_route_table_id()"
+        }
         StringIdentity::Ec2VpcCidrBlockAssociationId => {
-            "carina_aws_types::vpc_cidr_block_association_id()"
+            "crate::schemas::catalog::vpc_cidr_block_association_id()"
         }
-        StringIdentity::Ec2VpcEndpointId => "carina_aws_types::vpc_endpoint_id()",
-        StringIdentity::Ec2VpcId => "carina_aws_types::vpc_id()",
+        StringIdentity::Ec2VpcEndpointId => "crate::schemas::catalog::vpc_endpoint_id()",
+        StringIdentity::Ec2VpcId => "crate::schemas::catalog::vpc_id()",
         StringIdentity::Ec2VpcPeeringConnectionId => {
-            "carina_aws_types::vpc_peering_connection_id()"
+            "crate::schemas::catalog::vpc_peering_connection_id()"
         }
-        StringIdentity::Ec2VpnGatewayId => "carina_aws_types::vpn_gateway_id()",
+        StringIdentity::Ec2VpnGatewayId => "crate::schemas::catalog::vpn_gateway_id()",
         StringIdentity::EcsClusterArn => "crate::schemas::catalog::ecs_cluster_arn()",
         StringIdentity::Elasticloadbalancingv2TargetGroupGrpcCode => {
-            "carina_aws_types::elbv2_target_group_grpc_code()"
+            "crate::schemas::catalog::elbv2_target_group_grpc_code()"
         }
         StringIdentity::Elasticloadbalancingv2TargetGroupHttpCode => {
-            "carina_aws_types::elbv2_target_group_http_code()"
+            "crate::schemas::catalog::elbv2_target_group_http_code()"
         }
         StringIdentity::Email => "types::email()",
         StringIdentity::HttpResponseStatusCode => {
@@ -272,14 +290,14 @@ pub(super) fn constructor(identity: StringIdentity) -> &'static str {
         StringIdentity::HttpsUrl => "carina_core::schema::types::https_url()",
         StringIdentity::IamOidcProviderArn => "super::super::iam::oidc_provider::arn()",
         StringIdentity::IamPolicyArn => "crate::schemas::catalog::iam_policy_arn()",
-        StringIdentity::IamPolicyName => "carina_aws_types::iam_policy_name()",
+        StringIdentity::IamPolicyName => "crate::schemas::catalog::iam_policy_name()",
         StringIdentity::IamRoleArn => "super::super::iam::role::arn()",
-        StringIdentity::IamRoleId => "carina_aws_types::iam_role_id()",
-        StringIdentity::IamRoleName => "carina_aws_types::iam_role_name()",
+        StringIdentity::IamRoleId => "crate::schemas::catalog::iam_role_id()",
+        StringIdentity::IamRoleName => "crate::schemas::catalog::iam_role_name()",
         StringIdentity::IdentitystoreGroupDisplayName => {
             "crate::schemas::catalog::identitystore_group_display_name()"
         }
-        StringIdentity::IdentitystoreStoreId => "carina_aws_types::identity_store_id()",
+        StringIdentity::IdentitystoreStoreId => "crate::schemas::catalog::identity_store_id()",
         StringIdentity::Ipv4Address => "carina_core::schema::types::ipv4_address()",
         StringIdentity::Ipv4Cidr => "types::ipv4_cidr()",
         StringIdentity::Ipv6Address => "carina_core::schema::types::ipv6_address()",
@@ -307,8 +325,8 @@ pub(super) fn constructor(identity: StringIdentity) -> &'static str {
         StringIdentity::RedirectPort => "carina_core::schema::types::redirect_port()",
         StringIdentity::RedirectProtocol => "carina_core::schema::types::redirect_protocol()",
         StringIdentity::RedirectQuery => "carina_core::schema::types::redirect_query()",
-        StringIdentity::ResourceId => "carina_aws_types::aws_resource_id()",
-        StringIdentity::Route53HostedZoneId => "carina_aws_types::route53_hosted_zone_id()",
+        StringIdentity::ResourceId => "crate::schemas::catalog::aws_resource_id()",
+        StringIdentity::Route53HostedZoneId => "crate::schemas::catalog::route53_hosted_zone_id()",
         StringIdentity::S3BucketArn => "crate::schemas::catalog::s3_bucket_arn()",
         StringIdentity::S3BucketLifecycleDate => "crate::schemas::catalog::s3_lifecycle_date()",
         StringIdentity::SchedulerScheduleGroupName => {
@@ -322,7 +340,7 @@ pub(super) fn constructor(identity: StringIdentity) -> &'static str {
         StringIdentity::SsoPermissionSetSessionDuration => {
             "crate::schemas::catalog::sso_permission_set_session_duration()"
         }
-        StringIdentity::SsoPrincipalId => "carina_aws_types::sso_principal_id()",
+        StringIdentity::SsoPrincipalId => "crate::schemas::catalog::sso_principal_id()",
         StringIdentity::Wafv2WebACLByteMatchSearchString => {
             "crate::schemas::catalog::wafv2_byte_match_search_string()"
         }

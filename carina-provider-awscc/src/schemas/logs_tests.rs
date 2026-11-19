@@ -60,7 +60,7 @@ fn log_group_name_preserves_pattern_and_bounds_in_direct_callback_dispatch() {
     else {
         panic!("LogGroup.LogGroupName must retain its identity and validator callback");
     };
-    assert_eq!(identity.to_string(), "aws.logs.LogGroup.LogGroupName");
+    assert_eq!(identity.to_string(), "awscc.logs.LogGroup.LogGroupName");
     assert_eq!(
         pattern,
         Some(&carina_core::schema::PatternSpec::new(

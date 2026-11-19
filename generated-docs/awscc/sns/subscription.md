@@ -77,7 +77,7 @@ When specified, sends undeliverable messages to the specified Amazon SQS dead-le
 
 ### `region`
 
-- **Type:** `aws.Region (custom validator)`
+- **Type:** `awscc.Region (custom validator)`
 - **Required:** No
 - **Write-only:** Yes
 
@@ -92,14 +92,14 @@ Specifies whether Amazon SNS resends the notification to the subscription when a
 
 ### `subscription_role_arn`
 
-- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
+- **Type:** `awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 - **Required:** No
 
 This property applies only to Amazon Data Firehose delivery stream subscriptions.
 
 ### `topic_arn`
 
-- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
+- **Type:** `awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -117,10 +117,10 @@ These CloudFormation properties require the free-form JSON document type tracked
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `arithmetic` | `aws.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.arithmetic` |
-| `exponential` | `aws.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.exponential` |
-| `geometric` | `aws.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.geometric` |
-| `linear` | `aws.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.linear` |
+| `arithmetic` | `awscc.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.arithmetic` |
+| `exponential` | `awscc.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.exponential` |
+| `geometric` | `awscc.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.geometric` |
+| `linear` | `awscc.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.linear` |
 
 Shorthand formats: `arithmetic` or `BackoffFunction.arithmetic`
 
@@ -128,18 +128,18 @@ Shorthand formats: `arithmetic` or `BackoffFunction.arithmetic`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `text/css` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_css` |
-| `text/csv` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_csv` |
-| `text/html` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_html` |
-| `text/plain` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_plain` |
-| `text/xml` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_xml` |
-| `application/atom+xml` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_atom_xml` |
-| `application/json` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_json` |
-| `application/octet-stream` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_octet_stream` |
-| `application/soap+xml` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_soap_xml` |
-| `application/x-www-form-urlencoded` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_x_www_form_urlencoded` |
-| `application/xhtml+xml` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_xhtml_xml` |
-| `application/xml` | `aws.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_xml` |
+| `text/css` | `awscc.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_css` |
+| `text/csv` | `awscc.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_csv` |
+| `text/html` | `awscc.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_html` |
+| `text/plain` | `awscc.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_plain` |
+| `text/xml` | `awscc.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.text_xml` |
+| `application/atom+xml` | `awscc.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_atom_xml` |
+| `application/json` | `awscc.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_json` |
+| `application/octet-stream` | `awscc.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_octet_stream` |
+| `application/soap+xml` | `awscc.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_soap_xml` |
+| `application/x-www-form-urlencoded` | `awscc.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_x_www_form_urlencoded` |
+| `application/xhtml+xml` | `awscc.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_xhtml_xml` |
+| `application/xml` | `awscc.sns.Subscription.DeliveryPolicy.RequestPolicy.HeaderContentType.application_xml` |
 
 Shorthand formats: `text_css` or `HeaderContentType.text_css`
 
@@ -147,8 +147,8 @@ Shorthand formats: `text_css` or `HeaderContentType.text_css`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MessageAttributes` | `aws.sns.Subscription.FilterPolicyScope.message_attributes` |
-| `MessageBody` | `aws.sns.Subscription.FilterPolicyScope.message_body` |
+| `MessageAttributes` | `awscc.sns.Subscription.FilterPolicyScope.message_attributes` |
+| `MessageBody` | `awscc.sns.Subscription.FilterPolicyScope.message_body` |
 
 Shorthand formats: `message_attributes` or `FilterPolicyScope.message_attributes`
 
@@ -156,15 +156,15 @@ Shorthand formats: `message_attributes` or `FilterPolicyScope.message_attributes
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `http` | `aws.sns.Subscription.Protocol.http` |
-| `https` | `aws.sns.Subscription.Protocol.https` |
-| `email` | `aws.sns.Subscription.Protocol.email` |
-| `email-json` | `aws.sns.Subscription.Protocol.email_json` |
-| `sms` | `aws.sns.Subscription.Protocol.sms` |
-| `sqs` | `aws.sns.Subscription.Protocol.sqs` |
-| `application` | `aws.sns.Subscription.Protocol.application` |
-| `lambda` | `aws.sns.Subscription.Protocol.lambda` |
-| `firehose` | `aws.sns.Subscription.Protocol.firehose` |
+| `http` | `awscc.sns.Subscription.Protocol.http` |
+| `https` | `awscc.sns.Subscription.Protocol.https` |
+| `email` | `awscc.sns.Subscription.Protocol.email` |
+| `email-json` | `awscc.sns.Subscription.Protocol.email_json` |
+| `sms` | `awscc.sns.Subscription.Protocol.sms` |
+| `sqs` | `awscc.sns.Subscription.Protocol.sqs` |
+| `application` | `awscc.sns.Subscription.Protocol.application` |
+| `lambda` | `awscc.sns.Subscription.Protocol.lambda` |
+| `firehose` | `awscc.sns.Subscription.Protocol.firehose` |
 
 Shorthand formats: `http` or `Protocol.http`
 
@@ -172,7 +172,7 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Timestamp` | `aws.sns.Subscription.ReplayPolicy.PointType.timestamp` |
+| `Timestamp` | `awscc.sns.Subscription.ReplayPolicy.PointType.timestamp` |
 
 Shorthand formats: `timestamp` or `PointType.timestamp`
 
@@ -229,7 +229,7 @@ Shorthand formats: `timestamp` or `PointType.timestamp`
 
 ### `arn`
 
-- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
+- **Type:** `awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 Arn of the subscription
 

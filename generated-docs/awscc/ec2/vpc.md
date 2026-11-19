@@ -61,7 +61,7 @@ The allowed tenancy of instances launched into the VPC. + ``default``: An instan
 
 ### `ipv4_ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -90,8 +90,8 @@ The tags for the VPC.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `default` | `aws.ec2.Vpc.InstanceTenancy.default` |
-| `dedicated` | `aws.ec2.Vpc.InstanceTenancy.dedicated` |
+| `default` | `awscc.ec2.Vpc.InstanceTenancy.default` |
+| `dedicated` | `awscc.ec2.Vpc.InstanceTenancy.dedicated` |
 
 Shorthand formats: `default` or `InstanceTenancy.default`
 
@@ -99,19 +99,19 @@ Shorthand formats: `default` or `InstanceTenancy.default`
 
 ### `cidr_block_associations`
 
-- **Type:** List\<`aws.ec2.VpcCidrBlockAssociation.Id (pattern: /^vpc-cidr-assoc-[0-9a-f]{8,}$/ (Full))`\> (unordered)
+- **Type:** List\<`awscc.ec2.VpcCidrBlockAssociation.Id (pattern: /^vpc-cidr-assoc-[0-9a-f]{8,}$/ (Full))`\> (unordered)
 
 
 
 ### `default_network_acl`
 
-- **Type:** `aws.ec2.NetworkAcl.Id (pattern: /^acl-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.NetworkAcl.Id (pattern: /^acl-[0-9a-f]{8,}$/ (Full))`
 
 
 
 ### `default_security_group`
 
-- **Type:** `aws.ec2.SecurityGroup.Id (pattern: /^sg-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.SecurityGroup.Id (pattern: /^sg-[0-9a-f]{8,}$/ (Full))`
 
 
 
@@ -123,7 +123,7 @@ Shorthand formats: `default` or `InstanceTenancy.default`
 
 ### `vpc_id`
 
-- **Type:** `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
 
 
 

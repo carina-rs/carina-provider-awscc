@@ -41,14 +41,14 @@ The network (``vpc``). If you define an Elastic IP address and associate it with
 
 ### `instance_id`
 
-- **Type:** `aws.ec2.Instance.Id (pattern: /^i-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.Instance.Id (pattern: /^i-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 The ID of the instance. Updates to the ``InstanceId`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.
 
 ### `ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -92,8 +92,8 @@ The Elastic IP address you are accepting for transfer. You can only accept one t
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `vpc` | `aws.ec2.Eip.Domain.vpc` |
-| `standard` | `aws.ec2.Eip.Domain.standard` |
+| `vpc` | `awscc.ec2.Eip.Domain.vpc` |
+| `standard` | `awscc.ec2.Eip.Domain.standard` |
 
 Shorthand formats: `vpc` or `Domain.vpc`
 
@@ -101,7 +101,7 @@ Shorthand formats: `vpc` or `Domain.vpc`
 
 ### `allocation_id`
 
-- **Type:** `aws.ec2.Eip.AllocationId (pattern: /^eipalloc-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.Eip.AllocationId (pattern: /^eipalloc-[0-9a-f]{8,}$/ (Full))`
 
 
 

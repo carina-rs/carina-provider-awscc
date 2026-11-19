@@ -442,13 +442,13 @@ fn byte_match_catalog_types_have_the_exact_local_identities_and_callbacks() {
     for (field_name, identity, accepted, rejected) in [
         (
             "search_string",
-            "aws.wafv2.WebACL.ByteMatchSearchString",
+            "awscc.wafv2.WebACL.ByteMatchSearchString",
             "あ".repeat(66),
             "あ".repeat(67),
         ),
         (
             "search_string_base64",
-            "aws.wafv2.WebACL.ByteMatchSearchStringBase64",
+            "awscc.wafv2.WebACL.ByteMatchSearchStringBase64",
             "YQ==".into(),
             "".into(),
         ),

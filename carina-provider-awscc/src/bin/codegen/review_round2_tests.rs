@@ -113,7 +113,14 @@ fn review_r8_definition_outputs_keep_each_refinements_own_group_in_both_orders()
         let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
         for group in ["Exactly one", "At least one"] {
             let actual = markdown
-                .matches(&shared_field_group(if group == "Exactly one" { AlternativeKind::OneOf } else { AlternativeKind::AnyOf }, &["a", "b"]))
+                .matches(&shared_field_group(
+                    if group == "Exactly one" {
+                        AlternativeKind::OneOf
+                    } else {
+                        AlternativeKind::AnyOf
+                    },
+                    &["a", "b"],
+                ))
                 .count();
             if actual != 1 {
                 failures.push(format!(

@@ -47,21 +47,21 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_association_default_route_table_id_attribute());
     #[inline(never)]
     fn build_auto_accept_shared_attachments_attribute() -> AttributeSchema {
-        AttributeSchema::optional("auto_accept_shared_attachments", AttributeType::enum_(carina_core::schema::enum_identity("AutoAcceptSharedAttachments", Some("aws.ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
+        AttributeSchema::optional("auto_accept_shared_attachments", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("AutoAcceptSharedAttachments", &crate::schemas::namespace::AwsccNamespace::new("ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
                 .with_provider_name("AutoAcceptSharedAttachments")
             .build()
     }
     schema = schema.attribute(build_auto_accept_shared_attachments_attribute());
     #[inline(never)]
     fn build_default_route_table_association_attribute() -> AttributeSchema {
-        AttributeSchema::optional("default_route_table_association", AttributeType::enum_(carina_core::schema::enum_identity("DefaultRouteTableAssociation", Some("aws.ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
+        AttributeSchema::optional("default_route_table_association", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("DefaultRouteTableAssociation", &crate::schemas::namespace::AwsccNamespace::new("ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
                 .with_provider_name("DefaultRouteTableAssociation")
             .build()
     }
     schema = schema.attribute(build_default_route_table_association_attribute());
     #[inline(never)]
     fn build_default_route_table_propagation_attribute() -> AttributeSchema {
-        AttributeSchema::optional("default_route_table_propagation", AttributeType::enum_(carina_core::schema::enum_identity("DefaultRouteTablePropagation", Some("aws.ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
+        AttributeSchema::optional("default_route_table_propagation", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("DefaultRouteTablePropagation", &crate::schemas::namespace::AwsccNamespace::new("ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
                 .with_provider_name("DefaultRouteTablePropagation")
             .build()
     }
@@ -75,14 +75,14 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_description_attribute());
     #[inline(never)]
     fn build_dns_support_attribute() -> AttributeSchema {
-        AttributeSchema::optional("dns_support", AttributeType::enum_(carina_core::schema::enum_identity("DnsSupport", Some("aws.ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
+        AttributeSchema::optional("dns_support", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("DnsSupport", &crate::schemas::namespace::AwsccNamespace::new("ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
                 .with_provider_name("DnsSupport")
             .build()
     }
     schema = schema.attribute(build_dns_support_attribute());
     #[inline(never)]
     fn build_encryption_support_attribute() -> AttributeSchema {
-        AttributeSchema::optional("encryption_support", AttributeType::enum_(carina_core::schema::enum_identity("EncryptionSupport", Some("aws.ec2.TransitGateway")), Some(vec!["disable".to_string(), "enable".to_string()]), vec![("disable".to_string(), "disable".to_string()), ("enable".to_string(), "enable".to_string())], None, None))
+        AttributeSchema::optional("encryption_support", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("EncryptionSupport", &crate::schemas::namespace::AwsccNamespace::new("ec2.TransitGateway")), Some(vec!["disable".to_string(), "enable".to_string()]), vec![("disable".to_string(), "disable".to_string()), ("enable".to_string(), "enable".to_string())], None, None))
                 .write_only()
                 .with_provider_name("EncryptionSupport")
             .build()
@@ -90,7 +90,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_encryption_support_attribute());
     #[inline(never)]
     fn build_encryption_support_state_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("encryption_support_state", AttributeType::enum_(carina_core::schema::enum_identity("EncryptionSupportState", Some("aws.ec2.TransitGateway")), Some(vec!["enabling".to_string(), "enabled".to_string(), "disabling".to_string(), "disabled".to_string()]), vec![("enabling".to_string(), "enabling".to_string()), ("enabled".to_string(), "enabled".to_string()), ("disabling".to_string(), "disabling".to_string()), ("disabled".to_string(), "disabled".to_string())], None, None))
+        AttributeSchema::provider_populated("encryption_support_state", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("EncryptionSupportState", &crate::schemas::namespace::AwsccNamespace::new("ec2.TransitGateway")), Some(vec!["enabling".to_string(), "enabled".to_string(), "disabling".to_string(), "disabled".to_string()]), vec![("enabling".to_string(), "enabling".to_string()), ("enabled".to_string(), "enabled".to_string()), ("disabling".to_string(), "disabling".to_string()), ("disabled".to_string(), "disabled".to_string())], None, None))
                 .with_provider_name("EncryptionSupportState")
             .build()
     }
@@ -104,7 +104,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_id_attribute());
     #[inline(never)]
     fn build_multicast_support_attribute() -> AttributeSchema {
-        AttributeSchema::optional("multicast_support", AttributeType::enum_(carina_core::schema::enum_identity("MulticastSupport", Some("aws.ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
+        AttributeSchema::optional("multicast_support", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("MulticastSupport", &crate::schemas::namespace::AwsccNamespace::new("ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
                 .create_only()
                 .with_provider_name("MulticastSupport")
             .build()
@@ -119,7 +119,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_propagation_default_route_table_id_attribute());
     #[inline(never)]
     fn build_security_group_referencing_support_attribute() -> AttributeSchema {
-        AttributeSchema::optional("security_group_referencing_support", AttributeType::enum_(carina_core::schema::enum_identity("SecurityGroupReferencingSupport", Some("aws.ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
+        AttributeSchema::optional("security_group_referencing_support", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("SecurityGroupReferencingSupport", &crate::schemas::namespace::AwsccNamespace::new("ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
                 .with_provider_name("SecurityGroupReferencingSupport")
             .build()
     }
@@ -148,7 +148,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_transit_gateway_cidr_blocks_attribute());
     #[inline(never)]
     fn build_vpn_ecmp_support_attribute() -> AttributeSchema {
-        AttributeSchema::optional("vpn_ecmp_support", AttributeType::enum_(carina_core::schema::enum_identity("VpnEcmpSupport", Some("aws.ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
+        AttributeSchema::optional("vpn_ecmp_support", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("VpnEcmpSupport", &crate::schemas::namespace::AwsccNamespace::new("ec2.TransitGateway")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None))
                 .with_provider_name("VpnEcmpSupport")
             .build()
     }

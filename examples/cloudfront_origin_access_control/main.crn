@@ -10,8 +10,8 @@ awscc.cloudfront.OriginAccessControl {
   origin_access_control_config = {
     name                              = 'carina-example-s3-origin'
     description                       = 'Sign requests to the example S3 origin'
-    origin_access_control_origin_type = aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.s3
-    signing_behavior                  = aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.always
-    signing_protocol                  = aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningProtocol.sigv4
+    origin_access_control_origin_type = awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.s3
+    signing_behavior                  = awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.always
+    signing_protocol                  = awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningProtocol.sigv4
   }
 }

@@ -67,7 +67,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_email_attribute());
     #[inline(never)]
     fn build_joined_method_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("joined_method", AttributeType::enum_(carina_core::schema::enum_identity("JoinedMethod", Some("aws.organizations.Account")), Some(vec!["INVITED".to_string(), "CREATED".to_string()]), vec![("INVITED".to_string(), "invited".to_string()), ("CREATED".to_string(), "created".to_string())], None, None))
+        AttributeSchema::provider_populated("joined_method", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("JoinedMethod", &crate::schemas::namespace::AwsccNamespace::new("organizations.Account")), Some(vec!["INVITED".to_string(), "CREATED".to_string()]), vec![("INVITED".to_string(), "invited".to_string()), ("CREATED".to_string(), "created".to_string())], None, None))
                 .with_description("The method by which the account joined the organization. (read-only)")
                 .with_provider_name("JoinedMethod")
             .build()
@@ -109,7 +109,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_role_name_attribute());
     #[inline(never)]
     fn build_state_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("state", AttributeType::enum_(carina_core::schema::enum_identity("State", Some("aws.organizations.Account")), Some(vec!["PENDING_ACTIVATION".to_string(), "ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string(), "CLOSED".to_string()]), vec![("PENDING_ACTIVATION".to_string(), "pending_activation".to_string()), ("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string()), ("CLOSED".to_string(), "closed".to_string())], None, None))
+        AttributeSchema::provider_populated("state", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("State", &crate::schemas::namespace::AwsccNamespace::new("organizations.Account")), Some(vec!["PENDING_ACTIVATION".to_string(), "ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string(), "CLOSED".to_string()]), vec![("PENDING_ACTIVATION".to_string(), "pending_activation".to_string()), ("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string()), ("CLOSED".to_string(), "closed".to_string())], None, None))
                 .with_description("The state of the account in the organization. (read-only)")
                 .with_provider_name("State")
             .build()
@@ -117,7 +117,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_state_attribute());
     #[inline(never)]
     fn build_status_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("status", AttributeType::enum_(carina_core::schema::enum_identity("Status", Some("aws.organizations.Account")), Some(vec!["ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string()]), vec![("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string())], None, None))
+        AttributeSchema::provider_populated("status", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("Status", &crate::schemas::namespace::AwsccNamespace::new("organizations.Account")), Some(vec!["ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string()]), vec![("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string())], None, None))
                 .with_description("The status of the account in the organization. (read-only)")
                 .with_provider_name("Status")
             .build()

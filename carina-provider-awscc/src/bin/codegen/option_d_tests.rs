@@ -4,29 +4,76 @@ use serde_json::json;
 #[test]
 fn option_d_evidence_requires_an_aws_url_quote_and_valid_date() {
     use overrides::CheckedOn;
-    let date = CheckedOn { year: 2026, month: 11, day: 7 };
+    let date = CheckedOn {
+        year: 2026,
+        month: 11,
+        day: 7,
+    };
     let url = "https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html";
     let quote = "Length Constraints: Minimum length of 1. Maximum length of 64.";
     assert!(AwsEvidence::new("", quote, date).is_err());
     assert!(AwsEvidence::new("https://example.com/", quote, date).is_err());
     assert!(AwsEvidence::new(url, " \n", date).is_err());
     assert!(AwsEvidence::new(url, quote, CheckedOn { day: 0, ..date }).is_err());
-    assert!(AwsEvidence::new(url, quote, CheckedOn { month: 2, day: 30, ..date }).is_err());
+    assert!(
+        AwsEvidence::new(
+            url,
+            quote,
+            CheckedOn {
+                month: 2,
+                day: 30,
+                ..date
+            }
+        )
+        .is_err()
+    );
     assert!(AwsEvidence::new(url, quote, date).is_ok());
 }
 
 #[test]
 fn option_d_observations_require_exact_inputs_dates_directions_and_source_records() {
     use overrides::{CheckedOn, ObservedInput, VerifiedDirection};
-    static INPUT: LazyLock<serde_json::Value> = LazyLock::new(|| json!({"StartDate":"2030-01-01T00:00:00.123Z"}));
-    static OUTPUT: LazyLock<serde_json::Value> = LazyLock::new(|| json!({"StartDate":"2030-01-01T00:00:00.123Z"}));
-    let date = CheckedOn { year: 2026, month: 11, day: 5 };
+    static INPUT: LazyLock<serde_json::Value> =
+        LazyLock::new(|| json!({"StartDate":"2030-01-01T00:00:00.123Z"}));
+    static OUTPUT: LazyLock<serde_json::Value> =
+        LazyLock::new(|| json!({"StartDate":"2030-01-01T00:00:00.123Z"}));
+    let date = CheckedOn {
+        year: 2026,
+        month: 11,
+        day: 5,
+    };
     let record = "https://github.com/carina-rs/carina-provider-awscc/pull/592";
-    let cases = || vec![ObservedInput { exact_input: &INPUT, direction: VerifiedDirection::ReadBackForm, result: &OUTPUT }];
-    assert!(AwsEvidence::observed(Vec::new(), "ap-northeast-1", date, record, "Create/Get").is_err());
+    let cases = || {
+        vec![ObservedInput {
+            exact_input: &INPUT,
+            direction: VerifiedDirection::ReadBackForm,
+            result: &OUTPUT,
+        }]
+    };
+    assert!(
+        AwsEvidence::observed(Vec::new(), "ap-northeast-1", date, record, "Create/Get").is_err()
+    );
     assert!(AwsEvidence::observed(cases(), "", date, record, "Create/Get").is_err());
-    assert!(AwsEvidence::observed(cases(), "ap-northeast-1", CheckedOn { day: 0, ..date }, record, "Create/Get").is_err());
-    assert!(AwsEvidence::observed(cases(), "ap-northeast-1", date, "https://github.com/carina-rs", "Create/Get").is_err());
+    assert!(
+        AwsEvidence::observed(
+            cases(),
+            "ap-northeast-1",
+            CheckedOn { day: 0, ..date },
+            record,
+            "Create/Get"
+        )
+        .is_err()
+    );
+    assert!(
+        AwsEvidence::observed(
+            cases(),
+            "ap-northeast-1",
+            date,
+            "https://github.com/carina-rs",
+            "Create/Get"
+        )
+        .is_err()
+    );
     assert!(AwsEvidence::observed(cases(), "ap-northeast-1", date, record, "Create/Get").is_ok());
 }
 
@@ -48,7 +95,7 @@ fn option_d_every_reviewed_narrowing_has_complete_documentation() {
                 assert_eq!((date.year, date.month, date.day), (2026, 11, 7));
             } else {
                 assert_eq!((date.year, date.month), (2026, 11));
-                assert!([5,6].contains(&date.day));
+                assert!([5, 6].contains(&date.day));
             }
             for (url, quote) in evidence.sources() {
                 assert!(url.starts_with("https://docs.aws.amazon.com/"), "{row}");
@@ -59,7 +106,10 @@ fn option_d_every_reviewed_narrowing_has_complete_documentation() {
     assert_eq!(unique.len(), 349 + 7 + EMPTY_OBJECT_PROPERTIES.len());
     for ((resource, path), entry) in resource_type_overrides().iter() {
         if let Some(narrowing) = &entry.narrowing {
-            assert_eq!(narrowing.evidence, narrowing_evidence::for_field(resource, path).unwrap());
+            assert_eq!(
+                narrowing.evidence,
+                narrowing_evidence::for_field(resource, path).unwrap()
+            );
         }
     }
 }
@@ -91,14 +141,25 @@ fn option_d_markdown_keeps_global_enum_evidence() {
     ] {
         let schema = cfn_schema_for_codegen_tests(resource);
         generate_schema_code(&schema, resource).unwrap();
-        let mut expected = overrides::global_narrowings().into_keys().collect::<BTreeSet<_>>();
-        expected.extend(resource_type_overrides().for_resource(resource).filter_map(|(path, entry)| {
-            entry.narrowing.as_ref().map(|_| path.source_pointer())
-        }));
+        let mut expected = overrides::global_narrowings()
+            .into_keys()
+            .collect::<BTreeSet<_>>();
+        expected.extend(
+            resource_type_overrides()
+                .for_resource(resource)
+                .filter_map(|(path, entry)| {
+                    entry.narrowing.as_ref().map(|_| path.source_pointer())
+                }),
+        );
         let markdown = generate_test_markdown(&schema, resource).unwrap();
-        let actual = markdown.lines().filter_map(|line| {
-            line.strip_prefix("| `")?.split_once("` | Subset:").map(|(path, _)| path.to_string())
-        }).collect::<BTreeSet<_>>();
+        let actual = markdown
+            .lines()
+            .filter_map(|line| {
+                line.strip_prefix("| `")?
+                    .split_once("` | Subset:")
+                    .map(|(path, _)| path.to_string())
+            })
+            .collect::<BTreeSet<_>>();
         assert_eq!(actual, expected, "{resource}");
     }
 }
@@ -113,7 +174,13 @@ fn option_d_documented_restorations_and_drops_preserve_cfn() {
     assert!(rust.contains("Some((None, Some(32)))"), "{rust}");
     let sg = cfn_schema_for_codegen_tests("AWS::EC2::SecurityGroupIngress");
     let rust = generate_schema_code(&sg, &sg.type_name).unwrap();
-    let protocol = rust.split("fn build_ip_protocol_attribute()").nth(1).unwrap().split("schema = schema.attribute").next().unwrap();
+    let protocol = rust
+        .split("fn build_ip_protocol_attribute()")
+        .nth(1)
+        .unwrap()
+        .split("schema = schema.attribute")
+        .next()
+        .unwrap();
     assert!(protocol.contains("AttributeType::enum_("), "{protocol}");
     let pool = cfn_schema_for_codegen_tests("AWS::EC2::IPAMPool");
     let rust = generate_schema_code(&pool, &pool.type_name).unwrap();
@@ -125,7 +192,10 @@ fn option_d_documented_restorations_and_drops_preserve_cfn() {
 fn option_d_policy_grammar_keeps_documented_structure_and_existing_spelling() {
     let schema = cfn_schema_for_codegen_tests("AWS::IAM::Role");
     let rust = generate_schema_code(&schema, &schema.type_name).unwrap();
-    assert!(rust.contains("carina_aws_types::iam_policy_document()"), "{rust}");
+    assert!(
+        rust.contains("crate::schemas::type_helpers::policy_seed::iam_policy_document()"),
+        "{rust}"
+    );
     assert!(rust.contains(".with_documented_iam_grammar()"), "{rust}");
     assert!(!rust.contains("__CfnJsonValue"), "{rust}");
     let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
@@ -309,9 +379,7 @@ fn non_replacing_kms_overrides_preserve_reference_input_rules() {
             "string Primitive refinement",
             TypeOverride::identity(Some(StringIdentity::Arn)).with_narrowing(
                 NarrowingKind::Primitive {
-                    expression: ConstraintSpec::string(
-                        None,
-                        Some((Some(1), Some(256)))),
+                    expression: ConstraintSpec::string(None, Some((Some(1), Some(256)))),
                     block_name: None,
                     default: None,
                 },
@@ -330,9 +398,15 @@ fn non_replacing_kms_overrides_preserve_reference_input_rules() {
             );
             let rust = generate_schema_code(&schema, &schema.type_name).unwrap();
             let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-            assert!(rust.contains("carina_aws_types::kms_key_reference()"), "{case}: {rust}");
+            assert!(
+                rust.contains("crate::schemas::catalog::kms_key_reference()"),
+                "{case}: {rust}"
+            );
             assert!(rust.contains("schema.input_rule("), "{case}: {rust}");
-            assert!(markdown.contains("aws.kms.Key.Reference"), "{case}: {markdown}");
+            assert!(
+                markdown.contains("awscc.kms.Key.Reference"),
+                "{case}: {markdown}"
+            );
             assert!(
                 markdown.contains("## Additional Input Constraints"),
                 "{case}: {markdown}",
@@ -354,17 +428,31 @@ fn deprecated_kms_property_keeps_runtime_rules_and_documented_rows() {
         let context = EmissionContext::from_source(&schema).unwrap();
         let rust = super::super::render_schema_code(&context, &schema.type_name).unwrap();
         let rules = context.reference_input_rules();
-        assert!(!rules.is_empty(), "deprecated runtime slots retain their rules");
+        assert!(
+            !rules.is_empty(),
+            "deprecated runtime slots retain their rules"
+        );
         assert!(rust.contains("build_kms_key_id_attribute"), "{rust}");
-        assert!(rust.contains("carina_aws_types::kms_key_reference()"), "{rust}");
-        assert_eq!(rust.matches("schema.input_rule(").count(), rules.len(), "{rust}");
+        assert!(
+            rust.contains("crate::schemas::catalog::kms_key_reference()"),
+            "{rust}"
+        );
+        assert_eq!(
+            rust.matches("schema.input_rule(").count(),
+            rules.len(),
+            "{rust}"
+        );
 
         // Render Markdown with a fresh context, independent of the Rust visit.
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         let mut section = carina_docgen::PageBuilder::<()>::new();
         section.input_rules_section(&rules).unwrap();
         let expected = section.finish().unwrap();
-        assert_eq!(markdown.matches(&expected).count(), 1, "{markdown}\nExpected:\n{expected}");
+        assert_eq!(
+            markdown.matches(&expected).count(),
+            1,
+            "{markdown}\nExpected:\n{expected}"
+        );
         assert!(!markdown.contains("### `kms_key_id`\n"), "{markdown}");
     });
 }
@@ -379,7 +467,10 @@ fn create_only_kms_property_derives_reference_rules_in_both_outputs() {
         });
         let context = EmissionContext::from_source(&schema).unwrap();
         let rules = context.reference_input_rules();
-        assert!(!rules.is_empty(), "must derive rules for the constrained KMS slot");
+        assert!(
+            !rules.is_empty(),
+            "must derive rules for the constrained KMS slot"
+        );
         for rule in &rules {
             assert_eq!(
                 rule.scope(),
@@ -430,12 +521,23 @@ fn type_replacing_kms_override_has_no_reference_input_rules() {
             "{rust}",
         );
         assert!(
-            markdown.contains(&shared_type(AttributeType::refined_string(None, Some(ApprovedPattern::whole(r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z").as_spec().clone()), Some((None,Some(256))),None))),
+            markdown.contains(&shared_type(AttributeType::refined_string(
+                None,
+                Some(
+                    ApprovedPattern::whole(
+                        r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z"
+                    )
+                    .as_spec()
+                    .clone()
+                ),
+                Some((None, Some(256))),
+                None
+            ))),
             "{markdown}",
         );
         assert!(!rust.contains("kms_key_reference()"), "{rust}");
         assert!(!rust.contains("schema.input_rule("), "{rust}");
-        assert!(!markdown.contains("aws.kms.Key.Reference"), "{markdown}");
+        assert!(!markdown.contains("awscc.kms.Key.Reference"), "{markdown}");
         assert!(
             !markdown.contains("## Additional Input Constraints"),
             "{markdown}",
@@ -447,9 +549,7 @@ fn type_replacing_kms_override_has_no_reference_input_rules() {
 fn option_d_identity_and_narrowing_are_independent() {
     let entry = TypeOverride::identity(Some(StringIdentity::Arn)).with_narrowing(
         NarrowingKind::Primitive {
-            expression: ConstraintSpec::string(
-                None,
-                Some((Some(2), Some(5)))),
+            expression: ConstraintSpec::string(None, Some((Some(2), Some(5)))),
             block_name: None,
             default: None,
         },
@@ -466,10 +566,7 @@ fn option_d_identity_and_narrowing_are_independent() {
             }}))
             .unwrap();
         let output = generate_synthetic_schema_code(&schema).unwrap();
-        assert!(
-            output.contains("AttributeType::string_member("),
-            "{output}"
-        );
+        assert!(output.contains("AttributeType::string_member("), "{output}");
         assert!(output.contains("Some((Some(3), Some(5)))"), "{output}");
         assert!(output.contains("[a-z]+"), "{output}");
     });
@@ -502,9 +599,7 @@ fn option_d_narrowing_rejects_a_different_kind() {
 fn option_d_pattern_narrowing_cannot_discard_the_cfn_pattern() {
     let entry = TypeOverride::identity(None).with_narrowing(
         NarrowingKind::Primitive {
-            expression: ConstraintSpec::string(
-                Some(ApprovedPattern::whole("^[a-z]+$")),
-                None),
+            expression: ConstraintSpec::string(Some(ApprovedPattern::whole("^[a-z]+$")), None),
             block_name: None,
             default: None,
         },
@@ -530,9 +625,11 @@ fn option_d_waf_description_intersection_preserves_both_patterns() {
         WAF_DESCRIPTION_API, WAF_DESCRIPTION_CFN, WAF_DESCRIPTION_INTERSECTION,
     };
     let compile = |pattern| {
-        carina_core::schema::CompiledPattern::try_new(
-            &carina_core::schema::PatternSpec::new(pattern, PatternMatch::Full),
-        ).unwrap()
+        carina_core::schema::CompiledPattern::try_new(&carina_core::schema::PatternSpec::new(
+            pattern,
+            PatternMatch::Full,
+        ))
+        .unwrap()
     };
     let cfn = compile(WAF_DESCRIPTION_CFN);
     let api = compile(WAF_DESCRIPTION_API);
@@ -600,7 +697,8 @@ fn option_d_capture_actual_sites_and_evidence() {
         generate_schema_code(&schema, &schema.type_name)
             .unwrap_or_else(|error| panic!("{}: {error:#}", schema.type_name));
         for (pointer, provenance) in overrides::global_narrowings() {
-            evidence.push(json!({"resource":schema.type_name,"field":pointer,"evidence":provenance}));
+            evidence
+                .push(json!({"resource":schema.type_name,"field":pointer,"evidence":provenance}));
         }
         for (path, entry) in resource_type_overrides().for_resource(&schema.type_name) {
             if let Some(narrowing) = &entry.narrowing {
@@ -712,7 +810,11 @@ fn identity_rejects(
         );
         let schema =
             ValidatedConfigSchema::validate(BTreeMap::from([("value".into(), ty)])).unwrap();
-        schema.rootless_type("value").unwrap().validate(value).is_err()
+        schema
+            .rootless_type("value")
+            .unwrap()
+            .validate(value)
+            .is_err()
     })
 }
 
@@ -726,7 +828,7 @@ fn write_loosening_report(sites: &[serde_json::Value], directory: &std::path::Pa
         // All named AWS strings plus the historical anonymous gateway union.
         // CIDR unions had no old structural pattern/length, only core checks.
         let metadata = if let Some(identity_name) = site["identity"].as_str() {
-            if !identity_name.starts_with("aws.") {
+            if !identity_name.starts_with("awscc.") {
                 continue;
             }
             let metadata = if site["legacy"].is_null() {
@@ -850,10 +952,8 @@ fn option_d_named_enum_preserves_identity_callback_and_cfn_domain() {
     let a = "arn:aws:example:us-east-1:123456789012:resource/a";
     let b = "arn:aws:example:us-east-1:123456789012:resource/b";
     let c = "arn:aws:example:us-east-1:123456789012:resource/c";
-    let entry = TypeOverride::identity(Some(StringIdentity::Arn)).with_narrowing(
-        NarrowingKind::Enum(vec![a, b]),
-        AwsEvidence::fixture(),
-    );
+    let entry = TypeOverride::identity(Some(StringIdentity::Arn))
+        .with_narrowing(NarrowingKind::Enum(vec![a, b]), AwsEvidence::fixture());
     let mut overrides = ResourceTypeOverrides::default();
     overrides.insert(("AWS::Test::Emission", "Probe"), entry);
     with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
@@ -915,8 +1015,7 @@ fn option_d_failed_containment_is_a_schema_error() {
             Some(StringIdentity::Arn),
         ),
     ] {
-        let entry =
-            TypeOverride::identity(identity).with_narrowing(kind, AwsEvidence::fixture());
+        let entry = TypeOverride::identity(identity).with_narrowing(kind, AwsEvidence::fixture());
         let mut overrides = ResourceTypeOverrides::default();
         overrides.insert(("AWS::Test::Emission", "Probe"), entry);
         with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
@@ -1007,9 +1106,7 @@ fn option_d_rejection_baseline_is_preserved() {
         let case = cases
             .iter()
             .find(|case| {
-                case["resource"] == resource
-                    && case["field"] == field
-                    && case["example"] == example
+                case["resource"] == resource && case["field"] == field && case["example"] == example
             })
             .expect(&context);
         assert!(

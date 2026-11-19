@@ -5,18 +5,18 @@
 # full mode verifies the read-back is idempotent with a no-change plan.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 awscc.ecr.Repository {
   repository_name = 'carina-acc-test-lambda-pull'
 
   repository_policy_text = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
 
     statement {
       sid    = 'AllowLambdaPull'
-      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+      effect = awscc.iam.PolicyDocument.Statement.Effect.allow
 
       principal = {
         service = 'lambda.amazonaws.com'

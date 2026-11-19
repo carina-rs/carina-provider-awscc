@@ -1,0 +1,305 @@
+//! Migration inventory shared by the native and SDK schema tests.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use carina_core::schema::{
+    AttributeType, PatternAttributeType, PatternForm, RawShape, TypeIdentity,
+    ValidatedConfigSchema, ValidatedResourceSchema,
+};
+
+#[derive(Default)]
+pub struct Inventory {
+    pub identities: BTreeSet<TypeIdentity>,
+    pub callbacks: BTreeSet<TypeIdentity>,
+    pub enums: BTreeMap<TypeIdentity, AttributeType>,
+}
+
+impl Inventory {
+    pub fn walk<R: PatternForm>(
+        &mut self,
+        ty: &PatternAttributeType<R>,
+        defs: &BTreeMap<String, PatternAttributeType<R>>,
+    ) {
+        self.visit(ty, defs, &mut BTreeSet::new());
+    }
+
+    fn visit<R: PatternForm>(
+        &mut self,
+        ty: &PatternAttributeType<R>,
+        defs: &BTreeMap<String, PatternAttributeType<R>>,
+        visited: &mut BTreeSet<usize>,
+    ) {
+        // A repeated pointer is a back edge or a fully visited declaration.
+        // All of its outgoing edges are explored by the first visit. There is
+        // no depth limit that could silently omit a declaration.
+        if !visited.insert(ty as *const _ as usize) {
+            return;
+        }
+        match ty.raw_shape() {
+            RawShape::String { identity_layer, .. } => {
+                self.record(identity_layer.identity, identity_layer.validate.is_some());
+            }
+            RawShape::Int { identity_layer, .. } => {
+                self.record(identity_layer.identity, identity_layer.validate.is_some());
+            }
+            RawShape::Float {
+                identity, validate, ..
+            } => {
+                self.record(identity, validate.is_some());
+            }
+            RawShape::Reference { identity, .. } => self.record(Some(identity), false),
+            RawShape::Enum {
+                identity,
+                base,
+                values,
+                dsl_aliases,
+                validate,
+                to_dsl,
+            } => {
+                self.record(Some(identity), validate.is_some());
+                self.enums.entry(identity.clone()).or_insert_with(|| {
+                    AttributeType::enum_(
+                        identity.clone(),
+                        values.map(<[_]>::to_vec),
+                        dsl_aliases.to_vec(),
+                        validate.cloned(),
+                        to_dsl.cloned(),
+                    )
+                });
+                self.visit(base, defs, visited);
+            }
+            RawShape::List { element_type, .. } => self.visit(element_type, defs, visited),
+            RawShape::Map { key, value, .. } => {
+                self.visit(key, defs, visited);
+                self.visit(value, defs, visited);
+            }
+            RawShape::Struct { fields, .. } => {
+                for field in fields {
+                    self.visit(field.field_type(), defs, visited);
+                }
+            }
+            RawShape::Union(members) => {
+                for member in members {
+                    self.visit(member, defs, visited);
+                }
+            }
+            RawShape::Ref(name) => self.visit(
+                defs.get(name)
+                    .unwrap_or_else(|| panic!("unresolved inventory definition {name}")),
+                defs,
+                visited,
+            ),
+            RawShape::UnloadedSchemaType(unloaded) => {
+                panic!(
+                    "inventory requires loaded declaration: {}",
+                    unloaded.identity()
+                );
+            }
+            RawShape::Bool | RawShape::Duration => {}
+        }
+    }
+
+    fn record(&mut self, identity: Option<&TypeIdentity>, callback: bool) {
+        if let Some(identity) = identity {
+            self.identities.insert(identity.clone());
+            if callback {
+                self.callbacks.insert(identity.clone());
+            }
+        }
+    }
+
+    pub fn schemas(resources: &[ValidatedResourceSchema], config: &ValidatedConfigSchema) -> Self {
+        let mut inventory = Self::default();
+        for schema in resources {
+            let parts = schema.parts();
+            for attribute in parts.attributes.values() {
+                inventory.walk(attribute.attr_type(), parts.defs);
+            }
+            // Include unreferenced definitions as well as reachable ones.
+            for definition in parts.defs.values() {
+                inventory.walk(definition, parts.defs);
+            }
+        }
+        for ty in config.parts().values() {
+            inventory.walk(ty, &BTreeMap::new());
+        }
+        inventory
+    }
+
+    pub fn assert_owned(&self) {
+        // Clippy cannot ban TypeIdentity { .. } struct literals. This complete
+        // schema walk is the backstop for literals and transported identities.
+        let foreign: Vec<_> = self
+            .identities
+            .iter()
+            .filter(|id| {
+                id.provider
+                    .as_deref()
+                    .is_some_and(|provider| provider != "awscc")
+            })
+            .collect();
+        assert!(
+            foreign.is_empty(),
+            "AWSCC declares foreign identities: {foreign:?}"
+        );
+    }
+}
+
+fn migrated_inventory(route: &str) -> BTreeSet<String> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/identity_inventory_before_572")
+        .join(format!("{route}.txt"));
+    let expected = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+        .lines()
+        .map(|old| {
+            let (site, identity) = old
+                .rsplit_once('\t')
+                .map_or((None, old), |(site, identity)| (Some(site), identity));
+            let migrated = identity
+                .strip_prefix("aws.")
+                .map_or_else(|| identity.to_string(), |tail| format!("awscc.{tail}"));
+            site.map_or(migrated.clone(), |site| format!("{site}\t{migrated}"))
+        })
+        .collect::<BTreeSet<_>>();
+    assert!(!expected.is_empty(), "empty inventory for {route}");
+    expected
+}
+
+pub fn assert_migrated_inventory(route: &str, actual: BTreeSet<String>) {
+    let expected = migrated_inventory(route);
+    assert_eq!(actual, expected, "identity inventory changed on {route}");
+}
+
+pub fn assert_migrated_identities(route: &str, actual: BTreeSet<TypeIdentity>) {
+    let expected = migrated_inventory(route)
+        .into_iter()
+        .map(|name| {
+            // Baseline identity fixtures contain aws-owned identities and
+            // provider-less builtins. Compare axes too: rendering alone could
+            // disguise a missing provider as the first path segment.
+            let (provider, tail) = name
+                .strip_prefix("awscc.")
+                .map_or((None, name.as_str()), |tail| {
+                    (Some("awscc".to_string()), tail)
+                });
+            let mut parts = tail.split('.').map(str::to_string).collect::<Vec<_>>();
+            let kind = parts.pop().expect("fixture identity kind");
+            TypeIdentity {
+                provider,
+                segments: parts,
+                kind,
+            }
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(actual, expected, "identity axes changed on {route}");
+}
+
+/// Preserve each published identity occurrence, not just its presence somewhere
+/// in the provider. Removing one typed field must fail even if another field
+/// still declares the same identity. Wire schemas encode recursive edges as
+/// finite Ref nodes; every definition is exported and examined independently.
+pub fn identity_sites(
+    resources: &[ValidatedResourceSchema],
+    config: &ValidatedConfigSchema,
+) -> BTreeSet<String> {
+    fn visit(
+        value: &serde_json::Value,
+        path: &str,
+        names: &BTreeSet<String>,
+        axes: &BTreeMap<String, String>,
+        sites: &mut BTreeSet<String>,
+    ) {
+        match value {
+            serde_json::Value::String(text) => {
+                if names.contains(text) {
+                    sites.insert(format!("{path}\t{text}"));
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                // Protocol enums publish the identity as namespace + name,
+                // while scalar identities use a dotted string or axes.
+                if let (Some(namespace), Some(name)) = (
+                    fields.get("namespace").and_then(|value| value.as_str()),
+                    fields.get("name").and_then(|value| value.as_str()),
+                ) {
+                    let identity = format!("{namespace}.{name}");
+                    if names.contains(&identity) {
+                        sites.insert(format!("{path}/namespace\t{identity}"));
+                    }
+                }
+                if fields.contains_key("kind") && fields.contains_key("segments") {
+                    let key = serde_json::json!([
+                        fields
+                            .get("provider")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or_default(),
+                        fields["segments"],
+                        fields["kind"],
+                    ])
+                    .to_string();
+                    if let Some(identity) = axes.get(&key) {
+                        sites.insert(format!("{path}\t{identity}"));
+                    }
+                }
+                for (name, value) in fields {
+                    visit(value, &format!("{path}/{name}"), names, axes, sites);
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for (index, value) in values.iter().enumerate() {
+                    visit(value, &format!("{path}/{index}"), names, axes, sites);
+                }
+            }
+            _ => {}
+        }
+    }
+    let known = Inventory::schemas(resources, config).identities;
+    let names = known.iter().map(ToString::to_string).collect();
+    let axes = known
+        .iter()
+        .map(|id| {
+            (
+                serde_json::json!([
+                    id.provider.as_deref().unwrap_or_default(),
+                    id.segments,
+                    id.kind
+                ])
+                .to_string(),
+                id.to_string(),
+            )
+        })
+        .collect();
+    let mut sites = BTreeSet::new();
+    for schema in resources {
+        let wire = carina_core::protocol_convert::resource_schema_to_protocol(schema).unwrap();
+        visit(
+            &serde_json::to_value(wire).unwrap(),
+            &format!("resource/{}", schema.parts().resource_type),
+            &names,
+            &axes,
+            &mut sites,
+        );
+    }
+    let wire = carina_core::protocol_convert::config_schema_to_protocol(config).unwrap();
+    visit(
+        &serde_json::to_value(wire).unwrap(),
+        "config",
+        &names,
+        &axes,
+        &mut sites,
+    );
+    assert!(
+        !sites.is_empty(),
+        "wire identity site inventory must be nonempty"
+    );
+    let exposed = sites
+        .iter()
+        .map(|site| site.rsplit_once('\t').unwrap().1.to_string())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        exposed, names,
+        "wire site walk must cover every typed identity"
+    );
+    sites
+}

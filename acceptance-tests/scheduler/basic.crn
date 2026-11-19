@@ -5,16 +5,16 @@
 # free during the acceptance test's short lifetime.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 let scheduler_role = awscc.iam.Role {
   role_name_prefix = 'carina-acc-test-scheduler-'
 
   assume_role_policy_document = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+      effect = awscc.iam.PolicyDocument.Statement.Effect.allow
 
       principal = {
         service = 'scheduler.amazonaws.com'
@@ -34,9 +34,9 @@ awscc.iam.RolePolicy {
   policy_name = 'scheduler-put-metric-data'
 
   policy_document = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      effect   = awscc.iam.PolicyDocument.Statement.Effect.allow
       action   = 'cloudwatch:PutMetricData'
       resource = '*'
     }

@@ -196,8 +196,8 @@ Information used to configure the bucket as a static website. For more informati
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Enabled` | `aws.s3.Bucket.AbacStatus.enabled` |
-| `Disabled` | `aws.s3.Bucket.AbacStatus.disabled` |
+| `Enabled` | `awscc.s3.Bucket.AbacStatus.enabled` |
+| `Disabled` | `awscc.s3.Bucket.AbacStatus.disabled` |
 
 Shorthand formats: `enabled` or `AbacStatus.enabled`
 
@@ -205,8 +205,8 @@ Shorthand formats: `enabled` or `AbacStatus.enabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Enabled` | `aws.s3.Bucket.AccelerateConfiguration.AccelerationStatus.enabled` |
-| `Suspended` | `aws.s3.Bucket.AccelerateConfiguration.AccelerationStatus.suspended` |
+| `Enabled` | `awscc.s3.Bucket.AccelerateConfiguration.AccelerationStatus.enabled` |
+| `Suspended` | `awscc.s3.Bucket.AccelerateConfiguration.AccelerationStatus.suspended` |
 
 Shorthand formats: `enabled` or `AccelerationStatus.enabled`
 
@@ -214,14 +214,14 @@ Shorthand formats: `enabled` or `AccelerationStatus.enabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `AuthenticatedRead` | `aws.s3.Bucket.AccessControl.authenticated_read` |
-| `AwsExecRead` | `aws.s3.Bucket.AccessControl.aws_exec_read` |
-| `BucketOwnerFullControl` | `aws.s3.Bucket.AccessControl.bucket_owner_full_control` |
-| `BucketOwnerRead` | `aws.s3.Bucket.AccessControl.bucket_owner_read` |
-| `LogDeliveryWrite` | `aws.s3.Bucket.AccessControl.log_delivery_write` |
-| `Private` | `aws.s3.Bucket.AccessControl.private` |
-| `PublicRead` | `aws.s3.Bucket.AccessControl.public_read` |
-| `PublicReadWrite` | `aws.s3.Bucket.AccessControl.public_read_write` |
+| `AuthenticatedRead` | `awscc.s3.Bucket.AccessControl.authenticated_read` |
+| `AwsExecRead` | `awscc.s3.Bucket.AccessControl.aws_exec_read` |
+| `BucketOwnerFullControl` | `awscc.s3.Bucket.AccessControl.bucket_owner_full_control` |
+| `BucketOwnerRead` | `awscc.s3.Bucket.AccessControl.bucket_owner_read` |
+| `LogDeliveryWrite` | `awscc.s3.Bucket.AccessControl.log_delivery_write` |
+| `Private` | `awscc.s3.Bucket.AccessControl.private` |
+| `PublicRead` | `awscc.s3.Bucket.AccessControl.public_read` |
+| `PublicReadWrite` | `awscc.s3.Bucket.AccessControl.public_read_write` |
 
 Shorthand formats: `authenticated_read` or `AccessControl.authenticated_read`
 
@@ -229,7 +229,7 @@ Shorthand formats: `authenticated_read` or `AccessControl.authenticated_read`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CSV` | `aws.s3.Bucket.AnalyticsDestination.Format.csv` |
+| `CSV` | `awscc.s3.Bucket.AnalyticsDestination.Format.csv` |
 
 Shorthand formats: `csv` or `Format.csv`
 
@@ -237,7 +237,7 @@ Shorthand formats: `csv` or `Format.csv`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `V_1` | `aws.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.OutputSchemaVersion.v_1` |
+| `V_1` | `awscc.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.OutputSchemaVersion.v_1` |
 
 Shorthand formats: `v_1` or `OutputSchemaVersion.v_1`
 
@@ -245,8 +245,8 @@ Shorthand formats: `v_1` or `OutputSchemaVersion.v_1`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.s3.Bucket.BucketEncryption.ServerSideEncryptionRule.BlockedEncryptionTypes.EncryptionType.none` |
-| `SSE-C` | `aws.s3.Bucket.BucketEncryption.ServerSideEncryptionRule.BlockedEncryptionTypes.EncryptionType.sse_c` |
+| `NONE` | `awscc.s3.Bucket.BucketEncryption.ServerSideEncryptionRule.BlockedEncryptionTypes.EncryptionType.none` |
+| `SSE-C` | `awscc.s3.Bucket.BucketEncryption.ServerSideEncryptionRule.BlockedEncryptionTypes.EncryptionType.sse_c` |
 
 Shorthand formats: `none` or `EncryptionType.none`
 
@@ -254,9 +254,9 @@ Shorthand formats: `none` or `EncryptionType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `aws:kms` | `aws.s3.Bucket.BucketEncryption.ServerSideEncryptionRule.ServerSideEncryptionByDefault.SseAlgorithm.aws_kms` |
-| `AES256` | `aws.s3.Bucket.BucketEncryption.ServerSideEncryptionRule.ServerSideEncryptionByDefault.SseAlgorithm.aes256` |
-| `aws:kms:dsse` | `aws.s3.Bucket.BucketEncryption.ServerSideEncryptionRule.ServerSideEncryptionByDefault.SseAlgorithm.aws_kms_dsse` |
+| `aws:kms` | `awscc.s3.Bucket.BucketEncryption.ServerSideEncryptionRule.ServerSideEncryptionByDefault.SseAlgorithm.aws_kms` |
+| `AES256` | `awscc.s3.Bucket.BucketEncryption.ServerSideEncryptionRule.ServerSideEncryptionByDefault.SseAlgorithm.aes256` |
+| `aws:kms:dsse` | `awscc.s3.Bucket.BucketEncryption.ServerSideEncryptionRule.ServerSideEncryptionByDefault.SseAlgorithm.aws_kms_dsse` |
 
 Shorthand formats: `aws_kms` or `SseAlgorithm.aws_kms`
 
@@ -264,11 +264,11 @@ Shorthand formats: `aws_kms` or `SseAlgorithm.aws_kms`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GET` | `aws.s3.Bucket.CorsConfiguration.CorsRule.AllowedMethods.get` |
-| `PUT` | `aws.s3.Bucket.CorsConfiguration.CorsRule.AllowedMethods.put` |
-| `HEAD` | `aws.s3.Bucket.CorsConfiguration.CorsRule.AllowedMethods.head` |
-| `POST` | `aws.s3.Bucket.CorsConfiguration.CorsRule.AllowedMethods.post` |
-| `DELETE` | `aws.s3.Bucket.CorsConfiguration.CorsRule.AllowedMethods.delete` |
+| `GET` | `awscc.s3.Bucket.CorsConfiguration.CorsRule.AllowedMethods.get` |
+| `PUT` | `awscc.s3.Bucket.CorsConfiguration.CorsRule.AllowedMethods.put` |
+| `HEAD` | `awscc.s3.Bucket.CorsConfiguration.CorsRule.AllowedMethods.head` |
+| `POST` | `awscc.s3.Bucket.CorsConfiguration.CorsRule.AllowedMethods.post` |
+| `DELETE` | `awscc.s3.Bucket.CorsConfiguration.CorsRule.AllowedMethods.delete` |
 
 Shorthand formats: `get` or `AllowedMethods.get`
 
@@ -276,8 +276,8 @@ Shorthand formats: `get` or `AllowedMethods.get`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Disabled` | `aws.s3.Bucket.IntelligentTieringConfiguration.Status.disabled` |
-| `Enabled` | `aws.s3.Bucket.IntelligentTieringConfiguration.Status.enabled` |
+| `Disabled` | `awscc.s3.Bucket.IntelligentTieringConfiguration.Status.disabled` |
+| `Enabled` | `awscc.s3.Bucket.IntelligentTieringConfiguration.Status.enabled` |
 
 Shorthand formats: `disabled` or `Status.disabled`
 
@@ -285,8 +285,8 @@ Shorthand formats: `disabled` or `Status.disabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ARCHIVE_ACCESS` | `aws.s3.Bucket.IntelligentTieringConfiguration.Tiering.AccessTier.archive_access` |
-| `DEEP_ARCHIVE_ACCESS` | `aws.s3.Bucket.IntelligentTieringConfiguration.Tiering.AccessTier.deep_archive_access` |
+| `ARCHIVE_ACCESS` | `awscc.s3.Bucket.IntelligentTieringConfiguration.Tiering.AccessTier.archive_access` |
+| `DEEP_ARCHIVE_ACCESS` | `awscc.s3.Bucket.IntelligentTieringConfiguration.Tiering.AccessTier.deep_archive_access` |
 
 Shorthand formats: `archive_access` or `AccessTier.archive_access`
 
@@ -294,9 +294,9 @@ Shorthand formats: `archive_access` or `AccessTier.archive_access`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CSV` | `aws.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination.Format.csv` |
-| `ORC` | `aws.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination.Format.orc` |
-| `Parquet` | `aws.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination.Format.parquet` |
+| `CSV` | `awscc.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination.Format.csv` |
+| `ORC` | `awscc.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination.Format.orc` |
+| `Parquet` | `awscc.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination.Format.parquet` |
 
 Shorthand formats: `csv` or `Format.csv`
 
@@ -304,8 +304,8 @@ Shorthand formats: `csv` or `Format.csv`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `All` | `aws.s3.Bucket.InventoryConfiguration.IncludedObjectVersions.all` |
-| `Current` | `aws.s3.Bucket.InventoryConfiguration.IncludedObjectVersions.current` |
+| `All` | `awscc.s3.Bucket.InventoryConfiguration.IncludedObjectVersions.all` |
+| `Current` | `awscc.s3.Bucket.InventoryConfiguration.IncludedObjectVersions.current` |
 
 Shorthand formats: `all` or `IncludedObjectVersions.all`
 
@@ -313,22 +313,22 @@ Shorthand formats: `all` or `IncludedObjectVersions.all`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Size` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.size` |
-| `LastModifiedDate` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.last_modified_date` |
-| `StorageClass` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.storage_class` |
-| `ETag` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.etag` |
-| `IsMultipartUploaded` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.is_multipart_uploaded` |
-| `ReplicationStatus` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.replication_status` |
-| `EncryptionStatus` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.encryption_status` |
-| `ObjectLockRetainUntilDate` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.object_lock_retain_until_date` |
-| `ObjectLockMode` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.object_lock_mode` |
-| `ObjectLockLegalHoldStatus` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.object_lock_legal_hold_status` |
-| `IntelligentTieringAccessTier` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.intelligent_tiering_access_tier` |
-| `BucketKeyStatus` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.bucket_key_status` |
-| `ChecksumAlgorithm` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.checksum_algorithm` |
-| `ObjectAccessControlList` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.object_access_control_list` |
-| `ObjectOwner` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.object_owner` |
-| `LifecycleExpirationDate` | `aws.s3.Bucket.InventoryConfiguration.OptionalFields.lifecycle_expiration_date` |
+| `Size` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.size` |
+| `LastModifiedDate` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.last_modified_date` |
+| `StorageClass` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.storage_class` |
+| `ETag` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.etag` |
+| `IsMultipartUploaded` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.is_multipart_uploaded` |
+| `ReplicationStatus` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.replication_status` |
+| `EncryptionStatus` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.encryption_status` |
+| `ObjectLockRetainUntilDate` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.object_lock_retain_until_date` |
+| `ObjectLockMode` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.object_lock_mode` |
+| `ObjectLockLegalHoldStatus` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.object_lock_legal_hold_status` |
+| `IntelligentTieringAccessTier` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.intelligent_tiering_access_tier` |
+| `BucketKeyStatus` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.bucket_key_status` |
+| `ChecksumAlgorithm` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.checksum_algorithm` |
+| `ObjectAccessControlList` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.object_access_control_list` |
+| `ObjectOwner` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.object_owner` |
+| `LifecycleExpirationDate` | `awscc.s3.Bucket.InventoryConfiguration.OptionalFields.lifecycle_expiration_date` |
 
 Shorthand formats: `size` or `OptionalFields.size`
 
@@ -336,8 +336,8 @@ Shorthand formats: `size` or `OptionalFields.size`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Daily` | `aws.s3.Bucket.InventoryConfiguration.ScheduleFrequency.daily` |
-| `Weekly` | `aws.s3.Bucket.InventoryConfiguration.ScheduleFrequency.weekly` |
+| `Daily` | `awscc.s3.Bucket.InventoryConfiguration.ScheduleFrequency.daily` |
+| `Weekly` | `awscc.s3.Bucket.InventoryConfiguration.ScheduleFrequency.weekly` |
 
 Shorthand formats: `daily` or `ScheduleFrequency.daily`
 
@@ -345,12 +345,12 @@ Shorthand formats: `daily` or `ScheduleFrequency.daily`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `DEEP_ARCHIVE` | `aws.s3.Bucket.LifecycleConfiguration.Rule.NoncurrentVersionTransition.StorageClass.deep_archive` |
-| `GLACIER` | `aws.s3.Bucket.LifecycleConfiguration.Rule.NoncurrentVersionTransition.StorageClass.glacier` |
-| `GLACIER_IR` | `aws.s3.Bucket.LifecycleConfiguration.Rule.NoncurrentVersionTransition.StorageClass.glacier_ir` |
-| `INTELLIGENT_TIERING` | `aws.s3.Bucket.LifecycleConfiguration.Rule.NoncurrentVersionTransition.StorageClass.intelligent_tiering` |
-| `ONEZONE_IA` | `aws.s3.Bucket.LifecycleConfiguration.Rule.NoncurrentVersionTransition.StorageClass.onezone_ia` |
-| `STANDARD_IA` | `aws.s3.Bucket.LifecycleConfiguration.Rule.NoncurrentVersionTransition.StorageClass.standard_ia` |
+| `DEEP_ARCHIVE` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.NoncurrentVersionTransition.StorageClass.deep_archive` |
+| `GLACIER` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.NoncurrentVersionTransition.StorageClass.glacier` |
+| `GLACIER_IR` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.NoncurrentVersionTransition.StorageClass.glacier_ir` |
+| `INTELLIGENT_TIERING` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.NoncurrentVersionTransition.StorageClass.intelligent_tiering` |
+| `ONEZONE_IA` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.NoncurrentVersionTransition.StorageClass.onezone_ia` |
+| `STANDARD_IA` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.NoncurrentVersionTransition.StorageClass.standard_ia` |
 
 Shorthand formats: `deep_archive` or `StorageClass.deep_archive`
 
@@ -358,8 +358,8 @@ Shorthand formats: `deep_archive` or `StorageClass.deep_archive`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Enabled` | `aws.s3.Bucket.LifecycleConfiguration.Rule.Status.enabled` |
-| `Disabled` | `aws.s3.Bucket.LifecycleConfiguration.Rule.Status.disabled` |
+| `Enabled` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.Status.enabled` |
+| `Disabled` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.Status.disabled` |
 
 Shorthand formats: `enabled` or `Status.enabled`
 
@@ -367,12 +367,12 @@ Shorthand formats: `enabled` or `Status.enabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `DEEP_ARCHIVE` | `aws.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.deep_archive` |
-| `GLACIER` | `aws.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.glacier` |
-| `GLACIER_IR` | `aws.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.glacier_ir` |
-| `INTELLIGENT_TIERING` | `aws.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.intelligent_tiering` |
-| `ONEZONE_IA` | `aws.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.onezone_ia` |
-| `STANDARD_IA` | `aws.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.standard_ia` |
+| `DEEP_ARCHIVE` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.deep_archive` |
+| `GLACIER` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.glacier` |
+| `GLACIER_IR` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.glacier_ir` |
+| `INTELLIGENT_TIERING` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.intelligent_tiering` |
+| `ONEZONE_IA` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.onezone_ia` |
+| `STANDARD_IA` | `awscc.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.standard_ia` |
 
 Shorthand formats: `deep_archive` or `StorageClass.deep_archive`
 
@@ -380,8 +380,8 @@ Shorthand formats: `deep_archive` or `StorageClass.deep_archive`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `varies_by_storage_class` | `aws.s3.Bucket.LifecycleConfiguration.TransitionDefaultMinimumObjectSize.varies_by_storage_class` |
-| `all_storage_classes_128K` | `aws.s3.Bucket.LifecycleConfiguration.TransitionDefaultMinimumObjectSize.all_storage_classes_128k` |
+| `varies_by_storage_class` | `awscc.s3.Bucket.LifecycleConfiguration.TransitionDefaultMinimumObjectSize.varies_by_storage_class` |
+| `all_storage_classes_128K` | `awscc.s3.Bucket.LifecycleConfiguration.TransitionDefaultMinimumObjectSize.all_storage_classes_128k` |
 
 Shorthand formats: `varies_by_storage_class` or `TransitionDefaultMinimumObjectSize.varies_by_storage_class`
 
@@ -389,8 +389,8 @@ Shorthand formats: `varies_by_storage_class` or `TransitionDefaultMinimumObjectS
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `EventTime` | `aws.s3.Bucket.LoggingConfiguration.TargetObjectKeyFormat.PartitionedPrefix.PartitionDateSource.event_time` |
-| `DeliveryTime` | `aws.s3.Bucket.LoggingConfiguration.TargetObjectKeyFormat.PartitionedPrefix.PartitionDateSource.delivery_time` |
+| `EventTime` | `awscc.s3.Bucket.LoggingConfiguration.TargetObjectKeyFormat.PartitionedPrefix.PartitionDateSource.event_time` |
+| `DeliveryTime` | `awscc.s3.Bucket.LoggingConfiguration.TargetObjectKeyFormat.PartitionedPrefix.PartitionDateSource.delivery_time` |
 
 Shorthand formats: `event_time` or `PartitionDateSource.event_time`
 
@@ -398,8 +398,8 @@ Shorthand formats: `event_time` or `PartitionDateSource.event_time`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `aws` | `aws.s3.Bucket.MetadataConfiguration.MetadataDestination.TableBucketType.aws` |
-| `customer` | `aws.s3.Bucket.MetadataConfiguration.MetadataDestination.TableBucketType.customer` |
+| `aws` | `awscc.s3.Bucket.MetadataConfiguration.MetadataDestination.TableBucketType.aws` |
+| `customer` | `awscc.s3.Bucket.MetadataConfiguration.MetadataDestination.TableBucketType.customer` |
 
 Shorthand formats: `aws` or `TableBucketType.aws`
 
@@ -407,8 +407,8 @@ Shorthand formats: `aws` or `TableBucketType.aws`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ENABLED` | `aws.s3.Bucket.MetadataConfiguration.InventoryTableConfiguration.ConfigurationState.enabled` |
-| `DISABLED` | `aws.s3.Bucket.MetadataConfiguration.InventoryTableConfiguration.ConfigurationState.disabled` |
+| `ENABLED` | `awscc.s3.Bucket.MetadataConfiguration.InventoryTableConfiguration.ConfigurationState.enabled` |
+| `DISABLED` | `awscc.s3.Bucket.MetadataConfiguration.InventoryTableConfiguration.ConfigurationState.disabled` |
 
 Shorthand formats: `enabled` or `ConfigurationState.enabled`
 
@@ -416,8 +416,8 @@ Shorthand formats: `enabled` or `ConfigurationState.enabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ENABLED` | `aws.s3.Bucket.MetadataConfiguration.JournalTableConfiguration.RecordExpiration.Expiration.enabled` |
-| `DISABLED` | `aws.s3.Bucket.MetadataConfiguration.JournalTableConfiguration.RecordExpiration.Expiration.disabled` |
+| `ENABLED` | `awscc.s3.Bucket.MetadataConfiguration.JournalTableConfiguration.RecordExpiration.Expiration.enabled` |
+| `DISABLED` | `awscc.s3.Bucket.MetadataConfiguration.JournalTableConfiguration.RecordExpiration.Expiration.disabled` |
 
 Shorthand formats: `enabled` or `Expiration.enabled`
 
@@ -425,7 +425,7 @@ Shorthand formats: `enabled` or `Expiration.enabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `aws_s3_metadata` | `aws.s3.Bucket.MetadataTableConfiguration.S3TablesDestination.TableNamespace.aws_s3_metadata` |
+| `aws_s3_metadata` | `awscc.s3.Bucket.MetadataTableConfiguration.S3TablesDestination.TableNamespace.aws_s3_metadata` |
 
 Shorthand formats: `aws_s3_metadata` or `TableNamespace.aws_s3_metadata`
 
@@ -433,8 +433,8 @@ Shorthand formats: `aws_s3_metadata` or `TableNamespace.aws_s3_metadata`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `aws:kms` | `aws.s3.Bucket.MetadataConfiguration.InventoryTableConfiguration.MetadataTableEncryptionConfiguration.SseAlgorithm.aws_kms` |
-| `AES256` | `aws.s3.Bucket.MetadataConfiguration.InventoryTableConfiguration.MetadataTableEncryptionConfiguration.SseAlgorithm.aes256` |
+| `aws:kms` | `awscc.s3.Bucket.MetadataConfiguration.InventoryTableConfiguration.MetadataTableEncryptionConfiguration.SseAlgorithm.aws_kms` |
+| `AES256` | `awscc.s3.Bucket.MetadataConfiguration.InventoryTableConfiguration.MetadataTableEncryptionConfiguration.SseAlgorithm.aes256` |
 
 Shorthand formats: `aws_kms` or `SseAlgorithm.aws_kms`
 
@@ -442,8 +442,8 @@ Shorthand formats: `aws_kms` or `SseAlgorithm.aws_kms`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `prefix` | `aws.s3.Bucket.NotificationConfiguration.LambdaConfiguration.NotificationFilter.S3KeyFilter.FilterRule.Name.prefix` |
-| `suffix` | `aws.s3.Bucket.NotificationConfiguration.LambdaConfiguration.NotificationFilter.S3KeyFilter.FilterRule.Name.suffix` |
+| `prefix` | `awscc.s3.Bucket.NotificationConfiguration.LambdaConfiguration.NotificationFilter.S3KeyFilter.FilterRule.Name.prefix` |
+| `suffix` | `awscc.s3.Bucket.NotificationConfiguration.LambdaConfiguration.NotificationFilter.S3KeyFilter.FilterRule.Name.suffix` |
 
 Shorthand formats: `prefix` or `Name.prefix`
 
@@ -451,7 +451,7 @@ Shorthand formats: `prefix` or `Name.prefix`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Enabled` | `aws.s3.Bucket.ObjectLockConfiguration.ObjectLockEnabled.enabled` |
+| `Enabled` | `awscc.s3.Bucket.ObjectLockConfiguration.ObjectLockEnabled.enabled` |
 
 Shorthand formats: `enabled` or `ObjectLockEnabled.enabled`
 
@@ -459,8 +459,8 @@ Shorthand formats: `enabled` or `ObjectLockEnabled.enabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `COMPLIANCE` | `aws.s3.Bucket.ObjectLockConfiguration.ObjectLockRule.DefaultRetention.Mode.compliance` |
-| `GOVERNANCE` | `aws.s3.Bucket.ObjectLockConfiguration.ObjectLockRule.DefaultRetention.Mode.governance` |
+| `COMPLIANCE` | `awscc.s3.Bucket.ObjectLockConfiguration.ObjectLockRule.DefaultRetention.Mode.compliance` |
+| `GOVERNANCE` | `awscc.s3.Bucket.ObjectLockConfiguration.ObjectLockRule.DefaultRetention.Mode.governance` |
 
 Shorthand formats: `compliance` or `Mode.compliance`
 
@@ -468,9 +468,9 @@ Shorthand formats: `compliance` or `Mode.compliance`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ObjectWriter` | `aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.object_writer` |
-| `BucketOwnerPreferred` | `aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_preferred` |
-| `BucketOwnerEnforced` | `aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced` |
+| `ObjectWriter` | `awscc.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.object_writer` |
+| `BucketOwnerPreferred` | `awscc.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_preferred` |
+| `BucketOwnerEnforced` | `awscc.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced` |
 
 Shorthand formats: `object_writer` or `ObjectOwnership.object_writer`
 
@@ -478,8 +478,8 @@ Shorthand formats: `object_writer` or `ObjectOwnership.object_writer`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Disabled` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.DeleteMarkerReplication.Status.disabled` |
-| `Enabled` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.DeleteMarkerReplication.Status.enabled` |
+| `Disabled` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.DeleteMarkerReplication.Status.disabled` |
+| `Enabled` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.DeleteMarkerReplication.Status.enabled` |
 
 Shorthand formats: `disabled` or `Status.disabled`
 
@@ -487,7 +487,7 @@ Shorthand formats: `disabled` or `Status.disabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Destination` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.AccessControlTranslation.Owner.destination` |
+| `Destination` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.AccessControlTranslation.Owner.destination` |
 
 Shorthand formats: `destination` or `Owner.destination`
 
@@ -495,8 +495,8 @@ Shorthand formats: `destination` or `Owner.destination`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Disabled` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.Metrics.Status.disabled` |
-| `Enabled` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.Metrics.Status.enabled` |
+| `Disabled` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.Metrics.Status.disabled` |
+| `Enabled` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.Metrics.Status.enabled` |
 
 Shorthand formats: `disabled` or `Status.disabled`
 
@@ -504,8 +504,8 @@ Shorthand formats: `disabled` or `Status.disabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Disabled` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.ReplicationTime.Status.disabled` |
-| `Enabled` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.ReplicationTime.Status.enabled` |
+| `Disabled` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.ReplicationTime.Status.disabled` |
+| `Enabled` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.ReplicationTime.Status.enabled` |
 
 Shorthand formats: `disabled` or `Status.disabled`
 
@@ -513,14 +513,14 @@ Shorthand formats: `disabled` or `Status.disabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `DEEP_ARCHIVE` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.deep_archive` |
-| `GLACIER` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.glacier` |
-| `GLACIER_IR` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.glacier_ir` |
-| `INTELLIGENT_TIERING` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.intelligent_tiering` |
-| `ONEZONE_IA` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.onezone_ia` |
-| `REDUCED_REDUNDANCY` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.reduced_redundancy` |
-| `STANDARD` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.standard` |
-| `STANDARD_IA` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.standard_ia` |
+| `DEEP_ARCHIVE` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.deep_archive` |
+| `GLACIER` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.glacier` |
+| `GLACIER_IR` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.glacier_ir` |
+| `INTELLIGENT_TIERING` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.intelligent_tiering` |
+| `ONEZONE_IA` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.onezone_ia` |
+| `REDUCED_REDUNDANCY` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.reduced_redundancy` |
+| `STANDARD` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.standard` |
+| `STANDARD_IA` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.ReplicationDestination.StorageClass.standard_ia` |
 
 Shorthand formats: `deep_archive` or `StorageClass.deep_archive`
 
@@ -528,8 +528,8 @@ Shorthand formats: `deep_archive` or `StorageClass.deep_archive`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Enabled` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.SourceSelectionCriteria.ReplicaModifications.Status.enabled` |
-| `Disabled` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.SourceSelectionCriteria.ReplicaModifications.Status.disabled` |
+| `Enabled` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.SourceSelectionCriteria.ReplicaModifications.Status.enabled` |
+| `Disabled` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.SourceSelectionCriteria.ReplicaModifications.Status.disabled` |
 
 Shorthand formats: `enabled` or `Status.enabled`
 
@@ -537,8 +537,8 @@ Shorthand formats: `enabled` or `Status.enabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Disabled` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.SourceSelectionCriteria.SseKmsEncryptedObjects.Status.disabled` |
-| `Enabled` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.SourceSelectionCriteria.SseKmsEncryptedObjects.Status.enabled` |
+| `Disabled` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.SourceSelectionCriteria.SseKmsEncryptedObjects.Status.disabled` |
+| `Enabled` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.SourceSelectionCriteria.SseKmsEncryptedObjects.Status.enabled` |
 
 Shorthand formats: `disabled` or `Status.disabled`
 
@@ -546,8 +546,8 @@ Shorthand formats: `disabled` or `Status.disabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Disabled` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.Status.disabled` |
-| `Enabled` | `aws.s3.Bucket.ReplicationConfiguration.ReplicationRule.Status.enabled` |
+| `Disabled` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.Status.disabled` |
+| `Enabled` | `awscc.s3.Bucket.ReplicationConfiguration.ReplicationRule.Status.enabled` |
 
 Shorthand formats: `disabled` or `Status.disabled`
 
@@ -557,37 +557,37 @@ Used by: `notification_configuration.lambda_configurations.event`, `notification
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `s3:ObjectCreated:*` | `aws.s3.Bucket.NotificationConfiguration.Event.object_created_all` |
-| `s3:ObjectCreated:Put` | `aws.s3.Bucket.NotificationConfiguration.Event.object_created_put` |
-| `s3:ObjectCreated:Post` | `aws.s3.Bucket.NotificationConfiguration.Event.object_created_post` |
-| `s3:ObjectCreated:Copy` | `aws.s3.Bucket.NotificationConfiguration.Event.object_created_copy` |
-| `s3:ObjectCreated:CompleteMultipartUpload` | `aws.s3.Bucket.NotificationConfiguration.Event.object_created_complete_multipart_upload` |
-| `s3:ObjectRemoved:*` | `aws.s3.Bucket.NotificationConfiguration.Event.object_removed_all` |
-| `s3:ObjectRemoved:Delete` | `aws.s3.Bucket.NotificationConfiguration.Event.object_removed_delete` |
-| `s3:ObjectRemoved:DeleteMarkerCreated` | `aws.s3.Bucket.NotificationConfiguration.Event.object_removed_delete_marker_created` |
-| `s3:ObjectRestore:*` | `aws.s3.Bucket.NotificationConfiguration.Event.object_restore_all` |
-| `s3:ObjectRestore:Post` | `aws.s3.Bucket.NotificationConfiguration.Event.object_restore_post` |
-| `s3:ObjectRestore:Completed` | `aws.s3.Bucket.NotificationConfiguration.Event.object_restore_completed` |
-| `s3:ObjectRestore:Delete` | `aws.s3.Bucket.NotificationConfiguration.Event.object_restore_delete` |
-| `s3:Replication:*` | `aws.s3.Bucket.NotificationConfiguration.Event.replication_all` |
-| `s3:Replication:OperationFailedReplication` | `aws.s3.Bucket.NotificationConfiguration.Event.replication_operation_failed_replication` |
-| `s3:Replication:OperationNotTracked` | `aws.s3.Bucket.NotificationConfiguration.Event.replication_operation_not_tracked` |
-| `s3:Replication:OperationMissedThreshold` | `aws.s3.Bucket.NotificationConfiguration.Event.replication_operation_missed_threshold` |
-| `s3:Replication:OperationReplicatedAfterThreshold` | `aws.s3.Bucket.NotificationConfiguration.Event.replication_operation_replicated_after_threshold` |
-| `s3:LifecycleTransition` | `aws.s3.Bucket.NotificationConfiguration.Event.lifecycle_transition` |
-| `s3:IntelligentTiering` | `aws.s3.Bucket.NotificationConfiguration.Event.intelligent_tiering` |
-| `s3:ObjectAcl:Put` | `aws.s3.Bucket.NotificationConfiguration.Event.object_acl_put` |
-| `s3:LifecycleExpiration:*` | `aws.s3.Bucket.NotificationConfiguration.Event.lifecycle_expiration_all` |
-| `s3:LifecycleExpiration:Delete` | `aws.s3.Bucket.NotificationConfiguration.Event.lifecycle_expiration_delete` |
-| `s3:LifecycleExpiration:DeleteMarkerCreated` | `aws.s3.Bucket.NotificationConfiguration.Event.lifecycle_expiration_delete_marker_created` |
-| `s3:ObjectTagging:*` | `aws.s3.Bucket.NotificationConfiguration.Event.object_tagging_all` |
-| `s3:ObjectTagging:Put` | `aws.s3.Bucket.NotificationConfiguration.Event.object_tagging_put` |
-| `s3:ObjectTagging:Delete` | `aws.s3.Bucket.NotificationConfiguration.Event.object_tagging_delete` |
-| `s3:ObjectAnnotation:*` | `aws.s3.Bucket.NotificationConfiguration.Event.object_annotation_all` |
-| `s3:ObjectAnnotation:Put` | `aws.s3.Bucket.NotificationConfiguration.Event.object_annotation_put` |
-| `s3:ObjectAnnotation:Delete` | `aws.s3.Bucket.NotificationConfiguration.Event.object_annotation_delete` |
-| `s3:ObjectRetention:Put` | `aws.s3.Bucket.NotificationConfiguration.Event.object_retention_put` |
-| `s3:ReducedRedundancyLostObject` | `aws.s3.Bucket.NotificationConfiguration.Event.reduced_redundancy_lost_object` |
+| `s3:ObjectCreated:*` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_created_all` |
+| `s3:ObjectCreated:Put` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_created_put` |
+| `s3:ObjectCreated:Post` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_created_post` |
+| `s3:ObjectCreated:Copy` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_created_copy` |
+| `s3:ObjectCreated:CompleteMultipartUpload` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_created_complete_multipart_upload` |
+| `s3:ObjectRemoved:*` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_removed_all` |
+| `s3:ObjectRemoved:Delete` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_removed_delete` |
+| `s3:ObjectRemoved:DeleteMarkerCreated` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_removed_delete_marker_created` |
+| `s3:ObjectRestore:*` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_restore_all` |
+| `s3:ObjectRestore:Post` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_restore_post` |
+| `s3:ObjectRestore:Completed` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_restore_completed` |
+| `s3:ObjectRestore:Delete` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_restore_delete` |
+| `s3:Replication:*` | `awscc.s3.Bucket.NotificationConfiguration.Event.replication_all` |
+| `s3:Replication:OperationFailedReplication` | `awscc.s3.Bucket.NotificationConfiguration.Event.replication_operation_failed_replication` |
+| `s3:Replication:OperationNotTracked` | `awscc.s3.Bucket.NotificationConfiguration.Event.replication_operation_not_tracked` |
+| `s3:Replication:OperationMissedThreshold` | `awscc.s3.Bucket.NotificationConfiguration.Event.replication_operation_missed_threshold` |
+| `s3:Replication:OperationReplicatedAfterThreshold` | `awscc.s3.Bucket.NotificationConfiguration.Event.replication_operation_replicated_after_threshold` |
+| `s3:LifecycleTransition` | `awscc.s3.Bucket.NotificationConfiguration.Event.lifecycle_transition` |
+| `s3:IntelligentTiering` | `awscc.s3.Bucket.NotificationConfiguration.Event.intelligent_tiering` |
+| `s3:ObjectAcl:Put` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_acl_put` |
+| `s3:LifecycleExpiration:*` | `awscc.s3.Bucket.NotificationConfiguration.Event.lifecycle_expiration_all` |
+| `s3:LifecycleExpiration:Delete` | `awscc.s3.Bucket.NotificationConfiguration.Event.lifecycle_expiration_delete` |
+| `s3:LifecycleExpiration:DeleteMarkerCreated` | `awscc.s3.Bucket.NotificationConfiguration.Event.lifecycle_expiration_delete_marker_created` |
+| `s3:ObjectTagging:*` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_tagging_all` |
+| `s3:ObjectTagging:Put` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_tagging_put` |
+| `s3:ObjectTagging:Delete` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_tagging_delete` |
+| `s3:ObjectAnnotation:*` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_annotation_all` |
+| `s3:ObjectAnnotation:Put` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_annotation_put` |
+| `s3:ObjectAnnotation:Delete` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_annotation_delete` |
+| `s3:ObjectRetention:Put` | `awscc.s3.Bucket.NotificationConfiguration.Event.object_retention_put` |
+| `s3:ReducedRedundancyLostObject` | `awscc.s3.Bucket.NotificationConfiguration.Event.reduced_redundancy_lost_object` |
 
 Shorthand formats: `object_created_all` or `Event.object_created_all`
 
@@ -595,8 +595,8 @@ Shorthand formats: `object_created_all` or `Event.object_created_all`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Enabled` | `aws.s3.Bucket.VersioningConfiguration.Status.enabled` |
-| `Suspended` | `aws.s3.Bucket.VersioningConfiguration.Status.suspended` |
+| `Enabled` | `awscc.s3.Bucket.VersioningConfiguration.Status.enabled` |
+| `Suspended` | `awscc.s3.Bucket.VersioningConfiguration.Status.suspended` |
 
 Shorthand formats: `enabled` or `Status.enabled`
 
@@ -604,8 +604,8 @@ Shorthand formats: `enabled` or `Status.enabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `http` | `aws.s3.Bucket.WebsiteConfiguration.RedirectAllRequestsTo.Protocol.http` |
-| `https` | `aws.s3.Bucket.WebsiteConfiguration.RedirectAllRequestsTo.Protocol.https` |
+| `http` | `awscc.s3.Bucket.WebsiteConfiguration.RedirectAllRequestsTo.Protocol.http` |
+| `https` | `awscc.s3.Bucket.WebsiteConfiguration.RedirectAllRequestsTo.Protocol.https` |
 
 Shorthand formats: `http` or `Protocol.http`
 
@@ -613,8 +613,8 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `http` | `aws.s3.Bucket.WebsiteConfiguration.RoutingRule.RedirectRule.Protocol.http` |
-| `https` | `aws.s3.Bucket.WebsiteConfiguration.RoutingRule.RedirectRule.Protocol.https` |
+| `http` | `awscc.s3.Bucket.WebsiteConfiguration.RoutingRule.RedirectRule.Protocol.http` |
+| `https` | `awscc.s3.Bucket.WebsiteConfiguration.RoutingRule.RedirectRule.Protocol.https` |
 
 Shorthand formats: `http` or `Protocol.http`
 
@@ -681,7 +681,7 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `kms_master_key_id` | `aws.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | AWS Key Management Service (KMS) customer managed key ID to use for the default encryption. + *General purpose buckets* - This parameter is allowed if and only if ``SSEAlgorithm`` is set to ``aws:kms`` or ``aws:kms:dsse``. + *Directory buckets* - This parameter is allowed if and only if ``SSEAlgorithm`` is set to ``aws:kms``. You can specify the key ID, key alias, or the Amazon Resource Name (ARN) of the KMS key. + Key ID: ``1234abcd-12ab-34cd-56ef-1234567890ab`` + Key ARN: ``arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab`` + Key Alias: ``alias/alias-name`` If you are using encryption with cross-account or AWS service operations, you must use a fully qualified KMS key ARN. For more information, see [Using encryption for cross-account operations](https://docs.aws.amazon.com/AmazonS3/latest/dev/bucket-encryption.html#bucket-encryption-update-bucket-policy). + *General purpose buckets* - If you're specifying a customer managed KMS key, we recommend using a fully qualified KMS key ARN. If you use a KMS key alias instead, then KMS resolves the key within the requester?s account. This behavior can result in data that's encrypted with a KMS key that belongs to the requester, and not the bucket owner. Also, if you use a key ID, you can run into a LogDestination undeliverable error when creating a VPC flow log. + *Directory buckets* - When you specify an [customer managed key](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#customer-cmk) for encryption in your directory bucket, only use the key ID or key ARN. The key alias format of the KMS key isn't supported. Amazon S3 only supports symmetric encryption KMS keys. For more information, see [Asymmetric keys in KMS](https://docs.aws.amazon.com//kms/latest/developerguide/symmetric-asymmetric.html) in the *Key Management Service Developer Guide*. |
+| `kms_master_key_id` | `awscc.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | AWS Key Management Service (KMS) customer managed key ID to use for the default encryption. + *General purpose buckets* - This parameter is allowed if and only if ``SSEAlgorithm`` is set to ``aws:kms`` or ``aws:kms:dsse``. + *Directory buckets* - This parameter is allowed if and only if ``SSEAlgorithm`` is set to ``aws:kms``. You can specify the key ID, key alias, or the Amazon Resource Name (ARN) of the KMS key. + Key ID: ``1234abcd-12ab-34cd-56ef-1234567890ab`` + Key ARN: ``arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab`` + Key Alias: ``alias/alias-name`` If you are using encryption with cross-account or AWS service operations, you must use a fully qualified KMS key ARN. For more information, see [Using encryption for cross-account operations](https://docs.aws.amazon.com/AmazonS3/latest/dev/bucket-encryption.html#bucket-encryption-update-bucket-policy). + *General purpose buckets* - If you're specifying a customer managed KMS key, we recommend using a fully qualified KMS key ARN. If you use a KMS key alias instead, then KMS resolves the key within the requester?s account. This behavior can result in data that's encrypted with a KMS key that belongs to the requester, and not the bucket owner. Also, if you use a key ID, you can run into a LogDestination undeliverable error when creating a VPC flow log. + *Directory buckets* - When you specify an [customer managed key](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#customer-cmk) for encryption in your directory bucket, only use the key ID or key ARN. The key alias format of the KMS key isn't supported. Amazon S3 only supports symmetric encryption KMS keys. For more information, see [Asymmetric keys in KMS](https://docs.aws.amazon.com//kms/latest/developerguide/symmetric-asymmetric.html) in the *Key Management Service Developer Guide*. |
 | `sse_algorithm` | [SseAlgorithm](#bucket_encryptionserver_side_encryption_configurationserver_side_encryption_by_defaultsse_algorithm-ssealgorithm) | Yes | Server-side encryption algorithm to use for the default encryption. For directory buckets, there are only two supported values for server-side encryption: ``AES256`` and ``aws:kms``. |
 
 ### cors_configuration
@@ -734,8 +734,8 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `bucket_account_id` | `aws.AccountId (pattern: /^[0-9]{12}$/ (Full), len: 12..=12)` | No | The account ID that owns the destination S3 bucket. If no account ID is provided, the owner is not validated before exporting data. Although this value is optional, we strongly recommend that you set it to help prevent problems if the destination bucket ownership changes. |
-| `bucket_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the bucket to which data is exported. |
+| `bucket_account_id` | `awscc.AccountId (pattern: /^[0-9]{12}$/ (Full), len: 12..=12)` | No | The account ID that owns the destination S3 bucket. If no account ID is provided, the owner is not validated before exporting data. Although this value is optional, we strongly recommend that you set it to help prevent problems if the destination bucket ownership changes. |
+| `bucket_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the bucket to which data is exported. |
 | `format` | [Format](#inventory_configurationsdestinationformat-format) | Yes | Specifies the file format used when exporting data to Amazon S3. *Allowed values*: ``CSV`` \| ``ORC`` \| ``Parquet`` |
 | `prefix` | `String` | No | The prefix to use when exporting data. The prefix is prepended to all results. |
 
@@ -751,7 +751,7 @@ Shorthand formats: `http` or `Protocol.http`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `abort_incomplete_multipart_upload` | [Struct(AbortIncompleteMultipartUpload)](#lifecycle_configurationrulesabort_incomplete_multipart_upload) | No | Specifies a lifecycle rule that stops incomplete multipart uploads to an Amazon S3 bucket. |
-| `expiration_date` | `aws.s3.Bucket.LifecycleDate (identity constraints: pattern: /^[0-9]{4}-(?:0[1-9]\|1[0-2])-(?:0[1-9]\|[12][0-9]\|3[01])T00:00:00(?:\.000)?Z\z/ (Full), member constraints: pattern: /^(\d{4})-(0[0-9]\|1[0-2])-([0-2]\d\|3[01])T([01]\d\|2[0-4]):([0-5]\d):([0-6]\d)((\.\d{3})?)Z$/ (Full), custom validator)` | No | Indicates when objects are deleted from Amazon S3 and Amazon S3 Glacier. The date value must be in ISO 8601 format. The time is always midnight UTC. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time. |
+| `expiration_date` | `awscc.s3.Bucket.LifecycleDate (identity constraints: pattern: /^[0-9]{4}-(?:0[1-9]\|1[0-2])-(?:0[1-9]\|[12][0-9]\|3[01])T00:00:00(?:\.000)?Z\z/ (Full), member constraints: pattern: /^(\d{4})-(0[0-9]\|1[0-2])-([0-2]\d\|3[01])T([01]\d\|2[0-4]):([0-5]\d):([0-6]\d)((\.\d{3})?)Z$/ (Full), custom validator)` | No | Indicates when objects are deleted from Amazon S3 and Amazon S3 Glacier. The date value must be in ISO 8601 format. The time is always midnight UTC. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time. |
 | `expiration_in_days` | `Int (range: 1..unbounded)` | No | Indicates the number of days after creation when objects are deleted from Amazon S3 and Amazon S3 Glacier. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time. |
 | `expired_object_delete_marker` | `Bool` | No | Indicates whether Amazon S3 will remove a delete marker without any noncurrent versions. If set to true, the delete marker will be removed if there are no noncurrent versions. This cannot be specified with ``ExpirationInDays``, ``ExpirationDate``, or ``TagFilters``. |
 | `id` | `String (len: unbounded..=255)` | No | Unique identifier for the rule. The value can't be longer than 255 characters. |
@@ -790,7 +790,7 @@ Shorthand formats: `http` or `Protocol.http`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `storage_class` | [StorageClass](#lifecycle_configurationrulestransitionsstorage_class-storageclass) | Yes | The storage class to which you want the object to transition. |
-| `transition_date` | `aws.s3.Bucket.LifecycleDate (identity constraints: pattern: /^[0-9]{4}-(?:0[1-9]\|1[0-2])-(?:0[1-9]\|[12][0-9]\|3[01])T00:00:00(?:\.000)?Z\z/ (Full), member constraints: pattern: /^(\d{4})-(0[0-9]\|1[0-2])-([0-2]\d\|3[01])T([01]\d\|2[0-4]):([0-5]\d):([0-6]\d)((\.\d{3})?)Z$/ (Full), custom validator)` | No | Indicates when objects are transitioned to the specified storage class. The date value must be in ISO 8601 format. The time is always midnight UTC. |
+| `transition_date` | `awscc.s3.Bucket.LifecycleDate (identity constraints: pattern: /^[0-9]{4}-(?:0[1-9]\|1[0-2])-(?:0[1-9]\|[12][0-9]\|3[01])T00:00:00(?:\.000)?Z\z/ (Full), member constraints: pattern: /^(\d{4})-(0[0-9]\|1[0-2])-([0-2]\d\|3[01])T([01]\d\|2[0-4]):([0-5]\d):([0-6]\d)((\.\d{3})?)Z$/ (Full), custom validator)` | No | Indicates when objects are transitioned to the specified storage class. The date value must be in ISO 8601 format. The time is always midnight UTC. |
 | `transition_in_days` | `Int (range: 0..unbounded)` | No | Indicates the number of days after creation when objects are transitioned to the specified storage class. If the specified storage class is ``INTELLIGENT_TIERING``, ``GLACIER_IR``, ``GLACIER``, or ``DEEP_ARCHIVE``, valid values are ``0`` or positive integers. If the specified storage class is ``STANDARD_IA`` or ``ONEZONE_IA``, valid values are positive integers greater than ``30``. Be aware that some storage classes have a minimum storage duration and that you're charged for transitioning objects before their minimum storage duration. For more information, see [Constraints and considerations for transitions](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-transition-general-considerations.html#lifecycle-configuration-constraints) in the *Amazon S3 User Guide*. |
 
 ### logging_configuration
@@ -835,7 +835,7 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `table_bucket_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the table bucket where the metadata configuration is stored. |
+| `table_bucket_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the table bucket where the metadata configuration is stored. |
 | `table_bucket_type` | [TableBucketType](#metadata_configurationdestinationtable_bucket_type-tablebuckettype) | Yes | The type of the table bucket where the metadata configuration is stored. The ``aws`` value indicates an AWS managed table bucket, and the ``customer`` value indicates a customer-managed table bucket. V2 metadata configurations are stored in AWS managed table buckets, and V1 metadata configurations are stored in customer-managed table buckets. |
 | `table_namespace` | `String` | No | The namespace in the table bucket where the metadata tables for a metadata configuration are stored. |
 
@@ -845,7 +845,7 @@ Shorthand formats: `http` or `Protocol.http`
 |-------|------|----------|-------------|
 | `configuration_state` | [ConfigurationState](#metadata_configurationinventory_table_configurationconfiguration_state-configurationstate) | Yes | The configuration state of the inventory table, indicating whether the inventory table is enabled or disabled. |
 | `encryption_configuration` | [Struct(MetadataTableEncryptionConfiguration)](#metadata_table_encryption_configuration) | No | The encryption configuration for the inventory table. |
-| `table_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) for the inventory table. Provider-populated; cannot be set. |
+| `table_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) for the inventory table. Provider-populated; cannot be set. |
 | `table_name` | `String` | No | The name of the inventory table. Provider-populated; cannot be set. |
 
 ### metadata_configuration.journal_table_configuration
@@ -854,7 +854,7 @@ Shorthand formats: `http` or `Protocol.http`
 |-------|------|----------|-------------|
 | `encryption_configuration` | [Struct(MetadataTableEncryptionConfiguration)](#metadata_table_encryption_configuration) | No | The encryption configuration for the journal table. |
 | `record_expiration` | [Struct(RecordExpiration)](#metadata_configurationjournal_table_configurationrecord_expiration) | Yes | The journal table record expiration settings for the journal table. |
-| `table_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) for the journal table. Provider-populated; cannot be set. |
+| `table_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) for the journal table. Provider-populated; cannot be set. |
 | `table_name` | `String` | No | The name of the journal table. Provider-populated; cannot be set. |
 
 ### metadata_configuration.journal_table_configuration.record_expiration
@@ -874,8 +874,8 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `table_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) for the metadata table in the metadata table configuration. The specified metadata table name must be unique within the ``aws_s3_metadata`` namespace in the destination table bucket. Provider-populated; cannot be set. |
-| `table_bucket_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) for the table bucket that's specified as the destination in the metadata table configuration. The destination table bucket must be in the same Region and AWS-account as the general purpose bucket. |
+| `table_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) for the metadata table in the metadata table configuration. The specified metadata table name must be unique within the ``aws_s3_metadata`` namespace in the destination table bucket. Provider-populated; cannot be set. |
+| `table_bucket_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) for the table bucket that's specified as the destination in the metadata table configuration. The destination table bucket must be in the same Region and AWS-account as the general purpose bucket. |
 | `table_name` | `String` | Yes | The name for the metadata table in your metadata table configuration. The specified metadata table name must be unique within the ``aws_s3_metadata`` namespace in the destination table bucket. |
 | `table_namespace` | [TableNamespace](#metadata_table_configurations3_tables_destinationtable_namespace-tablenamespace) | No | The table bucket namespace for the metadata table in your metadata table configuration. This value is always ``aws_s3_metadata``. Provider-populated; cannot be set. |
 
@@ -885,14 +885,14 @@ Used by: `metadata_configuration.inventory_table_configuration.encryption_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `kms_key_arn` | `aws.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | If server-side encryption with KMSlong (KMS) keys (SSE-KMS) is specified, you must also specify the KMS key Amazon Resource Name (ARN). You must specify a customer-managed KMS key that's located in the same Region as the general purpose bucket that corresponds to the metadata table configuration. |
+| `kms_key_arn` | `awscc.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | No | If server-side encryption with KMSlong (KMS) keys (SSE-KMS) is specified, you must also specify the KMS key Amazon Resource Name (ARN). You must specify a customer-managed KMS key that's located in the same Region as the general purpose bucket that corresponds to the metadata table configuration. |
 | `sse_algorithm` | [SseAlgorithm](#metadata_table_encryption_configurationsse_algorithm-ssealgorithm) | Yes | The encryption type specified for a metadata table. To specify server-side encryption with KMSlong (KMS) keys (SSE-KMS), use the ``aws:kms`` value. To specify server-side encryption with Amazon S3 managed keys (SSE-S3), use the ``AES256`` value. |
 
 ### metrics_configurations
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `access_point_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The access point that was used while performing operations on the object. The metrics configuration only includes objects that meet the filter's criteria. |
+| `access_point_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The access point that was used while performing operations on the object. The metrics configuration only includes objects that meet the filter's criteria. |
 | `id` | `String (pattern: /^[A-Za-z0-9._-]+\z/ (Full), len: unbounded..=64)` | Yes | The ID used to identify the metrics configuration. This can be any value you choose that helps you identify your metrics configuration. |
 | `prefix` | `String` | No | The prefix that an object must have to be included in the metrics results. |
 | `tag_filters` | List\<Map\<`String`, `String`\>\> (unique items, ordered) | No | Specifies a list of tag filters to use as a metrics configuration filter. The metrics configuration includes only objects that meet the filter's criteria. |
@@ -918,7 +918,7 @@ Used by: `metadata_configuration.inventory_table_configuration.encryption_config
 |-------|------|----------|-------------|
 | `event` | [Event](#s3_notification_event-event) | Yes | The Amazon S3 bucket event for which to invoke the LAMlong function. For more information, see [Supported Event Types](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
 | `filter` | [Struct(NotificationFilter)](#notification_filter) | No | The filtering rules that determine which objects invoke the AWS Lambda function. For example, you can create a filter so that only image files with a ``.jpg`` extension invoke the function when they are added to the Amazon S3 bucket. |
-| `function` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the LAMlong function that Amazon S3 invokes when the specified event type occurs. |
+| `function` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the LAMlong function that Amazon S3 invokes when the specified event type occurs. |
 
 ### notification_configuration.queue_configurations
 
@@ -926,7 +926,7 @@ Used by: `metadata_configuration.inventory_table_configuration.encryption_config
 |-------|------|----------|-------------|
 | `event` | [Event](#s3_notification_event-event) | Yes | The Amazon S3 bucket event about which you want to publish messages to Amazon SQS. For more information, see [Supported Event Types](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
 | `filter` | [Struct(NotificationFilter)](#notification_filter) | No | The filtering rules that determine which objects trigger notifications. For example, you can create a filter so that Amazon S3 sends notifications only when image files with a ``.jpg`` extension are added to the bucket. For more information, see [Configuring event notifications using object key name filtering](https://docs.aws.amazon.com/AmazonS3/latest/user-guide/notification-how-to-filtering.html) in the *Amazon S3 User Guide*. |
-| `queue` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the Amazon SQS queue to which Amazon S3 publishes a message when it detects events of the specified type. FIFO queues are not allowed when enabling an SQS queue as the event notification destination. |
+| `queue` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the Amazon SQS queue to which Amazon S3 publishes a message when it detects events of the specified type. FIFO queues are not allowed when enabling an SQS queue as the event notification destination. |
 
 ### notification_configuration.topic_configurations
 
@@ -934,7 +934,7 @@ Used by: `metadata_configuration.inventory_table_configuration.encryption_config
 |-------|------|----------|-------------|
 | `event` | [Event](#s3_notification_event-event) | Yes | The Amazon S3 bucket event about which to send notifications. For more information, see [Supported Event Types](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*. |
 | `filter` | [Struct(NotificationFilter)](#notification_filter) | No | The filtering rules that determine for which objects to send notifications. For example, you can create a filter so that Amazon S3 sends notifications only when image files with a ``.jpg`` extension are added to the bucket. |
-| `topic` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the Amazon SNS topic to which Amazon S3 publishes a message when it detects events of the specified type. |
+| `topic` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the Amazon SNS topic to which Amazon S3 publishes a message when it detects events of the specified type. |
 
 ### notification_filter
 
@@ -1003,7 +1003,7 @@ Used by: `notification_configuration.lambda_configurations.filter`, `notificatio
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `role` | `aws.iam.Role.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):iam::[^:]*:role/.+$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the IAMlong (IAM) role that Amazon S3 assumes when replicating objects. For more information, see [How to Set Up Replication](https://docs.aws.amazon.com/AmazonS3/latest/dev/replication-how-setup.html) in the *Amazon S3 User Guide*. |
+| `role` | `awscc.iam.Role.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):iam::[^:]*:role/.+$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the IAMlong (IAM) role that Amazon S3 assumes when replicating objects. For more information, see [How to Set Up Replication](https://docs.aws.amazon.com/AmazonS3/latest/dev/replication-how-setup.html) in the *Amazon S3 User Guide*. |
 | `rules` | List\<[Struct(ReplicationRule)](#replication_configurationrules)\> (items: 1..=1000, unique items, ordered) | Yes | A container for one or more replication rules. A replication configuration must have at least one rule and can contain a maximum of 1,000 rules. |
 
 ### replication_configuration.rules
@@ -1030,7 +1030,7 @@ Used by: `notification_configuration.lambda_configurations.filter`, `notificatio
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `access_control_translation` | [Struct(AccessControlTranslation)](#replication_configurationrulesdestinationaccess_control_translation) | No | Specify this only in a cross-account scenario (where source and destination bucket owners are not the same), and you want to change replica ownership to the AWS-account that owns the destination bucket. If this is not specified in the replication configuration, the replicas are owned by same AWS-account that owns the source object. |
-| `account` | `aws.AccountId (pattern: /^[0-9]{12}$/ (Full), len: 12..=12)` | No | Destination bucket owner account ID. In a cross-account scenario, if you direct Amazon S3 to change replica ownership to the AWS-account that owns the destination bucket by specifying the ``AccessControlTranslation`` property, this is the account ID of the destination bucket owner. For more information, see [Cross-Region Replication Additional Configuration: Change Replica Owner](https://docs.aws.amazon.com/AmazonS3/latest/dev/crr-change-owner.html) in the *Amazon S3 User Guide*. If you specify the ``AccessControlTranslation`` property, the ``Account`` property is required. |
+| `account` | `awscc.AccountId (pattern: /^[0-9]{12}$/ (Full), len: 12..=12)` | No | Destination bucket owner account ID. In a cross-account scenario, if you direct Amazon S3 to change replica ownership to the AWS-account that owns the destination bucket by specifying the ``AccessControlTranslation`` property, this is the account ID of the destination bucket owner. For more information, see [Cross-Region Replication Additional Configuration: Change Replica Owner](https://docs.aws.amazon.com/AmazonS3/latest/dev/crr-change-owner.html) in the *Amazon S3 User Guide*. If you specify the ``AccessControlTranslation`` property, the ``Account`` property is required. |
 | `bucket` | `String` | Yes | The Amazon Resource Name (ARN) of the bucket where you want Amazon S3 to store the results. |
 | `encryption_configuration` | [Struct(EncryptionConfiguration)](#replication_configurationrulesdestinationencryption_configuration) | No | Specifies encryption-related information. |
 | `metrics` | [Struct(Metrics)](#replication_configurationrulesdestinationmetrics) | No | A container specifying replication metrics-related settings enabling replication metrics and events. |
@@ -1047,7 +1047,7 @@ Used by: `notification_configuration.lambda_configurations.filter`, `notificatio
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `replica_kms_key_id` | `aws.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | Yes | Specifies the ID (Key ARN or Alias ARN) of the customer managed AWS KMS key stored in AWS Key Management Service (KMS) for the destination bucket. Amazon S3 uses this key to encrypt replica objects. Amazon S3 only supports symmetric encryption KMS keys. For more information, see [Asymmetric keys in KMS](https://docs.aws.amazon.com//kms/latest/developerguide/symmetric-asymmetric.html) in the *Key Management Service Developer Guide*. |
+| `replica_kms_key_id` | `awscc.kms.Key.Reference (pattern: /^((arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\|mrk-[0-9a-fA-F]{32})\|alias/[a-zA-Z0-9:/_-]+))\|(alias/[a-zA-Z0-9:/_-]+)\|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)` | Yes | Specifies the ID (Key ARN or Alias ARN) of the customer managed AWS KMS key stored in AWS Key Management Service (KMS) for the destination bucket. Amazon S3 uses this key to encrypt replica objects. Amazon S3 only supports symmetric encryption KMS keys. For more information, see [Asymmetric keys in KMS](https://docs.aws.amazon.com//kms/latest/developerguide/symmetric-asymmetric.html) in the *Key Management Service Developer Guide*. |
 
 ### replication_configuration.rules.destination.metrics
 
@@ -1155,7 +1155,7 @@ Used by: `replication_configuration.rules.destination.metrics.event_threshold`, 
 
 ### `arn`
 
-- **Type:** `aws.s3.Bucket.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):s3:::.+$/ (Full), custom validator)`
+- **Type:** `awscc.s3.Bucket.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):s3:::.+$/ (Full), custom validator)`
 
 
 

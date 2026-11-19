@@ -10,19 +10,19 @@ awscc.cloudfront.Distribution {
   distribution_config = {
     comment                = 'Example distribution'
     enabled                = true
-    http_version           = aws.cloudfront.Distribution.DistributionConfig.HttpVersion.http2
-    price_class            = aws.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_100
+    http_version           = awscc.cloudfront.Distribution.DistributionConfig.HttpVersion.http2
+    price_class            = awscc.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_100
 
     default_cache_behavior = {
       target_origin_id       = 'example-origin'
-      viewer_protocol_policy = aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.redirect_to_https
+      viewer_protocol_policy = awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.redirect_to_https
       allowed_methods        = [
-        aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.get,
-        aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.head,
+        awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.get,
+        awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.head,
       ]
       cached_methods         = [
-        aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.get,
-        aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.head,
+        awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.get,
+        awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.head,
       ]
 
       # AWS managed CachingOptimized cache policy.
@@ -36,16 +36,16 @@ awscc.cloudfront.Distribution {
       custom_origin_config = {
         http_port              = 80
         https_port             = 443
-        origin_protocol_policy = aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.https_only
+        origin_protocol_policy = awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.https_only
         origin_ssl_protocols   = [
-          aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_2,
+          awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_2,
         ]
       }
     }
 
     restrictions           = {
       geo_restriction = {
-        restriction_type = aws.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.none
+        restriction_type = awscc.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.none
       }
     }
 

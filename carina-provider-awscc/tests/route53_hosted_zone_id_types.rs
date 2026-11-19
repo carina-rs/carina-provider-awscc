@@ -17,8 +17,8 @@ use carina_provider_awscc::schemas::generated::route53::hosted_zone::route53_hos
 #[test]
 fn hosted_zone_id_producers_share_catalog_identity_and_keep_cfn_member_bounds() {
     let alias_target_hosted_zone_id = AttributeType::union(vec![
-        carina_aws_types::cloudfront_hosted_zone_id(),
-        carina_aws_types::route53_hosted_zone_id(),
+        carina_provider_awscc::schemas::catalog::cloudfront_hosted_zone_id(),
+        carina_provider_awscc::schemas::catalog::route53_hosted_zone_id(),
     ]);
     let sinks = ResourceSchema::new("test.Route53Sinks")
         .attribute(AttributeSchema::optional("alias_target", alias_target_hosted_zone_id).build())
@@ -69,7 +69,7 @@ fn hosted_zone_id_producers_share_catalog_identity_and_keep_cfn_member_bounds() 
         else {
             panic!("{label} must preserve the catalog definition and CFN member layer");
         };
-        assert_eq!(identity.to_string(), "aws.route53.HostedZone.Id");
+        assert_eq!(identity.to_string(), "awscc.route53.HostedZone.Id");
         assert_eq!(pattern.as_str(), "^Z[A-Z0-9]+$");
         assert_eq!(length, (attribute_name == "id").then_some((None, Some(32))));
         assert!(

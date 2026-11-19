@@ -51,7 +51,7 @@ Creates or updates a *field index policy* for the specified log group. Only log 
 
 ### `kms_key_id`
 
-- **Type:** `aws.kms.Key.Reference (pattern: /^((arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})|alias/[a-zA-Z0-9:/_-]+))|(alias/[a-zA-Z0-9:/_-]+)|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)`
+- **Type:** `awscc.kms.Key.Reference (pattern: /^((arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})|alias/[a-zA-Z0-9:/_-]+))|(alias/[a-zA-Z0-9:/_-]+)|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)`
 - **Required:** No
 
 The Amazon Resource Name (ARN) of the KMS key to use when encrypting log data. To associate an KMS key with the log group, specify the ARN of that KMS key here. If you do so, ingested data is encrypted using this key. This association is stored as long as the data encrypted with the KMS key is still within CWL. This enables CWL to decrypt this data whenever it is requested. If you attempt to associate a KMS key with the log group but the KMS key doesn't exist or is deactivated, you will receive an ``InvalidParameterException`` error. Log group data is always encrypted in CWL. If you omit this key, the encryption does not use KMS. For more information, see [Encrypt log data in using](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html)
@@ -66,7 +66,7 @@ Specifies the log group class for this log group. There are two classes: + The `
 
 ### `log_group_name`
 
-- **Type:** `aws.logs.LogGroup.LogGroupName (identity constraints: pattern: /^[.\-_/#A-Za-z0-9]{1,512}\z/ (Full), len: 1..=512, member constraints: pattern: /^[.\-_/#A-Za-z0-9]{1,512}\z/ (Full), len: 1..=512, custom validator)`
+- **Type:** `awscc.logs.LogGroup.LogGroupName (identity constraints: pattern: /^[.\-_/#A-Za-z0-9]{1,512}\z/ (Full), len: 1..=512, member constraints: pattern: /^[.\-_/#A-Za-z0-9]{1,512}\z/ (Full), len: 1..=512, custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -81,7 +81,7 @@ Creates or updates a resource policy for the specified log group that allows oth
 
 ### `retention_in_days`
 
-- **Type:** `aws.logs.LogGroup.RetentionInDays (custom validator)`; CFN allowed values: \[1,3,5,7,14,30,60,90,120,150,180,365,400,545,731,1096,1827,2192,2557,2922,3288,3653\]
+- **Type:** `awscc.logs.LogGroup.RetentionInDays (custom validator)`; CFN allowed values: \[1,3,5,7,14,30,60,90,120,150,180,365,400,545,731,1096,1827,2192,2557,2922,3288,3653\]
 - **Required:** No
 
 The number of days to retain the log events in the specified log group. Possible values are: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, and 3653. To set a log group so that its log events do not expire, do not specify this property.
@@ -99,7 +99,7 @@ An array of key-value pairs to apply to the log group. For more information, see
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `2021-06-01` | `aws.logs.LogGroup.DataProtectionPolicy.Version.v2021_06_01` |
+| `2021-06-01` | `awscc.logs.LogGroup.DataProtectionPolicy.Version.v2021_06_01` |
 
 Shorthand formats: `v2021_06_01` or `Version.v2021_06_01`
 
@@ -107,8 +107,8 @@ Shorthand formats: `v2021_06_01` or `Version.v2021_06_01`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `FIELD_INDEX` | `aws.logs.LogGroup.FieldIndexPolicy.FieldIndexConfiguration.Type.field_index` |
-| `FACET` | `aws.logs.LogGroup.FieldIndexPolicy.FieldIndexConfiguration.Type.facet` |
+| `FIELD_INDEX` | `awscc.logs.LogGroup.FieldIndexPolicy.FieldIndexConfiguration.Type.field_index` |
+| `FACET` | `awscc.logs.LogGroup.FieldIndexPolicy.FieldIndexConfiguration.Type.facet` |
 
 Shorthand formats: `field_index` or `Type.field_index`
 
@@ -116,9 +116,9 @@ Shorthand formats: `field_index` or `Type.field_index`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `STANDARD` | `aws.logs.LogGroup.LogGroupClass.standard` |
-| `INFREQUENT_ACCESS` | `aws.logs.LogGroup.LogGroupClass.infrequent_access` |
-| `DELIVERY` | `aws.logs.LogGroup.LogGroupClass.delivery` |
+| `STANDARD` | `awscc.logs.LogGroup.LogGroupClass.standard` |
+| `INFREQUENT_ACCESS` | `awscc.logs.LogGroup.LogGroupClass.infrequent_access` |
+| `DELIVERY` | `awscc.logs.LogGroup.LogGroupClass.delivery` |
 
 Shorthand formats: `standard` or `LogGroupClass.standard`
 
@@ -126,8 +126,8 @@ Shorthand formats: `standard` or `LogGroupClass.standard`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `2012-10-17` | `aws.iam.PolicyDocument.Version.2012_10_17` |
-| `2008-10-17` | `aws.iam.PolicyDocument.Version.2008_10_17` |
+| `2012-10-17` | `awscc.iam.PolicyDocument.Version.2012_10_17` |
+| `2008-10-17` | `awscc.iam.PolicyDocument.Version.2008_10_17` |
 
 Use the fully qualified DSL identifiers above; bare numeric values parse as integers.
 
@@ -135,168 +135,168 @@ Use the fully qualified DSL identifiers above; bare numeric values parse as inte
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `string_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_equals` |
-| `string_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_equals_if_exists` |
-| `for_all_values_string_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_equals` |
-| `for_all_values_string_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_equals_if_exists` |
-| `for_any_value_string_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_equals` |
-| `for_any_value_string_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_equals_if_exists` |
-| `string_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_equals` |
-| `string_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_equals_if_exists` |
-| `for_all_values_string_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_equals` |
-| `for_all_values_string_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_equals_if_exists` |
-| `for_any_value_string_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_equals` |
-| `for_any_value_string_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_equals_if_exists` |
-| `string_equals_ignore_case` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_equals_ignore_case` |
-| `string_equals_ignore_case_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_equals_ignore_case_if_exists` |
-| `for_all_values_string_equals_ignore_case` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_equals_ignore_case` |
-| `for_all_values_string_equals_ignore_case_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_equals_ignore_case_if_exists` |
-| `for_any_value_string_equals_ignore_case` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_equals_ignore_case` |
-| `for_any_value_string_equals_ignore_case_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_equals_ignore_case_if_exists` |
-| `string_not_equals_ignore_case` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_equals_ignore_case` |
-| `string_not_equals_ignore_case_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_equals_ignore_case_if_exists` |
-| `for_all_values_string_not_equals_ignore_case` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_equals_ignore_case` |
-| `for_all_values_string_not_equals_ignore_case_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_equals_ignore_case_if_exists` |
-| `for_any_value_string_not_equals_ignore_case` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_equals_ignore_case` |
-| `for_any_value_string_not_equals_ignore_case_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_equals_ignore_case_if_exists` |
-| `string_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_like` |
-| `string_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_like_if_exists` |
-| `for_all_values_string_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_like` |
-| `for_all_values_string_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_like_if_exists` |
-| `for_any_value_string_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_like` |
-| `for_any_value_string_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_like_if_exists` |
-| `string_not_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_like` |
-| `string_not_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_like_if_exists` |
-| `for_all_values_string_not_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_like` |
-| `for_all_values_string_not_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_like_if_exists` |
-| `for_any_value_string_not_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_like` |
-| `for_any_value_string_not_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_like_if_exists` |
-| `numeric_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_equals` |
-| `numeric_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_equals_if_exists` |
-| `for_all_values_numeric_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_equals` |
-| `for_all_values_numeric_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_equals_if_exists` |
-| `for_any_value_numeric_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_equals` |
-| `for_any_value_numeric_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_equals_if_exists` |
-| `numeric_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_not_equals` |
-| `numeric_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_not_equals_if_exists` |
-| `for_all_values_numeric_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_not_equals` |
-| `for_all_values_numeric_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_not_equals_if_exists` |
-| `for_any_value_numeric_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_not_equals` |
-| `for_any_value_numeric_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_not_equals_if_exists` |
-| `numeric_less_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_less_than` |
-| `numeric_less_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_less_than_if_exists` |
-| `for_all_values_numeric_less_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_less_than` |
-| `for_all_values_numeric_less_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_less_than_if_exists` |
-| `for_any_value_numeric_less_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_less_than` |
-| `for_any_value_numeric_less_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_less_than_if_exists` |
-| `numeric_less_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_less_than_equals` |
-| `numeric_less_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_less_than_equals_if_exists` |
-| `for_all_values_numeric_less_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_less_than_equals` |
-| `for_all_values_numeric_less_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_less_than_equals_if_exists` |
-| `for_any_value_numeric_less_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_less_than_equals` |
-| `for_any_value_numeric_less_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_less_than_equals_if_exists` |
-| `numeric_greater_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_greater_than` |
-| `numeric_greater_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_greater_than_if_exists` |
-| `for_all_values_numeric_greater_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_greater_than` |
-| `for_all_values_numeric_greater_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_greater_than_if_exists` |
-| `for_any_value_numeric_greater_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_greater_than` |
-| `for_any_value_numeric_greater_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_greater_than_if_exists` |
-| `numeric_greater_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_greater_than_equals` |
-| `numeric_greater_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_greater_than_equals_if_exists` |
-| `for_all_values_numeric_greater_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_greater_than_equals` |
-| `for_all_values_numeric_greater_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_greater_than_equals_if_exists` |
-| `for_any_value_numeric_greater_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_greater_than_equals` |
-| `for_any_value_numeric_greater_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_greater_than_equals_if_exists` |
-| `date_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_equals` |
-| `date_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_equals_if_exists` |
-| `for_all_values_date_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_equals` |
-| `for_all_values_date_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_equals_if_exists` |
-| `for_any_value_date_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_equals` |
-| `for_any_value_date_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_equals_if_exists` |
-| `date_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_not_equals` |
-| `date_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_not_equals_if_exists` |
-| `for_all_values_date_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_not_equals` |
-| `for_all_values_date_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_not_equals_if_exists` |
-| `for_any_value_date_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_not_equals` |
-| `for_any_value_date_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_not_equals_if_exists` |
-| `date_less_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_less_than` |
-| `date_less_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_less_than_if_exists` |
-| `for_all_values_date_less_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_less_than` |
-| `for_all_values_date_less_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_less_than_if_exists` |
-| `for_any_value_date_less_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_less_than` |
-| `for_any_value_date_less_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_less_than_if_exists` |
-| `date_less_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_less_than_equals` |
-| `date_less_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_less_than_equals_if_exists` |
-| `for_all_values_date_less_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_less_than_equals` |
-| `for_all_values_date_less_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_less_than_equals_if_exists` |
-| `for_any_value_date_less_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_less_than_equals` |
-| `for_any_value_date_less_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_less_than_equals_if_exists` |
-| `date_greater_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_greater_than` |
-| `date_greater_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_greater_than_if_exists` |
-| `for_all_values_date_greater_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_greater_than` |
-| `for_all_values_date_greater_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_greater_than_if_exists` |
-| `for_any_value_date_greater_than` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_greater_than` |
-| `for_any_value_date_greater_than_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_greater_than_if_exists` |
-| `date_greater_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_greater_than_equals` |
-| `date_greater_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_greater_than_equals_if_exists` |
-| `for_all_values_date_greater_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_greater_than_equals` |
-| `for_all_values_date_greater_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_greater_than_equals_if_exists` |
-| `for_any_value_date_greater_than_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_greater_than_equals` |
-| `for_any_value_date_greater_than_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_greater_than_equals_if_exists` |
-| `bool` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.bool` |
-| `bool_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.bool_if_exists` |
-| `for_all_values_bool` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_bool` |
-| `for_all_values_bool_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_bool_if_exists` |
-| `for_any_value_bool` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_bool` |
-| `for_any_value_bool_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_bool_if_exists` |
-| `binary_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.binary_equals` |
-| `binary_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.binary_equals_if_exists` |
-| `for_all_values_binary_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_binary_equals` |
-| `for_all_values_binary_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_binary_equals_if_exists` |
-| `for_any_value_binary_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_binary_equals` |
-| `for_any_value_binary_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_binary_equals_if_exists` |
-| `ip_address` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.ip_address` |
-| `ip_address_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.ip_address_if_exists` |
-| `for_all_values_ip_address` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_ip_address` |
-| `for_all_values_ip_address_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_ip_address_if_exists` |
-| `for_any_value_ip_address` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_ip_address` |
-| `for_any_value_ip_address_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_ip_address_if_exists` |
-| `not_ip_address` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.not_ip_address` |
-| `not_ip_address_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.not_ip_address_if_exists` |
-| `for_all_values_not_ip_address` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_not_ip_address` |
-| `for_all_values_not_ip_address_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_not_ip_address_if_exists` |
-| `for_any_value_not_ip_address` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_not_ip_address` |
-| `for_any_value_not_ip_address_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_not_ip_address_if_exists` |
-| `arn_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_equals` |
-| `arn_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_equals_if_exists` |
-| `for_all_values_arn_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_equals` |
-| `for_all_values_arn_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_equals_if_exists` |
-| `for_any_value_arn_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_equals` |
-| `for_any_value_arn_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_equals_if_exists` |
-| `arn_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_not_equals` |
-| `arn_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_not_equals_if_exists` |
-| `for_all_values_arn_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_not_equals` |
-| `for_all_values_arn_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_not_equals_if_exists` |
-| `for_any_value_arn_not_equals` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_not_equals` |
-| `for_any_value_arn_not_equals_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_not_equals_if_exists` |
-| `arn_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_like` |
-| `arn_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_like_if_exists` |
-| `for_all_values_arn_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_like` |
-| `for_all_values_arn_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_like_if_exists` |
-| `for_any_value_arn_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_like` |
-| `for_any_value_arn_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_like_if_exists` |
-| `arn_not_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_not_like` |
-| `arn_not_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_not_like_if_exists` |
-| `for_all_values_arn_not_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_not_like` |
-| `for_all_values_arn_not_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_not_like_if_exists` |
-| `for_any_value_arn_not_like` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_not_like` |
-| `for_any_value_arn_not_like_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_not_like_if_exists` |
-| `null` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.null` |
-| `null_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.null_if_exists` |
-| `for_all_values_null` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_null` |
-| `for_all_values_null_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_null_if_exists` |
-| `for_any_value_null` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_null` |
-| `for_any_value_null_if_exists` | `aws.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_null_if_exists` |
+| `string_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_equals` |
+| `string_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_equals_if_exists` |
+| `for_all_values_string_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_equals` |
+| `for_all_values_string_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_equals_if_exists` |
+| `for_any_value_string_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_equals` |
+| `for_any_value_string_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_equals_if_exists` |
+| `string_not_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_equals` |
+| `string_not_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_equals_if_exists` |
+| `for_all_values_string_not_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_equals` |
+| `for_all_values_string_not_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_equals_if_exists` |
+| `for_any_value_string_not_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_equals` |
+| `for_any_value_string_not_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_equals_if_exists` |
+| `string_equals_ignore_case` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_equals_ignore_case` |
+| `string_equals_ignore_case_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_equals_ignore_case_if_exists` |
+| `for_all_values_string_equals_ignore_case` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_equals_ignore_case` |
+| `for_all_values_string_equals_ignore_case_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_equals_ignore_case_if_exists` |
+| `for_any_value_string_equals_ignore_case` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_equals_ignore_case` |
+| `for_any_value_string_equals_ignore_case_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_equals_ignore_case_if_exists` |
+| `string_not_equals_ignore_case` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_equals_ignore_case` |
+| `string_not_equals_ignore_case_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_equals_ignore_case_if_exists` |
+| `for_all_values_string_not_equals_ignore_case` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_equals_ignore_case` |
+| `for_all_values_string_not_equals_ignore_case_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_equals_ignore_case_if_exists` |
+| `for_any_value_string_not_equals_ignore_case` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_equals_ignore_case` |
+| `for_any_value_string_not_equals_ignore_case_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_equals_ignore_case_if_exists` |
+| `string_like` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_like` |
+| `string_like_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_like_if_exists` |
+| `for_all_values_string_like` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_like` |
+| `for_all_values_string_like_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_like_if_exists` |
+| `for_any_value_string_like` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_like` |
+| `for_any_value_string_like_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_like_if_exists` |
+| `string_not_like` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_like` |
+| `string_not_like_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.string_not_like_if_exists` |
+| `for_all_values_string_not_like` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_like` |
+| `for_all_values_string_not_like_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_string_not_like_if_exists` |
+| `for_any_value_string_not_like` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_like` |
+| `for_any_value_string_not_like_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_string_not_like_if_exists` |
+| `numeric_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_equals` |
+| `numeric_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_equals_if_exists` |
+| `for_all_values_numeric_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_equals` |
+| `for_all_values_numeric_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_equals_if_exists` |
+| `for_any_value_numeric_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_equals` |
+| `for_any_value_numeric_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_equals_if_exists` |
+| `numeric_not_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_not_equals` |
+| `numeric_not_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_not_equals_if_exists` |
+| `for_all_values_numeric_not_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_not_equals` |
+| `for_all_values_numeric_not_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_not_equals_if_exists` |
+| `for_any_value_numeric_not_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_not_equals` |
+| `for_any_value_numeric_not_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_not_equals_if_exists` |
+| `numeric_less_than` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_less_than` |
+| `numeric_less_than_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_less_than_if_exists` |
+| `for_all_values_numeric_less_than` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_less_than` |
+| `for_all_values_numeric_less_than_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_less_than_if_exists` |
+| `for_any_value_numeric_less_than` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_less_than` |
+| `for_any_value_numeric_less_than_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_less_than_if_exists` |
+| `numeric_less_than_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_less_than_equals` |
+| `numeric_less_than_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_less_than_equals_if_exists` |
+| `for_all_values_numeric_less_than_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_less_than_equals` |
+| `for_all_values_numeric_less_than_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_less_than_equals_if_exists` |
+| `for_any_value_numeric_less_than_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_less_than_equals` |
+| `for_any_value_numeric_less_than_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_less_than_equals_if_exists` |
+| `numeric_greater_than` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_greater_than` |
+| `numeric_greater_than_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_greater_than_if_exists` |
+| `for_all_values_numeric_greater_than` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_greater_than` |
+| `for_all_values_numeric_greater_than_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_greater_than_if_exists` |
+| `for_any_value_numeric_greater_than` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_greater_than` |
+| `for_any_value_numeric_greater_than_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_greater_than_if_exists` |
+| `numeric_greater_than_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_greater_than_equals` |
+| `numeric_greater_than_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.numeric_greater_than_equals_if_exists` |
+| `for_all_values_numeric_greater_than_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_greater_than_equals` |
+| `for_all_values_numeric_greater_than_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_numeric_greater_than_equals_if_exists` |
+| `for_any_value_numeric_greater_than_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_greater_than_equals` |
+| `for_any_value_numeric_greater_than_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_numeric_greater_than_equals_if_exists` |
+| `date_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_equals` |
+| `date_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_equals_if_exists` |
+| `for_all_values_date_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_equals` |
+| `for_all_values_date_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_equals_if_exists` |
+| `for_any_value_date_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_equals` |
+| `for_any_value_date_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_equals_if_exists` |
+| `date_not_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_not_equals` |
+| `date_not_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_not_equals_if_exists` |
+| `for_all_values_date_not_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_not_equals` |
+| `for_all_values_date_not_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_not_equals_if_exists` |
+| `for_any_value_date_not_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_not_equals` |
+| `for_any_value_date_not_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_not_equals_if_exists` |
+| `date_less_than` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_less_than` |
+| `date_less_than_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_less_than_if_exists` |
+| `for_all_values_date_less_than` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_less_than` |
+| `for_all_values_date_less_than_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_less_than_if_exists` |
+| `for_any_value_date_less_than` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_less_than` |
+| `for_any_value_date_less_than_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_less_than_if_exists` |
+| `date_less_than_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_less_than_equals` |
+| `date_less_than_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_less_than_equals_if_exists` |
+| `for_all_values_date_less_than_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_less_than_equals` |
+| `for_all_values_date_less_than_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_less_than_equals_if_exists` |
+| `for_any_value_date_less_than_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_less_than_equals` |
+| `for_any_value_date_less_than_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_less_than_equals_if_exists` |
+| `date_greater_than` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_greater_than` |
+| `date_greater_than_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_greater_than_if_exists` |
+| `for_all_values_date_greater_than` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_greater_than` |
+| `for_all_values_date_greater_than_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_greater_than_if_exists` |
+| `for_any_value_date_greater_than` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_greater_than` |
+| `for_any_value_date_greater_than_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_greater_than_if_exists` |
+| `date_greater_than_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_greater_than_equals` |
+| `date_greater_than_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.date_greater_than_equals_if_exists` |
+| `for_all_values_date_greater_than_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_greater_than_equals` |
+| `for_all_values_date_greater_than_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_date_greater_than_equals_if_exists` |
+| `for_any_value_date_greater_than_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_greater_than_equals` |
+| `for_any_value_date_greater_than_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_date_greater_than_equals_if_exists` |
+| `bool` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.bool` |
+| `bool_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.bool_if_exists` |
+| `for_all_values_bool` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_bool` |
+| `for_all_values_bool_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_bool_if_exists` |
+| `for_any_value_bool` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_bool` |
+| `for_any_value_bool_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_bool_if_exists` |
+| `binary_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.binary_equals` |
+| `binary_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.binary_equals_if_exists` |
+| `for_all_values_binary_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_binary_equals` |
+| `for_all_values_binary_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_binary_equals_if_exists` |
+| `for_any_value_binary_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_binary_equals` |
+| `for_any_value_binary_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_binary_equals_if_exists` |
+| `ip_address` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.ip_address` |
+| `ip_address_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.ip_address_if_exists` |
+| `for_all_values_ip_address` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_ip_address` |
+| `for_all_values_ip_address_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_ip_address_if_exists` |
+| `for_any_value_ip_address` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_ip_address` |
+| `for_any_value_ip_address_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_ip_address_if_exists` |
+| `not_ip_address` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.not_ip_address` |
+| `not_ip_address_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.not_ip_address_if_exists` |
+| `for_all_values_not_ip_address` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_not_ip_address` |
+| `for_all_values_not_ip_address_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_not_ip_address_if_exists` |
+| `for_any_value_not_ip_address` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_not_ip_address` |
+| `for_any_value_not_ip_address_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_not_ip_address_if_exists` |
+| `arn_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_equals` |
+| `arn_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_equals_if_exists` |
+| `for_all_values_arn_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_equals` |
+| `for_all_values_arn_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_equals_if_exists` |
+| `for_any_value_arn_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_equals` |
+| `for_any_value_arn_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_equals_if_exists` |
+| `arn_not_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_not_equals` |
+| `arn_not_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_not_equals_if_exists` |
+| `for_all_values_arn_not_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_not_equals` |
+| `for_all_values_arn_not_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_not_equals_if_exists` |
+| `for_any_value_arn_not_equals` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_not_equals` |
+| `for_any_value_arn_not_equals_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_not_equals_if_exists` |
+| `arn_like` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_like` |
+| `arn_like_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_like_if_exists` |
+| `for_all_values_arn_like` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_like` |
+| `for_all_values_arn_like_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_like_if_exists` |
+| `for_any_value_arn_like` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_like` |
+| `for_any_value_arn_like_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_like_if_exists` |
+| `arn_not_like` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_not_like` |
+| `arn_not_like_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.arn_not_like_if_exists` |
+| `for_all_values_arn_not_like` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_not_like` |
+| `for_all_values_arn_not_like_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_arn_not_like_if_exists` |
+| `for_any_value_arn_not_like` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_not_like` |
+| `for_any_value_arn_not_like_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_arn_not_like_if_exists` |
+| `null` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.null` |
+| `null_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.null_if_exists` |
+| `for_all_values_null` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_null` |
+| `for_all_values_null_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_all_values_null_if_exists` |
+| `for_any_value_null` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_null` |
+| `for_any_value_null_if_exists` | `awscc.iam.PolicyDocument.Statement.Condition.ConditionOperator.for_any_value_null_if_exists` |
 
 Shorthand formats: `string_equals` or `ConditionOperator.string_equals`
 
@@ -304,8 +304,8 @@ Shorthand formats: `string_equals` or `ConditionOperator.string_equals`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Allow` | `aws.iam.PolicyDocument.Statement.Effect.allow` |
-| `Deny` | `aws.iam.PolicyDocument.Statement.Effect.deny` |
+| `Allow` | `awscc.iam.PolicyDocument.Statement.Effect.allow` |
+| `Deny` | `awscc.iam.PolicyDocument.Statement.Effect.deny` |
 
 Shorthand formats: `allow` or `Effect.allow`
 
@@ -517,7 +517,7 @@ Used by: `principal.aws`, `principal.canonical_user`, `principal.federated`, `pr
 
 ### `arn`
 
-- **Type:** `aws.logs.LogGroup.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):logs:[^:]*:[^:]*:log-group:.+$/ (Full), custom validator)`
+- **Type:** `awscc.logs.LogGroup.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):logs:[^:]*:[^:]*:log-group:.+$/ (Full), custom validator)`
 
 
 

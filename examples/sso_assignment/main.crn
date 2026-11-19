@@ -22,9 +22,9 @@ let read_only = awscc.sso.PermissionSet {
   session_duration = 'PT1H'
 
   inline_policy = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      effect   = awscc.iam.PolicyDocument.Statement.Effect.allow
       action   = 's3:ListAllMyBuckets'
       resource = '*'
     }
@@ -35,8 +35,8 @@ awscc.sso.Assignment {
   instance_arn       = read_only.instance_arn
   permission_set_arn = read_only.permission_set_arn
   principal_id       = assigned_group.group_id
-  principal_type     = aws.sso.Assignment.PrincipalType.group
+  principal_type     = awscc.sso.Assignment.PrincipalType.group
   # Replace this placeholder with your AWS account ID.
   target_id          = '123456789012'
-  target_type        = aws.sso.Assignment.TargetType.aws_account
+  target_type        = awscc.sso.Assignment.TargetType.aws_account
 }

@@ -1,10 +1,10 @@
 //! AWS Cloud Control type definitions and validators
 //!
 //! This module defines provider-specific schema config and validator
-//! registration for shared AWS types from `carina-aws-types`.
+//! registration for AWSCC-owned types.
 
 #[cfg(test)]
-use carina_aws_types::find_matching_enum_value;
+use crate::schemas::type_helpers::find_matching_enum_value;
 #[cfg(test)]
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::ValidatedResourceSchema;
@@ -135,24 +135,12 @@ fn strip_enum_identity_prefix<'a>(
 pub(crate) fn validate_namespaced_enum(
     value: &Value,
     type_name: &str,
-    namespace: &str,
+    namespace: &super::namespace::AwsccNamespace,
     valid_values: &[&str],
 ) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
         let s = s.expose_plaintext();
-        // Reconstruct the structured identity from the caller-supplied
-        // `(type_name, namespace)` pair: the namespace's first segment is
-        // the provider, the remainder are the service/resource segments,
-        // and the type name is the kind. Mirrors the helper used in
-        // S2.5b's test corpus.
-        let mut parts = namespace.split('.');
-        let provider = parts.next().map(String::from);
-        let segments: Vec<String> = parts.map(String::from).collect();
-        let identity = carina_core::schema::TypeIdentity {
-            provider,
-            segments,
-            kind: type_name.to_string(),
-        };
+        let identity = super::namespace::awscc_enum_identity(type_name, namespace);
         validate_enum_namespace(s, &identity)?;
 
         let normalized = strip_enum_identity_prefix(s, &identity);
@@ -169,7 +157,7 @@ pub(crate) fn validate_namespaced_enum(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use carina_aws_types::validate_iam_policy_document;
+    use crate::schemas::type_helpers::validate_iam_policy_document;
 
     #[test]
     fn all_read_back_declarations_exist_and_budgets_remain_default() {
@@ -205,10 +193,10 @@ mod tests {
     fn validate_namespaced_enum_basic() {
         let result = validate_namespaced_enum(
             &Value::Concrete(ConcreteValue::String(
-                "aws.ec2.Vpc.InstanceTenancy.default".to_string().into(),
+                "awscc.ec2.Vpc.InstanceTenancy.default".to_string().into(),
             )),
             "InstanceTenancy",
-            "aws.ec2.Vpc",
+            &crate::schemas::namespace::AwsccNamespace::new("ec2.Vpc"),
             &["default", "dedicated", "host"],
         );
         assert!(result.is_ok());

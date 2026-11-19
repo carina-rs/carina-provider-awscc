@@ -12,10 +12,10 @@ Resource Type definition for AWS::ElasticLoadBalancingV2::TargetGroup
 ```crn
 awscc.elasticloadbalancingv2.TargetGroup {
   name              = 'registry-tg'
-  protocol          = aws.elasticloadbalancingv2.TargetGroup.Protocol.http
+  protocol          = awscc.elasticloadbalancingv2.TargetGroup.Protocol.http
   port              = 8080
   vpc_id            = 'vpc-dddd4444'
-  target_type       = aws.elasticloadbalancingv2.TargetGroup.TargetType.ip
+  target_type       = awscc.elasticloadbalancingv2.TargetGroup.TargetType.ip
   health_check_path = '/health'
 
   target {
@@ -173,7 +173,7 @@ The number of consecutive health check failures required before considering a ta
 
 ### `vpc_id`
 
-- **Type:** `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -185,9 +185,9 @@ The identifier of the virtual private cloud (VPC). If the target is a Lambda fun
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `HTTP` | `aws.elasticloadbalancingv2.TargetGroup.HealthCheckProtocol.http` |
-| `HTTPS` | `aws.elasticloadbalancingv2.TargetGroup.HealthCheckProtocol.https` |
-| `TCP` | `aws.elasticloadbalancingv2.TargetGroup.HealthCheckProtocol.tcp` |
+| `HTTP` | `awscc.elasticloadbalancingv2.TargetGroup.HealthCheckProtocol.http` |
+| `HTTPS` | `awscc.elasticloadbalancingv2.TargetGroup.HealthCheckProtocol.https` |
+| `TCP` | `awscc.elasticloadbalancingv2.TargetGroup.HealthCheckProtocol.tcp` |
 
 Shorthand formats: `http` or `HealthCheckProtocol.http`
 
@@ -195,8 +195,8 @@ Shorthand formats: `http` or `HealthCheckProtocol.http`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ipv4` | `aws.elasticloadbalancingv2.TargetGroup.IpAddressType.ipv4` |
-| `ipv6` | `aws.elasticloadbalancingv2.TargetGroup.IpAddressType.ipv6` |
+| `ipv4` | `awscc.elasticloadbalancingv2.TargetGroup.IpAddressType.ipv4` |
+| `ipv6` | `awscc.elasticloadbalancingv2.TargetGroup.IpAddressType.ipv6` |
 
 Shorthand formats: `ipv4` or `IpAddressType.ipv4`
 
@@ -204,15 +204,15 @@ Shorthand formats: `ipv4` or `IpAddressType.ipv4`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `HTTP` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.http` |
-| `HTTPS` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.https` |
-| `TCP` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.tcp` |
-| `TLS` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.tls` |
-| `UDP` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.udp` |
-| `TCP_UDP` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.tcp_udp` |
-| `GENEVE` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.geneve` |
-| `QUIC` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.quic` |
-| `TCP_QUIC` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.tcp_quic` |
+| `HTTP` | `awscc.elasticloadbalancingv2.TargetGroup.Protocol.http` |
+| `HTTPS` | `awscc.elasticloadbalancingv2.TargetGroup.Protocol.https` |
+| `TCP` | `awscc.elasticloadbalancingv2.TargetGroup.Protocol.tcp` |
+| `TLS` | `awscc.elasticloadbalancingv2.TargetGroup.Protocol.tls` |
+| `UDP` | `awscc.elasticloadbalancingv2.TargetGroup.Protocol.udp` |
+| `TCP_UDP` | `awscc.elasticloadbalancingv2.TargetGroup.Protocol.tcp_udp` |
+| `GENEVE` | `awscc.elasticloadbalancingv2.TargetGroup.Protocol.geneve` |
+| `QUIC` | `awscc.elasticloadbalancingv2.TargetGroup.Protocol.quic` |
+| `TCP_QUIC` | `awscc.elasticloadbalancingv2.TargetGroup.Protocol.tcp_quic` |
 
 Shorthand formats: `http` or `Protocol.http`
 
@@ -220,9 +220,9 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GRPC` | `aws.elasticloadbalancingv2.TargetGroup.ProtocolVersion.grpc` |
-| `HTTP1` | `aws.elasticloadbalancingv2.TargetGroup.ProtocolVersion.http1` |
-| `HTTP2` | `aws.elasticloadbalancingv2.TargetGroup.ProtocolVersion.http2` |
+| `GRPC` | `awscc.elasticloadbalancingv2.TargetGroup.ProtocolVersion.grpc` |
+| `HTTP1` | `awscc.elasticloadbalancingv2.TargetGroup.ProtocolVersion.http1` |
+| `HTTP2` | `awscc.elasticloadbalancingv2.TargetGroup.ProtocolVersion.http2` |
 
 Shorthand formats: `grpc` or `ProtocolVersion.grpc`
 
@@ -230,10 +230,10 @@ Shorthand formats: `grpc` or `ProtocolVersion.grpc`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `instance` | `aws.elasticloadbalancingv2.TargetGroup.TargetType.instance` |
-| `ip` | `aws.elasticloadbalancingv2.TargetGroup.TargetType.ip` |
-| `lambda` | `aws.elasticloadbalancingv2.TargetGroup.TargetType.lambda` |
-| `alb` | `aws.elasticloadbalancingv2.TargetGroup.TargetType.alb` |
+| `instance` | `awscc.elasticloadbalancingv2.TargetGroup.TargetType.instance` |
+| `ip` | `awscc.elasticloadbalancingv2.TargetGroup.TargetType.ip` |
+| `lambda` | `awscc.elasticloadbalancingv2.TargetGroup.TargetType.lambda` |
+| `alb` | `awscc.elasticloadbalancingv2.TargetGroup.TargetType.alb` |
 
 Shorthand formats: `instance` or `TargetType.instance`
 
@@ -243,8 +243,8 @@ Shorthand formats: `instance` or `TargetType.instance`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `grpc_code` | `aws.elasticloadbalancingv2.TargetGroup.GrpcCode (custom validator)` | No | You can specify values between 0 and 99. You can specify multiple values, or a range of values. The default value is 12. |
-| `http_code` | `aws.elasticloadbalancingv2.TargetGroup.HttpCode (custom validator)` | No | For Application Load Balancers, you can specify values between 200 and 499, and the default value is 200. You can specify multiple values or a range of values.  |
+| `grpc_code` | `awscc.elasticloadbalancingv2.TargetGroup.GrpcCode (custom validator)` | No | You can specify values between 0 and 99. You can specify multiple values, or a range of values. The default value is 12. |
+| `http_code` | `awscc.elasticloadbalancingv2.TargetGroup.HttpCode (custom validator)` | No | For Application Load Balancers, you can specify values between 200 and 499, and the default value is 200. You can specify multiple values or a range of values.  |
 
 ### target_group_attributes
 
@@ -268,20 +268,20 @@ Shorthand formats: `instance` or `TargetType.instance`
 
 | Member | Type |
 |--------|------|
-| `member_0` | `aws.AvailabilityZone.ZoneName (custom validator)` |
+| `member_0` | `awscc.AvailabilityZone.ZoneName (custom validator)` |
 | `member_1` | `String (pattern: /^all\z/ (Full))` |
 
 ## Attribute Reference
 
 ### `load_balancer_arns`
 
-- **Type:** List\<`aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`\> (items: unbounded..=1, unordered)
+- **Type:** List\<`awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`\> (items: unbounded..=1, unordered)
 
 The Amazon Resource Names (ARNs) of the load balancers that route traffic to this target group.
 
 ### `target_group_arn`
 
-- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
+- **Type:** `awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 The ARN of the Target Group
 

@@ -291,10 +291,10 @@ fn probes() -> Vec<Probe> {
 
 #[test]
 fn both_slots_accept_exactly_canonical_intersected_with_the_old_slot() {
-    let canonical = rootless(carina_aws_types::kms_key_reference());
+    let canonical = rootless(carina_provider_awscc::schemas::catalog::kms_key_reference());
     for (index, slot) in slots().iter().enumerate() {
         let old = rootless(AttributeType::reference(
-            carina_aws_types::AwsType::KmsKeyReference.identity(),
+            carina_provider_awscc::schemas::catalog::ScalarType::KmsKeyReference.identity(),
             Some(PatternSpec::new(slot.old_pattern, PatternMatch::Full)),
             Some(slot.old_length),
         ));

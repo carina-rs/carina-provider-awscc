@@ -3,7 +3,7 @@
 # Tests a cloudfront-js-2.0 viewer-request function published to LIVE.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 awscc.cloudfront.Function {

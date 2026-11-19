@@ -79,8 +79,8 @@ The tier of the IPAM.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ipam-owner` | `aws.ec2.Ipam.MeteredAccount.ipam_owner` |
-| `resource-owner` | `aws.ec2.Ipam.MeteredAccount.resource_owner` |
+| `ipam-owner` | `awscc.ec2.Ipam.MeteredAccount.ipam_owner` |
+| `resource-owner` | `awscc.ec2.Ipam.MeteredAccount.resource_owner` |
 
 Shorthand formats: `ipam_owner` or `MeteredAccount.ipam_owner`
 
@@ -88,8 +88,8 @@ Shorthand formats: `ipam_owner` or `MeteredAccount.ipam_owner`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `free` | `aws.ec2.Ipam.Tier.free` |
-| `advanced` | `aws.ec2.Ipam.Tier.advanced` |
+| `free` | `awscc.ec2.Ipam.Tier.free` |
+| `advanced` | `awscc.ec2.Ipam.Tier.advanced` |
 
 Shorthand formats: `free` or `Tier.free`
 
@@ -105,13 +105,13 @@ Shorthand formats: `free` or `Tier.free`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `region_name` | `aws.Region (custom validator)` | Yes | The name of the region. |
+| `region_name` | `awscc.Region (custom validator)` | Yes | The name of the region. |
 
 ## Attribute Reference
 
 ### `arn`
 
-- **Type:** `aws.ec2.Ipam.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):ec2:.*$/ (Full), custom validator)`
+- **Type:** `awscc.ec2.Ipam.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):ec2:.*$/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of the IPAM.
 
@@ -129,7 +129,7 @@ The Id of the default resource discovery, created with this IPAM.
 
 ### `ipam_id`
 
-- **Type:** `aws.ec2.Ipam.Id (pattern: /^ipam-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.Ipam.Id (pattern: /^ipam-[0-9a-f]{8,}$/ (Full))`
 
 Id of the IPAM.
 

@@ -388,7 +388,7 @@ mod tests {
 
         let request = |value: &str| ReferenceRequest {
             ty: TypeIdentity {
-                provider: "aws".into(),
+                provider: "awscc".into(),
                 segments: vec!["kms".into(), "Key".into()],
                 kind: "Reference".into(),
             },
@@ -432,22 +432,50 @@ mod tests {
         assert_eq!(
             calls.lock().unwrap().kms.len(),
             4,
-            "the shared resolver preserves batch positions and short-circuits key ARNs"
+            "the AWSCC resolver preserves batch positions and short-circuits key ARNs"
+        );
+
+        // The old hand-built wire identity is deliberately rejected before
+        // DescribeKey, while the current forms above retain credential routing.
+        let old = ReferenceRequest {
+            ty: TypeIdentity {
+                provider: "aws".into(),
+                segments: vec!["kms".into(), "Key".into()],
+                kind: "Reference".into(),
+            },
+            value: "alias/aws/ecr".into(),
+        };
+        let rejected = provider.resolve_references(vec![old]).await;
+        let Err(ReferenceError::InvalidReference(error)) = &rejected[0] else {
+            panic!("old AWS identity must be rejected");
+        };
+        assert!(
+            error
+                .as_ref()
+                .clone()
+                .into_host_for_test()
+                .to_string()
+                .contains("unsupported reference identity aws.kms.Key.Reference")
+        );
+        assert_eq!(
+            calls.lock().unwrap().kms.len(),
+            4,
+            "old identity must not call KMS"
         );
 
         let native = carina_core::provider::Provider::resolve_references(
             &provider,
             &[
                 carina_core::references::ReferenceRequest {
-                    ty: carina_aws_types::AwsType::KmsKeyReference.identity(),
+                    ty: crate::schemas::catalog::ScalarType::KmsKeyReference.identity(),
                     value: "alias/aws/ecr".into(),
                 },
                 carina_core::references::ReferenceRequest {
-                    ty: carina_aws_types::AwsType::KmsKeyReference.identity(),
+                    ty: crate::schemas::catalog::ScalarType::KmsKeyReference.identity(),
                     value: REMOTE_KEY.into(),
                 },
                 carina_core::references::ReferenceRequest {
-                    ty: carina_aws_types::AwsType::KmsKeyArn.identity(),
+                    ty: crate::schemas::string_identity::StringIdentity::KmsKeyArn.identity(),
                     value: "alias/unsupported".into(),
                 },
             ],

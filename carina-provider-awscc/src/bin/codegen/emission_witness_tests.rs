@@ -105,7 +105,7 @@ fn conflicting_definition_annotations_are_errors() {
         let emit = |name: &str| {
             super::super::generate_attribute_type(
                 context.property_at(&[name.to_string()], &context.properties[name]),
-                "aws.test.NamedNotes",
+                &AwsccNamespace::new("test.NamedNotes"),
                 &BTreeMap::new(),
                 CfnTypeGenerationPaths {
                     structural: &[],
@@ -234,7 +234,7 @@ fn prescan_reset_clears_repeated_named_enum_bodies() {
     for _ in 0..2 {
         super::super::generate_attribute_type(
             context.property_at(&path, &definition.properties["Event"]),
-            "aws.s3.Bucket",
+            &AwsccNamespace::new("s3.Bucket"),
             &BTreeMap::new(),
             CfnTypeGenerationPaths {
                 structural: &path[..1],

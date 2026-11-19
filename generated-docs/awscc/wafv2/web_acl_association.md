@@ -45,7 +45,7 @@ let load_balancer_security_group = awscc.ec2.SecurityGroup {
   group_description = 'Allow HTTP traffic to the example load balancer'
 
   security_group_ingress {
-    ip_protocol = aws.ec2.SecurityGroup.Ingress.IpProtocol.tcp
+    ip_protocol = awscc.ec2.SecurityGroup.Ingress.IpProtocol.tcp
     from_port   = 80
     to_port     = 80
     cidr_ip     = '10.0.0.0/16'
@@ -59,7 +59,7 @@ let load_balancer_security_group = awscc.ec2.SecurityGroup {
 let web_acl = awscc.wafv2.WebAcl {
   name        = 'carina-example-associated-web-acl'
   description = 'Regional protection for the example load balancer'
-  scope       = aws.wafv2.WebAcl.Scope.regional
+  scope       = awscc.wafv2.WebAcl.Scope.regional
 
   default_action = {
     allow = {}
@@ -78,8 +78,8 @@ let web_acl = awscc.wafv2.WebAcl {
 
 let load_balancer = awscc.elasticloadbalancingv2.LoadBalancer {
   name            = 'carina-example-alb'
-  type            = aws.elasticloadbalancingv2.LoadBalancer.Type.application
-  scheme          = aws.elasticloadbalancingv2.LoadBalancer.Scheme.internal
+  type            = awscc.elasticloadbalancingv2.LoadBalancer.Type.application
+  scheme          = awscc.elasticloadbalancingv2.LoadBalancer.Scheme.internal
   subnets         = [subnet_a.subnet_id, subnet_c.subnet_id]
   security_groups = [load_balancer_security_group.group_id]
 
@@ -98,13 +98,13 @@ awscc.wafv2.WebAclAssociation {
 
 ### `resource_arn`
 
-- **Type:** `aws.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)`
+- **Type:** `awscc.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)`
 - **Required:** Yes
 - **Create-only:** Yes
 
 ### `web_acl_arn`
 
-- **Type:** `aws.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)`
+- **Type:** `awscc.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)`
 - **Required:** Yes
 - **Create-only:** Yes
 

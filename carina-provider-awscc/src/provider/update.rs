@@ -411,7 +411,7 @@ mod tests {
             ops: vec![replace(
                 "instance_tenancy",
                 Value::Concrete(ConcreteValue::String(
-                    "aws.ec2.Vpc.InstanceTenancy.dedicated".to_string().into(),
+                    "awscc.ec2.Vpc.InstanceTenancy.dedicated".to_string().into(),
                 )),
             )],
         };

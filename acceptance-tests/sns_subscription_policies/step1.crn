@@ -3,7 +3,7 @@
 # Queue ARNs are rendered by run.sh after it creates the queues with AWS CLI.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 let standard_topic = awscc.sns.Topic {
@@ -19,7 +19,7 @@ let fifo_topic = awscc.sns.Topic {
   topic_name                  = 'carina-acc-test-sns-policies-fifo.fifo'
   fifo_topic                  = true
   content_based_deduplication = true
-  signature_version           = aws.sns.Topic.SignatureVersion.2
+  signature_version           = awscc.sns.Topic.SignatureVersion.2
 
   archive_policy = {
     message_retention_period = 1
@@ -49,7 +49,7 @@ awscc.sns.Subscription {
       num_no_delay_retries     = 0
       num_min_delay_retries    = 1
       num_max_delay_retries    = 2
-      backoff_function         = aws.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.linear
+      backoff_function         = awscc.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.linear
     }
 
     throttle_policy = {

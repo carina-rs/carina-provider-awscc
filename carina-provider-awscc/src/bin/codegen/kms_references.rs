@@ -22,7 +22,7 @@ pub enum ReferenceKind {
 
 impl ReferenceKind {
     pub fn default_length(self) -> Option<(Option<u64>, Option<u64>)> {
-        let default_type = carina_aws_types::kms_key_reference();
+        let default_type = carina_provider_awscc::schemas::catalog::kms_key_reference();
         let carina_core::schema::RawShape::Reference {
             identity: _,
             pattern: _,
@@ -36,7 +36,7 @@ impl ReferenceKind {
 
     pub fn constructor(self) -> &'static str {
         match self {
-            Self::Key => "carina_aws_types::kms_key_reference()",
+            Self::Key => "crate::schemas::catalog::kms_key_reference()",
         }
     }
 
@@ -50,7 +50,7 @@ impl ReferenceKind {
         // This comparison-only reference type is shared across providers (#541).
         // Read its grammar from the type instead of maintaining a second source.
         static DEFAULT_TYPE: std::sync::LazyLock<carina_core::schema::AttributeType> =
-            std::sync::LazyLock::new(carina_aws_types::kms_key_reference);
+            std::sync::LazyLock::new(carina_provider_awscc::schemas::catalog::kms_key_reference);
         let carina_core::schema::RawShape::Reference {
             identity: _,
             pattern: Some(pattern),

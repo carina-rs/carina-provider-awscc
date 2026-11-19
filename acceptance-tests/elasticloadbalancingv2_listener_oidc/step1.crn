@@ -4,7 +4,7 @@
 # nested write-only client_secret in the CloudControl patch base (carina#3984).
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 let vpc = awscc.ec2.Vpc {

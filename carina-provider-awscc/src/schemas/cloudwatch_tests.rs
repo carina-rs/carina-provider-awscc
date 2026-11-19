@@ -432,7 +432,7 @@ fn action_arrays_validate_arns_count_and_allow_duplicates() {
         let item = actions.list_element().unwrap();
         assert!(
             source.is_assignable_to(assignment.sink(&schema, item.as_type())),
-            "{path} must accept aws.Arn-typed topic_arn references"
+            "{path} must accept awscc.Arn-typed topic_arn references"
         );
         let arn = string("arn:aws:sns:ap-northeast-1:123456789012:alarm-topic");
         for count in [0, 1, 5] {

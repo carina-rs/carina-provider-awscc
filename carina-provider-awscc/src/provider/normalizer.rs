@@ -172,12 +172,12 @@ mod tests {
             Some(Value::Concrete(ConcreteValue::CanonicalEnum(c))) => {
                 assert_eq!(
                     c.identity().to_string(),
-                    "aws.ec2.SecurityGroupEgress.IpProtocol"
+                    "awscc.ec2.SecurityGroupEgress.IpProtocol"
                 );
                 assert_eq!(c.api_value(), "-1");
             }
             Some(Value::Concrete(ConcreteValue::String(s))) => {
-                assert_ne!(s, "aws.ec2.SecurityGroupEgress.IpProtocol.all");
+                assert_ne!(s, "awscc.ec2.SecurityGroupEgress.IpProtocol.all");
                 assert_eq!(s, "-1");
             }
             other => panic!("expected CanonicalEnum(-1) or raw String(-1), got {other:?}"),
@@ -328,7 +328,7 @@ mod tests {
         state.attributes.insert(
             "ip_protocol".to_string(),
             Value::Concrete(ConcreteValue::String(
-                "aws.ec2.SecurityGroupEgress.IpProtocol.all"
+                "awscc.ec2.SecurityGroupEgress.IpProtocol.all"
                     .to_string()
                     .into(),
             )),

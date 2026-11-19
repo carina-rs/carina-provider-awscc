@@ -11,14 +11,21 @@ fn fixture(property: Value) -> ParsedCfnSchema {
 fn rejected(schema: &ParsedCfnSchema, fact: &str, kind: &str, pointer: &str) {
     for (renderer, result) in [
         ("Rust", generate_synthetic_schema_code(schema)),
-        ("Markdown", generate_test_markdown(schema, "AWS::EC2::Route")),
+        (
+            "Markdown",
+            generate_test_markdown(schema, "AWS::EC2::Route"),
+        ),
     ] {
         let error = result.expect_err("an unpreserved fact must fail before emission");
-        let projection = error.chain().find_map(|source| source.downcast_ref::<schema_layer::SchemaError>());
-        assert!(matches!(projection,
+        let projection = error
+            .chain()
+            .find_map(|source| source.downcast_ref::<schema_layer::SchemaError>());
+        assert!(
+            matches!(projection,
             Some(schema_layer::SchemaError::Projection { pointer: actual, reason })
                 if actual == pointer && reason.contains(fact) && reason.contains(kind)),
-            "{renderer}: {error:#}");
+            "{renderer}: {error:#}"
+        );
     }
 }
 
@@ -28,7 +35,12 @@ fn exhaustive_one_of_number_integer_overlap_is_rejected() {
         json!([{"type":"number"},{"type":"integer","minimum":1}]),
         json!([{"type":"integer","minimum":1},{"type":"number"}]),
     ] {
-        rejected(&fixture(json!({"oneOf":arms})), "oneOf", "overlap", "/properties/Probe");
+        rejected(
+            &fixture(json!({"oneOf":arms})),
+            "oneOf",
+            "overlap",
+            "/properties/Probe",
+        );
     }
 }
 
@@ -43,15 +55,22 @@ fn exhaustive_nonliteral_multiple_of_is_documented_without_rust_validation() {
                 json!({"allOf":[{"type":kind,"minimum":0,"maximum":100},{"multipleOf":divisor}]}),
             ] {
                 let schema = fixture(property);
-                let plan = emission_plan::lower(schema.properties["Probe"].try_query().unwrap()).unwrap();
+                let plan =
+                    emission_plan::lower(schema.properties["Probe"].try_query().unwrap()).unwrap();
                 assert_eq!(
                     plan.numeric.unwrap().multiple_of.unwrap().divisor,
                     divisor.as_number().unwrap()
                 );
                 let rust = generate_synthetic_schema_code(&schema).unwrap();
-                assert_eq!(rust, baseline_rust, "multipleOf has no core validator: carina#4229");
+                assert_eq!(
+                    rust, baseline_rust,
+                    "multipleOf has no core validator: carina#4229"
+                );
                 let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
-                assert!(markdown.contains(&format!("multiple of {divisor}")), "{markdown}");
+                assert!(
+                    markdown.contains(&format!("multiple of {divisor}")),
+                    "{markdown}"
+                );
             }
         }
     }
@@ -73,15 +92,21 @@ fn exhaustive_closed_empty_objects_are_structs_in_both_renderers() {
                 "typeName":"AWS::Test::Emission",
                 "properties":{"Probe":{"$ref":"#/definitions/Marker"}},
                 "definitions":{"Marker":closed}
-            })).unwrap(),
+            }))
+            .unwrap(),
         ] {
             let rust = generate_synthetic_schema_code(&schema).unwrap();
-            assert!(rust.contains("AttributeType::struct_(\"Probe\".to_string(), vec![])"), "{rust}");
+            assert!(
+                rust.contains("AttributeType::struct_(\"Probe\".to_string(), vec![])"),
+                "{rust}"
+            );
             let _markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
-
         }
         for (property, display) in [
-            (json!({"type":"object","properties":{"Marker":closed}}), "Struct(Marker)"),
+            (
+                json!({"type":"object","properties":{"Marker":closed}}),
+                "Struct(Marker)",
+            ),
             (json!({"type":"array","items":closed}), "Struct(Probe)"),
         ] {
             let schema = fixture(property);
@@ -115,14 +140,20 @@ fn exhaustive_empty_struct_closedness_rejects_unknown_fields_at_validate() {
     use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, TypeError};
 
     let schema = ResourceSchema::new("test.Emission")
-        .attribute(AttributeSchema::optional("probe", AttributeType::struct_("Probe", vec![])).build())
-        .validate().unwrap();
+        .attribute(
+            AttributeSchema::optional("probe", AttributeType::struct_("Probe", vec![])).build(),
+        )
+        .validate()
+        .unwrap();
     let attribute = schema.effective_attribute("probe").unwrap();
     let empty: Value = Value::Concrete(ConcreteValue::Map(indexmap::IndexMap::new()));
-    attribute.validate(&empty).expect("an empty object satisfies the closed struct");
-    let unknown: Value = Value::Concrete(ConcreteValue::Map(indexmap::IndexMap::from([
-        ("unknown".into(), Value::Concrete(ConcreteValue::Bool(true)))
-    ])));
+    attribute
+        .validate(&empty)
+        .expect("an empty object satisfies the closed struct");
+    let unknown: Value = Value::Concrete(ConcreteValue::Map(indexmap::IndexMap::from([(
+        "unknown".into(),
+        Value::Concrete(ConcreteValue::Bool(true)),
+    )])));
     assert!(matches!(attribute.validate(&unknown),
         Err(TypeError::UnknownStructField { field, .. }) if field == "unknown"));
 }
@@ -133,27 +164,44 @@ fn same_rendering(baseline: Value, keyword: &str, value: Value) {
     let baseline = fixture(baseline);
     let annotated = fixture(annotated);
     for (renderer, before, after) in [
-        ("Rust", generate_synthetic_schema_code(&baseline), generate_synthetic_schema_code(&annotated)),
-        ("Markdown", generate_test_markdown(&baseline, "AWS::EC2::Route"), generate_test_markdown(&annotated, "AWS::EC2::Route")),
+        (
+            "Rust",
+            generate_synthetic_schema_code(&baseline),
+            generate_synthetic_schema_code(&annotated),
+        ),
+        (
+            "Markdown",
+            generate_test_markdown(&baseline, "AWS::EC2::Route"),
+            generate_test_markdown(&annotated, "AWS::EC2::Route"),
+        ),
     ] {
-        assert_eq!(before.unwrap(), after.unwrap(), "{renderer}: inapplicable {keyword}");
+        assert_eq!(
+            before.unwrap(),
+            after.unwrap(),
+            "{renderer}: inapplicable {keyword}"
+        );
     }
 }
 
 #[test]
 fn exhaustive_array_keywords_do_not_apply_to_nonarrays() {
     for property in [
-        json!({"type":"string"}), json!({"type":"integer"}),
-        json!({"type":"number"}), json!({"type":"boolean"}),
+        json!({"type":"string"}),
+        json!({"type":"integer"}),
+        json!({"type":"number"}),
+        json!({"type":"boolean"}),
         json!({"type":"string","enum":["x"]}),
         json!({"type":"object","properties":{"A":{"type":"string"}}}),
         json!({"type":"object","patternProperties":{".*":{"type":"string"}},"additionalProperties":false}),
     ] {
         for (keyword, value) in [
-            ("minItems", json!(1)), ("maxItems", json!(2)),
-            ("uniqueItems", json!(true)), ("insertionOrder", json!(false)),
+            ("minItems", json!(1)),
+            ("maxItems", json!(2)),
+            ("uniqueItems", json!(true)),
+            ("insertionOrder", json!(false)),
             ("arrayType", json!("AttributeList")),
-            ("items", json!(false)), ("contains", json!(false)),
+            ("items", json!(false)),
+            ("contains", json!(false)),
         ] {
             same_rendering(property.clone(), keyword, value);
         }
@@ -163,27 +211,33 @@ fn exhaustive_array_keywords_do_not_apply_to_nonarrays() {
 #[test]
 fn exhaustive_scalar_keywords_do_not_apply_to_other_kinds() {
     for property in [
-        json!({"type":"string"}), json!({"type":"boolean"}),
+        json!({"type":"string"}),
+        json!({"type":"boolean"}),
         json!({"type":"object","properties":{"A":{"type":"string"}}}),
         json!({"type":"array","items":{"type":"string"}}),
         json!({"type":"array","uniqueItems":true,"items":{"type":"string"}}),
     ] {
         for (keyword, value) in [
-            ("minimum", json!(1)), ("maximum", json!(2)),
-            ("exclusiveMinimum", json!(1)), ("exclusiveMaximum", json!(2)),
+            ("minimum", json!(1)),
+            ("maximum", json!(2)),
+            ("exclusiveMinimum", json!(1)),
+            ("exclusiveMaximum", json!(2)),
             ("multipleOf", json!(2)),
         ] {
             same_rendering(property.clone(), keyword, value);
         }
     }
     for property in [
-        json!({"type":"integer"}), json!({"type":"number"}),
+        json!({"type":"integer"}),
+        json!({"type":"number"}),
         json!({"type":"boolean"}),
         json!({"type":"object","properties":{"A":{"type":"string"}}}),
         json!({"type":"array","items":{"type":"string"}}),
     ] {
         for (keyword, value) in [
-            ("pattern", json!("^x$")), ("minLength", json!(1)), ("maxLength", json!(2)),
+            ("pattern", json!("^x$")),
+            ("minLength", json!(1)),
+            ("maxLength", json!(2)),
         ] {
             same_rendering(property.clone(), keyword, value);
         }
@@ -194,30 +248,51 @@ fn exhaustive_scalar_keywords_do_not_apply_to_other_kinds() {
 fn exhaustive_array_keywords_are_inapplicable_in_every_nonarray_arm() {
     use emission_plan::EmittedKind;
     for (property, kinds) in [
-        (json!({"type":"string"}), vec![EmittedKind::String, EmittedKind::TagString]),
+        (
+            json!({"type":"string"}),
+            vec![EmittedKind::String, EmittedKind::TagString],
+        ),
         (json!({"type":"integer"}), vec![EmittedKind::Integer]),
         (json!({"type":"number"}), vec![EmittedKind::Number]),
         (json!({"type":"boolean"}), vec![EmittedKind::Boolean]),
-        (json!({"type":"string","enum":["x"]}), vec![EmittedKind::Literal]),
-        (json!({"type":"object","properties":{"A":{"type":"string"}}}), vec![EmittedKind::Struct, EmittedKind::Root, EmittedKind::TagObject]),
-        (json!({"type":"object","patternProperties":{".*":{"type":"string"}},"additionalProperties":false}), vec![EmittedKind::Map, EmittedKind::TagMap]),
+        (
+            json!({"type":"string","enum":["x"]}),
+            vec![EmittedKind::Literal],
+        ),
+        (
+            json!({"type":"object","properties":{"A":{"type":"string"}}}),
+            vec![
+                EmittedKind::Struct,
+                EmittedKind::Root,
+                EmittedKind::TagObject,
+            ],
+        ),
+        (
+            json!({"type":"object","patternProperties":{".*":{"type":"string"}},"additionalProperties":false}),
+            vec![EmittedKind::Map, EmittedKind::TagMap],
+        ),
         (json!({"type":"object"}), vec![EmittedKind::BareObject]),
-        (json!({"type":["object","string"]}), vec![EmittedKind::JsonDocument]),
+        (
+            json!({"type":["object","string"]}),
+            vec![EmittedKind::JsonDocument],
+        ),
     ] {
         for (keyword, value) in [
-            ("minItems", json!(1)), ("maxItems", json!(2)),
-            ("uniqueItems", json!(true)), ("insertionOrder", json!(false)),
+            ("minItems", json!(1)),
+            ("maxItems", json!(2)),
+            ("uniqueItems", json!(true)),
+            ("insertionOrder", json!(false)),
             ("arrayType", json!("AttributeList")),
-            ("items", json!(false)), ("contains", json!(false)),
+            ("items", json!(false)),
+            ("contains", json!(false)),
         ] {
             let mut annotated = property.clone();
             annotated[keyword] = value;
             let schema = fixture(annotated);
             let projection = schema.properties["Probe"].try_query().unwrap();
             for kind in &kinds {
-                emission_plan::lower_as(projection, *kind).unwrap_or_else(|error| {
-                    panic!("{kind:?}: inapplicable {keyword}: {error}")
-                });
+                emission_plan::lower_as(projection, *kind)
+                    .unwrap_or_else(|error| panic!("{kind:?}: inapplicable {keyword}: {error}"));
             }
         }
     }
@@ -238,17 +313,23 @@ fn exhaustive_format_annotations_do_not_restrict_other_kinds() {
 #[test]
 fn exhaustive_object_keywords_do_not_apply_to_nonobjects() {
     for property in [
-        json!({"type":"string"}), json!({"type":"integer"}),
-        json!({"type":"number"}), json!({"type":"boolean"}),
+        json!({"type":"string"}),
+        json!({"type":"integer"}),
+        json!({"type":"number"}),
+        json!({"type":"boolean"}),
         json!({"type":"string","enum":["x"]}),
         json!({"type":"array","items":{"type":"string"}}),
     ] {
         for (keyword, value) in [
-            ("minProperties", json!(1)), ("maxProperties", json!(2)),
+            ("minProperties", json!(1)),
+            ("maxProperties", json!(2)),
             ("properties", json!({})),
             ("patternProperties", json!({".*":false})),
             ("additionalProperties", json!(false)),
-            ("additionalProperties", json!({"type":"integer","multipleOf":2})),
+            (
+                "additionalProperties",
+                json!({"type":"integer","multipleOf":2}),
+            ),
             ("required", json!(["Ignored"])),
             ("dependencies", json!({"Ignored":["Other"]})),
             ("dependencies", json!({"Ignored":false})),
@@ -260,12 +341,24 @@ fn exhaustive_object_keywords_do_not_apply_to_nonobjects() {
 
 #[test]
 fn exhaustive_struct_property_count_is_rejected() {
-    for bound in [json!({"minProperties":1}), json!({"maxProperties":1}), json!({"minProperties":1,"maxProperties":1})] {
+    for bound in [
+        json!({"minProperties":1}),
+        json!({"maxProperties":1}),
+        json!({"minProperties":1,"maxProperties":1}),
+    ] {
         let mut property = json!({"type":"object","properties":{
             "A":{"type":"string"},"B":{"type":"string"}
         }});
-        property.as_object_mut().unwrap().extend(bound.as_object().unwrap().clone());
-        rejected(&fixture(property), "Properties", "struct", "/properties/Probe");
+        property
+            .as_object_mut()
+            .unwrap()
+            .extend(bound.as_object().unwrap().clone());
+        rejected(
+            &fixture(property),
+            "Properties",
+            "struct",
+            "/properties/Probe",
+        );
     }
 }
 
@@ -274,31 +367,57 @@ fn exhaustive_struct_pattern_property_overlap_is_rejected() {
     let fields = json!({"type":"object","properties":{"Apple":{"type":"string"}}});
     let patterns = json!({"patternProperties":{"^A":{"type":"string","minLength":5}}});
     let mut direct = fields.clone();
-    direct.as_object_mut().unwrap().extend(patterns.as_object().unwrap().clone());
-    for property in [direct, json!({"allOf":[fields,patterns]}), json!({"allOf":[patterns,fields]})] {
-        rejected(&fixture(property), "patternProperties", "struct", "/properties/Probe");
+    direct
+        .as_object_mut()
+        .unwrap()
+        .extend(patterns.as_object().unwrap().clone());
+    for property in [
+        direct,
+        json!({"allOf":[fields,patterns]}),
+        json!({"allOf":[patterns,fields]}),
+    ] {
+        rejected(
+            &fixture(property),
+            "patternProperties",
+            "struct",
+            "/properties/Probe",
+        );
     }
 }
 
 #[test]
 fn exhaustive_pattern_map_additional_schema_is_rejected() {
-    rejected(&fixture(json!({"type":"object","patternProperties":{"^A":{"type":"string"}},
-        "additionalProperties":{"type":"string","minLength":5}})),
-        "additionalProperties", "map", "/properties/Probe");
+    rejected(
+        &fixture(
+            json!({"type":"object","patternProperties":{"^A":{"type":"string"}},
+        "additionalProperties":{"type":"string","minLength":5}}),
+        ),
+        "additionalProperties",
+        "map",
+        "/properties/Probe",
+    );
 }
 
 #[test]
 fn exhaustive_map_required_keys_are_rejected() {
-    rejected(&fixture(json!({"type":"object","patternProperties":{".*":{"type":"string"}},
-        "additionalProperties":false,"required":["RequiredKey"]})),
-        "required", "map", "/properties/Probe");
+    rejected(
+        &fixture(
+            json!({"type":"object","patternProperties":{".*":{"type":"string"}},
+        "additionalProperties":false,"required":["RequiredKey"]}),
+        ),
+        "required",
+        "map",
+        "/properties/Probe",
+    );
 }
 
 #[test]
 fn exhaustive_tag_string_format_is_preserved_or_rejected() {
     for patterned in [false, true] {
         let mut value = json!({"type":"string","format":"date-time"});
-        if patterned { value["pattern"] = json!("^x$"); }
+        if patterned {
+            value["pattern"] = json!("^x$");
+        }
         let schema = ParsedCfnSchema::from_json(json!({
             "typeName":"AWS::Test::Tags", "tagging":{"taggable":true,"tagProperty":"/properties/Tags"},
             "properties":{"Tags":{"type":"array","items":{"type":"object","properties":{
@@ -306,10 +425,18 @@ fn exhaustive_tag_string_format_is_preserved_or_rejected() {
             }}}}
         })).unwrap();
         if patterned {
-            rejected(&schema, "date-time", "pattern", "/properties/Tags/items/properties/Value");
+            rejected(
+                &schema,
+                "date-time",
+                "pattern",
+                "/properties/Tags/items/properties/Value",
+            );
         } else {
             let rust = generate_synthetic_schema_code(&schema).unwrap();
-            assert!(rust.contains("[Tt]") && rust.contains("AttributeType::refined_string("), "{rust}");
+            assert!(
+                rust.contains("[Tt]") && rust.contains("AttributeType::refined_string("),
+                "{rust}"
+            );
             let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
             assert!(markdown.contains("CFN format: date-time"), "{markdown}");
         }
@@ -325,19 +452,34 @@ fn exhaustive_tag_candidate_includes_required_and_dependency_names() {
     ] {
         let schema = ParsedCfnSchema::from_json(json!({
             "typeName":"AWS::Test::Emission","properties":{"Probe":{"type":"array","items":item}}
-        })).unwrap();
-        assert!(schema.tag_shape(&schema.properties["Probe"]).unwrap().candidate());
-        for result in [generate_synthetic_schema_code(&schema), generate_test_markdown(&schema, "AWS::EC2::Route")] {
-            let error = result.expect_err("tag candidates require classification without tagging metadata");
-            assert!(error.to_string().contains("unclassified tag-shaped"), "{error:#}");
+        }))
+        .unwrap();
+        assert!(
+            schema
+                .tag_shape(&schema.properties["Probe"])
+                .unwrap()
+                .candidate()
+        );
+        for result in [
+            generate_synthetic_schema_code(&schema),
+            generate_test_markdown(&schema, "AWS::EC2::Route"),
+        ] {
+            let error =
+                result.expect_err("tag candidates require classification without tagging metadata");
+            assert!(
+                error.to_string().contains("unclassified tag-shaped"),
+                "{error:#}"
+            );
         }
     }
 }
 
 #[test]
 fn exhaustive_map_dependencies_reach_markdown() {
-    let schema = fixture(json!({"type":"object","patternProperties":{".*":{"type":"string"}},
-        "additionalProperties":false,"dependencies":{"A":["B"]}}));
+    let schema = fixture(
+        json!({"type":"object","patternProperties":{".*":{"type":"string"}},
+        "additionalProperties":false,"dependencies":{"A":["B"]}}),
+    );
     let rust = generate_synthetic_schema_code(&schema).unwrap();
     assert!(!rust.contains("FieldGroup::"), "{rust}");
     let markdown = generate_test_markdown(&schema, "AWS::EC2::Route").unwrap();
@@ -353,14 +495,17 @@ fn review602_render(schema: &ParsedCfnSchema, markdown: bool) -> Result<String> 
 }
 
 fn review602_rejected(schema: &ParsedCfnSchema, markdown: bool, facts: &[&str]) {
-    let error = review602_render(schema, markdown).expect_err("unpreserved constraint was admitted");
-    let projection = error
-        .chain()
-        .find_map(|source| {
-            source.downcast_ref::<schema_layer::SchemaError>().or_else(|| {
-                source.downcast_ref::<Box<schema_layer::SchemaError>>().map(Box::as_ref)
+    let error =
+        review602_render(schema, markdown).expect_err("unpreserved constraint was admitted");
+    let projection = error.chain().find_map(|source| {
+        source
+            .downcast_ref::<schema_layer::SchemaError>()
+            .or_else(|| {
+                source
+                    .downcast_ref::<Box<schema_layer::SchemaError>>()
+                    .map(Box::as_ref)
             })
-        });
+    });
     assert!(
         matches!(projection, Some(schema_layer::SchemaError::Projection { pointer, reason })
             if !pointer.is_empty() && facts.iter().all(|fact| reason.contains(fact))),
@@ -371,9 +516,13 @@ fn review602_rejected(schema: &ParsedCfnSchema, markdown: bool, facts: &[&str]) 
 macro_rules! boundary_renderers {
     ($rust:ident, $markdown:ident, $case:ident) => {
         #[test]
-        fn $rust() { $case(false); }
+        fn $rust() {
+            $case(false);
+        }
         #[test]
-        fn $markdown() { $case(true); }
+        fn $markdown() {
+            $case(true);
+        }
     };
 }
 
@@ -385,38 +534,73 @@ fn boundary_canonical_enum(markdown: bool) {
         }}},
         "properties":{"Probe":{"$ref":"#/definitions/Choice",
             "properties":{"Mode":{"enum":["red"]}}}}
-    })).unwrap();
+    }))
+    .unwrap();
     // Rejecting a conflicting canonical identity is permitted; widening it is not.
     review602_rejected(&schema, markdown, &["enum", "domain"]);
 }
-boundary_renderers!(boundary_canonical_enum_rust, boundary_canonical_enum_markdown, boundary_canonical_enum);
+boundary_renderers!(
+    boundary_canonical_enum_rust,
+    boundary_canonical_enum_markdown,
+    boundary_canonical_enum
+);
 
 fn boundary_inferred_string(markdown: bool) {
     let schema = ParsedCfnSchema::from_json(json!({
         "typeName":"AWS::Test::Emission",
         "properties":{"SubnetId":{"allOf":[{"type":"string"},{"maxLength":16}]}}
-    })).unwrap();
+    }))
+    .unwrap();
     let output = review602_render(&schema, markdown).unwrap();
-    if markdown { assert!(output.contains("aws.ec2.Subnet.Id")); }
-    else { assert!(output.contains("Some((None, Some(16)))"), "{output}"); }
+    if markdown {
+        assert!(output.contains("awscc.ec2.Subnet.Id"));
+    } else {
+        assert!(output.contains("Some((None, Some(16)))"), "{output}");
+    }
 }
-boundary_renderers!(boundary_inferred_string_rust, boundary_inferred_string_markdown, boundary_inferred_string);
+boundary_renderers!(
+    boundary_inferred_string_rust,
+    boundary_inferred_string_markdown,
+    boundary_inferred_string
+);
 
 fn boundary_inferred_enum(markdown: bool) {
     for (name, property, removed, retained) in [
-        ("Probe", json!({"type":"string","description":"Allowed values: ab | cd", "pattern":"^ab$"}), "cd", "ab"),
-        ("ConnectivityType", json!({"type":"string","pattern":"^public$"}), "private", "public"),
+        (
+            "Probe",
+            json!({"type":"string","description":"Allowed values: ab | cd", "pattern":"^ab$"}),
+            "cd",
+            "ab",
+        ),
+        (
+            "ConnectivityType",
+            json!({"type":"string","pattern":"^public$"}),
+            "private",
+            "public",
+        ),
     ] {
         let schema = ParsedCfnSchema::from_json(json!({
             "typeName":"AWS::Test::Emission","properties":{name:property}
-        })).unwrap();
+        }))
+        .unwrap();
         let output = review602_render(&schema, markdown).unwrap();
-        let literal = if markdown { format!("`{removed}`") } else { format!("\"{removed}\".to_string()") };
-        assert!(!output.contains(&literal), "filtered literal survived: {output}");
+        let literal = if markdown {
+            format!("`{removed}`")
+        } else {
+            format!("\"{removed}\".to_string()")
+        };
+        assert!(
+            !output.contains(&literal),
+            "filtered literal survived: {output}"
+        );
         assert!(output.contains(retained), "{output}");
     }
 }
-boundary_renderers!(boundary_inferred_enum_rust, boundary_inferred_enum_markdown, boundary_inferred_enum);
+boundary_renderers!(
+    boundary_inferred_enum_rust,
+    boundary_inferred_enum_markdown,
+    boundary_inferred_enum
+);
 
 fn boundary_open_map(markdown: bool) {
     let property = json!({"type":"object","patternProperties":{"^Known[0-9]+$":{"type":"string","minLength":2}}});
@@ -444,53 +628,97 @@ fn boundary_open_map(markdown: bool) {
     for additional in [json!(true), json!({"type":"string"})] {
         let mut property = property.clone();
         property["additionalProperties"] = additional;
-        review602_rejected(&fixture(property), markdown, &["additionalProperties", "map"]);
+        review602_rejected(
+            &fixture(property),
+            markdown,
+            &["additionalProperties", "map"],
+        );
     }
 }
-boundary_renderers!(boundary_open_map_rust, boundary_open_map_markdown, boundary_open_map);
+boundary_renderers!(
+    boundary_open_map_rust,
+    boundary_open_map_markdown,
+    boundary_open_map
+);
 
 fn boundary_constructor_definition(markdown: bool) {
     let mut overrides = ResourceTypeOverrides::default();
-    overrides.insert(("AWS::Test::Emission", "Probe"), TypeOverride::identity(Some(StringIdentity::SsoInstanceArn)));
+    overrides.insert(
+        ("AWS::Test::Emission", "Probe"),
+        TypeOverride::identity(Some(StringIdentity::SsoInstanceArn)),
+    );
     with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
         for max in [19, 20] {
-            let output = review602_render(&fixture(json!({"type":"string","maxLength":max})), markdown).unwrap();
+            let output =
+                review602_render(&fixture(json!({"type":"string","maxLength":max})), markdown)
+                    .unwrap();
             assert!(!output.is_empty());
-            if !markdown { assert!(output.contains(&format!("Some({max})")), "{output}"); }
+            if !markdown {
+                assert!(output.contains(&format!("Some({max})")), "{output}");
+            }
         }
     });
 }
-boundary_renderers!(boundary_constructor_definition_rust, boundary_constructor_definition_markdown, boundary_constructor_definition);
+boundary_renderers!(
+    boundary_constructor_definition_rust,
+    boundary_constructor_definition_markdown,
+    boundary_constructor_definition
+);
 
 fn boundary_numeric_override(markdown: bool) {
     static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
         let mut overrides = ResourceTypeOverrides::default();
-        overrides.insert(("AWS::ElasticLoadBalancingV2::Listener", "Port"), NarrowingKind::IntRange(1, 65535));
+        overrides.insert(
+            ("AWS::ElasticLoadBalancingV2::Listener", "Port"),
+            NarrowingKind::IntRange(1, 65535),
+        );
         overrides
     });
     with_resource_type_overrides(&OVERRIDES, || {
-    for kind in ["integer", "number"] {
-        let schema = ParsedCfnSchema::from_json(json!({
-            "typeName":"AWS::ElasticLoadBalancingV2::Listener",
-            "properties":{"Port":{"type":kind,"multipleOf":2}}
-        })).unwrap();
-        let output = review602_render(&schema, markdown).unwrap();
-        if markdown { assert!(output.contains("multiple of 2"), "{output}"); }
-        else { assert!(output.contains("65535"), "{output}"); }
-    }
+        for kind in ["integer", "number"] {
+            let schema = ParsedCfnSchema::from_json(json!({
+                "typeName":"AWS::ElasticLoadBalancingV2::Listener",
+                "properties":{"Port":{"type":kind,"multipleOf":2}}
+            }))
+            .unwrap();
+            let output = review602_render(&schema, markdown).unwrap();
+            if markdown {
+                assert!(output.contains("multiple of 2"), "{output}");
+            } else {
+                assert!(output.contains("65535"), "{output}");
+            }
+        }
     });
 }
-boundary_renderers!(boundary_numeric_override_rust, boundary_numeric_override_markdown, boundary_numeric_override);
+boundary_renderers!(
+    boundary_numeric_override_rust,
+    boundary_numeric_override_markdown,
+    boundary_numeric_override
+);
 
 fn boundary_unique_collection(markdown: bool) {
-    for items in [json!({"type":"string"}), json!({"type":"string","enum":["a","b"]}),
-        json!({"type":"object","properties":{"Value":{"type":"string"}}})] {
+    for items in [
+        json!({"type":"string"}),
+        json!({"type":"string","enum":["a","b"]}),
+        json!({"type":"object","properties":{"Value":{"type":"string"}}}),
+    ] {
         let schema = fixture(json!({"type":"array","items":items,"uniqueItems":true}));
         let output = review602_render(&schema, markdown).unwrap();
-        assert!(output.contains(if markdown { "unique items" } else { "ListElements::Unique" }), "{output}");
+        assert!(
+            output.contains(if markdown {
+                "unique items"
+            } else {
+                "ListElements::Unique"
+            }),
+            "{output}"
+        );
     }
 }
-boundary_renderers!(boundary_unique_collection_rust, boundary_unique_collection_markdown, boundary_unique_collection);
+boundary_renderers!(
+    boundary_unique_collection_rust,
+    boundary_unique_collection_markdown,
+    boundary_unique_collection
+);
 
 fn boundary_read_only_query(markdown: bool) {
     let schema = ParsedCfnSchema::from_json(json!({
@@ -498,48 +726,125 @@ fn boundary_read_only_query(markdown: bool) {
         "properties":{"Probe":{"type":"object","properties":{"Nested":{
             "anyOf":[{"type":"string"},{"type":"integer"}]}}}},
         "readOnlyProperties":["/properties/Probe/Nested/Output"]
-    })).unwrap();
-    let mode = std::panic::catch_unwind(|| super::super::is_property_read_only(&schema, &schema.properties["Probe"], &["Probe".to_string()]));
-    assert!(mode.expect("mode inference must propagate the descendant query error").is_err());
+    }))
+    .unwrap();
+    let mode = std::panic::catch_unwind(|| {
+        super::super::is_property_read_only(
+            &schema,
+            &schema.properties["Probe"],
+            &["Probe".to_string()],
+        )
+    });
+    assert!(
+        mode.expect("mode inference must propagate the descendant query error")
+            .is_err()
+    );
     review602_rejected(&schema, markdown, &[]);
 }
-boundary_renderers!(boundary_read_only_query_rust, boundary_read_only_query_markdown, boundary_read_only_query);
+boundary_renderers!(
+    boundary_read_only_query_rust,
+    boundary_read_only_query_markdown,
+    boundary_read_only_query
+);
 
 fn boundary_replacement_refinements(markdown: bool) {
     for (override_type, property) in [
-        (NarrowingKind::Primitive { expression: ConstraintSpec::int_range(Some(1), Some(5)),  block_name: None, default: None }, json!({"type":"string"})),
-        (NarrowingKind::Primitive { expression: ConstraintSpec::document(DocumentKind::SnsSubscriptionRedrivePolicy),  block_name: None, default: None }, json!({"type":"array","items":{"type":"string"},"uniqueItems":true})),
-        (NarrowingKind::Enum(vec!["ab","cd"]), json!({"type":"string","pattern":"^ab$"})),
-        (NarrowingKind::IntEnum(vec![2,3]), json!({"type":"integer","multipleOf":2})),
+        (
+            NarrowingKind::Primitive {
+                expression: ConstraintSpec::int_range(Some(1), Some(5)),
+                block_name: None,
+                default: None,
+            },
+            json!({"type":"string"}),
+        ),
+        (
+            NarrowingKind::Primitive {
+                expression: ConstraintSpec::document(DocumentKind::SnsSubscriptionRedrivePolicy),
+                block_name: None,
+                default: None,
+            },
+            json!({"type":"array","items":{"type":"string"},"uniqueItems":true}),
+        ),
+        (
+            NarrowingKind::Enum(vec!["ab", "cd"]),
+            json!({"type":"string","pattern":"^ab$"}),
+        ),
+        (
+            NarrowingKind::IntEnum(vec![2, 3]),
+            json!({"type":"integer","multipleOf":2}),
+        ),
     ] {
         let mut overrides = ResourceTypeOverrides::default();
-        overrides.insert(("AWS::Test::Emission","Probe"), override_type);
+        overrides.insert(("AWS::Test::Emission", "Probe"), override_type);
         with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
             review602_rejected(&fixture(property), markdown, &[]);
         });
     }
 }
-boundary_renderers!(boundary_replacement_refinements_rust, boundary_replacement_refinements_markdown, boundary_replacement_refinements);
+boundary_renderers!(
+    boundary_replacement_refinements_rust,
+    boundary_replacement_refinements_markdown,
+    boundary_replacement_refinements
+);
 
 fn boundary_override_collections_and_ranges(markdown: bool) {
     let mut overrides = ResourceTypeOverrides::default();
-    overrides.insert(("AWS::Test::Emission","Probe"), NarrowingKind::ArrayItemType {
-        expression: ConstraintSpec::string(None, None),  block_name: None, default: None, min_items: None, max_items: None,
-    }.with_array_bounds(Some(1), None));
+    overrides.insert(
+        ("AWS::Test::Emission", "Probe"),
+        NarrowingKind::ArrayItemType {
+            expression: ConstraintSpec::string(None, None),
+            block_name: None,
+            default: None,
+            min_items: None,
+            max_items: None,
+        }
+        .with_array_bounds(Some(1), None),
+    );
     with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
-        let output = review602_render(&fixture(json!({"type":"array","items":{"type":"string"},"uniqueItems":true})), markdown).unwrap();
-        assert!(output.contains(if markdown {"unique items"} else {"ListElements::Unique"}), "{output}");
+        let output = review602_render(
+            &fixture(json!({"type":"array","items":{"type":"string"},"uniqueItems":true})),
+            markdown,
+        )
+        .unwrap();
+        assert!(
+            output.contains(if markdown {
+                "unique items"
+            } else {
+                "ListElements::Unique"
+            }),
+            "{output}"
+        );
     });
     for kind in ["integer", "number"] {
         let mut overrides = ResourceTypeOverrides::default();
-        overrides.insert(("AWS::Test::Emission","Probe"), NarrowingKind::IntRange(1,10));
+        overrides.insert(
+            ("AWS::Test::Emission", "Probe"),
+            NarrowingKind::IntRange(1, 10),
+        );
         with_resource_type_overrides(Box::leak(Box::new(overrides)), || {
-            let output = review602_render(&fixture(json!({"type":kind,"minimum":8,"maximum":12})), markdown).unwrap();
-            assert!(output.contains(if markdown {"8..=10"} else if kind == "integer" {"Some(8), Some(10)"} else {"FiniteF64::new(8.0)"}), "{output}");
+            let output = review602_render(
+                &fixture(json!({"type":kind,"minimum":8,"maximum":12})),
+                markdown,
+            )
+            .unwrap();
+            assert!(
+                output.contains(if markdown {
+                    "8..=10"
+                } else if kind == "integer" {
+                    "Some(8), Some(10)"
+                } else {
+                    "FiniteF64::new(8.0)"
+                }),
+                "{output}"
+            );
         });
     }
 }
-boundary_renderers!(boundary_override_collections_rust, boundary_override_collections_markdown, boundary_override_collections_and_ranges);
+boundary_renderers!(
+    boundary_override_collections_rust,
+    boundary_override_collections_markdown,
+    boundary_override_collections_and_ranges
+);
 
 fn review602_nonobject_one_of(markdown: bool) {
     for (property, kind) in [
@@ -549,7 +854,10 @@ fn review602_nonobject_one_of(markdown: bool) {
         (json!({"type":"boolean"}), "boolean"),
         (json!({"type":"string","enum":["x"]}), "enum/literal"),
         (json!({"type":"array","items":{"type":"string"}}), "list"),
-        (json!({"type":"array","uniqueItems":true,"items":{"type":"string"}}), "set"),
+        (
+            json!({"type":"array","uniqueItems":true,"items":{"type":"string"}}),
+            "set",
+        ),
     ] {
         let choice = json!({"oneOf":[{"required":["A"]},{"required":["B"]}]});
         let mut direct = property.clone();
@@ -573,15 +881,21 @@ fn review602_nonobject_one_of_markdown() {
 #[test]
 fn review602_vacuous_inclusive_and_single_required_arms_are_inapplicable() {
     for property in [
-        json!({"type":"string"}), json!({"type":"integer"}),
-        json!({"type":"number"}), json!({"type":"boolean"}),
+        json!({"type":"string"}),
+        json!({"type":"integer"}),
+        json!({"type":"number"}),
+        json!({"type":"boolean"}),
         json!({"type":"string","enum":["x"]}),
         json!({"type":"array","items":{"type":"string"}}),
         json!({"type":"array","uniqueItems":true,"items":{"type":"string"}}),
     ] {
-        same_rendering(property.clone(), "anyOf", json!([
-            {"required":["Always","A"]},{"required":["Always","B"]}
-        ]));
+        same_rendering(
+            property.clone(),
+            "anyOf",
+            json!([
+                {"required":["Always","A"]},{"required":["Always","B"]}
+            ]),
+        );
         same_rendering(property, "oneOf", json!([{"required":["A"]}]));
     }
 }
@@ -641,7 +955,10 @@ fn review602_missing_required_members(markdown: bool) {
         let mut object = json!({"type":"object","properties":{
             "A":{"type":"boolean"},"B":{"type":"boolean"}
         }});
-        object.as_object_mut().unwrap().extend(requirement.as_object().unwrap().clone());
+        object
+            .as_object_mut()
+            .unwrap()
+            .extend(requirement.as_object().unwrap().clone());
         for scope in ["inline", "root", "reference", "list", "map"] {
             let schema = match scope {
                 "root" => {
@@ -653,18 +970,24 @@ fn review602_missing_required_members(markdown: bool) {
                     "typeName":"AWS::Test::Emission",
                     "properties":{"Probe":{"$ref":"#/definitions/Choice"}},
                     "definitions":{"Choice":object}
-                })).unwrap(),
+                }))
+                .unwrap(),
                 "list" => fixture(json!({"type":"array","items":object})),
-                "map" => fixture(json!({"type":"object","patternProperties":{".*":object},"additionalProperties":false})),
+                "map" => fixture(
+                    json!({"type":"object","patternProperties":{".*":object},"additionalProperties":false}),
+                ),
                 "inline" => fixture(object.clone()),
                 _ => unreachable!(),
             };
             // Root's JSON pointer is the empty string, which is valid.
-            let error = review602_render(&schema, markdown).expect_err("missing required member was dropped");
-            assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+            let error = review602_render(&schema, markdown)
+                .expect_err("missing required member was dropped");
+            assert!(
+                matches!(error.downcast_ref::<schema_layer::SchemaError>(),
                 Some(schema_layer::SchemaError::Projection { pointer: _, reason })
                     if reason.contains("required") && reason.contains("Always")),
-                "{scope}, markdown={markdown}: {error:#}");
+                "{scope}, markdown={markdown}: {error:#}"
+            );
         }
     }
 }
@@ -692,11 +1015,14 @@ fn review602_filtered_required_members(markdown: bool) {
         } else {
             fixture(object)
         };
-        let error = review602_render(&schema, markdown).expect_err("deprecated required member was dropped");
-        assert!(matches!(error.downcast_ref::<schema_layer::SchemaError>(),
+        let error = review602_render(&schema, markdown)
+            .expect_err("deprecated required member was dropped");
+        assert!(
+            matches!(error.downcast_ref::<schema_layer::SchemaError>(),
             Some(schema_layer::SchemaError::Projection { pointer: _, reason })
                 if reason.contains("required") && reason.contains("Always") && reason.contains("deprecated")),
-            "{error:#}");
+            "{error:#}"
+        );
     }
     let schema = ParsedCfnSchema::from_json(json!({
         "typeName":"AWS::Test::NestedOmission",
@@ -704,7 +1030,8 @@ fn review602_filtered_required_members(markdown: bool) {
         "definitions":{"ParentConfig":{"type":"object","properties":{
             "ChildPolicy":{"type":"object"},"Enabled":{"type":"boolean"}
         },"required":["ChildPolicy"]}}
-    })).unwrap();
+    }))
+    .unwrap();
     review602_rejected(&schema, markdown, &["required", "ChildPolicy", "omitted"]);
 }
 
@@ -738,7 +1065,8 @@ fn review602_vacuous_keyword_one_of_and_not_are_never_discarded() {
     ] {
         let error = schema_layer::Layer::from_json(&json!({
             "typeName":"AWS::Test::Emission","properties":{"Probe":property}
-        })).expect_err("not must retain a typed diagnostic");
+        }))
+        .expect_err("not must retain a typed diagnostic");
         assert!(error.to_string().contains("not"), "{error}");
     }
 }
@@ -747,9 +1075,18 @@ fn review602_vacuous_keyword_one_of_and_not_are_never_discarded() {
 fn review602_nonobject_scope_checks_cover_tag_lowering() {
     use emission_plan::EmittedKind;
     for (property, kinds) in [
-        (json!({"type":"string"}), vec![EmittedKind::String, EmittedKind::TagString]),
-        (json!({"type":"array","items":{"type":"string"}}), vec![EmittedKind::List, EmittedKind::TagList]),
-        (json!({"type":"array","uniqueItems":true,"items":{"type":"string"}}), vec![EmittedKind::Set]),
+        (
+            json!({"type":"string"}),
+            vec![EmittedKind::String, EmittedKind::TagString],
+        ),
+        (
+            json!({"type":"array","items":{"type":"string"}}),
+            vec![EmittedKind::List, EmittedKind::TagList],
+        ),
+        (
+            json!({"type":"array","uniqueItems":true,"items":{"type":"string"}}),
+            vec![EmittedKind::Set],
+        ),
     ] {
         for keyword in ["oneOf", "anyOf"] {
             let mut property = property.clone();
@@ -759,8 +1096,10 @@ fn review602_nonobject_scope_checks_cover_tag_lowering() {
             for kind in &kinds {
                 let result = emission_plan::lower_as(projection, *kind);
                 if keyword == "oneOf" {
-                    assert!(matches!(result, Err(schema_layer::SchemaError::Projection { pointer: _, reason })
-                        if reason.contains("oneOf") && reason.contains("unsatisfiable")));
+                    assert!(
+                        matches!(result, Err(schema_layer::SchemaError::Projection { pointer: _, reason })
+                        if reason.contains("oneOf") && reason.contains("unsatisfiable"))
+                    );
                 } else {
                     result.unwrap_or_else(|error| panic!("{kind:?}: {error}"));
                 }
@@ -779,7 +1118,10 @@ fn review602_pattern_enum_intersection(markdown: bool) {
     ] {
         let pattern = json!({"type":"string","pattern":"^(a|bbb)$"});
         let mut direct = pattern.clone();
-        direct.as_object_mut().unwrap().extend(bounds.as_object().unwrap().clone());
+        direct
+            .as_object_mut()
+            .unwrap()
+            .extend(bounds.as_object().unwrap().clone());
         for property in [
             direct,
             json!({"allOf":[pattern,bounds]}),
@@ -789,18 +1131,33 @@ fn review602_pattern_enum_intersection(markdown: bool) {
             let schema = ParsedCfnSchema::from_json(json!({
                 "typeName":"AWS::Test::Emission", "properties":{"Probe":property},
                 "definitions":{"Mode":pattern}
-            })).unwrap();
+            }))
+            .unwrap();
             let narrowed = retained.len() < 2;
-            let expected = review602_render(&fixture(json!({"type":"string","enum":retained})), markdown).unwrap();
+            let expected =
+                review602_render(&fixture(json!({"type":"string","enum":retained})), markdown)
+                    .unwrap();
             let actual = review602_render(&schema, markdown).unwrap();
-            assert_eq!(identity.is_match(&actual), narrowed, "refined enum identity: {actual}");
+            assert_eq!(
+                identity.is_match(&actual),
+                narrowed,
+                "refined enum identity: {actual}"
+            );
             let normalized = identity.replace_all(&actual, "Probe");
-            assert_eq!(anchor.replace_all(&normalized, "probe"), expected, "markdown={markdown}: inferred values must satisfy effective bounds");
+            assert_eq!(
+                anchor.replace_all(&normalized, "probe"),
+                expected,
+                "markdown={markdown}: inferred values must satisfy effective bounds"
+            );
         }
     }
-    review602_rejected(&fixture(json!({
-        "type":"string","pattern":"^(a|bbb)$","minLength":2,"maxLength":2
-    })), markdown, &["empty literal intersection"]);
+    review602_rejected(
+        &fixture(json!({
+            "type":"string","pattern":"^(a|bbb)$","minLength":2,"maxLength":2
+        })),
+        markdown,
+        &["empty literal intersection"],
+    );
 }
 
 #[test]

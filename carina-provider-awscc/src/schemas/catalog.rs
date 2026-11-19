@@ -1,18 +1,17 @@
-//! Canonical schema identities used by AWSCC.
-//!
-//! `carina-aws-types` owns identities shared by the AWS and AWSCC providers.
-//! This catalog reuses those definitions and adds AWSCC identities and
-//! refinements. It supplies identity layers independently of CFN member
-//! constraints. Its rows use the exported
-//! `carina_aws_types::define_aws_type_catalog` grammar shared with `AwsType`.
+//! Canonical schema identities owned by AWSCC.
+//! Catalog identity policy is independent of CFN member constraints.
 
+use super::catalog_definition::{
+    IdentityDefinition, catalog_definition, catalog_values, define_awscc_type_catalog,
+};
+pub use super::catalog_scalar::*;
+use super::namespace::awscc_identity;
 use super::pattern::{
     ApprovedPattern, refined_string, refined_string_with_validator,
     string_definition_with_validator,
 };
 use super::string_identity::StringIdentity;
 use crate::partition::{Partition, arn_regex};
-use carina_aws_types::IdentityDefinition;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeType, CompiledPattern, RawShape, StringIdentityLayer, TypeIdentity, legacy_validator,
@@ -40,7 +39,7 @@ pub fn string_identity_layer(identity: StringIdentity) -> StringIdentityLayer {
                     layer.clone()
                 } else if let RawShape::Enum { validate, .. } = declaration.raw_shape() {
                     // Region and AZ spellings also have an enum surface. Their
-                    // raw String definition retains the shared check; enum DSL
+                    // raw String definition retains the catalog check; enum DSL
                     // aliases/transforms belong to the enum, not its String base.
                     StringIdentityLayer::with_validator(
                         identity.identity(),
@@ -60,23 +59,12 @@ pub fn string_identity_layer(identity: StringIdentity) -> StringIdentityLayer {
     LAYERS[&identity].clone()
 }
 
-fn overlay_identity(segments: &[&str], kind: &str) -> TypeIdentity {
-    TypeIdentity {
-        provider: Some("aws".to_string()),
-        segments: segments
-            .iter()
-            .map(|segment| (*segment).to_string())
-            .collect(),
-        kind: kind.to_string(),
-    }
-}
-
 /// Generic AWS ARN.
 pub fn arn() -> AttributeType {
-    // Preserve the provider-scoped aws.Arn identity without delegating any
+    // Preserve the provider-scoped awscc.Arn identity without delegating any
     // partition validation to the shared AWS types crate.
     refined_string_with_validator(
-        overlay_identity(&[], "Arn"),
+        awscc_identity(&[], "Arn"),
         Some(ApprovedPattern::whole(&arn_regex("[^:]+:.*$"))),
         None,
         legacy_validator(|value| {
@@ -104,14 +92,14 @@ pub fn iam_policy_arn() -> AttributeType {
 
 fn iam_arn(resource: &str, prefix: &'static str) -> AttributeType {
     refined_string_with_validator(
-        overlay_identity(&["iam", resource], "Arn"),
+        awscc_identity(&["iam", resource], "Arn"),
         Some(ApprovedPattern::whole(&arn_regex(&format!(
             "iam::[^:]*:{prefix}.+$"
         )))),
         None,
         legacy_validator(move |value| {
             if let Value::Concrete(ConcreteValue::String(value)) = value {
-                // Preserve the shared IAM type's bare diagnostic, including
+                // Preserve the established IAM type's bare diagnostic, including
                 // the IAM resource label supplied by validate_iam_arn.
                 validate_iam_arn(value.expose_plaintext(), prefix).map_err(Into::into)
             } else {
@@ -132,7 +120,7 @@ pub fn kms_key_id() -> AttributeType {
         crate::partition::regex_fragment()
     );
     refined_string_with_validator(
-        overlay_identity(&["kms", "Key"], "Id"),
+        awscc_identity(&["kms", "Key"], "Id"),
         Some(ApprovedPattern::whole(&pattern)),
         None,
         legacy_validator(|value| {
@@ -185,7 +173,7 @@ pub fn kms_key_arn() -> AttributeType {
         regex::Regex::new(&arn_regex(KMS_KEY_ARN_REST)).expect("KMS key ARN pattern must compile")
     });
     refined_string_with_validator(
-        overlay_identity(&["kms", "Key"], "Arn"),
+        awscc_identity(&["kms", "Key"], "Arn"),
         Some(ApprovedPattern::whole(&arn_regex(KMS_KEY_ARN_REST))),
         None,
         legacy_validator(|value| {
@@ -208,7 +196,7 @@ pub fn kms_key_arn() -> AttributeType {
 /// IAM Identity Center instance ARN; retain the pattern-only shared shape.
 pub fn sso_instance_arn() -> AttributeType {
     refined_string(
-        Some(overlay_identity(&["sso", "Instance"], "Arn")),
+        Some(awscc_identity(&["sso", "Instance"], "Arn")),
         Some(ApprovedPattern::whole(&arn_regex("sso:::instance/.+$"))),
         None,
         None,
@@ -218,7 +206,7 @@ pub fn sso_instance_arn() -> AttributeType {
 /// IAM Identity Center permission-set ARN; retain the pattern-only shared shape.
 pub fn sso_permission_set_arn() -> AttributeType {
     refined_string(
-        Some(overlay_identity(&["sso", "PermissionSet"], "Arn")),
+        Some(awscc_identity(&["sso", "PermissionSet"], "Arn")),
         Some(ApprovedPattern::whole(&arn_regex(
             "sso:::permissionSet/.+$",
         ))),
@@ -478,7 +466,7 @@ fn validated_logs_log_group_name(identity: TypeIdentity) -> IdentityDefinition {
 }
 
 fn validated_organizations_account_email(identity: TypeIdentity) -> IdentityDefinition {
-    // Use the shared AWS identity so core Email stays unbounded. Preserve
+    // Use the AWSCC identity so core Email stays unbounded. Preserve
     // core's grammar for historical reads, without CreateAccount-only rules.
     // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-Email
     string_definition_with_validator(
@@ -795,12 +783,9 @@ fn validated_scheduler_schedule_group_name(identity: TypeIdentity) -> IdentityDe
     )
 }
 
-carina_aws_types::define_aws_type_catalog! {
-    /// Every identity and shared-identity refinement declared by AWSCC.
+define_awscc_type_catalog! {
+    /// Every AWSCC overlay identity, with its complete local grammar.
     pub enum AwsccType {
-        identity_constructor: overlay_identity,
-        refinement_type: carina_aws_types::AwsType,
-        constructor_path_prefix: "crate::schemas::catalog::",
         rows: {
         /// CloudFront distribution ARN.
         CloudFrontDistributionArn => cloudfront_distribution_arn {
@@ -907,9 +892,11 @@ carina_aws_types::define_aws_type_catalog! {
                 "wafv2",
             ),
         },
-        /// AWSCC keeps the stricter OIDC callback while reusing the shared identity.
+        /// AWSCC keeps the stricter OIDC callback with an AWSCC-owned identity.
         IamOidcProviderArn => iam_oidc_provider_arn {
-            refines: carina_aws_types::AwsType::IamOidcProviderArn,
+            segments: ["iam", "OidcProvider"],
+            kind: "Arn",
+            valid_sample: "arn:aws:iam::123456789012:oidc-provider/example.com",
             constructor: |identity| validated_iam_arn(
                 identity,
                 ApprovedPattern::whole(&arn_regex("iam::[^:]*:oidc-provider/.+$")),
@@ -917,9 +904,11 @@ carina_aws_types::define_aws_type_catalog! {
                 "IAM OIDC Provider",
             ),
         },
-        /// AWSCC keeps service validation around the shared Organizations account identity.
+        /// AWSCC keeps service validation for the AWSCC Organizations account identity.
         OrganizationsAccountArn => organizations_account_arn {
-            refines: carina_aws_types::AwsType::OrganizationsAccountArn,
+            segments: ["organizations", "Account"],
+            kind: "Arn",
+            valid_sample: "arn:aws:organizations::123456789012:account/o-exampleorgid/123456789012",
             constructor: |identity| validated_service_arn(
                 identity,
                 ApprovedPattern::whole(&arn_regex("organizations:.*$")),
@@ -930,7 +919,9 @@ carina_aws_types::define_aws_type_catalog! {
         },
         /// Organizations Account email, with core email validation and API bounds.
         OrganizationsAccountEmail => organizations_account_email {
-            refines: carina_aws_types::AwsType::OrganizationsAccountEmail,
+            segments: ["organizations", "Account"],
+            kind: "Email",
+            valid_sample: "user@example.com",
             constructor: validated_organizations_account_email,
         },
         /// Organizations-created role name, excluding the service-linked role prefix.
@@ -940,9 +931,11 @@ carina_aws_types::define_aws_type_catalog! {
             valid_sample: "OrganizationAccountAccessRole",
             constructor: validated_organizations_account_role_name,
         },
-        /// AWSCC keeps service validation around the shared Organizations identity.
+        /// AWSCC keeps service validation for the AWSCC Organizations identity.
         OrganizationsOrganizationArn => organizations_organization_arn {
-            refines: carina_aws_types::AwsType::OrganizationsOrganizationArn,
+            segments: ["organizations", "Organization"],
+            kind: "Arn",
+            valid_sample: "arn:aws:organizations::123456789012:organization/o-exampleorgid",
             constructor: |identity| validated_service_arn(
                 identity,
                 ApprovedPattern::whole(&arn_regex("organizations:.*$")),
@@ -951,9 +944,11 @@ carina_aws_types::define_aws_type_catalog! {
                 "organizations",
             ),
         },
-        /// AWSCC keeps service validation around the shared S3 bucket identity.
+        /// AWSCC keeps service validation for the AWSCC S3 bucket identity.
         S3BucketArn => s3_bucket_arn {
-            refines: carina_aws_types::AwsType::S3BucketArn,
+            segments: ["s3", "Bucket"],
+            kind: "Arn",
+            valid_sample: "arn:aws:s3:::example-bucket",
             constructor: |identity| validated_service_arn(
                 identity,
                 ApprovedPattern::whole(&arn_regex("s3:::.+$")),
@@ -964,7 +959,9 @@ carina_aws_types::define_aws_type_catalog! {
         },
         /// Cloud Control FlowLog aggregation interval enum.
         Ec2FlowLogMaxAggregationInterval => ec2_flow_log_max_aggregation_interval {
-            refines: carina_aws_types::AwsType::Ec2FlowLogMaxAggregationInterval,
+            segments: ["ec2", "FlowLog"],
+            kind: "MaxAggregationInterval",
+            valid_sample: "60",
             values: [60, 600],
             constructor: validated_int_enum,
         },
@@ -1290,32 +1287,15 @@ mod tests {
 
     #[test]
     fn catalog_identities_are_unique_and_have_declared_ownership() {
-        let shared = carina_aws_types::AwsType::ALL
-            .iter()
-            .map(|aws_type| aws_type.identity())
-            .collect::<BTreeSet<_>>();
         let mut catalog = BTreeSet::new();
-
-        for awscc_type in AwsccType::ALL.iter().copied() {
-            let identity = awscc_type.identity();
+        for row in AwsccType::ALL.iter().copied() {
+            let identity = row.identity();
             assert!(
                 catalog.insert(identity.clone()),
                 "duplicate AWSCC catalog identity {identity}"
             );
-            if let Some(refined) = awscc_type.refines() {
-                assert_eq!(identity, refined.identity());
-                assert!(
-                    shared.contains(&identity),
-                    "AWSCC refinement {identity} must name an AwsType row"
-                );
-            } else {
-                assert!(
-                    !shared.contains(&identity),
-                    "AWSCC-owned identity {identity} is already owned by AwsType"
-                );
-            }
+            assert_eq!(identity.provider.as_deref(), Some("awscc"));
         }
-
         assert_eq!(catalog.len(), AwsccType::ALL.len());
     }
 
@@ -1355,42 +1335,6 @@ mod tests {
     }
 
     #[test]
-    fn refinement_rows_derive_the_shared_identity_callback_set() {
-        let refinements = AwsccType::ALL
-            .iter()
-            .copied()
-            .filter(|awscc_type| awscc_type.refines().is_some())
-            .collect::<Vec<_>>();
-        assert!(!refinements.is_empty());
-
-        for awscc_type in refinements {
-            let attribute_type = awscc_type.attribute_type();
-            let identity = match attribute_type.raw_shape() {
-                RawShape::String {
-                    identity_layer:
-                        StringIdentityParts {
-                            identity: Some(identity),
-                            validate: Some(_),
-                            ..
-                        },
-                    ..
-                }
-                | RawShape::Int {
-                    identity_layer:
-                        IntIdentityParts {
-                            identity: Some(identity),
-                            validate: Some(_),
-                            ..
-                        },
-                    ..
-                } => identity,
-                _ => panic!("AWSCC shared-identity refinement must retain its callback"),
-            };
-            assert_eq!(identity, &awscc_type.refines().unwrap().identity());
-        }
-    }
-
-    #[test]
     fn integer_enum_rows_expose_their_allowed_values() {
         for awscc_type in AwsccType::ALL.iter().copied() {
             let Some(values) = awscc_type.allowed_int_values() else {
@@ -1411,28 +1355,28 @@ mod tests {
 
     #[test]
     fn catalog_metadata_snapshot() {
-        const EXPECTED: &str = r#"CloudFrontDistributionArn|aws|cloudfront/Distribution|Arn|None|arn:aws:cloudfront::123456789012:distribution/E1234567890ABC|None|crate::schemas::catalog::cloudfront_distribution_arn()
-DynamoDbTableArn|aws|dynamodb/Table|Arn|None|arn:aws:dynamodb:ap-northeast-1:123456789012:table/example|None|crate::schemas::catalog::dynamodb_table_arn()
-Ec2IpamPoolArn|aws|ec2/IpamPool|Arn|None|arn:aws:ec2:ap-northeast-1:123456789012:ipam-pool/ipam-pool-12345678|None|crate::schemas::catalog::ec2_ipam_pool_arn()
-Ec2IpamArn|aws|ec2/Ipam|Arn|None|arn:aws:ec2:ap-northeast-1:123456789012:ipam/ipam-12345678|None|crate::schemas::catalog::ec2_ipam_arn()
-EcsClusterArn|aws|ecs/Cluster|Arn|None|arn:aws:ecs:ap-northeast-1:123456789012:cluster/example|None|crate::schemas::catalog::ecs_cluster_arn()
-IdentityStoreGroupDisplayName|aws|identitystore/Group|DisplayName|None|admins|None|crate::schemas::catalog::identitystore_group_display_name()
-LogsLogGroupArn|aws|logs/LogGroup|Arn|None|arn:aws:logs:ap-northeast-1:123456789012:log-group:example|None|crate::schemas::catalog::logs_log_group_arn()
-LogsLogGroupName|aws|logs/LogGroup|LogGroupName|None|/aws/lambda/example|None|crate::schemas::catalog::logs_log_group_name()
-Wafv2WebAclArn|aws|wafv2/WebAcl|Arn|None|arn:aws:wafv2:ap-northeast-1:123456789012:regional/webacl/example/12345678-1234-1234-1234-123456789abc|None|crate::schemas::catalog::wafv2_web_acl_arn()
-IamOidcProviderArn|aws|iam/OidcProvider|Arn|Some(IamOidcProviderArn)|arn:aws:iam::123456789012:oidc-provider/example.com|None|crate::schemas::catalog::iam_oidc_provider_arn()
-OrganizationsAccountArn|aws|organizations/Account|Arn|Some(OrganizationsAccountArn)|arn:aws:organizations::123456789012:account/o-exampleorgid/123456789012|None|crate::schemas::catalog::organizations_account_arn()
-OrganizationsAccountEmail|aws|organizations/Account|Email|Some(OrganizationsAccountEmail)|user@example.com|None|crate::schemas::catalog::organizations_account_email()
-OrganizationsAccountRoleName|aws|organizations/Account|RoleName|None|OrganizationAccountAccessRole|None|crate::schemas::catalog::organizations_account_role_name()
-OrganizationsOrganizationArn|aws|organizations/Organization|Arn|Some(OrganizationsOrganizationArn)|arn:aws:organizations::123456789012:organization/o-exampleorgid|None|crate::schemas::catalog::organizations_organization_arn()
-S3BucketArn|aws|s3/Bucket|Arn|Some(S3BucketArn)|arn:aws:s3:::example-bucket|None|crate::schemas::catalog::s3_bucket_arn()
-Ec2FlowLogMaxAggregationInterval|aws|ec2/FlowLog|MaxAggregationInterval|Some(Ec2FlowLogMaxAggregationInterval)|60|Some([60, 600])|crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()
-SchedulerScheduleGroupName|aws|scheduler/Schedule|GroupName|None|default|None|crate::schemas::catalog::scheduler_schedule_group_name()
-SchedulerScheduleExpression|aws|scheduler/Schedule|ScheduleExpression|None|rate(6 hours)|None|crate::schemas::catalog::scheduler_schedule_expression()
-SsoPermissionSetSessionDuration|aws|sso/PermissionSet|SessionDuration|None|PT8H|None|crate::schemas::catalog::sso_permission_set_session_duration()
-Wafv2ByteMatchSearchString|aws|wafv2/WebACL|ByteMatchSearchString|None|BadBot|None|crate::schemas::catalog::wafv2_byte_match_search_string()
-Wafv2ByteMatchSearchStringBase64|aws|wafv2/WebACL|ByteMatchSearchStringBase64|None|QmFkQm90|None|crate::schemas::catalog::wafv2_byte_match_search_string_base64()
-S3LifecycleDate|aws|s3/Bucket|LifecycleDate|None|2030-01-01T00:00:00Z|None|crate::schemas::catalog::s3_lifecycle_date()"#;
+        const EXPECTED: &str = r#"CloudFrontDistributionArn|awscc|cloudfront/Distribution|Arn|arn:aws:cloudfront::123456789012:distribution/E1234567890ABC|None|crate::schemas::catalog::cloudfront_distribution_arn()
+DynamoDbTableArn|awscc|dynamodb/Table|Arn|arn:aws:dynamodb:ap-northeast-1:123456789012:table/example|None|crate::schemas::catalog::dynamodb_table_arn()
+Ec2IpamPoolArn|awscc|ec2/IpamPool|Arn|arn:aws:ec2:ap-northeast-1:123456789012:ipam-pool/ipam-pool-12345678|None|crate::schemas::catalog::ec2_ipam_pool_arn()
+Ec2IpamArn|awscc|ec2/Ipam|Arn|arn:aws:ec2:ap-northeast-1:123456789012:ipam/ipam-12345678|None|crate::schemas::catalog::ec2_ipam_arn()
+EcsClusterArn|awscc|ecs/Cluster|Arn|arn:aws:ecs:ap-northeast-1:123456789012:cluster/example|None|crate::schemas::catalog::ecs_cluster_arn()
+IdentityStoreGroupDisplayName|awscc|identitystore/Group|DisplayName|admins|None|crate::schemas::catalog::identitystore_group_display_name()
+LogsLogGroupArn|awscc|logs/LogGroup|Arn|arn:aws:logs:ap-northeast-1:123456789012:log-group:example|None|crate::schemas::catalog::logs_log_group_arn()
+LogsLogGroupName|awscc|logs/LogGroup|LogGroupName|/aws/lambda/example|None|crate::schemas::catalog::logs_log_group_name()
+Wafv2WebAclArn|awscc|wafv2/WebAcl|Arn|arn:aws:wafv2:ap-northeast-1:123456789012:regional/webacl/example/12345678-1234-1234-1234-123456789abc|None|crate::schemas::catalog::wafv2_web_acl_arn()
+IamOidcProviderArn|awscc|iam/OidcProvider|Arn|arn:aws:iam::123456789012:oidc-provider/example.com|None|crate::schemas::catalog::iam_oidc_provider_arn()
+OrganizationsAccountArn|awscc|organizations/Account|Arn|arn:aws:organizations::123456789012:account/o-exampleorgid/123456789012|None|crate::schemas::catalog::organizations_account_arn()
+OrganizationsAccountEmail|awscc|organizations/Account|Email|user@example.com|None|crate::schemas::catalog::organizations_account_email()
+OrganizationsAccountRoleName|awscc|organizations/Account|RoleName|OrganizationAccountAccessRole|None|crate::schemas::catalog::organizations_account_role_name()
+OrganizationsOrganizationArn|awscc|organizations/Organization|Arn|arn:aws:organizations::123456789012:organization/o-exampleorgid|None|crate::schemas::catalog::organizations_organization_arn()
+S3BucketArn|awscc|s3/Bucket|Arn|arn:aws:s3:::example-bucket|None|crate::schemas::catalog::s3_bucket_arn()
+Ec2FlowLogMaxAggregationInterval|awscc|ec2/FlowLog|MaxAggregationInterval|60|Some([60, 600])|crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()
+SchedulerScheduleGroupName|awscc|scheduler/Schedule|GroupName|default|None|crate::schemas::catalog::scheduler_schedule_group_name()
+SchedulerScheduleExpression|awscc|scheduler/Schedule|ScheduleExpression|rate(6 hours)|None|crate::schemas::catalog::scheduler_schedule_expression()
+SsoPermissionSetSessionDuration|awscc|sso/PermissionSet|SessionDuration|PT8H|None|crate::schemas::catalog::sso_permission_set_session_duration()
+Wafv2ByteMatchSearchString|awscc|wafv2/WebACL|ByteMatchSearchString|BadBot|None|crate::schemas::catalog::wafv2_byte_match_search_string()
+Wafv2ByteMatchSearchStringBase64|awscc|wafv2/WebACL|ByteMatchSearchStringBase64|QmFkQm90|None|crate::schemas::catalog::wafv2_byte_match_search_string_base64()
+S3LifecycleDate|awscc|s3/Bucket|LifecycleDate|2030-01-01T00:00:00Z|None|crate::schemas::catalog::s3_lifecycle_date()"#;
 
         let snapshot = AwsccType::ALL
             .iter()
@@ -1440,11 +1384,10 @@ S3LifecycleDate|aws|s3/Bucket|LifecycleDate|None|2030-01-01T00:00:00Z|None|crate
             .map(|awscc_type| {
                 let identity = awscc_type.identity();
                 format!(
-                    "{awscc_type:?}|{}|{}|{}|{:?}|{}|{:?}|{}",
+                    "{awscc_type:?}|{}|{}|{}|{}|{:?}|{}",
                     identity.provider.as_deref().unwrap_or("<none>"),
                     identity.segments.join("/"),
                     identity.kind,
-                    awscc_type.refines(),
                     awscc_type.valid_sample(),
                     awscc_type.allowed_int_values(),
                     awscc_type.constructor_path(),

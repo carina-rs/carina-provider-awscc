@@ -134,7 +134,7 @@ Determines whether or not address space from this pool is publicly advertised. M
 
 ### `source_ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -159,8 +159,8 @@ An array of key-value pairs to apply to this resource.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ipv4` | `aws.ec2.IpamPool.AddressFamily.ipv4` |
-| `ipv6` | `aws.ec2.IpamPool.AddressFamily.ipv6` |
+| `ipv4` | `awscc.ec2.IpamPool.AddressFamily.ipv4` |
+| `ipv6` | `awscc.ec2.IpamPool.AddressFamily.ipv6` |
 
 Shorthand formats: `ipv4` or `AddressFamily.ipv4`
 
@@ -168,8 +168,8 @@ Shorthand formats: `ipv4` or `AddressFamily.ipv4`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ec2` | `aws.ec2.IpamPool.AwsService.ec2` |
-| `global-services` | `aws.ec2.IpamPool.AwsService.global_services` |
+| `ec2` | `awscc.ec2.IpamPool.AwsService.ec2` |
+| `global-services` | `awscc.ec2.IpamPool.AwsService.global_services` |
 
 Shorthand formats: `ec2` or `AwsService.ec2`
 
@@ -177,8 +177,8 @@ Shorthand formats: `ec2` or `AwsService.ec2`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `public` | `aws.ec2.IpamPool.IpamScopeType.public` |
-| `private` | `aws.ec2.IpamPool.IpamScopeType.private` |
+| `public` | `awscc.ec2.IpamPool.IpamScopeType.public` |
+| `private` | `awscc.ec2.IpamPool.IpamScopeType.private` |
 
 Shorthand formats: `public` or `IpamScopeType.public`
 
@@ -186,8 +186,8 @@ Shorthand formats: `public` or `IpamScopeType.public`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `byoip` | `aws.ec2.IpamPool.PublicIpSource.byoip` |
-| `amazon` | `aws.ec2.IpamPool.PublicIpSource.amazon` |
+| `byoip` | `awscc.ec2.IpamPool.PublicIpSource.byoip` |
+| `amazon` | `awscc.ec2.IpamPool.PublicIpSource.amazon` |
 
 Shorthand formats: `byoip` or `PublicIpSource.byoip`
 
@@ -195,7 +195,7 @@ Shorthand formats: `byoip` or `PublicIpSource.byoip`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `vpc` | `aws.ec2.IpamPool.SourceResource.ResourceType.vpc` |
+| `vpc` | `awscc.ec2.IpamPool.SourceResource.ResourceType.vpc` |
 
 Shorthand formats: `vpc` or `ResourceType.vpc`
 
@@ -203,12 +203,12 @@ Shorthand formats: `vpc` or `ResourceType.vpc`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `create-in-progress` | `aws.ec2.IpamPool.State.create_in_progress` |
-| `create-complete` | `aws.ec2.IpamPool.State.create_complete` |
-| `modify-in-progress` | `aws.ec2.IpamPool.State.modify_in_progress` |
-| `modify-complete` | `aws.ec2.IpamPool.State.modify_complete` |
-| `delete-in-progress` | `aws.ec2.IpamPool.State.delete_in_progress` |
-| `delete-complete` | `aws.ec2.IpamPool.State.delete_complete` |
+| `create-in-progress` | `awscc.ec2.IpamPool.State.create_in_progress` |
+| `create-complete` | `awscc.ec2.IpamPool.State.create_complete` |
+| `modify-in-progress` | `awscc.ec2.IpamPool.State.modify_in_progress` |
+| `modify-complete` | `awscc.ec2.IpamPool.State.modify_complete` |
+| `delete-in-progress` | `awscc.ec2.IpamPool.State.delete_in_progress` |
+| `delete-complete` | `awscc.ec2.IpamPool.State.delete_complete` |
 
 Shorthand formats: `create_in_progress` or `State.create_in_progress`
 
@@ -226,32 +226,32 @@ Shorthand formats: `create_in_progress` or `State.create_in_progress`
 |-------|------|----------|-------------|
 | `resource_id` | `String` | Yes |  |
 | `resource_owner` | `String` | Yes |  |
-| `resource_region` | `aws.Region (custom validator)` | Yes |  |
+| `resource_region` | `awscc.Region (custom validator)` | Yes |  |
 | `resource_type` | [ResourceType](#source_resourceresource_type-resourcetype) | Yes |  |
 
 ## Attribute Reference
 
 ### `arn`
 
-- **Type:** `aws.ec2.IpamPool.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):ec2:.*$/ (Full), custom validator)`
+- **Type:** `awscc.ec2.IpamPool.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):ec2:.*$/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of the IPAM Pool.
 
 ### `ipam_arn`
 
-- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
+- **Type:** `awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of the IPAM this pool is a part of.
 
 ### `ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
 
 Id of the IPAM Pool.
 
 ### `ipam_scope_arn`
 
-- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
+- **Type:** `awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of the scope this pool is a part of.
 

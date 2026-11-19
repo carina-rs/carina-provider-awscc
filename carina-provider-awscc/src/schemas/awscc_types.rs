@@ -1,20 +1,19 @@
 //! AWS Cloud Control-specific reusable attribute shapes.
 //!
-//! These types live here, instead of in `carina-aws-types`, until another
-//! provider needs the same Cloud Control document shapes.
+//! AWSCC owns these Cloud Control document shapes and their enum identities.
 
 use super::pattern::{ApprovedPattern, refined_string};
 use carina_core::schema::{
     AttributeSchema, AttributeType, FieldGroup, ListElements, OptionalAttributeSchemaBuilder,
     OptionalStructFieldBuilder, ProviderPopulatedAttributeSchemaBuilder,
     ProviderPopulatedStructFieldBuilder, RawShape, RequiredAttributeSchemaBuilder,
-    RequiredStructFieldBuilder, StructField, enum_identity,
+    RequiredStructFieldBuilder, StructField,
 };
 
 /// The emitter applies the documented grammar to a freshly constructed builder,
-/// before emitting any CFN annotations. The shared seed retains the established
+/// before emitting any CFN annotations. The local seed retains the established
 /// constructor spelling and supplies the existing enum identities. There is no
-/// dependency alias or hidden shared-type import.
+/// dependency alias or shared-type import.
 pub(crate) trait DocumentedIamGrammar: Sized {
     fn with_documented_iam_grammar(self) -> Self;
 }
@@ -76,12 +75,10 @@ documented_iam_builder!(
 /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html
 /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html
 pub fn iam_policy_document() -> AttributeType {
-    iam_policy_document_from_seed(&carina_aws_types::iam_policy_document())
+    iam_policy_document_from_seed(&super::type_helpers::policy_seed::iam_policy_document())
 }
 
 fn iam_policy_document_from_seed(legacy: &AttributeType) -> AttributeType {
-    // Reuse the public declaration's nominal enums; changing their namespaces
-    // would break existing aws.iam.PolicyDocument.Version/Statement expressions.
     let RawShape::Struct { fields, .. } = legacy.raw_shape() else {
         unreachable!("IAM policy declaration is a struct")
     };
@@ -229,9 +226,13 @@ fn iam_policy_document_from_seed(legacy: &AttributeType) -> AttributeType {
     )
 }
 
-fn string_enum(name: &str, namespace: &str, values_and_aliases: &[(&str, &str)]) -> AttributeType {
+fn string_enum(
+    name: &str,
+    namespace: &super::namespace::AwsccNamespace,
+    values_and_aliases: &[(&str, &str)],
+) -> AttributeType {
     AttributeType::enum_(
-        enum_identity(name, Some(namespace)),
+        super::namespace::awscc_enum_identity(name, namespace),
         Some(
             values_and_aliases
                 .iter()
@@ -257,7 +258,7 @@ pub fn s3_notification_event() -> AttributeType {
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_TopicConfiguration.html
     string_enum(
         "Event",
-        "aws.s3.Bucket.NotificationConfiguration",
+        &super::namespace::AwsccNamespace::new("s3.Bucket.NotificationConfiguration"),
         &[
             ("s3:ObjectCreated:*", "object_created_all"),
             ("s3:ObjectCreated:Put", "object_created_put"),
@@ -342,7 +343,7 @@ pub fn s3_analytics_destination() -> AttributeType {
                 "format",
                 string_enum(
                     "Format",
-                    "aws.s3.Bucket.AnalyticsDestination",
+                    &super::namespace::AwsccNamespace::new("s3.Bucket.AnalyticsDestination"),
                     &[("CSV", "csv")],
                 ),
             )
@@ -380,7 +381,9 @@ pub fn sns_subscription_delivery_policy() -> AttributeType {
     // it is HTTP/S-only, and added undocumented `guaranteed: false` on read.
     let backoff_function = string_enum(
         "BackoffFunction",
-        "aws.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy",
+        &super::namespace::AwsccNamespace::new(
+            "sns.Subscription.DeliveryPolicy.HealthyRetryPolicy",
+        ),
         &[
             ("arithmetic", "arithmetic"),
             ("exponential", "exponential"),
@@ -390,7 +393,7 @@ pub fn sns_subscription_delivery_policy() -> AttributeType {
     );
     let header_content_type = string_enum(
         "HeaderContentType",
-        "aws.sns.Subscription.DeliveryPolicy.RequestPolicy",
+        &super::namespace::AwsccNamespace::new("sns.Subscription.DeliveryPolicy.RequestPolicy"),
         &[
             ("text/css", "text_css"),
             ("text/csv", "text_csv"),
@@ -524,7 +527,7 @@ pub fn sns_subscription_replay_policy() -> AttributeType {
                 "point_type",
                 string_enum(
                     "PointType",
-                    "aws.sns.Subscription.ReplayPolicy",
+                    &super::namespace::AwsccNamespace::new("sns.Subscription.ReplayPolicy"),
                     &[("Timestamp", "timestamp")],
                 ),
             )
@@ -582,7 +585,9 @@ pub fn logs_field_index_policy() -> AttributeType {
                             "type",
                             string_enum(
                                 "Type",
-                                "aws.logs.LogGroup.FieldIndexPolicy.FieldIndexConfiguration",
+                                &super::namespace::AwsccNamespace::new(
+                                    "logs.LogGroup.FieldIndexPolicy.FieldIndexConfiguration",
+                                ),
                                 &[("FIELD_INDEX", "field_index"), ("FACET", "facet")],
                             ),
                         )
@@ -716,7 +721,7 @@ pub fn logs_data_protection_policy() -> AttributeType {
                 "version",
                 string_enum(
                     "Version",
-                    "aws.logs.LogGroup.DataProtectionPolicy",
+                    &super::namespace::AwsccNamespace::new("logs.LogGroup.DataProtectionPolicy"),
                     &[("2021-06-01", "v2021_06_01")],
                 ),
             )

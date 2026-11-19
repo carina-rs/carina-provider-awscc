@@ -14,19 +14,19 @@ awscc.cloudfront.Distribution {
   distribution_config = {
     comment                = 'Example distribution'
     enabled                = true
-    http_version           = aws.cloudfront.Distribution.DistributionConfig.HttpVersion.http2
-    price_class            = aws.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_100
+    http_version           = awscc.cloudfront.Distribution.DistributionConfig.HttpVersion.http2
+    price_class            = awscc.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_100
 
     default_cache_behavior = {
       target_origin_id       = 'example-origin'
-      viewer_protocol_policy = aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.redirect_to_https
+      viewer_protocol_policy = awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.redirect_to_https
       allowed_methods        = [
-        aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.get,
-        aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.head,
+        awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.get,
+        awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.head,
       ]
       cached_methods         = [
-        aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.get,
-        aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.head,
+        awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.get,
+        awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.head,
       ]
 
       # AWS managed CachingOptimized cache policy.
@@ -40,16 +40,16 @@ awscc.cloudfront.Distribution {
       custom_origin_config = {
         http_port              = 80
         https_port             = 443
-        origin_protocol_policy = aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.https_only
+        origin_protocol_policy = awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.https_only
         origin_ssl_protocols   = [
-          aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_2,
+          awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_2,
         ]
       }
     }
 
     restrictions           = {
       geo_restriction = {
-        restriction_type = aws.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.none
+        restriction_type = awscc.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.none
       }
     }
 
@@ -86,13 +86,13 @@ A complex type that contains zero or more ``Tag`` elements.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GET` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.get` |
-| `HEAD` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.head` |
-| `OPTIONS` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.options` |
-| `PUT` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.put` |
-| `PATCH` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.patch` |
-| `POST` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.post` |
-| `DELETE` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.delete` |
+| `GET` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.get` |
+| `HEAD` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.head` |
+| `OPTIONS` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.options` |
+| `PUT` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.put` |
+| `PATCH` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.patch` |
+| `POST` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.post` |
+| `DELETE` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.delete` |
 
 Shorthand formats: `get` or `AllowedMethods.get`
 
@@ -100,9 +100,9 @@ Shorthand formats: `get` or `AllowedMethods.get`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GET` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.CachedMethods.get` |
-| `HEAD` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.CachedMethods.head` |
-| `OPTIONS` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.CachedMethods.options` |
+| `GET` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.CachedMethods.get` |
+| `HEAD` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.CachedMethods.head` |
+| `OPTIONS` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.CachedMethods.options` |
 
 Shorthand formats: `get` or `CachedMethods.get`
 
@@ -110,8 +110,8 @@ Shorthand formats: `get` or `CachedMethods.get`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `viewer-request` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.viewer_request` |
-| `viewer-response` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.viewer_response` |
+| `viewer-request` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.viewer_request` |
+| `viewer-response` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.viewer_response` |
 
 Shorthand formats: `viewer_request` or `EventType.viewer_request`
 
@@ -119,10 +119,10 @@ Shorthand formats: `viewer_request` or `EventType.viewer_request`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `viewer-request` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.viewer_request` |
-| `origin-request` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.origin_request` |
-| `origin-response` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.origin_response` |
-| `viewer-response` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.viewer_response` |
+| `viewer-request` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.viewer_request` |
+| `origin-request` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.origin_request` |
+| `origin-response` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.origin_response` |
+| `viewer-response` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.viewer_response` |
 
 Shorthand formats: `viewer_request` or `EventType.viewer_request`
 
@@ -130,9 +130,9 @@ Shorthand formats: `viewer_request` or `EventType.viewer_request`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `allow-all` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ViewerProtocolPolicy.allow_all` |
-| `redirect-to-https` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ViewerProtocolPolicy.redirect_to_https` |
-| `https-only` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ViewerProtocolPolicy.https_only` |
+| `allow-all` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ViewerProtocolPolicy.allow_all` |
+| `redirect-to-https` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ViewerProtocolPolicy.redirect_to_https` |
+| `https-only` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ViewerProtocolPolicy.https_only` |
 
 Shorthand formats: `allow_all` or `ViewerProtocolPolicy.allow_all`
 
@@ -140,8 +140,8 @@ Shorthand formats: `allow_all` or `ViewerProtocolPolicy.allow_all`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `direct` | `aws.cloudfront.Distribution.DistributionConfig.ConnectionMode.direct` |
-| `tenant-only` | `aws.cloudfront.Distribution.DistributionConfig.ConnectionMode.tenant_only` |
+| `direct` | `awscc.cloudfront.Distribution.DistributionConfig.ConnectionMode.direct` |
+| `tenant-only` | `awscc.cloudfront.Distribution.DistributionConfig.ConnectionMode.tenant_only` |
 
 Shorthand formats: `direct` or `ConnectionMode.direct`
 
@@ -149,9 +149,9 @@ Shorthand formats: `direct` or `ConnectionMode.direct`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `http-only` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginProtocolPolicy.http_only` |
-| `https-only` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginProtocolPolicy.https_only` |
-| `match-viewer` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginProtocolPolicy.match_viewer` |
+| `http-only` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginProtocolPolicy.http_only` |
+| `https-only` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginProtocolPolicy.https_only` |
+| `match-viewer` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginProtocolPolicy.match_viewer` |
 
 Shorthand formats: `http_only` or `OriginProtocolPolicy.http_only`
 
@@ -159,10 +159,10 @@ Shorthand formats: `http_only` or `OriginProtocolPolicy.http_only`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `SSLv3` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.sslv3` |
-| `TLSv1` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1` |
-| `TLSv1.1` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_1` |
-| `TLSv1.2` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_2` |
+| `SSLv3` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.sslv3` |
+| `TLSv1` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1` |
+| `TLSv1.1` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_1` |
+| `TLSv1.2` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_2` |
 
 Shorthand formats: `sslv3` or `OriginSslProtocols.sslv3`
 
@@ -170,13 +170,13 @@ Shorthand formats: `sslv3` or `OriginSslProtocols.sslv3`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GET` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.get` |
-| `HEAD` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.head` |
-| `OPTIONS` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.options` |
-| `PUT` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.put` |
-| `PATCH` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.patch` |
-| `POST` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.post` |
-| `DELETE` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.delete` |
+| `GET` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.get` |
+| `HEAD` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.head` |
+| `OPTIONS` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.options` |
+| `PUT` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.put` |
+| `PATCH` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.patch` |
+| `POST` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.post` |
+| `DELETE` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.delete` |
 
 Shorthand formats: `get` or `AllowedMethods.get`
 
@@ -184,9 +184,9 @@ Shorthand formats: `get` or `AllowedMethods.get`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GET` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.get` |
-| `HEAD` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.head` |
-| `OPTIONS` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.options` |
+| `GET` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.get` |
+| `HEAD` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.head` |
+| `OPTIONS` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.options` |
 
 Shorthand formats: `get` or `CachedMethods.get`
 
@@ -194,8 +194,8 @@ Shorthand formats: `get` or `CachedMethods.get`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `viewer-request` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.FunctionAssociation.EventType.viewer_request` |
-| `viewer-response` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.FunctionAssociation.EventType.viewer_response` |
+| `viewer-request` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.FunctionAssociation.EventType.viewer_request` |
+| `viewer-response` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.FunctionAssociation.EventType.viewer_response` |
 
 Shorthand formats: `viewer_request` or `EventType.viewer_request`
 
@@ -203,10 +203,10 @@ Shorthand formats: `viewer_request` or `EventType.viewer_request`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `viewer-request` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.LambdaFunctionAssociation.EventType.viewer_request` |
-| `origin-request` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.LambdaFunctionAssociation.EventType.origin_request` |
-| `origin-response` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.LambdaFunctionAssociation.EventType.origin_response` |
-| `viewer-response` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.LambdaFunctionAssociation.EventType.viewer_response` |
+| `viewer-request` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.LambdaFunctionAssociation.EventType.viewer_request` |
+| `origin-request` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.LambdaFunctionAssociation.EventType.origin_request` |
+| `origin-response` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.LambdaFunctionAssociation.EventType.origin_response` |
+| `viewer-response` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.LambdaFunctionAssociation.EventType.viewer_response` |
 
 Shorthand formats: `viewer_request` or `EventType.viewer_request`
 
@@ -214,9 +214,9 @@ Shorthand formats: `viewer_request` or `EventType.viewer_request`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `allow-all` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.allow_all` |
-| `redirect-to-https` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.redirect_to_https` |
-| `https-only` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.https_only` |
+| `allow-all` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.allow_all` |
+| `redirect-to-https` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.redirect_to_https` |
+| `https-only` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.https_only` |
 
 Shorthand formats: `allow_all` or `ViewerProtocolPolicy.allow_all`
 
@@ -224,10 +224,10 @@ Shorthand formats: `allow_all` or `ViewerProtocolPolicy.allow_all`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `http1.1` | `aws.cloudfront.Distribution.DistributionConfig.HttpVersion.http1_1` |
-| `http2` | `aws.cloudfront.Distribution.DistributionConfig.HttpVersion.http2` |
-| `http2and3` | `aws.cloudfront.Distribution.DistributionConfig.HttpVersion.http2and3` |
-| `http3` | `aws.cloudfront.Distribution.DistributionConfig.HttpVersion.http3` |
+| `http1.1` | `awscc.cloudfront.Distribution.DistributionConfig.HttpVersion.http1_1` |
+| `http2` | `awscc.cloudfront.Distribution.DistributionConfig.HttpVersion.http2` |
+| `http2and3` | `awscc.cloudfront.Distribution.DistributionConfig.HttpVersion.http2and3` |
+| `http3` | `awscc.cloudfront.Distribution.DistributionConfig.HttpVersion.http3` |
 
 Shorthand formats: `http1_1` or `HttpVersion.http1_1`
 
@@ -235,8 +235,8 @@ Shorthand formats: `http1_1` or `HttpVersion.http1_1`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `default` | `aws.cloudfront.Distribution.DistributionConfig.OriginGroups.OriginGroup.OriginGroupSelectionCriteria.default` |
-| `media-quality-based` | `aws.cloudfront.Distribution.DistributionConfig.OriginGroups.OriginGroup.OriginGroupSelectionCriteria.media_quality_based` |
+| `default` | `awscc.cloudfront.Distribution.DistributionConfig.OriginGroups.OriginGroup.OriginGroupSelectionCriteria.default` |
+| `media-quality-based` | `awscc.cloudfront.Distribution.DistributionConfig.OriginGroups.OriginGroup.OriginGroupSelectionCriteria.media_quality_based` |
 
 Shorthand formats: `default` or `OriginGroupSelectionCriteria.default`
 
@@ -244,9 +244,9 @@ Shorthand formats: `default` or `OriginGroupSelectionCriteria.default`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ipv4` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.IpAddressType.ipv4` |
-| `ipv6` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.IpAddressType.ipv6` |
-| `dualstack` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.IpAddressType.dualstack` |
+| `ipv4` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.IpAddressType.ipv4` |
+| `ipv6` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.IpAddressType.ipv6` |
+| `dualstack` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.IpAddressType.dualstack` |
 
 Shorthand formats: `ipv4` or `IpAddressType.ipv4`
 
@@ -254,9 +254,9 @@ Shorthand formats: `ipv4` or `IpAddressType.ipv4`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `http-only` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.http_only` |
-| `match-viewer` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.match_viewer` |
-| `https-only` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.https_only` |
+| `http-only` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.http_only` |
+| `match-viewer` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.match_viewer` |
+| `https-only` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.https_only` |
 
 Shorthand formats: `http_only` or `OriginProtocolPolicy.http_only`
 
@@ -264,10 +264,10 @@ Shorthand formats: `http_only` or `OriginProtocolPolicy.http_only`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `SSLv3` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.sslv3` |
-| `TLSv1` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1` |
-| `TLSv1.1` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_1` |
-| `TLSv1.2` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_2` |
+| `SSLv3` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.sslv3` |
+| `TLSv1` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1` |
+| `TLSv1.1` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_1` |
+| `TLSv1.2` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_2` |
 
 Shorthand formats: `sslv3` or `OriginSslProtocols.sslv3`
 
@@ -275,10 +275,10 @@ Shorthand formats: `sslv3` or `OriginSslProtocols.sslv3`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `PriceClass_100` | `aws.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_100` |
-| `PriceClass_200` | `aws.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_200` |
-| `PriceClass_All` | `aws.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_all` |
-| `None` | `aws.cloudfront.Distribution.DistributionConfig.PriceClass.none` |
+| `PriceClass_100` | `awscc.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_100` |
+| `PriceClass_200` | `awscc.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_200` |
+| `PriceClass_All` | `awscc.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_all` |
+| `None` | `awscc.cloudfront.Distribution.DistributionConfig.PriceClass.none` |
 
 Shorthand formats: `price_class_100` or `PriceClass.price_class_100`
 
@@ -286,9 +286,9 @@ Shorthand formats: `price_class_100` or `PriceClass.price_class_100`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `none` | `aws.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.none` |
-| `blacklist` | `aws.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.blacklist` |
-| `whitelist` | `aws.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.whitelist` |
+| `none` | `awscc.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.none` |
+| `blacklist` | `awscc.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.blacklist` |
+| `whitelist` | `awscc.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.whitelist` |
 
 Shorthand formats: `none` or `RestrictionType.none`
 
@@ -296,15 +296,15 @@ Shorthand formats: `none` or `RestrictionType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `SSLv3` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.sslv3` |
-| `TLSv1` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1` |
-| `TLSv1_2016` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2016` |
-| `TLSv1.1_2016` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_1_2016` |
-| `TLSv1.2_2018` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2018` |
-| `TLSv1.2_2019` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2019` |
-| `TLSv1.2_2021` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2021` |
-| `TLSv1.3_2025` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_3_2025` |
-| `TLSv1.2_2025` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2025` |
+| `SSLv3` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.sslv3` |
+| `TLSv1` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1` |
+| `TLSv1_2016` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2016` |
+| `TLSv1.1_2016` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_1_2016` |
+| `TLSv1.2_2018` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2018` |
+| `TLSv1.2_2019` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2019` |
+| `TLSv1.2_2021` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2021` |
+| `TLSv1.3_2025` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_3_2025` |
+| `TLSv1.2_2025` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2025` |
 
 Shorthand formats: `sslv3` or `MinimumProtocolVersion.sslv3`
 
@@ -312,9 +312,9 @@ Shorthand formats: `sslv3` or `MinimumProtocolVersion.sslv3`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `sni-only` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.SslSupportMethod.sni_only` |
-| `vip` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.SslSupportMethod.vip` |
-| `static-ip` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.SslSupportMethod.static_ip` |
+| `sni-only` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.SslSupportMethod.sni_only` |
+| `vip` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.SslSupportMethod.vip` |
+| `static-ip` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.SslSupportMethod.static_ip` |
 
 Shorthand formats: `sni_only` or `SslSupportMethod.sni_only`
 
@@ -322,9 +322,9 @@ Shorthand formats: `sni_only` or `SslSupportMethod.sni_only`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `required` | `aws.cloudfront.Distribution.DistributionConfig.ViewerMtlsConfig.ViewerMtlsMode.required` |
-| `optional` | `aws.cloudfront.Distribution.DistributionConfig.ViewerMtlsConfig.ViewerMtlsMode.optional` |
-| `passthrough` | `aws.cloudfront.Distribution.DistributionConfig.ViewerMtlsConfig.ViewerMtlsMode.passthrough` |
+| `required` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerMtlsConfig.ViewerMtlsMode.required` |
+| `optional` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerMtlsConfig.ViewerMtlsMode.optional` |
+| `passthrough` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerMtlsConfig.ViewerMtlsMode.passthrough` |
 
 Shorthand formats: `required` or `ViewerMtlsMode.required`
 
@@ -332,9 +332,9 @@ Shorthand formats: `required` or `ViewerMtlsMode.required`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `all` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.all` |
-| `none` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.none` |
-| `whitelist` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.whitelist` |
+| `all` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.all` |
+| `none` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.none` |
+| `whitelist` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.whitelist` |
 
 Shorthand formats: `all` or `Forward.all`
 
@@ -390,7 +390,7 @@ Shorthand formats: `all` or `Forward.all`
 | `min_ttl` | `Float` | No | This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. This field is deprecated. We recommend that you use the ``MinTTL`` field in a cache policy instead of this field. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. The minimum amount of time that you want objects to stay in CloudFront caches before CloudFront forwards another request to your origin to determine whether the object has been updated. For more information, see [Managing How Long Content Stays in an Edge Cache (Expiration)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html) in the *Amazon CloudFront Developer Guide*. You must specify ``0`` for ``MinTTL`` if you configure CloudFront to forward all headers to your origin (under ``Headers``, if you specify ``1`` for ``Quantity`` and ``*`` for ``Name``). Default: 0. AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
 | `origin_request_policy_id` | `String` | No | The unique identifier of the origin request policy that is attached to this cache behavior. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) or [Using the managed origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-origin-request-policies.html) in the *Amazon CloudFront Developer Guide*. |
 | `path_pattern` | `String` | Yes | The pattern (for example, ``images/*.jpg``) that specifies which requests to apply the behavior to. When CloudFront receives a viewer request, the requested path is compared with path patterns in the order in which cache behaviors are listed in the distribution. You can optionally include a slash (``/``) at the beginning of the path pattern. For example, ``/images/*.jpg``. CloudFront behavior is the same with or without the leading ``/``. The path pattern for the default cache behavior is ``*`` and cannot be changed. If the request for an object does not match the path pattern for any cache behaviors, CloudFront applies the behavior in the default cache behavior. For more information, see [Path Pattern](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-web-values-specify.html#DownloadDistValuesPathPattern) in the *Amazon CloudFront Developer Guide*. |
-| `realtime_log_config_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the real-time log configuration that is attached to this cache behavior. For more information, see [Real-time logs](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/real-time-logs.html) in the *Amazon CloudFront Developer Guide*. |
+| `realtime_log_config_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the real-time log configuration that is attached to this cache behavior. For more information, see [Real-time logs](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/real-time-logs.html) in the *Amazon CloudFront Developer Guide*. |
 | `response_headers_policy_id` | `String` | No | The identifier for a response headers policy. |
 | `smooth_streaming` | `Bool` | No | This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. Indicates whether you want to distribute media files in the Microsoft Smooth Streaming format using the origin that is associated with this cache behavior. If so, specify ``true``; if not, specify ``false``. If you specify ``true`` for ``SmoothStreaming``, you can still distribute other content using this cache behavior if the content matches the value of ``PathPattern``. Default: false. AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
 | `target_origin_id` | `String` | Yes | The value of ``ID`` for the origin that you want CloudFront to route requests to when they match this cache behavior. |
@@ -403,7 +403,7 @@ Shorthand formats: `all` or `Forward.all`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `event_type` | [EventType](#distribution_configcache_behaviorsfunction_associationsevent_type-eventtype) | No | The event type of the function, either ``viewer-request`` or ``viewer-response``. You cannot use origin-facing event types (``origin-request`` and ``origin-response``) with a CloudFront function. |
-| `function_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the function. |
+| `function_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the function. |
 
 ### distribution_config.cache_behaviors.lambda_function_associations
 
@@ -411,7 +411,7 @@ Shorthand formats: `all` or `Forward.all`
 |-------|------|----------|-------------|
 | `event_type` | [EventType](#distribution_configcache_behaviorslambda_function_associationsevent_type-eventtype) | No | Specifies the event type that triggers a Lambda@Edge function invocation. You can specify the following values: + ``viewer-request``: The function executes when CloudFront receives a request from a viewer and before it checks to see whether the requested object is in the edge cache. + ``origin-request``: The function executes only when CloudFront sends a request to your origin. When the requested object is in the edge cache, the function doesn't execute. + ``origin-response``: The function executes after CloudFront receives a response from the origin and before it caches the object in the response. When the requested object is in the edge cache, the function doesn't execute. + ``viewer-response``: The function executes before CloudFront returns the requested object to the viewer. The function executes regardless of whether the object was already in the edge cache. If the origin returns an HTTP status code other than HTTP 200 (OK), the function doesn't execute. |
 | `include_body` | `Bool` | No | A flag that allows a Lambda@Edge function to have read access to the body content. For more information, see [Accessing the Request Body by Choosing the Include Body Option](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/lambda-include-body-access.html) in the Amazon CloudFront Developer Guide. |
-| `lambda_function_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The ARN of the Lambda@Edge function. You must specify the ARN of a function version; you can't specify an alias or $LATEST. |
+| `lambda_function_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The ARN of the Lambda@Edge function. You must specify the ARN of a function version; you can't specify an alias or $LATEST. |
 
 ### distribution_config.cache_tag_config
 
@@ -461,7 +461,7 @@ Shorthand formats: `all` or `Forward.all`
 | `max_ttl` | `Float` | No | This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. This field is deprecated. We recommend that you use the ``MaxTTL`` field in a cache policy instead of this field. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. The maximum amount of time that you want objects to stay in CloudFront caches before CloudFront forwards another request to your origin to determine whether the object has been updated. The value that you specify applies only when your origin adds HTTP headers such as ``Cache-Control max-age``, ``Cache-Control s-maxage``, and ``Expires`` to objects. For more information, see [Managing How Long Content Stays in an Edge Cache (Expiration)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html) in the *Amazon CloudFront Developer Guide*. Default: 31536000. AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
 | `min_ttl` | `Float` | No | This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. This field is deprecated. We recommend that you use the ``MinTTL`` field in a cache policy instead of this field. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. The minimum amount of time that you want objects to stay in CloudFront caches before CloudFront forwards another request to your origin to determine whether the object has been updated. For more information, see [Managing How Long Content Stays in an Edge Cache (Expiration)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html) in the *Amazon CloudFront Developer Guide*. You must specify ``0`` for ``MinTTL`` if you configure CloudFront to forward all headers to your origin (under ``Headers``, if you specify ``1`` for ``Quantity`` and ``*`` for ``Name``). Default: 0. AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
 | `origin_request_policy_id` | `String` | No | The unique identifier of the origin request policy that is attached to the default cache behavior. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) or [Using the managed origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-origin-request-policies.html) in the *Amazon CloudFront Developer Guide*. Default: "". AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
-| `realtime_log_config_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the real-time log configuration that is attached to this cache behavior. For more information, see [Real-time logs](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/real-time-logs.html) in the *Amazon CloudFront Developer Guide*. Default: "". AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
+| `realtime_log_config_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the real-time log configuration that is attached to this cache behavior. For more information, see [Real-time logs](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/real-time-logs.html) in the *Amazon CloudFront Developer Guide*. Default: "". AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
 | `response_headers_policy_id` | `String` | No | The identifier for a response headers policy. Default: "". AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
 | `smooth_streaming` | `Bool` | No | This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. Indicates whether you want to distribute media files in the Microsoft Smooth Streaming format using the origin that is associated with this cache behavior. If so, specify ``true``; if not, specify ``false``. If you specify ``true`` for ``SmoothStreaming``, you can still distribute other content using this cache behavior if the content matches the value of ``PathPattern``. Default: false. AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
 | `target_origin_id` | `String` | Yes | The value of ``ID`` for the origin that you want CloudFront to route requests to when they use the default cache behavior. |
@@ -474,7 +474,7 @@ Shorthand formats: `all` or `Forward.all`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `event_type` | [EventType](#distribution_configdefault_cache_behaviorfunction_associationsevent_type-eventtype) | No | The event type of the function, either ``viewer-request`` or ``viewer-response``. You cannot use origin-facing event types (``origin-request`` and ``origin-response``) with a CloudFront function. |
-| `function_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the function. |
+| `function_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the function. |
 
 ### distribution_config.default_cache_behavior.lambda_function_associations
 
@@ -482,7 +482,7 @@ Shorthand formats: `all` or `Forward.all`
 |-------|------|----------|-------------|
 | `event_type` | [EventType](#distribution_configdefault_cache_behaviorlambda_function_associationsevent_type-eventtype) | No | Specifies the event type that triggers a Lambda@Edge function invocation. You can specify the following values: + ``viewer-request``: The function executes when CloudFront receives a request from a viewer and before it checks to see whether the requested object is in the edge cache. + ``origin-request``: The function executes only when CloudFront sends a request to your origin. When the requested object is in the edge cache, the function doesn't execute. + ``origin-response``: The function executes after CloudFront receives a response from the origin and before it caches the object in the response. When the requested object is in the edge cache, the function doesn't execute. + ``viewer-response``: The function executes before CloudFront returns the requested object to the viewer. The function executes regardless of whether the object was already in the edge cache. If the origin returns an HTTP status code other than HTTP 200 (OK), the function doesn't execute. |
 | `include_body` | `Bool` | No | A flag that allows a Lambda@Edge function to have read access to the body content. For more information, see [Accessing the Request Body by Choosing the Include Body Option](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/lambda-include-body-access.html) in the Amazon CloudFront Developer Guide. |
-| `lambda_function_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The ARN of the Lambda@Edge function. You must specify the ARN of a function version; you can't specify an alias or $LATEST. |
+| `lambda_function_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The ARN of the Lambda@Edge function. You must specify the ARN of a function version; you can't specify an alias or $LATEST. |
 
 ### distribution_config.logging
 
@@ -568,7 +568,7 @@ Shorthand formats: `all` or `Forward.all`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `client_certificate_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the client certificate stored in AWS Certificate Manager (ACM) that CloudFront uses to authenticate with your origin using Mutual TLS. |
+| `client_certificate_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the client certificate stored in AWS Certificate Manager (ACM) that CloudFront uses to authenticate with your origin using Mutual TLS. |
 
 ### distribution_config.origins.origin_custom_headers
 
@@ -582,7 +582,7 @@ Shorthand formats: `all` or `Forward.all`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `enabled` | `Bool` | No | A flag that specifies whether Origin Shield is enabled. When it's enabled, CloudFront routes all requests through Origin Shield, which can help protect your origin. When it's disabled, CloudFront might send requests directly to your origin from multiple edge locations or regional edge caches. |
-| `origin_shield_region` | `aws.Region (custom validator)` | No | The AWS-Region for Origin Shield. Specify the AWS-Region that has the lowest latency to your origin. To specify a region, use the region code, not the region name. For example, specify the US East (Ohio) region as ``us-east-2``. When you enable CloudFront Origin Shield, you must specify the AWS-Region for Origin Shield. For the list of AWS-Regions that you can specify, and for help choosing the best Region for your origin, see [Choosing the for Origin Shield](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/origin-shield.html#choose-origin-shield-region) in the *Amazon CloudFront Developer Guide*. |
+| `origin_shield_region` | `awscc.Region (custom validator)` | No | The AWS-Region for Origin Shield. Specify the AWS-Region that has the lowest latency to your origin. To specify a region, use the region code, not the region name. For example, specify the US East (Ohio) region as ``us-east-2``. When you enable CloudFront Origin Shield, you must specify the AWS-Region for Origin Shield. For the list of AWS-Regions that you can specify, and for help choosing the best Region for your origin, see [Choosing the for Origin Shield](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/origin-shield.html#choose-origin-shield-region) in the *Amazon CloudFront Developer Guide*. |
 
 ### distribution_config.origins.s3_origin_config
 
@@ -597,7 +597,7 @@ Shorthand formats: `all` or `Forward.all`
 |-------|------|----------|-------------|
 | `origin_keepalive_timeout` | `Int (range: 1..unbounded)` | No | Specifies how long, in seconds, CloudFront persists its connection to the origin. The minimum timeout is 1 second, the maximum is 120 seconds, and the default (if you don't specify otherwise) is 5 seconds. For more information, see [Keep-alive timeout (custom origins only)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginKeepaliveTimeout) in the *Amazon CloudFront Developer Guide*. Default: 5. AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
 | `origin_read_timeout` | `Int (range: 1..unbounded)` | No | Specifies how long, in seconds, CloudFront waits for a response from the origin. This is also known as the *origin response timeout*. The minimum timeout is 1 second, the maximum is 120 seconds, and the default (if you don't specify otherwise) is 30 seconds. For more information, see [Response timeout](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginResponseTimeout) in the *Amazon CloudFront Developer Guide*. Default: 30. AWS applies the server default; pinned carina-core cannot apply nested field defaults. |
-| `owner_account_id` | `aws.AccountId (pattern: /^[0-9]{12}$/ (Full), len: 12..=12)` | No | The account ID of the AWS-account that owns the VPC origin. |
+| `owner_account_id` | `awscc.AccountId (pattern: /^[0-9]{12}$/ (Full), len: 12..=12)` | No | The account ID of the AWS-account that owns the VPC origin. |
 | `vpc_origin_id` | `String` | Yes | The VPC origin ID. |
 
 ### distribution_config.restrictions
@@ -651,7 +651,7 @@ Shorthand formats: `all` or `Forward.all`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `acm_certificate_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | In CloudFormation, this field name is ``AcmCertificateArn``. Note the different capitalization. If the distribution uses ``Aliases`` (alternate domain names or CNAMEs) and the SSL/TLS certificate is stored in [(ACM)](https://docs.aws.amazon.com/acm/latest/userguide/acm-overview.html), provide the Amazon Resource Name (ARN) of the ACM certificate. CloudFront only supports ACM certificates in the US East (N. Virginia) Region (``us-east-1``). If you specify an ACM certificate ARN, you must also specify values for ``MinimumProtocolVersion`` and ``SSLSupportMethod``. (In CloudFormation, the field name is ``SslSupportMethod``. Note the different capitalization.) |
+| `acm_certificate_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | In CloudFormation, this field name is ``AcmCertificateArn``. Note the different capitalization. If the distribution uses ``Aliases`` (alternate domain names or CNAMEs) and the SSL/TLS certificate is stored in [(ACM)](https://docs.aws.amazon.com/acm/latest/userguide/acm-overview.html), provide the Amazon Resource Name (ARN) of the ACM certificate. CloudFront only supports ACM certificates in the US East (N. Virginia) Region (``us-east-1``). If you specify an ACM certificate ARN, you must also specify values for ``MinimumProtocolVersion`` and ``SSLSupportMethod``. (In CloudFormation, the field name is ``SslSupportMethod``. Note the different capitalization.) |
 | `cloud_front_default_certificate` | `Bool` | No | If the distribution uses the CloudFront domain name such as ``d111111abcdef8.cloudfront.net``, set this field to ``true``. If the distribution uses ``Aliases`` (alternate domain names or CNAMEs), omit this field and specify values for the following fields: + ``AcmCertificateArn`` or ``IamCertificateId`` (specify a value for one, not both) + ``MinimumProtocolVersion`` + ``SslSupportMethod`` |
 | `iam_certificate_id` | `String (len: unbounded..=32)` | No | This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. In CloudFormation, this field name is ``IamCertificateId``. Note the different capitalization. If the distribution uses ``Aliases`` (alternate domain names or CNAMEs) and the SSL/TLS certificate is stored in [(IAM)](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_server-certs.html), provide the ID of the IAM certificate. If you specify an IAM certificate ID, you must also specify values for ``MinimumProtocolVersion`` and ``SSLSupportMethod``. (In CloudFormation, the field name is ``SslSupportMethod``. Note the different capitalization.) |
 | `minimum_protocol_version` | [MinimumProtocolVersion](#distribution_configviewer_certificateminimum_protocol_version-minimumprotocolversion) | No | If the distribution uses ``Aliases`` (alternate domain names or CNAMEs), specify the security policy that you want CloudFront to use for HTTPS connections with viewers. The security policy determines two settings: + The minimum SSL/TLS protocol that CloudFront can use to communicate with viewers. + The ciphers that CloudFront can use to encrypt the content that it returns to viewers. For more information, see [Security Policy](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-web-values-specify.html#DownloadDistValues-security-policy) and [Supported Protocols and Ciphers Between Viewers and CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/secure-connections-supported-viewer-protocols-ciphers.html#secure-connections-supported-ciphers) in the *Amazon CloudFront Developer Guide*. On the CloudFront console, this setting is called *Security Policy*. When you're using SNI only (you set ``SSLSupportMethod`` to ``sni-only``), you must specify ``TLSv1`` or higher. (In CloudFormation, the field name is ``SslSupportMethod``. Note the different capitalization.) If the distribution uses the CloudFront domain name such as ``d111111abcdef8.cloudfront.net`` (you set ``CloudFrontDefaultCertificate`` to ``true``), CloudFront automatically sets the security policy to ``TLSv1`` regardless of the value that you set here. |
@@ -714,7 +714,7 @@ Used by: `distribution_config.cache_behaviors.grpc_config`, `distribution_config
 
 ### `arn`
 
-- **Type:** `aws.cloudfront.Distribution.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):cloudfront::[^:]*:distribution/.+$/ (Full), custom validator)`
+- **Type:** `awscc.cloudfront.Distribution.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):cloudfront::[^:]*:distribution/.+$/ (Full), custom validator)`
 
 The ARN of the CloudFront distribution. Synthesized by the provider from the distribution id; CloudFront's CloudFormation type does not expose ARN through the Cloud Control API.
 

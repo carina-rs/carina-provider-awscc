@@ -874,7 +874,7 @@ fn step4_emission_ignores_legacy_tag_carrier_fields() {
         &property,
         "Probe",
         &context,
-        "aws.test.Emission",
+        &AwsccNamespace::new("test.Emission"),
         &BTreeMap::new(),
     )
     .unwrap();
@@ -1036,17 +1036,17 @@ fn document_emitter_produces_final_builder_type_spelling() {
             None,
         )
         .unwrap();
-    assert_eq!(emitted.rust, "carina_aws_types::iam_policy_document()");
+    assert_eq!(
+        emitted.rust,
+        "crate::schemas::type_helpers::policy_seed::iam_policy_document()"
+    );
 }
 
 #[test]
 fn catalog_integer_enum_lookup_returns_spelling_and_type_from_the_same_row() {
     let flow = AwsccType::Ec2FlowLogMaxAggregationInterval;
-    let retention = carina_aws_types::AwsType::LogsLogGroupRetentionInDays;
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "The expected integer retention declaration carries no partition-bearing ARN (#593)"
-    )]
+    let retention =
+        carina_provider_awscc::schemas::catalog::ScalarType::LogsLogGroupRetentionInDays;
     let retention_type = retention.attribute_type();
     for (resource, property, path, values, expected_type) in [
         (

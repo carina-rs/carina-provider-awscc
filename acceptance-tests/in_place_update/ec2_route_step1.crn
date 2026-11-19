@@ -3,7 +3,7 @@
 # Tests: create route 10.1.0.0/16 via Internet Gateway
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 let vpc = awscc.ec2.Vpc {
@@ -27,7 +27,7 @@ let public_subnet = awscc.ec2.Subnet {
 }
 
 let eip = awscc.ec2.Eip {
-  domain = aws.ec2.Eip.Domain.vpc
+  domain = awscc.ec2.Eip.Domain.vpc
 }
 
 # This binding keeps the address identical across steps so the test measures an in-place update; anonymous-to-let changes it (carina-rs/carina#3003).

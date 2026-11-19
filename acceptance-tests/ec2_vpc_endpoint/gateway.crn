@@ -3,7 +3,7 @@
 # Tests: vpc_endpoint_type=Gateway, service_name, route_table_ids, policy_document
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 let vpc = awscc.ec2.Vpc {
@@ -21,9 +21,9 @@ awscc.ec2.VpcEndpoint {
   route_table_ids   = [rt.route_table_id]
 
   policy_document = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect    = aws.iam.PolicyDocument.Statement.Effect.allow
+      effect    = awscc.iam.PolicyDocument.Statement.Effect.allow
       principal = '*'
       action    = 's3:GetObject'
       resource  = 'arn:aws:s3:::*'

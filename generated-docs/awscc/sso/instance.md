@@ -43,9 +43,9 @@ The name you want to assign to this Identity Center (SSO) Instance
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CREATE_IN_PROGRESS` | `aws.sso.Instance.Status.create_in_progress` |
-| `DELETE_IN_PROGRESS` | `aws.sso.Instance.Status.delete_in_progress` |
-| `ACTIVE` | `aws.sso.Instance.Status.active` |
+| `CREATE_IN_PROGRESS` | `awscc.sso.Instance.Status.create_in_progress` |
+| `DELETE_IN_PROGRESS` | `awscc.sso.Instance.Status.delete_in_progress` |
+| `ACTIVE` | `awscc.sso.Instance.Status.active` |
 
 Shorthand formats: `create_in_progress` or `Status.create_in_progress`
 
@@ -53,19 +53,19 @@ Shorthand formats: `create_in_progress` or `Status.create_in_progress`
 
 ### `identity_store_id`
 
-- **Type:** `aws.identitystore.Store.Id (identity constraints: pattern: /^(d-[0-9a-fA-F]{10}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/ (Full), member constraints: pattern: /^(d-[0-9a-f]{10}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\z/ (Full), len: 1..=64)`
+- **Type:** `awscc.identitystore.Store.Id (identity constraints: pattern: /^(d-[0-9a-fA-F]{10}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/ (Full), member constraints: pattern: /^(d-[0-9a-f]{10}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\z/ (Full), len: 1..=64)`
 
 The ID of the identity store associated with the created Identity Center (SSO) Instance
 
 ### `instance_arn`
 
-- **Type:** `aws.sso.Instance.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::instance/.+$/ (Full), member constraints: pattern: /^arn:aws(-[a-z]{1,5}){0,3}:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}\z/ (Full), len: 10..=1224)`
+- **Type:** `awscc.sso.Instance.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::instance/.+$/ (Full), member constraints: pattern: /^arn:aws(-[a-z]{1,5}){0,3}:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}\z/ (Full), len: 10..=1224)`
 
 The SSO Instance ARN that is returned upon creation of the Identity Center (SSO) Instance
 
 ### `owner_account_id`
 
-- **Type:** `aws.AccountId (identity constraints: pattern: /^[0-9]{12}$/ (Full), len: 12..=12, member constraints: pattern: /^\d{12}?$/ (Full), len: 12..=12)`
+- **Type:** `awscc.AccountId (identity constraints: pattern: /^[0-9]{12}$/ (Full), len: 12..=12, member constraints: pattern: /^\d{12}?$/ (Full), len: 12..=12)`
 
 The AWS accountId of the owner of the Identity Center (SSO) Instance
 

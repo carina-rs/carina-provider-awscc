@@ -94,7 +94,7 @@ fn scheduler_generates_canonical_reference_and_cfn_pattern_rule() {
     );
     let code = String::from_utf8(output.stdout).unwrap();
     assert!(code.contains(&expected));
-    assert!(code.contains("carina_aws_types::kms_key_reference()"));
+    assert!(code.contains("crate::schemas::catalog::kms_key_reference()"));
     assert!(!code.contains("AttributeType::reference("));
 }
 
@@ -135,7 +135,7 @@ fn reference_rule_scope_follows_cfn_create_only_metadata() {
             assert!(code.contains(&format!(
                 "InputRuleScope::{scope}, carina_core::schema::InputRuleTarget::Value(carina_core::schema::InputPath::new(\"{field}\")"
             )));
-            assert!(code.contains("carina_aws_types::kms_key_reference()"));
+            assert!(code.contains("crate::schemas::catalog::kms_key_reference()"));
             assert!(!code.contains("AttributeType::reference("));
         }
     }
@@ -156,7 +156,7 @@ fn final_scheduler_leaf_is_the_canonical_reference() {
     else {
         panic!("scheduler kms_key_arn must be a reference leaf");
     };
-    assert_eq!(identity.to_string(), "aws.kms.Key.Reference");
+    assert_eq!(identity.to_string(), "awscc.kms.Key.Reference");
     assert_eq!(length, Some((Some(1), Some(2048))));
     let pattern = carina_core::schema::CompiledPattern::try_new(pattern).unwrap();
     assert!(pattern.is_match("arn:aws:kms:us-east-1:123456789012:alias/customer"));
@@ -222,7 +222,7 @@ fn reference_inside_list_struct_preserves_the_array_constraints() {
         String::from_utf8_lossy(&output.stderr)
     );
     let code = String::from_utf8(output.stdout).unwrap();
-    assert!(code.contains("carina_aws_types::kms_key_reference()"));
+    assert!(code.contains("crate::schemas::catalog::kms_key_reference()"));
     assert!(
         code.contains(
             "false, Some((Some(1), Some(3))), carina_core::schema::ListElements::Unique)"
@@ -368,7 +368,7 @@ fn explicitly_classified_non_reference_scalars_and_key_outputs_keep_their_types(
             ));
         } else {
             assert!(output.contains("### `enabled`\n\n- **Type:** `Bool`"));
-            assert!(output.contains("### `arn`\n\n- **Type:** `aws.kms.Key.Arn ("));
+            assert!(output.contains("### `arn`\n\n- **Type:** `awscc.kms.Key.Arn ("));
         }
     }
 }
@@ -541,7 +541,7 @@ fn read_only_scalar_collections_keep_their_output_types() {
             if format == "rust" {
                 let code = String::from_utf8(output.stdout).unwrap();
                 assert!(code.contains("AttributeSchema::provider_populated"));
-                assert!(!code.contains("carina_aws_types::kms_key_reference()"));
+                assert!(!code.contains("crate::schemas::catalog::kms_key_reference()"));
             }
         }
     }

@@ -1,5 +1,5 @@
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 let vpc = awscc.ec2.Vpc {
@@ -33,7 +33,7 @@ awscc.ec2.VpcGatewayAttachment {
 }
 
 let eip = awscc.ec2.Eip {
-  domain = aws.ec2.Eip.Domain.vpc
+  domain = awscc.ec2.Eip.Domain.vpc
 
   tags = {
     Name = 'write-only-test'

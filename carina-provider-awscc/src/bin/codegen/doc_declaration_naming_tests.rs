@@ -131,7 +131,10 @@ fn identical_struct_and_union_bodies_share_one_table() {
 fn shared_enums_and_unions_show_used_by() {
     for ty in [
         AttributeType::enum_(
-            carina_core::schema::enum_identity("Mode", Some("aws.test.Round2")),
+            carina_provider_awscc::schemas::namespace::awscc_enum_identity(
+                "Mode",
+                &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.Round2"),
+            ),
             Some(vec!["a".into()]),
             vec![],
             None,
@@ -179,7 +182,10 @@ fn shared_headings_and_anchors_do_not_depend_on_sibling_uses() {
             vec![StructField::optional("enabled", AttributeType::bool()).build()],
         ),
         AttributeType::enum_(
-            carina_core::schema::enum_identity("Mode", Some("aws.test.Round3")),
+            carina_provider_awscc::schemas::namespace::awscc_enum_identity(
+                "Mode",
+                &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.Round3"),
+            ),
             Some(vec!["a".into()]),
             vec![],
             None,

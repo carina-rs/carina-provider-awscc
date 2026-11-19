@@ -15,9 +15,9 @@ awscc.sso.PermissionSet {
   session_duration = 'PT1H'
 
   inline_policy = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      effect   = awscc.iam.PolicyDocument.Statement.Effect.allow
       action   = 's3:ListAllMyBuckets'
       resource = '*'
     }

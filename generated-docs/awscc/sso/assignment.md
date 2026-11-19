@@ -25,9 +25,9 @@ let read_only = awscc.sso.PermissionSet {
   session_duration = 'PT1H'
 
   inline_policy = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      effect   = awscc.iam.PolicyDocument.Statement.Effect.allow
       action   = 's3:ListAllMyBuckets'
       resource = '*'
     }
@@ -38,10 +38,10 @@ awscc.sso.Assignment {
   instance_arn       = read_only.instance_arn
   permission_set_arn = read_only.permission_set_arn
   principal_id       = assigned_group.group_id
-  principal_type     = aws.sso.Assignment.PrincipalType.group
+  principal_type     = awscc.sso.Assignment.PrincipalType.group
   # Replace this placeholder with your AWS account ID.
   target_id          = '123456789012'
-  target_type        = aws.sso.Assignment.TargetType.aws_account
+  target_type        = awscc.sso.Assignment.TargetType.aws_account
 }
 ```
 
@@ -49,7 +49,7 @@ awscc.sso.Assignment {
 
 ### `instance_arn`
 
-- **Type:** `aws.sso.Instance.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::instance/.+$/ (Full), member constraints: pattern: /^arn:aws(-[a-z]{1,5}){0,3}:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}\z/ (Full), len: 10..=1224)`
+- **Type:** `awscc.sso.Instance.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::instance/.+$/ (Full), member constraints: pattern: /^arn:aws(-[a-z]{1,5}){0,3}:sso:::instance/(sso)?ins-[a-zA-Z0-9-.]{16}\z/ (Full), len: 10..=1224)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -57,7 +57,7 @@ The sso instance that the permission set is owned.
 
 ### `permission_set_arn`
 
-- **Type:** `aws.sso.PermissionSet.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::permissionSet/.+$/ (Full), member constraints: pattern: /^arn:aws(-[a-z]{1,5}){0,3}:sso:::permissionSet/(sso)?ins-[a-zA-Z0-9-.]{16}/ps-[a-zA-Z0-9-./]{16}\z/ (Full), len: 10..=1224)`
+- **Type:** `awscc.sso.PermissionSet.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):sso:::permissionSet/.+$/ (Full), member constraints: pattern: /^arn:aws(-[a-z]{1,5}){0,3}:sso:::permissionSet/(sso)?ins-[a-zA-Z0-9-.]{16}/ps-[a-zA-Z0-9-./]{16}\z/ (Full), len: 10..=1224)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -65,7 +65,7 @@ The permission set that the assignment will be assigned
 
 ### `principal_id`
 
-- **Type:** `aws.sso.Principal.Id (identity constraints: pattern: /^.{1,64}$/ (Full), member constraints: pattern: /^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$/ (Full), len: 1..=47)`
+- **Type:** `awscc.sso.Principal.Id (identity constraints: pattern: /^.{1,64}$/ (Full), member constraints: pattern: /^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$/ (Full), len: 1..=47)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -81,7 +81,7 @@ The assignee's type, user/group
 
 ### `target_id`
 
-- **Type:** `aws.AccountId (identity constraints: pattern: /^[0-9]{12}$/ (Full), len: 12..=12, member constraints: pattern: /\d{12}/ (Full))`
+- **Type:** `awscc.AccountId (identity constraints: pattern: /^[0-9]{12}$/ (Full), len: 12..=12, member constraints: pattern: /\d{12}/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -101,8 +101,8 @@ The type of resource to be provisioned to, only aws account now
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `USER` | `aws.sso.Assignment.PrincipalType.user` |
-| `GROUP` | `aws.sso.Assignment.PrincipalType.group` |
+| `USER` | `awscc.sso.Assignment.PrincipalType.user` |
+| `GROUP` | `awscc.sso.Assignment.PrincipalType.group` |
 
 Shorthand formats: `user` or `PrincipalType.user`
 
@@ -110,7 +110,7 @@ Shorthand formats: `user` or `PrincipalType.user`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `AWS_ACCOUNT` | `aws.sso.Assignment.TargetType.aws_account` |
+| `AWS_ACCOUNT` | `awscc.sso.Assignment.TargetType.aws_account` |
 
 Shorthand formats: `aws_account` or `TargetType.aws_account`
 

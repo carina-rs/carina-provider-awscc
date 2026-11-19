@@ -42,7 +42,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         .with_description("Resource Schema of AWS::EC2::IPAMPool Type");
     #[inline(never)]
     fn build_address_family_attribute() -> AttributeSchema {
-        AttributeSchema::required("address_family", AttributeType::enum_(carina_core::schema::enum_identity("AddressFamily", Some("aws.ec2.IpamPool")), Some(vec!["ipv4".to_string(), "ipv6".to_string()]), vec![("ipv4".to_string(), "ipv4".to_string()), ("ipv6".to_string(), "ipv6".to_string())], None, None))
+        AttributeSchema::required("address_family", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("AddressFamily", &crate::schemas::namespace::AwsccNamespace::new("ec2.IpamPool")), Some(vec!["ipv4".to_string(), "ipv6".to_string()]), vec![("ipv4".to_string(), "ipv4".to_string()), ("ipv6".to_string(), "ipv6".to_string())], None, None))
                 .create_only()
                 .with_description("The address family of the address space in this pool. Either IPv4 or IPv6.")
                 .with_provider_name("AddressFamily")
@@ -100,7 +100,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_auto_import_attribute());
     #[inline(never)]
     fn build_aws_service_attribute() -> AttributeSchema {
-        AttributeSchema::optional("aws_service", AttributeType::enum_(carina_core::schema::enum_identity("AwsService", Some("aws.ec2.IpamPool")), Some(vec!["ec2".to_string(), "global-services".to_string()]), vec![("ec2".to_string(), "ec2".to_string()), ("global-services".to_string(), "global_services".to_string())], None, None))
+        AttributeSchema::optional("aws_service", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("AwsService", &crate::schemas::namespace::AwsccNamespace::new("ec2.IpamPool")), Some(vec!["ec2".to_string(), "global-services".to_string()]), vec![("ec2".to_string(), "ec2".to_string()), ("global-services".to_string(), "global_services".to_string())], None, None))
                 .create_only()
                 .with_description("Limits which service in Amazon Web Services that the pool can be used in.")
                 .with_provider_name("AwsService")
@@ -149,7 +149,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipam_scope_id_attribute());
     #[inline(never)]
     fn build_ipam_scope_type_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("ipam_scope_type", AttributeType::enum_(carina_core::schema::enum_identity("IpamScopeType", Some("aws.ec2.IpamPool")), Some(vec!["public".to_string(), "private".to_string()]), vec![("public".to_string(), "public".to_string()), ("private".to_string(), "private".to_string())], None, None))
+        AttributeSchema::provider_populated("ipam_scope_type", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("IpamScopeType", &crate::schemas::namespace::AwsccNamespace::new("ec2.IpamPool")), Some(vec!["public".to_string(), "private".to_string()]), vec![("public".to_string(), "public".to_string()), ("private".to_string(), "private".to_string())], None, None))
                 .with_description("Determines whether this scope contains publicly routable space or space for a private network (read-only)")
                 .with_provider_name("IpamScopeType")
             .build()
@@ -183,7 +183,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_provisioned_cidrs_attribute());
     #[inline(never)]
     fn build_public_ip_source_attribute() -> AttributeSchema {
-        AttributeSchema::optional("public_ip_source", AttributeType::enum_(carina_core::schema::enum_identity("PublicIpSource", Some("aws.ec2.IpamPool")), Some(vec!["byoip".to_string(), "amazon".to_string()]), vec![("byoip".to_string(), "byoip".to_string()), ("amazon".to_string(), "amazon".to_string())], None, None))
+        AttributeSchema::optional("public_ip_source", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("PublicIpSource", &crate::schemas::namespace::AwsccNamespace::new("ec2.IpamPool")), Some(vec!["byoip".to_string(), "amazon".to_string()]), vec![("byoip".to_string(), "byoip".to_string()), ("amazon".to_string(), "amazon".to_string())], None, None))
                 .create_only()
                 .with_description("The IP address source for pools in the public scope. Only used for provisioning IP address CIDRs to pools in the public scope. Default is `byoip`.")
                 .with_provider_name("PublicIpSource")
@@ -213,7 +213,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         AttributeSchema::optional("source_resource", AttributeType::struct_("SourceResource".to_string(), vec![StructField::required("resource_id", AttributeType::string()).with_provider_name("ResourceId").build(),
                     StructField::required("resource_owner", AttributeType::string()).with_provider_name("ResourceOwner").build(),
                     StructField::required("resource_region", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Region.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))).with_provider_name("ResourceRegion").build(),
-                    StructField::required("resource_type", AttributeType::enum_(carina_core::schema::enum_identity("ResourceType", Some("aws.ec2.IpamPool.SourceResource")), Some(vec!["vpc".to_string()]), vec![("vpc".to_string(), "vpc".to_string())], None, None)).with_provider_name("ResourceType").build()]))
+                    StructField::required("resource_type", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("ResourceType", &crate::schemas::namespace::AwsccNamespace::new("ec2.IpamPool.SourceResource")), Some(vec!["vpc".to_string()]), vec![("vpc".to_string(), "vpc".to_string())], None, None)).with_provider_name("ResourceType").build()]))
                 .create_only()
                 .with_provider_name("SourceResource")
             .build()
@@ -221,7 +221,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_source_resource_attribute());
     #[inline(never)]
     fn build_state_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("state", AttributeType::enum_(carina_core::schema::enum_identity("State", Some("aws.ec2.IpamPool")), Some(vec!["create-in-progress".to_string(), "create-complete".to_string(), "modify-in-progress".to_string(), "modify-complete".to_string(), "delete-in-progress".to_string(), "delete-complete".to_string()]), vec![("create-in-progress".to_string(), "create_in_progress".to_string()), ("create-complete".to_string(), "create_complete".to_string()), ("modify-in-progress".to_string(), "modify_in_progress".to_string()), ("modify-complete".to_string(), "modify_complete".to_string()), ("delete-in-progress".to_string(), "delete_in_progress".to_string()), ("delete-complete".to_string(), "delete_complete".to_string())], None, None))
+        AttributeSchema::provider_populated("state", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("State", &crate::schemas::namespace::AwsccNamespace::new("ec2.IpamPool")), Some(vec!["create-in-progress".to_string(), "create-complete".to_string(), "modify-in-progress".to_string(), "modify-complete".to_string(), "delete-in-progress".to_string(), "delete-complete".to_string()]), vec![("create-in-progress".to_string(), "create_in_progress".to_string()), ("create-complete".to_string(), "create_complete".to_string()), ("modify-in-progress".to_string(), "modify_in_progress".to_string()), ("modify-complete".to_string(), "modify_complete".to_string()), ("delete-in-progress".to_string(), "delete_in_progress".to_string()), ("delete-complete".to_string(), "delete_complete".to_string())], None, None))
                 .with_description("The state of this pool. This can be one of the following values: \"create-in-progress\", \"create-complete\", \"modify-in-progress\", \"modify-complete\", \"delete-in-progress\", or \"delete-complete\" (read-only)")
                 .with_provider_name("State")
             .build()
@@ -259,7 +259,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     fn build_schema_def_0() -> AttributeType { AttributeType::struct_("SourceResource".to_string(), vec![StructField::required("resource_id", AttributeType::string()).with_provider_name("ResourceId").build(),
                     StructField::required("resource_owner", AttributeType::string()).with_provider_name("ResourceOwner").build(),
                     StructField::required("resource_region", AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Region.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))).with_provider_name("ResourceRegion").build(),
-                    StructField::required("resource_type", AttributeType::enum_(carina_core::schema::enum_identity("ResourceType", Some("aws.ec2.IpamPool.SourceResource")), Some(vec!["vpc".to_string()]), vec![("vpc".to_string(), "vpc".to_string())], None, None)).with_provider_name("ResourceType").build()]) }
+                    StructField::required("resource_type", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("ResourceType", &crate::schemas::namespace::AwsccNamespace::new("ec2.IpamPool.SourceResource")), Some(vec!["vpc".to_string()]), vec![("vpc".to_string(), "vpc".to_string())], None, None)).with_provider_name("ResourceType").build()]) }
     schema = schema.with_def("SourceResource", build_schema_def_0());
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::IPAMPool",

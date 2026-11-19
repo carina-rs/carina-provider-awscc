@@ -16,9 +16,9 @@ awscc.cloudfront.OriginAccessControl {
   origin_access_control_config = {
     name                              = 'carina-example-s3-origin'
     description                       = 'Sign requests to the example S3 origin'
-    origin_access_control_origin_type = aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.s3
-    signing_behavior                  = aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.always
-    signing_protocol                  = aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningProtocol.sigv4
+    origin_access_control_origin_type = awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.s3
+    signing_behavior                  = awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.always
+    signing_protocol                  = awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningProtocol.sigv4
   }
 }
 ```
@@ -38,10 +38,10 @@ The origin access control.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `s3` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.s3` |
-| `mediastore` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.mediastore` |
-| `lambda` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.lambda` |
-| `mediapackagev2` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.mediapackagev2` |
+| `s3` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.s3` |
+| `mediastore` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.mediastore` |
+| `lambda` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.lambda` |
+| `mediapackagev2` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.mediapackagev2` |
 
 Shorthand formats: `s3` or `OriginAccessControlOriginType.s3`
 
@@ -49,9 +49,9 @@ Shorthand formats: `s3` or `OriginAccessControlOriginType.s3`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `always` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.always` |
-| `never` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.never` |
-| `no-override` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.no_override` |
+| `always` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.always` |
+| `never` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.never` |
+| `no-override` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.no_override` |
 
 Shorthand formats: `always` or `SigningBehavior.always`
 
@@ -59,7 +59,7 @@ Shorthand formats: `always` or `SigningBehavior.always`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `sigv4` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningProtocol.sigv4` |
+| `sigv4` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningProtocol.sigv4` |
 
 Shorthand formats: `sigv4` or `SigningProtocol.sigv4`
 

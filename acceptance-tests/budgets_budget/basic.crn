@@ -4,7 +4,7 @@
 # us-east-1. The email address is syntactically valid but intentionally inert.
 
 provider awscc {
-  region = aws.Region.us_east_1
+  region = awscc.Region.us_east_1
 }
 
 awscc.budgets.Budget {

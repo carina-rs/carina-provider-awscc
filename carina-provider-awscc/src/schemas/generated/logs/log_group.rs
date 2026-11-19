@@ -60,7 +60,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_field_index_policies_attribute());
     #[inline(never)]
     fn build_kms_key_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("kms_key_id", carina_aws_types::kms_key_reference())
+        AttributeSchema::optional("kms_key_id", crate::schemas::catalog::kms_key_reference())
                 .with_description("The Amazon Resource Name (ARN) of the KMS key to use when encrypting log data. To associate an KMS key with the log group, specify the ARN of that KMS key here. If you do so, ingested data is encrypted using this key. This association is stored as long as the data encrypted with the KMS key is still within CWL. This enables CWL to decrypt this data whenever it is requested. If you attempt to associate a KMS key with the log group but the KMS key doesn't exist or is deactivated, you will receive an ``InvalidParameterException`` error. Log group data is always encrypted in CWL. If you omit this key, the encryption does not use KMS. For more information, see [Encrypt log data in using](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html)")
                 .with_provider_name("KmsKeyId")
             .build()
@@ -68,7 +68,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_kms_key_id_attribute());
     #[inline(never)]
     fn build_log_group_class_attribute() -> AttributeSchema {
-        AttributeSchema::optional("log_group_class", AttributeType::enum_(carina_core::schema::enum_identity("LogGroupClass", Some("aws.logs.LogGroup")), Some(vec!["STANDARD".to_string(), "INFREQUENT_ACCESS".to_string(), "DELIVERY".to_string()]), vec![("STANDARD".to_string(), "standard".to_string()), ("INFREQUENT_ACCESS".to_string(), "infrequent_access".to_string()), ("DELIVERY".to_string(), "delivery".to_string())], None, None))
+        AttributeSchema::optional("log_group_class", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("LogGroupClass", &crate::schemas::namespace::AwsccNamespace::new("logs.LogGroup")), Some(vec!["STANDARD".to_string(), "INFREQUENT_ACCESS".to_string(), "DELIVERY".to_string()]), vec![("STANDARD".to_string(), "standard".to_string()), ("INFREQUENT_ACCESS".to_string(), "infrequent_access".to_string()), ("DELIVERY".to_string(), "delivery".to_string())], None, None))
                 .with_description("Specifies the log group class for this log group. There are two classes: + The ``Standard`` log class supports all CWL features. + The ``Infrequent Access`` log class supports a subset of CWL features and incurs lower costs. For details about the features supported by each class, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html)")
                 .with_provider_name("LogGroupClass")
                 .with_default(Value::Concrete(ConcreteValue::String("STANDARD".to_string().into())))
@@ -86,7 +86,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_log_group_name_attribute());
     #[inline(never)]
     fn build_resource_policy_document_attribute() -> AttributeSchema {
-        AttributeSchema::optional("resource_policy_document", carina_aws_types::iam_policy_document())
+        AttributeSchema::optional("resource_policy_document", crate::schemas::type_helpers::policy_seed::iam_policy_document())
                 .with_documented_iam_grammar()
                 .with_description("Creates or updates a resource policy for the specified log group that allows other services to put log events to this account. A LogGroup can have 1 resource policy.")
                 .with_provider_name("ResourcePolicyDocument")
@@ -95,7 +95,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_resource_policy_document_attribute());
     #[inline(never)]
     fn build_retention_in_days_attribute() -> AttributeSchema {
-        AttributeSchema::optional("retention_in_days", carina_aws_types::logs_log_group_retention_in_days())
+        AttributeSchema::optional("retention_in_days", crate::schemas::catalog::logs_log_group_retention_in_days())
                 .with_description("The number of days to retain the log events in the specified log group. Possible values are: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, and 3653. To set a log group so that its log events do not expire, do not specify this property.")
                 .with_provider_name("RetentionInDays")
             .build()

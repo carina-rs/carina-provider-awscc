@@ -34,7 +34,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_description_attribute());
     #[inline(never)]
     fn build_inline_policy_attribute() -> AttributeSchema {
-        AttributeSchema::optional("inline_policy", carina_aws_types::iam_policy_document())
+        AttributeSchema::optional("inline_policy", crate::schemas::type_helpers::policy_seed::iam_policy_document())
                 .with_documented_iam_grammar()
                 .with_description("The inline policy to put in permission set.")
                 .with_provider_name("InlinePolicy")

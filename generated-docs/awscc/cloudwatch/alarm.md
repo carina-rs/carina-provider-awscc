@@ -64,7 +64,7 @@ Indicates whether actions should be executed during any changes to the alarm sta
 
 ### `alarm_actions`
 
-- **Type:** List\<`aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`\> (items: unbounded..=5, ordered)
+- **Type:** List\<`awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`\> (items: unbounded..=5, ordered)
 - **Required:** No
 
 The list of actions to execute when this alarm transitions into an ALARM state from any other state. Specify each action as an Amazon Resource Name (ARN). For more information about creating alarms and the actions that you can specify, see [PutMetricAlarm](https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html) in the *API Reference*.
@@ -149,7 +149,7 @@ The percentile statistic for the metric associated with the alarm. Specify a val
 
 ### `insufficient_data_actions`
 
-- **Type:** List\<`aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`\> (items: unbounded..=5, ordered)
+- **Type:** List\<`awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`\> (items: unbounded..=5, ordered)
 - **Required:** No
 
 The actions to execute when this alarm transitions to the ``INSUFFICIENT_DATA`` state from any other state. Each action is specified as an Amazon Resource Name (ARN).
@@ -177,7 +177,7 @@ The namespace of the metric associated with the alarm. This is required for an a
 
 ### `ok_actions`
 
-- **Type:** List\<`aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`\> (items: unbounded..=5, ordered)
+- **Type:** List\<`awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`\> (items: unbounded..=5, ordered)
 - **Required:** No
 
 The actions to execute when this alarm transitions to the ``OK`` state from any other state. Each action is specified as an Amazon Resource Name (ARN).
@@ -244,13 +244,13 @@ The warm-up configuration for the alarm. A warm-up period delays alarm evaluatio
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GreaterThanOrEqualToThreshold` | `aws.cloudwatch.Alarm.ComparisonOperator.greater_than_or_equal_to_threshold` |
-| `GreaterThanThreshold` | `aws.cloudwatch.Alarm.ComparisonOperator.greater_than_threshold` |
-| `LessThanThreshold` | `aws.cloudwatch.Alarm.ComparisonOperator.less_than_threshold` |
-| `LessThanOrEqualToThreshold` | `aws.cloudwatch.Alarm.ComparisonOperator.less_than_or_equal_to_threshold` |
-| `LessThanLowerOrGreaterThanUpperThreshold` | `aws.cloudwatch.Alarm.ComparisonOperator.less_than_lower_or_greater_than_upper_threshold` |
-| `LessThanLowerThreshold` | `aws.cloudwatch.Alarm.ComparisonOperator.less_than_lower_threshold` |
-| `GreaterThanUpperThreshold` | `aws.cloudwatch.Alarm.ComparisonOperator.greater_than_upper_threshold` |
+| `GreaterThanOrEqualToThreshold` | `awscc.cloudwatch.Alarm.ComparisonOperator.greater_than_or_equal_to_threshold` |
+| `GreaterThanThreshold` | `awscc.cloudwatch.Alarm.ComparisonOperator.greater_than_threshold` |
+| `LessThanThreshold` | `awscc.cloudwatch.Alarm.ComparisonOperator.less_than_threshold` |
+| `LessThanOrEqualToThreshold` | `awscc.cloudwatch.Alarm.ComparisonOperator.less_than_or_equal_to_threshold` |
+| `LessThanLowerOrGreaterThanUpperThreshold` | `awscc.cloudwatch.Alarm.ComparisonOperator.less_than_lower_or_greater_than_upper_threshold` |
+| `LessThanLowerThreshold` | `awscc.cloudwatch.Alarm.ComparisonOperator.less_than_lower_threshold` |
+| `GreaterThanUpperThreshold` | `awscc.cloudwatch.Alarm.ComparisonOperator.greater_than_upper_threshold` |
 
 Shorthand formats: `greater_than_or_equal_to_threshold` or `ComparisonOperator.greater_than_or_equal_to_threshold`
 
@@ -258,8 +258,8 @@ Shorthand formats: `greater_than_or_equal_to_threshold` or `ComparisonOperator.g
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `evaluate` | `aws.cloudwatch.Alarm.EvaluateLowSampleCountPercentile.evaluate` |
-| `ignore` | `aws.cloudwatch.Alarm.EvaluateLowSampleCountPercentile.ignore` |
+| `evaluate` | `awscc.cloudwatch.Alarm.EvaluateLowSampleCountPercentile.evaluate` |
+| `ignore` | `awscc.cloudwatch.Alarm.EvaluateLowSampleCountPercentile.ignore` |
 
 Shorthand formats: `evaluate` or `EvaluateLowSampleCountPercentile.evaluate`
 
@@ -267,33 +267,33 @@ Shorthand formats: `evaluate` or `EvaluateLowSampleCountPercentile.evaluate`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Seconds` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.seconds` |
-| `Microseconds` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.microseconds` |
-| `Milliseconds` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.milliseconds` |
-| `Bytes` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.bytes` |
-| `Kilobytes` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.kilobytes` |
-| `Megabytes` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.megabytes` |
-| `Gigabytes` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.gigabytes` |
-| `Terabytes` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.terabytes` |
-| `Bits` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.bits` |
-| `Kilobits` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.kilobits` |
-| `Megabits` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.megabits` |
-| `Gigabits` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.gigabits` |
-| `Terabits` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.terabits` |
-| `Percent` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.percent` |
-| `Count` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.count` |
-| `Bytes/Second` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.bytes_second` |
-| `Kilobytes/Second` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.kilobytes_second` |
-| `Megabytes/Second` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.megabytes_second` |
-| `Gigabytes/Second` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.gigabytes_second` |
-| `Terabytes/Second` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.terabytes_second` |
-| `Bits/Second` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.bits_second` |
-| `Kilobits/Second` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.kilobits_second` |
-| `Megabits/Second` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.megabits_second` |
-| `Gigabits/Second` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.gigabits_second` |
-| `Terabits/Second` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.terabits_second` |
-| `Count/Second` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.count_second` |
-| `None` | `aws.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.none` |
+| `Seconds` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.seconds` |
+| `Microseconds` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.microseconds` |
+| `Milliseconds` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.milliseconds` |
+| `Bytes` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.bytes` |
+| `Kilobytes` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.kilobytes` |
+| `Megabytes` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.megabytes` |
+| `Gigabytes` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.gigabytes` |
+| `Terabytes` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.terabytes` |
+| `Bits` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.bits` |
+| `Kilobits` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.kilobits` |
+| `Megabits` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.megabits` |
+| `Gigabits` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.gigabits` |
+| `Terabits` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.terabits` |
+| `Percent` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.percent` |
+| `Count` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.count` |
+| `Bytes/Second` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.bytes_second` |
+| `Kilobytes/Second` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.kilobytes_second` |
+| `Megabytes/Second` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.megabytes_second` |
+| `Gigabytes/Second` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.gigabytes_second` |
+| `Terabytes/Second` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.terabytes_second` |
+| `Bits/Second` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.bits_second` |
+| `Kilobits/Second` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.kilobits_second` |
+| `Megabits/Second` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.megabits_second` |
+| `Gigabits/Second` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.gigabits_second` |
+| `Terabits/Second` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.terabits_second` |
+| `Count/Second` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.count_second` |
+| `None` | `awscc.cloudwatch.Alarm.MetricDataQuery.MetricStat.Unit.none` |
 
 Shorthand formats: `seconds` or `Unit.seconds`
 
@@ -301,11 +301,11 @@ Shorthand formats: `seconds` or `Unit.seconds`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `SampleCount` | `aws.cloudwatch.Alarm.Statistic.sample_count` |
-| `Average` | `aws.cloudwatch.Alarm.Statistic.average` |
-| `Sum` | `aws.cloudwatch.Alarm.Statistic.sum` |
-| `Minimum` | `aws.cloudwatch.Alarm.Statistic.minimum` |
-| `Maximum` | `aws.cloudwatch.Alarm.Statistic.maximum` |
+| `SampleCount` | `awscc.cloudwatch.Alarm.Statistic.sample_count` |
+| `Average` | `awscc.cloudwatch.Alarm.Statistic.average` |
+| `Sum` | `awscc.cloudwatch.Alarm.Statistic.sum` |
+| `Minimum` | `awscc.cloudwatch.Alarm.Statistic.minimum` |
+| `Maximum` | `awscc.cloudwatch.Alarm.Statistic.maximum` |
 
 Shorthand formats: `sample_count` or `Statistic.sample_count`
 
@@ -313,10 +313,10 @@ Shorthand formats: `sample_count` or `Statistic.sample_count`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `breaching` | `aws.cloudwatch.Alarm.TreatMissingData.breaching` |
-| `notBreaching` | `aws.cloudwatch.Alarm.TreatMissingData.not_breaching` |
-| `ignore` | `aws.cloudwatch.Alarm.TreatMissingData.ignore` |
-| `missing` | `aws.cloudwatch.Alarm.TreatMissingData.missing` |
+| `breaching` | `awscc.cloudwatch.Alarm.TreatMissingData.breaching` |
+| `notBreaching` | `awscc.cloudwatch.Alarm.TreatMissingData.not_breaching` |
+| `ignore` | `awscc.cloudwatch.Alarm.TreatMissingData.ignore` |
+| `missing` | `awscc.cloudwatch.Alarm.TreatMissingData.missing` |
 
 Shorthand formats: `breaching` or `TreatMissingData.breaching`
 
@@ -324,33 +324,33 @@ Shorthand formats: `breaching` or `TreatMissingData.breaching`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Seconds` | `aws.cloudwatch.Alarm.Unit.seconds` |
-| `Microseconds` | `aws.cloudwatch.Alarm.Unit.microseconds` |
-| `Milliseconds` | `aws.cloudwatch.Alarm.Unit.milliseconds` |
-| `Bytes` | `aws.cloudwatch.Alarm.Unit.bytes` |
-| `Kilobytes` | `aws.cloudwatch.Alarm.Unit.kilobytes` |
-| `Megabytes` | `aws.cloudwatch.Alarm.Unit.megabytes` |
-| `Gigabytes` | `aws.cloudwatch.Alarm.Unit.gigabytes` |
-| `Terabytes` | `aws.cloudwatch.Alarm.Unit.terabytes` |
-| `Bits` | `aws.cloudwatch.Alarm.Unit.bits` |
-| `Kilobits` | `aws.cloudwatch.Alarm.Unit.kilobits` |
-| `Megabits` | `aws.cloudwatch.Alarm.Unit.megabits` |
-| `Gigabits` | `aws.cloudwatch.Alarm.Unit.gigabits` |
-| `Terabits` | `aws.cloudwatch.Alarm.Unit.terabits` |
-| `Percent` | `aws.cloudwatch.Alarm.Unit.percent` |
-| `Count` | `aws.cloudwatch.Alarm.Unit.count` |
-| `Bytes/Second` | `aws.cloudwatch.Alarm.Unit.bytes_second` |
-| `Kilobytes/Second` | `aws.cloudwatch.Alarm.Unit.kilobytes_second` |
-| `Megabytes/Second` | `aws.cloudwatch.Alarm.Unit.megabytes_second` |
-| `Gigabytes/Second` | `aws.cloudwatch.Alarm.Unit.gigabytes_second` |
-| `Terabytes/Second` | `aws.cloudwatch.Alarm.Unit.terabytes_second` |
-| `Bits/Second` | `aws.cloudwatch.Alarm.Unit.bits_second` |
-| `Kilobits/Second` | `aws.cloudwatch.Alarm.Unit.kilobits_second` |
-| `Megabits/Second` | `aws.cloudwatch.Alarm.Unit.megabits_second` |
-| `Gigabits/Second` | `aws.cloudwatch.Alarm.Unit.gigabits_second` |
-| `Terabits/Second` | `aws.cloudwatch.Alarm.Unit.terabits_second` |
-| `Count/Second` | `aws.cloudwatch.Alarm.Unit.count_second` |
-| `None` | `aws.cloudwatch.Alarm.Unit.none` |
+| `Seconds` | `awscc.cloudwatch.Alarm.Unit.seconds` |
+| `Microseconds` | `awscc.cloudwatch.Alarm.Unit.microseconds` |
+| `Milliseconds` | `awscc.cloudwatch.Alarm.Unit.milliseconds` |
+| `Bytes` | `awscc.cloudwatch.Alarm.Unit.bytes` |
+| `Kilobytes` | `awscc.cloudwatch.Alarm.Unit.kilobytes` |
+| `Megabytes` | `awscc.cloudwatch.Alarm.Unit.megabytes` |
+| `Gigabytes` | `awscc.cloudwatch.Alarm.Unit.gigabytes` |
+| `Terabytes` | `awscc.cloudwatch.Alarm.Unit.terabytes` |
+| `Bits` | `awscc.cloudwatch.Alarm.Unit.bits` |
+| `Kilobits` | `awscc.cloudwatch.Alarm.Unit.kilobits` |
+| `Megabits` | `awscc.cloudwatch.Alarm.Unit.megabits` |
+| `Gigabits` | `awscc.cloudwatch.Alarm.Unit.gigabits` |
+| `Terabits` | `awscc.cloudwatch.Alarm.Unit.terabits` |
+| `Percent` | `awscc.cloudwatch.Alarm.Unit.percent` |
+| `Count` | `awscc.cloudwatch.Alarm.Unit.count` |
+| `Bytes/Second` | `awscc.cloudwatch.Alarm.Unit.bytes_second` |
+| `Kilobytes/Second` | `awscc.cloudwatch.Alarm.Unit.kilobytes_second` |
+| `Megabytes/Second` | `awscc.cloudwatch.Alarm.Unit.megabytes_second` |
+| `Gigabytes/Second` | `awscc.cloudwatch.Alarm.Unit.gigabytes_second` |
+| `Terabytes/Second` | `awscc.cloudwatch.Alarm.Unit.terabytes_second` |
+| `Bits/Second` | `awscc.cloudwatch.Alarm.Unit.bits_second` |
+| `Kilobits/Second` | `awscc.cloudwatch.Alarm.Unit.kilobits_second` |
+| `Megabits/Second` | `awscc.cloudwatch.Alarm.Unit.megabits_second` |
+| `Gigabits/Second` | `awscc.cloudwatch.Alarm.Unit.gigabits_second` |
+| `Terabits/Second` | `awscc.cloudwatch.Alarm.Unit.terabits_second` |
+| `Count/Second` | `awscc.cloudwatch.Alarm.Unit.count_second` |
+| `None` | `awscc.cloudwatch.Alarm.Unit.none` |
 
 Shorthand formats: `seconds` or `Unit.seconds`
 
@@ -419,7 +419,7 @@ Used by: `dimensions`, `metrics.metric_stat.metric.dimensions`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `account_id` | `aws.AccountId (pattern: /^[0-9]{12}$/ (Full), len: 12..=12)` | No | The ID of the account where the metrics are located, if this is a cross-account alarm. |
+| `account_id` | `awscc.AccountId (pattern: /^[0-9]{12}$/ (Full), len: 12..=12)` | No | The ID of the account where the metrics are located, if this is a cross-account alarm. |
 | `expression` | `String (len: 1..=2048)` | No | The math expression to be performed on the returned data, if this object is performing a math expression. This expression can use the ``Id`` of the other metrics to refer to those metrics, and can also use the ``Id`` of other expressions to use the result of those expressions. For more information about metric math expressions, see [Metric Math Syntax and Functions](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/using-metric-math.html#metric-math-syntax) in the *User Guide*. Within each MetricDataQuery object, you must specify either ``Expression`` or ``MetricStat`` but not both. |
 | `id` | `String (pattern: /^[a-z][a-zA-Z0-9_]*$/ (Full), len: 1..=255)` | Yes | A short name used to tie this object to the results in the response. This name must be unique within a single call to ``GetMetricData``. If you are performing math expressions on this set of data, this name represents that data and can serve as a variable in the mathematical expression. The valid characters are letters, numbers, and underscore. The first character must be a lowercase letter. |
 | `label` | `String` | No | A human-readable label for this metric or expression. This is especially useful if this is an expression, so that you know what the value represents. If the metric or expression is shown in a CW dashboard widget, the label is shown. If ``Label`` is omitted, CW generates a default. |
@@ -455,7 +455,7 @@ Used by: `dimensions`, `metrics.metric_stat.metric.dimensions`
 
 ### `arn`
 
-- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
+- **Type:** `awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 
 

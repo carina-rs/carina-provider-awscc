@@ -154,13 +154,13 @@ async fn authored_email_json_and_qualified_signature_versions_serialize_as_wire_
         (
             "sns.Topic",
             "signature_version",
-            enum_identifier("aws.sns.Topic.SignatureVersion.1"),
+            enum_identifier("awscc.sns.Topic.SignatureVersion.1"),
             "1",
         ),
         (
             "sns.Topic",
             "signature_version",
-            enum_identifier("aws.sns.Topic.SignatureVersion.2"),
+            enum_identifier("awscc.sns.Topic.SignatureVersion.2"),
             "2",
         ),
     ] {
@@ -200,7 +200,7 @@ async fn authored_email_json_and_qualified_signature_versions_serialize_as_wire_
 
 #[test]
 fn signature_version_enum_dsl_forms_are_preserved_by_formatter() {
-    for value in ["SignatureVersion.2", "aws.sns.Topic.SignatureVersion.2"] {
+    for value in ["SignatureVersion.2", "awscc.sns.Topic.SignatureVersion.2"] {
         let expected_line = format!("  signature_version = {value}");
         let source = format!("let topic = awscc.sns.Topic {{\n{expected_line}\n}}\n");
         let formatted = format(&source, &FormatConfig::default()).unwrap();
@@ -240,7 +240,7 @@ fn signature_version_requires_documented_enum_values() {
     for value in ["1", "2"] {
         signature_version
             .validate(&enum_identifier(&format!(
-                "aws.sns.Topic.SignatureVersion.{value}"
+                "awscc.sns.Topic.SignatureVersion.{value}"
             )))
             .unwrap();
         assert!(signature_version.validate(&string(value)).is_err());
@@ -249,15 +249,15 @@ fn signature_version_requires_documented_enum_values() {
         assert!(signature_version.validate(&int(value)).is_err());
     }
     let error = signature_version
-        .validate(&enum_identifier("aws.sns.Topic.SignatureVersion.3"))
+        .validate(&enum_identifier("awscc.sns.Topic.SignatureVersion.3"))
         .unwrap_err()
         .to_string();
     assert!(
-        error.contains("aws.sns.Topic.SignatureVersion.1"),
+        error.contains("awscc.sns.Topic.SignatureVersion.1"),
         "{error}"
     );
     assert!(
-        error.contains("aws.sns.Topic.SignatureVersion.2"),
+        error.contains("awscc.sns.Topic.SignatureVersion.2"),
         "{error}"
     );
 }
@@ -414,14 +414,14 @@ provider awscc {
 }
 let standard = awscc.sns.Topic {
   topic_name = 'signature-one'
-  signature_version = aws.sns.Topic.SignatureVersion.1
+  signature_version = awscc.sns.Topic.SignatureVersion.1
   tracing_config = pass_through
 }
 let fifo = awscc.sns.Topic {
   topic_name = 'signature-two.fifo'
   fifo_topic = true
   fifo_throughput_scope = message_group
-  signature_version = aws.sns.Topic.SignatureVersion.2
+  signature_version = awscc.sns.Topic.SignatureVersion.2
 }
 let short = awscc.sns.Topic {
   topic_name = 'signature-two-short'
@@ -435,8 +435,8 @@ let first = awscc.sns.Subscription {
 }
 let second = awscc.sns.Subscription {
   topic_arn = fifo.topic_arn
-  protocol = aws.sns.Subscription.Protocol.sqs
-  filter_policy_scope = aws.sns.Subscription.FilterPolicyScope.message_attributes
+  protocol = awscc.sns.Subscription.Protocol.sqs
+  filter_policy_scope = awscc.sns.Subscription.FilterPolicyScope.message_attributes
   endpoint = 'arn:aws:sqs:ap-northeast-1:123456789012:alerts.fifo'
 }
 "#,

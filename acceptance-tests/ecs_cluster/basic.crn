@@ -3,7 +3,7 @@
 # Tests: cluster_name, cluster_settings, and tags.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 awscc.ecs.Cluster {

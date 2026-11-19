@@ -53,7 +53,10 @@ fn group_display_name_preserves_pattern_and_bounds_in_direct_callback_dispatch()
     else {
         panic!("Group.DisplayName must retain its identity and validator callback");
     };
-    assert_eq!(identity.to_string(), "aws.identitystore.Group.DisplayName");
+    assert_eq!(
+        identity.to_string(),
+        "awscc.identitystore.Group.DisplayName"
+    );
     assert_eq!(
         pattern,
         Some(&carina_core::schema::PatternSpec::new(
