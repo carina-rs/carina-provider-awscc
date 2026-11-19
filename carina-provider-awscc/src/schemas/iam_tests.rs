@@ -93,10 +93,20 @@ fn role_and_policy_names_use_shared_identities_and_documented_boundaries() {
 }
 
 #[test]
-fn role_path_uses_shared_anonymous_path_type_and_keeps_the_root_path() {
+fn role_path_keeps_anonymous_constraints_and_the_root_path() {
     let schema = role_schema();
     let path = field(&schema, "path");
-    let shared = crate::schemas::type_helpers::iam_path();
+    // Pin the anonymous declaration independently of the generated schema.
+    let expected = carina_core::schema::AttributeType::string_member(
+        carina_core::schema::StringIdentityLayer::new(None, None, None, None),
+        carina_core::schema::StringMemberConstraints::new(
+            Some(carina_core::schema::PatternSpec::new(
+                r"^(?:/|/[\x21-\x7E]+/)\z",
+                carina_core::schema::PatternMatch::Full,
+            )),
+            Some((Some(1), Some(512))),
+        ),
+    );
     let RawShape::String {
         identity_layer:
             StringIdentityParts {
@@ -120,16 +130,16 @@ fn role_path_uses_shared_anonymous_path_type_and_keeps_the_root_path() {
             },
         member_layer:
             StringMemberParts {
-                pattern: shared_pattern,
-                length: shared_length,
+                pattern: expected_pattern,
+                length: expected_length,
             },
-    } = shared.raw_shape()
+    } = expected.raw_shape()
     else {
-        panic!("shared IAM path must keep anonymous constraints in its member layer");
+        panic!("expected IAM path must keep anonymous constraints in its member layer");
     };
     assert!(identity.is_none());
-    assert_eq!(pattern, shared_pattern);
-    assert_eq!(length, shared_length);
+    assert_eq!(pattern, expected_pattern);
+    assert_eq!(length, expected_length);
     for value in [
         "/".to_string(),
         "/carina/app/".to_string(),

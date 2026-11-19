@@ -1036,17 +1036,14 @@ fn document_emitter_produces_final_builder_type_spelling() {
             None,
         )
         .unwrap();
-    assert_eq!(
-        emitted.rust,
-        "crate::schemas::type_helpers::policy_seed::iam_policy_document()"
-    );
+    assert_eq!(emitted.rust, "crate::schemas::type_helpers::policy_seed::iam_policy_document()");
 }
 
 #[test]
 fn catalog_integer_enum_lookup_returns_spelling_and_type_from_the_same_row() {
     let flow = AwsccType::Ec2FlowLogMaxAggregationInterval;
-    let retention =
-        carina_provider_awscc::schemas::catalog::ScalarType::LogsLogGroupRetentionInDays;
+    let retention = carina_provider_awscc::schemas::catalog::ScalarType::LogsLogGroupRetentionInDays;
+
     let retention_type = retention.attribute_type();
     for (resource, property, path, values, expected_type) in [
         (
@@ -1213,13 +1210,14 @@ fn object_string_union_order_is_independent() {
     }
 }
 
+
 #[test]
 fn catalog_arn_service_guard_matches_before_572() {
     let expected = include_str!("../../../tests/fixtures/arn_services_before_572.txt")
         .lines()
         .collect::<BTreeSet<_>>();
-    let mut candidates = expected.clone();
-    let identities = AwsccType::ALL
+    // Derive independently from every row, without filtering through the guard.
+    let actual = AwsccType::ALL
         .iter()
         .copied()
         .map(AwsccType::identity)
@@ -1229,17 +1227,24 @@ fn catalog_arn_service_guard_matches_before_572() {
                 .copied()
                 .map(StringIdentity::identity),
         )
-        .collect::<Vec<_>>();
-    candidates.extend(
-        identities
-            .iter()
-            .filter_map(|id| id.segments.first().map(String::as_str)),
-    );
-    candidates.insert("unknown_service");
-    let actual = candidates
-        .into_iter()
-        .filter(|service| catalog_knows_arn_service(service))
+        .chain(
+            carina_provider_awscc::schemas::catalog::ScalarType::ALL
+                .iter()
+                .copied()
+                .map(carina_provider_awscc::schemas::catalog::ScalarType::identity),
+        )
+        .filter(|id| id.kind == "Arn")
+        .filter_map(|id| id.segments.into_iter().next())
+        .chain(["acm", "sqs", "sts"].into_iter().map(str::to_string))
         .collect::<BTreeSet<_>>();
+    let expected = expected
+        .into_iter()
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        carina_provider_awscc::schemas::catalog::known_arn_services(),
+        &actual
+    );
     assert_eq!(
         actual, expected,
         "ARN service guard differs from a1bed43 and pinned 5ad417e catalogs"

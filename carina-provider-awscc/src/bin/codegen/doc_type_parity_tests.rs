@@ -970,11 +970,9 @@ fn oracle_rejects_changed_bounds_patterns_ordering_uniqueness_and_missing_cells(
 
 #[test]
 fn enum_parity_rejects_changed_values_aliases_and_coverage() {
-    let identity = carina_provider_awscc::schemas::namespace::awscc_enum_identity(
-        "Mode",
-        &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.Round1")
-            .expect("valid AWSCC namespace"),
-    );
+    let identity = carina_provider_awscc::schemas::namespace::awscc_identity("Mode", &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.Round1").expect("valid AWSCC namespace"),
+    )
+    .expect("valid AWSCC identity");
     let runtime = ResourceSchema::new("test.Round1")
         .attribute(
             AttributeSchema::optional(

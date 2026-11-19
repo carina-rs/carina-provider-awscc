@@ -1031,11 +1031,14 @@ mod tests {
                 "redirect-to-https".to_string(),
                 "https-only".to_string(),
             ],
-            Some(crate::schemas::namespace::awscc_enum_identity(
-                "ViewerProtocolPolicy",
-                &crate::schemas::namespace::AwsccNamespace::new("cloudfront.Distribution")
-                    .expect("valid AWSCC namespace"),
-            )),
+            Some(
+                crate::schemas::namespace::awscc_identity(
+                    "ViewerProtocolPolicy",
+                    &crate::schemas::namespace::AwsccNamespace::new("cloudfront.Distribution")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
+            ),
             vec![(
                 "redirect-to-https".to_string(),
                 "redirect_to_https".to_string(),
@@ -1398,11 +1401,14 @@ mod tests {
                 "INFREQUENT_ACCESS".to_string(),
                 "DELIVERY".to_string(),
             ],
-            Some(crate::schemas::namespace::awscc_enum_identity(
-                "LogGroupClass",
-                &crate::schemas::namespace::AwsccNamespace::new("logs.LogGroup")
-                    .expect("valid AWSCC namespace"),
-            )),
+            Some(
+                crate::schemas::namespace::awscc_identity(
+                    "LogGroupClass",
+                    &crate::schemas::namespace::AwsccNamespace::new("logs.LogGroup")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
+            ),
             vec![],
         );
         let value = Value::Concrete(ConcreteValue::String(
@@ -1485,11 +1491,14 @@ mod tests {
         let inner = test_enum(
             "AllowedMethod",
             vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
-            Some(crate::schemas::namespace::awscc_enum_identity(
-                "AllowedMethod",
-                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
-                    .expect("valid AWSCC namespace"),
-            )),
+            Some(
+                crate::schemas::namespace::awscc_identity(
+                    "AllowedMethod",
+                    &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
+            ),
             vec![],
         );
         let enum_schema = test_rootless_type(inner.clone());
@@ -1524,11 +1533,14 @@ mod tests {
         let inner = test_enum(
             "AllowedMethod",
             vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
-            Some(crate::schemas::namespace::awscc_enum_identity(
-                "AllowedMethod",
-                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
-                    .expect("valid AWSCC namespace"),
-            )),
+            Some(
+                crate::schemas::namespace::awscc_identity(
+                    "AllowedMethod",
+                    &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
+            ),
             vec![],
         );
         let attr_type = AttributeType::list(inner);
@@ -1559,11 +1571,14 @@ mod tests {
         let inner = test_enum(
             "AllowedMethod",
             vec!["GET".to_string(), "PUT".to_string()],
-            Some(crate::schemas::namespace::awscc_enum_identity(
-                "AllowedMethod",
-                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
-                    .expect("valid AWSCC namespace"),
-            )),
+            Some(
+                crate::schemas::namespace::awscc_identity(
+                    "AllowedMethod",
+                    &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
+            ),
             vec![],
         );
         let attr_type = AttributeType::list(inner);
@@ -1599,11 +1614,14 @@ mod tests {
             test_enum(
                 "Protocol",
                 vec!["tcp".to_string(), "udp".to_string()],
-                Some(crate::schemas::namespace::awscc_enum_identity(
-                    "Protocol",
-                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
-                        .expect("valid AWSCC namespace"),
-                )),
+                Some(
+                    crate::schemas::namespace::awscc_identity(
+                        "Protocol",
+                        &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
+                            .expect("valid AWSCC namespace"),
+                    )
+                    .expect("valid AWSCC identity"),
+                ),
                 vec![],
             ),
             AttributeType::string(),
@@ -1670,11 +1688,14 @@ mod tests {
         let inner_type = test_enum(
             "Status",
             vec!["Active".to_string(), "Inactive".to_string()],
-            Some(crate::schemas::namespace::awscc_enum_identity(
-                "Status",
-                &crate::schemas::namespace::AwsccNamespace::new("test.resource")
-                    .expect("valid AWSCC namespace"),
-            )),
+            Some(
+                crate::schemas::namespace::awscc_identity(
+                    "Status",
+                    &crate::schemas::namespace::AwsccNamespace::new("test.resource")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
+            ),
             vec![],
         );
         let enum_schema = test_rootless_type(inner_type.clone());
@@ -1759,11 +1780,14 @@ mod tests {
             test_enum(
                 "Protocol",
                 vec!["tcp".to_string(), "udp".to_string()],
-                Some(crate::schemas::namespace::awscc_enum_identity(
-                    "Protocol",
-                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
-                        .expect("valid AWSCC namespace"),
-                )),
+                Some(
+                    crate::schemas::namespace::awscc_identity(
+                        "Protocol",
+                        &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
+                            .expect("valid AWSCC namespace"),
+                    )
+                    .expect("valid AWSCC identity"),
+                ),
                 vec![],
             ),
             AttributeType::string(),
@@ -1795,11 +1819,14 @@ mod tests {
             test_enum(
                 "Protocol",
                 vec!["tcp".to_string(), "udp".to_string()],
-                Some(crate::schemas::namespace::awscc_enum_identity(
-                    "Protocol",
-                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
-                        .expect("valid AWSCC namespace"),
-                )),
+                Some(
+                    crate::schemas::namespace::awscc_identity(
+                        "Protocol",
+                        &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
+                            .expect("valid AWSCC namespace"),
+                    )
+                    .expect("valid AWSCC identity"),
+                ),
                 vec![],
             ),
             AttributeType::int(),
@@ -2469,11 +2496,14 @@ mod tests {
         let attr_type = test_enum(
             "Type",
             vec!["ipsec.1".to_string()],
-            Some(crate::schemas::namespace::awscc_enum_identity(
-                "Type",
-                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
-                    .expect("valid AWSCC namespace"),
-            )),
+            Some(
+                crate::schemas::namespace::awscc_identity(
+                    "Type",
+                    &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
+            ),
             vec![],
         );
         let json_val = json!("ipsec.1");
@@ -2505,11 +2535,14 @@ mod tests {
         let attr_type = test_enum(
             "Type",
             vec!["ipsec.1".to_string()],
-            Some(crate::schemas::namespace::awscc_enum_identity(
-                "Type",
-                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
-                    .expect("valid AWSCC namespace"),
-            )),
+            Some(
+                crate::schemas::namespace::awscc_identity(
+                    "Type",
+                    &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
+            ),
             vec![],
         );
         let value = Value::Concrete(ConcreteValue::String(
@@ -2536,11 +2569,14 @@ mod tests {
         let attr_type = test_enum(
             "Type",
             vec!["ipsec.1".to_string()],
-            Some(crate::schemas::namespace::awscc_enum_identity(
-                "Type",
-                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
-                    .expect("valid AWSCC namespace"),
-            )),
+            Some(
+                crate::schemas::namespace::awscc_identity(
+                    "Type",
+                    &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
+            ),
             vec![],
         );
         let value = Value::Concrete(ConcreteValue::String("ipsec.1".to_string().into()));
@@ -2565,11 +2601,14 @@ mod tests {
         let attr_type = test_enum(
             "Type",
             vec!["ipsec.1".to_string()],
-            Some(crate::schemas::namespace::awscc_enum_identity(
-                "Type",
-                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
-                    .expect("valid AWSCC namespace"),
-            )),
+            Some(
+                crate::schemas::namespace::awscc_identity(
+                    "Type",
+                    &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
+            ),
             vec![],
         );
 
@@ -2654,11 +2693,12 @@ mod tests {
     #[test]
     fn test_value_to_json_canonical_enum_uses_api_value() {
         let attr_type = AttributeType::enum_(
-            crate::schemas::namespace::awscc_enum_identity(
+            crate::schemas::namespace::awscc_identity(
                 "Effect",
                 &crate::schemas::namespace::AwsccNamespace::new("iam.PolicyDocument")
                     .expect("valid AWSCC namespace"),
-            ),
+            )
+            .expect("valid AWSCC identity"),
             Some(vec!["Allow".to_string(), "Deny".to_string()]),
             vec![
                 ("Allow".to_string(), "allow".to_string()),

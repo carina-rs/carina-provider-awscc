@@ -1,25 +1,10 @@
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, TypeIdentity, legacy_validator};
-use carina_core::schema::{PatternMatch, PatternSpec};
+use carina_core::schema::{TypeIdentity, legacy_validator};
 
 // Real-AWS probe by the awscc agent in carina-test-001, 2026-11-04:
 // HTTP 0200, 200-0299, 200,0302 and gRPC 00-05, 0,05 were rejected.
 // HealthCheckPort 08080 was accepted but read back as 8080; reject leading
 // zeros in all three types to avoid phantom diffs. Equal range endpoints are accepted.
-
-/// Shared anonymous ELBv2 health-check port: `traffic-port` or canonical decimal 1..=65535.
-pub fn elbv2_health_check_port() -> AttributeType {
-    AttributeType::string_member(
-        carina_core::schema::StringIdentityLayer::new(None, None, None, None),
-        carina_core::schema::StringMemberConstraints::new(
-            Some(PatternSpec::new(
-                r"^(?:traffic-port|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])\z",
-                PatternMatch::Full,
-            )),
-            None,
-        ),
-    )
-}
 
 pub(crate) fn elbv2_matcher_codes(
     identity: TypeIdentity,

@@ -16,17 +16,7 @@ pub struct InvalidAwsccNamespace(String);
 
 impl AwsccNamespace {
     pub fn new(segments: &str) -> Result<Self, InvalidAwsccNamespace> {
-        if segments.is_empty()
-            || !segments.split('.').all(|segment| {
-                let mut characters = segment.chars();
-                characters
-                    .next()
-                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-                    && characters.all(|c| c.is_ascii_alphanumeric() || c == '_')
-                    && !segment.eq_ignore_ascii_case("aws")
-                    && !segment.eq_ignore_ascii_case(AWSCC_PROVIDER_NAME)
-            })
-        {
+        if segments.is_empty() || !segments.split('.').all(valid_identifier) {
             return Err(InvalidAwsccNamespace(segments.to_string()));
         }
         Ok(Self(segments.to_string()))
@@ -60,20 +50,40 @@ impl std::fmt::Display for AwsccNamespace {
     }
 }
 
+/// Namespace segments and identity kinds follow the same identifier policy.
+fn valid_identifier(segment: &str) -> bool {
+    let mut characters = segment.chars();
+    characters
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && characters.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !segment.eq_ignore_ascii_case("aws")
+        && !segment.eq_ignore_ascii_case(AWSCC_PROVIDER_NAME)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "invalid AWSCC identity kind {0:?}: expected a single nonempty identifier without a provider"
+)]
+pub struct InvalidAwsccKind(String);
+
+/// The sole entrance for AWSCC-owned identities; both axes are validated.
 #[expect(
     clippy::disallowed_methods,
     reason = "the AWSCC identity construction seam owns the provider (#572)"
 )]
-pub fn awscc_identity(namespace: &AwsccNamespace, kind: &str) -> TypeIdentity {
-    TypeIdentity::new(
+pub fn awscc_identity(
+    kind: &str,
+    namespace: &AwsccNamespace,
+) -> Result<TypeIdentity, InvalidAwsccKind> {
+    if !valid_identifier(kind) {
+        return Err(InvalidAwsccKind(kind.to_string()));
+    }
+    Ok(TypeIdentity::new(
         Some(AWSCC_PROVIDER_NAME),
         namespace.0.split('.').filter(|segment| !segment.is_empty()),
         kind,
-    )
-}
-
-pub fn awscc_enum_identity(kind: &str, namespace: &AwsccNamespace) -> TypeIdentity {
-    awscc_identity(namespace, kind)
+    ))
 }
 
 #[cfg(test)]
@@ -106,14 +116,19 @@ mod tests {
     fn namespace_root_and_valid_children_keep_fixed_awscc_ownership() {
         let root = AwsccNamespace::root();
         assert_eq!(root.to_string(), AWSCC_PROVIDER_NAME);
-        assert_eq!(awscc_identity(&root, "Region").to_string(), "awscc.Region");
+        assert_eq!(
+            awscc_identity("Region", &root)
+                .expect("valid AWSCC identity")
+                .to_string(),
+            "awscc.Region"
+        );
         let namespace = root.child("ec2.Vpc").unwrap().child("Tag").unwrap();
         assert_eq!(namespace, AwsccNamespace::new("ec2.Vpc.Tag").unwrap());
-        let identity = awscc_identity(&namespace, "Kind");
+        let identity = awscc_identity("Kind", &namespace).expect("valid AWSCC identity");
         assert_eq!(identity.provider.as_deref(), Some(AWSCC_PROVIDER_NAME));
         assert_eq!(identity.segments, ["ec2", "Vpc", "Tag"]);
         assert_eq!(identity.kind, "Kind");
-        assert_eq!(awscc_enum_identity("Kind", &namespace), identity);
+        assert_ne!(awscc_identity("OtherKind", &namespace).unwrap(), identity);
     }
 
     #[test]
@@ -121,6 +136,32 @@ mod tests {
         let namespace = AwsccNamespace::new("ec2.Vpc").unwrap();
         for invalid in ["", "aws", "awscc.Tag", ".Tag", "Tag.", "Tag..Kind"] {
             assert!(namespace.child(invalid).is_err(), "{invalid:?}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod kind_tests {
+    use super::*;
+    #[test]
+    fn identity_kinds_reject_provider_and_malformed_identifiers_without_panicking() {
+        let namespace = AwsccNamespace::new("ec2.Vpc").unwrap();
+        for kind in [
+            "",
+            "1Kind",
+            "Kind.WithDots",
+            "bad-name",
+            "bad/name",
+            "white space",
+            "aws",
+            "AWS",
+            "awscc",
+            "AwScC",
+        ] {
+            assert!(awscc_identity(kind, &namespace).is_err(), "{kind:?}");
+        }
+        for kind in ["Arn", "Id", "_Test", "IPv6Cidr"] {
+            assert_eq!(awscc_identity(kind, &namespace).unwrap().kind, kind);
         }
     }
 }

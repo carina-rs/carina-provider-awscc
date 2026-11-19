@@ -1,5 +1,3 @@
-use carina_core::resource::{ConcreteValue, Value};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct ConditionOperator {
@@ -331,49 +329,4 @@ pub fn condition_operator_to_aws(snake: &str) -> Option<String> {
 /// [`ConditionOperator::to_snake`].
 pub fn condition_operator_to_snake(pascal: &str) -> Option<String> {
     ConditionOperator::from_aws(pascal).map(|op| op.to_snake())
-}
-
-/// Check if a string is a valid snake_case condition operator.
-pub fn is_valid_condition_operator(key: &str) -> bool {
-    ConditionOperator::from_snake(key).is_some()
-}
-
-/// Validate condition operators in a parsed IAM policy document.
-///
-/// Walks the document looking for `condition` maps and validates that
-/// all operator keys are valid snake_case condition operators.
-pub fn validate_condition_operators(value: &Value) -> Result<(), String> {
-    let Value::Concrete(ConcreteValue::Map(doc)) = value else {
-        return Ok(());
-    };
-    // Look for "statement" list
-    let Some(Value::Concrete(ConcreteValue::List(statements))) = doc.get("statement") else {
-        return Ok(());
-    };
-    for (i, stmt) in statements.iter().enumerate() {
-        let Value::Concrete(ConcreteValue::Map(stmt_map)) = stmt else {
-            continue;
-        };
-        let Some(Value::Concrete(ConcreteValue::Map(condition))) = stmt_map.get("condition") else {
-            continue;
-        };
-        for key in condition.keys() {
-            if !is_valid_condition_operator(key) {
-                let valid_operators: Vec<&'static str> = ConditionOperatorBase::ALL
-                    .iter()
-                    .map(|b| b.snake())
-                    .collect();
-                return Err(format!(
-                    "statement[{}]: unknown condition operator '{}'. \
-                     Valid operators: {} \
-                     (prefix with for_all_values_ or for_any_value_ for set operators, \
-                     append _if_exists for conditional variants)",
-                    i,
-                    key,
-                    valid_operators.join(", ")
-                ));
-            }
-        }
-    }
-    Ok(())
 }

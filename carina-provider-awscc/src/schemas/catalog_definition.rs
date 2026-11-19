@@ -42,16 +42,30 @@ impl IdentityDefinition {
         semantic: Option<CustomValidator>,
         to_dsl: Option<DslTransform>,
     ) -> Self {
-        assert!(
-            values.is_some() || (pattern.is_none() && length.is_none()),
-            "{identity}: core does not enforce structural constraints on open Enum bases; use a String identity"
-        );
+        Self::try_enum(identity, pattern, length, values, aliases, semantic, to_dsl)
+            .expect("invalid static enum identity definition")
+    }
+
+    pub(crate) fn try_enum(
+        identity: TypeIdentity,
+        pattern: Option<PatternSpec>,
+        length: Length,
+        values: Option<Vec<String>>,
+        aliases: Vec<(String, String)>,
+        semantic: Option<CustomValidator>,
+        to_dsl: Option<DslTransform>,
+    ) -> Result<Self, String> {
+        if values.is_none() && (pattern.is_some() || length.is_some()) {
+            return Err(format!(
+                "{identity}: core does not enforce structural constraints on open Enum bases; use a String identity"
+            ));
+        }
         let policy = Self::string(identity.clone(), pattern, length, semantic.clone(), None);
         let schema = ValidatedConfigSchema::validate(std::collections::BTreeMap::from([(
             "value".into(),
             policy.into_attribute_type(),
         )]))
-        .expect("catalog enum policy must pass admission");
+        .map_err(|error| error.to_string())?;
         let validator = schema.rootless_type("value").unwrap();
         let accepts = |value: &str| {
             let value: carina_core::resource::Value = carina_core::resource::Value::Concrete(
@@ -61,32 +75,37 @@ impl IdentityDefinition {
         };
         if let Some(values) = &values {
             for value in values {
-                assert!(
-                    accepts(value),
-                    "{identity}: enum value {value:?} violates the identity policy"
-                );
+                if !accepts(value) {
+                    return Err(format!(
+                        "{identity}: enum value {value:?} violates the identity pattern/length or semantic policy"
+                    ));
+                }
             }
         }
         for (canonical, _) in &aliases {
-            assert!(
-                values
-                    .as_ref()
-                    .is_none_or(|values| values.contains(canonical)),
-                "{identity}: alias target {canonical:?} is absent from the enum value set"
-            );
-            assert!(
-                accepts(canonical),
-                "{identity}: alias target {canonical:?} violates the identity policy"
-            );
+            if values
+                .as_ref()
+                .is_some_and(|values| !values.contains(canonical))
+            {
+                return Err(format!(
+                    "{identity}: alias target {canonical:?} is absent from the enum value set"
+                ));
+            }
+            if !accepts(canonical) {
+                return Err(format!(
+                    "{identity}: alias target {canonical:?} violates the identity pattern/length or semantic policy"
+                ));
+            }
         }
-        Self(AttributeType::enum_with_base(
+
+        Ok(Self(AttributeType::enum_with_base(
             identity,
             AttributeType::string(),
             values,
             aliases,
             semantic,
             to_dsl,
-        ))
+        )))
     }
 
     pub fn reference(identity: TypeIdentity, pattern: Option<PatternSpec>, length: Length) -> Self {
@@ -153,7 +172,7 @@ macro_rules! define_awscc_type_catalog {
                         $crate::schemas::namespace::AwsccNamespace::new(&segments.join("."))
                             .expect("valid AWSCC catalog namespace")
                     };
-                    $crate::schemas::namespace::awscc_identity(&namespace, $kind)
+                    $crate::schemas::namespace::awscc_identity($kind, &namespace).expect("valid AWSCC identity")
                 }),* }
             }
             pub const fn valid_sample(self) -> &'static str {

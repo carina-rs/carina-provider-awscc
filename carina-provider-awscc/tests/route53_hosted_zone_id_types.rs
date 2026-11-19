@@ -20,11 +20,12 @@ fn hosted_zone_id_producers_share_catalog_identity_and_keep_cfn_member_bounds() 
         // No AWSCC schema declares this CloudFront alternative; keep the
         // original union fixture local instead of adding an unused catalog row.
         AttributeType::enum_(
-            carina_provider_awscc::schemas::namespace::awscc_enum_identity(
+            carina_provider_awscc::schemas::namespace::awscc_identity(
                 "HostedZoneId",
                 &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("cloudfront")
                     .expect("valid AWSCC namespace"),
-            ),
+            )
+            .expect("valid AWSCC identity"),
             Some(vec!["Z2FDTNDATAQYW2".into()]),
             vec![("Z2FDTNDATAQYW2".into(), "global".into())],
             None,

@@ -17,25 +17,44 @@ use carina_core::schema::{
     AttributeType, CompiledPattern, RawShape, StringIdentityLayer, TypeIdentity, legacy_validator,
 };
 
-/// Services whose known ARN domains require an explicit resource identity.
-/// Retained from a1bed43's AWSCC catalog and pinned 5ad417e catalog; this guard
-/// must not silently fall back to generic Arn when a resource is unsupported.
-pub const KNOWN_ARN_SERVICES: &[&str] = &[
-    "acm",
-    "cloudfront",
-    "dynamodb",
-    "ec2",
-    "ecs",
-    "iam",
-    "kms",
-    "logs",
-    "organizations",
-    "s3",
-    "sqs",
-    "sso",
-    "sts",
-    "wafv2",
-];
+/// ARN services declared by the AWSCC catalogs, plus base-only knowledge.
+pub fn known_arn_services() -> &'static std::collections::BTreeSet<String> {
+    static SERVICES: std::sync::LazyLock<std::collections::BTreeSet<String>> =
+        std::sync::LazyLock::new(|| {
+            derive_arn_services(
+                AwsccType::ALL
+                    .iter()
+                    .copied()
+                    .map(AwsccType::identity)
+                    .chain(
+                        StringIdentity::ALL
+                            .iter()
+                            .copied()
+                            .map(StringIdentity::identity),
+                    )
+                    .chain(ScalarType::ALL.iter().copied().map(ScalarType::identity)),
+            )
+        });
+    &SERVICES
+}
+
+fn derive_arn_services(
+    identities: impl IntoIterator<Item = TypeIdentity>,
+) -> std::collections::BTreeSet<String> {
+    // a1bed43 knew these through the shared catalog. AWSCC has no corresponding
+    // ARN rows yet; keep requiring an explicit binding instead of generic Arn.
+    const BASE_ONLY_ARN_SERVICES: &[&str] = &["acm", "sqs", "sts"];
+    identities
+        .into_iter()
+        .filter(|id| id.kind == "Arn")
+        .filter_map(|id| id.segments.into_iter().next())
+        .chain(
+            BASE_ONLY_ARN_SERVICES
+                .iter()
+                .map(|service| (*service).to_string()),
+        )
+        .collect()
+}
 
 /// One reusable definition per String identity. CFN fields can only combine
 /// this layer with `StringMemberConstraints` through `AttributeType::string_member`.
@@ -71,7 +90,8 @@ pub fn string_identity_layer(identity: StringIdentity) -> StringIdentityLayer {
                 } else {
                     unreachable!("String identity must have a scalar catalog declaration")
                 };
-                assert_eq!(layer.parts().identity, Some(&identity.identity()));
+                // StringIdentity::identity derives this same declaration. The
+                // per-variant fixture test pins that mapping independently.
                 (identity, layer)
             })
             .collect()
@@ -84,14 +104,12 @@ pub fn arn() -> AttributeType {
     // Preserve the provider-scoped awscc.Arn identity without delegating any
     // partition validation to the shared AWS types crate.
     refined_string_with_validator(
-        awscc_identity(&AwsccNamespace::root(), "Arn"),
+        awscc_identity("Arn", &AwsccNamespace::root()).expect("valid AWSCC identity"),
         Some(ApprovedPattern::whole(&arn_regex("[^:]+:.*$"))),
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(value)) = value {
-                arn_parts(value.expose_plaintext())
-                    .map(|_| ())
-                    .map_err(Into::into)
+                validate_arn(value.expose_plaintext()).map_err(Into::into)
             } else {
                 Err("Expected string".to_string().into())
             }
@@ -113,9 +131,10 @@ pub fn iam_policy_arn() -> AttributeType {
 fn iam_arn(resource: &str, prefix: &'static str) -> AttributeType {
     refined_string_with_validator(
         awscc_identity(
-            &AwsccNamespace::new(&format!("iam.{resource}")).expect("valid IAM type namespace"),
             "Arn",
-        ),
+            &AwsccNamespace::new(&format!("iam.{resource}")).expect("valid IAM type namespace"),
+        )
+        .expect("valid AWSCC identity"),
         Some(ApprovedPattern::whole(&arn_regex(&format!(
             "iam::[^:]*:{prefix}.+$"
         )))),
@@ -142,9 +161,10 @@ pub fn kms_key_id() -> AttributeType {
     );
     refined_string_with_validator(
         awscc_identity(
-            &AwsccNamespace::new("kms.Key").expect("valid AWSCC namespace"),
             "Id",
-        ),
+            &AwsccNamespace::new("kms.Key").expect("valid AWSCC namespace"),
+        )
+        .expect("valid AWSCC identity"),
         Some(ApprovedPattern::whole(&pattern)),
         None,
         legacy_validator(|value| {
@@ -195,9 +215,10 @@ fn validate_kms_key_id(value: &str) -> Result<(), String> {
 pub fn kms_key_arn() -> AttributeType {
     refined_string_with_validator(
         awscc_identity(
-            &AwsccNamespace::new("kms.Key").expect("valid AWSCC namespace"),
             "Arn",
-        ),
+            &AwsccNamespace::new("kms.Key").expect("valid AWSCC namespace"),
+        )
+        .expect("valid AWSCC identity"),
         Some(ApprovedPattern::whole(
             super::type_helpers::kms::kms_key_arn_pattern(),
         )),
@@ -217,10 +238,13 @@ pub fn kms_key_arn() -> AttributeType {
 /// IAM Identity Center instance ARN; retain the pattern-only shared shape.
 pub fn sso_instance_arn() -> AttributeType {
     refined_string(
-        Some(awscc_identity(
-            &AwsccNamespace::new("sso.Instance").expect("valid AWSCC namespace"),
-            "Arn",
-        )),
+        Some(
+            awscc_identity(
+                "Arn",
+                &AwsccNamespace::new("sso.Instance").expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
+        ),
         Some(ApprovedPattern::whole(&arn_regex("sso:::instance/.+$"))),
         None,
         None,
@@ -230,10 +254,13 @@ pub fn sso_instance_arn() -> AttributeType {
 /// IAM Identity Center permission-set ARN; retain the pattern-only shared shape.
 pub fn sso_permission_set_arn() -> AttributeType {
     refined_string(
-        Some(awscc_identity(
-            &AwsccNamespace::new("sso.PermissionSet").expect("valid AWSCC namespace"),
-            "Arn",
-        )),
+        Some(
+            awscc_identity(
+                "Arn",
+                &AwsccNamespace::new("sso.PermissionSet").expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
+        ),
         Some(ApprovedPattern::whole(&arn_regex(
             "sso:::permissionSet/.+$",
         ))),
@@ -261,6 +288,10 @@ fn arn_parts(arn: &str) -> Result<[&str; 6], String> {
         return Err("service must not be empty (e.g., 's3', 'iam', 'ec2')".to_string());
     }
     Ok(parts)
+}
+
+fn validate_arn(value: &str) -> Result<(), String> {
+    arn_parts(value).map(|_| ())
 }
 
 fn validate_service_arn(
@@ -1424,5 +1455,49 @@ S3LifecycleDate|awscc|s3/Bucket|LifecycleDate|2030-01-01T00:00:00Z|None|crate::s
             .join("\n");
 
         assert_eq!(snapshot, EXPECTED);
+    }
+}
+
+#[cfg(test)]
+#[path = "ported_type_tests.rs"]
+pub(crate) mod ported_upstream_tests;
+
+#[cfg(test)]
+mod catalog_seam_tests {
+    use super::*;
+    #[test]
+    fn arn_service_derivation_includes_new_catalog_services() {
+        let added = super::super::namespace::awscc_identity(
+            "Arn",
+            &AwsccNamespace::new("sns.Topic").unwrap(),
+        )
+        .unwrap();
+        let services = derive_arn_services([added]);
+        assert_eq!(
+            services,
+            std::collections::BTreeSet::from([
+                "acm".into(),
+                "sns".into(),
+                "sqs".into(),
+                "sts".into()
+            ])
+        );
+    }
+    #[test]
+    fn string_identity_variants_match_independent_base_mapping() {
+        // Extracted from a1bed43 string_identity.rs identity() match: preserve
+        // every variant/identity pair, mapping only provider aws to awscc.
+        let expected = include_str!("../../tests/fixtures/string_identity_variants_before_572.tsv")
+            .lines()
+            .map(str::to_string)
+            .collect::<std::collections::BTreeSet<_>>();
+        let actual = StringIdentity::ALL
+            .iter()
+            .map(|variant| format!("{variant:?}\t{}", variant.identity()))
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            actual, expected,
+            "variant-to-declaration mapping drifted from a1bed43"
+        );
     }
 }

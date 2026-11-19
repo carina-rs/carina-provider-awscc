@@ -117,7 +117,7 @@ mod tests {
     use super::super::{decode_persisted_saved_attrs, proto};
     use super::*;
     use carina_core::resource::{ConcreteValue, ResourceId, Value};
-    use carina_provider_awscc::schemas::namespace::{AwsccNamespace, awscc_enum_identity};
+    use carina_provider_awscc::schemas::namespace::{AwsccNamespace, awscc_identity};
     use std::collections::HashMap;
 
     #[test]
@@ -137,10 +137,11 @@ mod tests {
                 StructField::required(
                     "effect",
                     AttributeType::enum_(
-                        awscc_enum_identity(
+                        awscc_identity(
                             "Effect",
                             &AwsccNamespace::new("test.Saved").expect("valid AWSCC namespace"),
-                        ),
+                        )
+                        .expect("valid AWSCC identity"),
                         Some(vec!["Allow".into()]),
                         Vec::new(),
                         None,

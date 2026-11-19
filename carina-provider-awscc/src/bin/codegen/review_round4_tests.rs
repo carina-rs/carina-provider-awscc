@@ -64,10 +64,7 @@ fn review_r10_normalized_pattern_lengths_reject_empty_intersections_in_both_rend
             let schema = ParsedCfnSchema::from_json(source).unwrap();
             for (renderer, output) in [
                 ("Rust", generate_schema_code(&schema, &schema.type_name)),
-                (
-                    "Markdown",
-                    generate_test_markdown(&schema, &schema.type_name),
-                ),
+                ("Markdown", generate_test_markdown(&schema, &schema.type_name)),
             ] {
                 let rejected = output.as_ref().is_err_and(|error| {
                     matches!(error.downcast_ref::<schema_layer::SchemaError>(),

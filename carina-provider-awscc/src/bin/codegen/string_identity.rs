@@ -21,7 +21,6 @@ pub(super) fn from_constructor(source: &str) -> Option<Option<StringIdentity>> {
         "crate::schemas::catalog::egress_only_internet_gateway_id()" => {
             Some(StringIdentity::Ec2EgressOnlyInternetGatewayId)
         }
-        "crate::schemas::type_helpers::elbv2_health_check_port()" => None,
         "crate::schemas::catalog::elbv2_target_group_grpc_code()" => {
             Some(StringIdentity::Elasticloadbalancingv2TargetGroupGrpcCode)
         }
@@ -29,7 +28,6 @@ pub(super) fn from_constructor(source: &str) -> Option<Option<StringIdentity>> {
             Some(StringIdentity::Elasticloadbalancingv2TargetGroupHttpCode)
         }
         "crate::schemas::catalog::flow_log_id()" => Some(StringIdentity::Ec2FlowLogId),
-        "crate::schemas::type_helpers::iam_path()" => None,
         "crate::schemas::catalog::iam_policy_name()" => Some(StringIdentity::IamPolicyName),
         "crate::schemas::catalog::iam_role_id()" => Some(StringIdentity::IamRoleId),
         "crate::schemas::catalog::iam_role_name()" => Some(StringIdentity::IamRoleName),

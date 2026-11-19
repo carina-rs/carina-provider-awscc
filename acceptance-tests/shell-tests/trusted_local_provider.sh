@@ -140,7 +140,7 @@ provider awscc {
 }
 
 provider aws {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 CRN
 

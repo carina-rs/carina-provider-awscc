@@ -1,11 +1,8 @@
-use carina_core::resource::Value;
-use std::collections::BTreeMap;
-
-use carina_core::schema::{AttributeType, StructField, ValidatedConfigSchema};
+use carina_core::schema::{AttributeType, StructField};
 
 use super::enums::{dsl_enum_value, enum_with_dsl_aliases};
 
-use super::condition_operator::{all_condition_operator_snake_forms, validate_condition_operators};
+use super::condition_operator::all_condition_operator_snake_forms;
 
 // ========== IAM Policy Document ==========
 
@@ -61,11 +58,12 @@ fn string_or_principal_struct() -> AttributeType {
 pub(crate) fn iam_policy_effect() -> AttributeType {
     enum_with_dsl_aliases(
         &["Allow", "Deny"],
-        crate::schemas::namespace::awscc_enum_identity(
+        crate::schemas::namespace::awscc_identity(
             "Effect",
             &crate::schemas::namespace::AwsccNamespace::new("iam.PolicyDocument.Statement")
                 .expect("valid AWSCC namespace"),
-        ),
+        )
+        .expect("valid AWSCC identity"),
     )
 }
 
@@ -82,11 +80,12 @@ pub(crate) fn iam_policy_effect() -> AttributeType {
 pub(crate) fn iam_policy_version() -> AttributeType {
     enum_with_dsl_aliases(
         &["2012-10-17", "2008-10-17"],
-        crate::schemas::namespace::awscc_enum_identity(
+        crate::schemas::namespace::awscc_identity(
             "Version",
             &crate::schemas::namespace::AwsccNamespace::new("iam.PolicyDocument")
                 .expect("valid AWSCC namespace"),
-        ),
+        )
+        .expect("valid AWSCC identity"),
     )
 }
 
@@ -112,13 +111,14 @@ pub(crate) fn condition_type() -> AttributeType {
         .collect();
     AttributeType::map_with_key(
         AttributeType::enum_(
-            crate::schemas::namespace::awscc_enum_identity(
+            crate::schemas::namespace::awscc_identity(
                 "ConditionOperator",
                 &crate::schemas::namespace::AwsccNamespace::new(
                     "iam.PolicyDocument.Statement.Condition",
                 )
                 .expect("valid AWSCC namespace"),
-            ),
+            )
+            .expect("valid AWSCC identity"),
             Some(operator_values),
             operator_aliases,
             None,
@@ -186,21 +186,4 @@ pub fn iam_policy_document() -> AttributeType {
                 .build(),
         ],
     )
-}
-
-/// Validate IAM policy document structure and condition operators.
-pub fn validate_iam_policy_document(value: &Value) -> Result<(), String> {
-    // The IAM policy schema is flat (no `AttributeType::Ref`), so an
-    // empty `defs` map is sound here (carina#3345).
-    let schema = ValidatedConfigSchema::validate(BTreeMap::from([(
-        "policy_document".to_string(),
-        iam_policy_document(),
-    )]))
-    .expect("IAM policy document schema must be valid");
-    schema
-        .rootless_type("policy_document")
-        .expect("IAM policy document type must exist")
-        .validate(value)
-        .map_err(|e| e.to_string())?;
-    validate_condition_operators(value)
 }

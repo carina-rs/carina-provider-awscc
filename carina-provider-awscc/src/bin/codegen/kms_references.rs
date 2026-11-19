@@ -47,7 +47,7 @@ impl ReferenceKind {
     }
 
     pub fn default_pattern(self) -> &'static PatternSpec {
-        // This comparison-only reference type is shared across providers (#541).
+        // AWSCC owns this comparison-only reference type and its grammar (#572).
         // Read its grammar from the type instead of maintaining a second source.
         static DEFAULT_TYPE: std::sync::LazyLock<carina_core::schema::AttributeType> =
             std::sync::LazyLock::new(carina_provider_awscc::schemas::catalog::kms_key_reference);

@@ -140,7 +140,8 @@ pub(crate) fn validate_namespaced_enum(
 ) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
         let s = s.expose_plaintext();
-        let identity = super::namespace::awscc_enum_identity(type_name, namespace);
+        let identity =
+            super::namespace::awscc_identity(type_name, namespace).expect("valid AWSCC identity");
         validate_enum_namespace(s, &identity)?;
 
         let normalized = strip_enum_identity_prefix(s, &identity);
@@ -157,7 +158,7 @@ pub(crate) fn validate_namespaced_enum(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schemas::type_helpers::validate_iam_policy_document;
+    use crate::schemas::catalog::ported_upstream_tests::validate_iam_policy_document;
 
     #[test]
     fn all_read_back_declarations_exist_and_budgets_remain_default() {
