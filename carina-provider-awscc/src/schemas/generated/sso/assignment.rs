@@ -45,7 +45,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_principal_id_attribute());
     #[inline(never)]
     fn build_principal_type_attribute() -> AttributeSchema {
-        AttributeSchema::required("principal_type", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("PrincipalType", &crate::schemas::namespace::AwsccNamespace::new("sso.Assignment")), Some(vec!["USER".to_string(), "GROUP".to_string()]), vec![("USER".to_string(), "user".to_string()), ("GROUP".to_string(), "group".to_string())], None, None))
+        AttributeSchema::required("principal_type", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("PrincipalType", &crate::schemas::namespace::AwsccNamespace::new("sso.Assignment").expect("valid AWSCC namespace")), Some(vec!["USER".to_string(), "GROUP".to_string()]), vec![("USER".to_string(), "user".to_string()), ("GROUP".to_string(), "group".to_string())], None, None))
                 .create_only()
                 .with_description("The assignee's type, user/group")
                 .with_provider_name("PrincipalType")
@@ -63,7 +63,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_target_id_attribute());
     #[inline(never)]
     fn build_target_type_attribute() -> AttributeSchema {
-        AttributeSchema::required("target_type", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("TargetType", &crate::schemas::namespace::AwsccNamespace::new("sso.Assignment")), Some(vec!["AWS_ACCOUNT".to_string()]), vec![("AWS_ACCOUNT".to_string(), "aws_account".to_string())], None, None))
+        AttributeSchema::required("target_type", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("TargetType", &crate::schemas::namespace::AwsccNamespace::new("sso.Assignment").expect("valid AWSCC namespace")), Some(vec!["AWS_ACCOUNT".to_string()]), vec![("AWS_ACCOUNT".to_string(), "aws_account".to_string())], None, None))
                 .create_only()
                 .with_description("The type of resource to be provisioned to, only aws account now")
                 .with_provider_name("TargetType")

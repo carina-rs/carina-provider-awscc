@@ -17,7 +17,19 @@ use carina_provider_awscc::schemas::generated::route53::hosted_zone::route53_hos
 #[test]
 fn hosted_zone_id_producers_share_catalog_identity_and_keep_cfn_member_bounds() {
     let alias_target_hosted_zone_id = AttributeType::union(vec![
-        carina_provider_awscc::schemas::catalog::cloudfront_hosted_zone_id(),
+        // No AWSCC schema declares this CloudFront alternative; keep the
+        // original union fixture local instead of adding an unused catalog row.
+        AttributeType::enum_(
+            carina_provider_awscc::schemas::namespace::awscc_enum_identity(
+                "HostedZoneId",
+                &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("cloudfront")
+                    .expect("valid AWSCC namespace"),
+            ),
+            Some(vec!["Z2FDTNDATAQYW2".into()]),
+            vec![("Z2FDTNDATAQYW2".into(), "global".into())],
+            None,
+            None,
+        ),
         carina_provider_awscc::schemas::catalog::route53_hosted_zone_id(),
     ]);
     let sinks = ResourceSchema::new("test.Route53Sinks")

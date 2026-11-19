@@ -160,9 +160,7 @@ impl AwsccProvider {
             .kms_client()
             .and_then(|client| client.instance_region().map(|region| (client, region)));
         match scope {
-            Ok((client, region)) => {
-                resolve_guest_reference_batch(client, "awscc", region, requests).await
-            }
+            Ok((client, region)) => resolve_guest_reference_batch(client, region, requests).await,
             Err(reason) => requests
                 .into_iter()
                 .map(|_| {

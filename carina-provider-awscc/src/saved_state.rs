@@ -137,7 +137,10 @@ mod tests {
                 StructField::required(
                     "effect",
                     AttributeType::enum_(
-                        awscc_enum_identity("Effect", &AwsccNamespace::new("test.Saved")),
+                        awscc_enum_identity(
+                            "Effect",
+                            &AwsccNamespace::new("test.Saved").expect("valid AWSCC namespace"),
+                        ),
                         Some(vec!["Allow".into()]),
                         Vec::new(),
                         None,

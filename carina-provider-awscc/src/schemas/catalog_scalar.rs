@@ -140,18 +140,6 @@ define_awscc_type_catalog! {
         valid_sample: "cagw-12345678",
         constructor: |identity| prefixed_resource_id(identity, "cagw"),
     },
-    CloudFrontHostedZoneId => cloudfront_hosted_zone_id {
-        segments: ["cloudfront"],
-        kind: "HostedZoneId",
-        valid_sample: "Z2FDTNDATAQYW2",
-        constructor: |identity| IdentityDefinition::enum_(identity,
-None,
-None,
-Some(vec!["Z2FDTNDATAQYW2".to_string()]),
-vec![("Z2FDTNDATAQYW2".to_string(), "global".to_string())],
-None,
-None),
-    },
     EgressOnlyInternetGatewayId => egress_only_internet_gateway_id {
         segments: ["ec2", "EgressOnlyInternetGateway"],
         kind: "Id",

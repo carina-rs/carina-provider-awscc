@@ -58,7 +58,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_health_check_port_attribute());
     #[inline(never)]
     fn build_health_check_protocol_attribute() -> AttributeSchema {
-        AttributeSchema::optional("health_check_protocol", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("HealthCheckProtocol", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.TargetGroup")), Some(vec!["HTTP".to_string(), "HTTPS".to_string(), "TCP".to_string()]), vec![("HTTP".to_string(), "http".to_string()), ("HTTPS".to_string(), "https".to_string()), ("TCP".to_string(), "tcp".to_string())], None, None))
+        AttributeSchema::optional("health_check_protocol", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("HealthCheckProtocol", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.TargetGroup").expect("valid AWSCC namespace")), Some(vec!["HTTP".to_string(), "HTTPS".to_string(), "TCP".to_string()]), vec![("HTTP".to_string(), "http".to_string()), ("HTTPS".to_string(), "https".to_string()), ("TCP".to_string(), "tcp".to_string())], None, None))
                 .with_description("The protocol the load balancer uses when performing health checks on targets. ")
                 .with_provider_name("HealthCheckProtocol")
             .build()
@@ -82,7 +82,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_healthy_threshold_count_attribute());
     #[inline(never)]
     fn build_ip_address_type_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ip_address_type", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("IpAddressType", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.TargetGroup")), Some(vec!["ipv4".to_string(), "ipv6".to_string()]), vec![("ipv4".to_string(), "ipv4".to_string()), ("ipv6".to_string(), "ipv6".to_string())], None, None))
+        AttributeSchema::optional("ip_address_type", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("IpAddressType", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.TargetGroup").expect("valid AWSCC namespace")), Some(vec!["ipv4".to_string(), "ipv6".to_string()]), vec![("ipv4".to_string(), "ipv4".to_string()), ("ipv6".to_string(), "ipv6".to_string())], None, None))
                 .create_only()
                 .with_description("The type of IP address used for this target group. The possible values are ipv4 and ipv6. ")
                 .with_provider_name("IpAddressType")
@@ -126,7 +126,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_port_attribute());
     #[inline(never)]
     fn build_protocol_attribute() -> AttributeSchema {
-        AttributeSchema::optional("protocol", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("Protocol", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.TargetGroup")), Some(vec!["HTTP".to_string(), "HTTPS".to_string(), "TCP".to_string(), "TLS".to_string(), "UDP".to_string(), "TCP_UDP".to_string(), "GENEVE".to_string(), "QUIC".to_string(), "TCP_QUIC".to_string()]), vec![("HTTP".to_string(), "http".to_string()), ("HTTPS".to_string(), "https".to_string()), ("TCP".to_string(), "tcp".to_string()), ("TLS".to_string(), "tls".to_string()), ("UDP".to_string(), "udp".to_string()), ("TCP_UDP".to_string(), "tcp_udp".to_string()), ("GENEVE".to_string(), "geneve".to_string()), ("QUIC".to_string(), "quic".to_string()), ("TCP_QUIC".to_string(), "tcp_quic".to_string())], None, None))
+        AttributeSchema::optional("protocol", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("Protocol", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.TargetGroup").expect("valid AWSCC namespace")), Some(vec!["HTTP".to_string(), "HTTPS".to_string(), "TCP".to_string(), "TLS".to_string(), "UDP".to_string(), "TCP_UDP".to_string(), "GENEVE".to_string(), "QUIC".to_string(), "TCP_QUIC".to_string()]), vec![("HTTP".to_string(), "http".to_string()), ("HTTPS".to_string(), "https".to_string()), ("TCP".to_string(), "tcp".to_string()), ("TLS".to_string(), "tls".to_string()), ("UDP".to_string(), "udp".to_string()), ("TCP_UDP".to_string(), "tcp_udp".to_string()), ("GENEVE".to_string(), "geneve".to_string()), ("QUIC".to_string(), "quic".to_string()), ("TCP_QUIC".to_string(), "tcp_quic".to_string())], None, None))
                 .create_only()
                 .with_description("The protocol to use for routing traffic to the targets.")
                 .with_provider_name("Protocol")
@@ -135,7 +135,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_protocol_attribute());
     #[inline(never)]
     fn build_protocol_version_attribute() -> AttributeSchema {
-        AttributeSchema::optional("protocol_version", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("ProtocolVersion", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.TargetGroup")), Some(vec!["GRPC".to_string(), "HTTP1".to_string(), "HTTP2".to_string()]), vec![("GRPC".to_string(), "grpc".to_string()), ("HTTP1".to_string(), "http1".to_string()), ("HTTP2".to_string(), "http2".to_string())], None, None))
+        AttributeSchema::optional("protocol_version", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("ProtocolVersion", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.TargetGroup").expect("valid AWSCC namespace")), Some(vec!["GRPC".to_string(), "HTTP1".to_string(), "HTTP2".to_string()]), vec![("GRPC".to_string(), "grpc".to_string()), ("HTTP1".to_string(), "http1".to_string()), ("HTTP2".to_string(), "http2".to_string())], None, None))
                 .create_only()
                 .with_description("[HTTP/HTTPS protocol] The protocol version. The possible values are GRPC, HTTP1, and HTTP2.")
                 .with_provider_name("ProtocolVersion")
@@ -195,7 +195,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_target_group_name_attribute());
     #[inline(never)]
     fn build_target_type_attribute() -> AttributeSchema {
-        AttributeSchema::optional("target_type", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("TargetType", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.TargetGroup")), Some(vec!["instance".to_string(), "ip".to_string(), "lambda".to_string(), "alb".to_string()]), vec![("instance".to_string(), "instance".to_string()), ("ip".to_string(), "ip".to_string()), ("lambda".to_string(), "lambda".to_string()), ("alb".to_string(), "alb".to_string())], None, None))
+        AttributeSchema::optional("target_type", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("TargetType", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.TargetGroup").expect("valid AWSCC namespace")), Some(vec!["instance".to_string(), "ip".to_string(), "lambda".to_string(), "alb".to_string()]), vec![("instance".to_string(), "instance".to_string()), ("ip".to_string(), "ip".to_string()), ("lambda".to_string(), "lambda".to_string()), ("alb".to_string(), "alb".to_string())], None, None))
                 .create_only()
                 .with_description("The type of target that you must specify when registering targets with this target group. You can't specify targets for a target group using more than one target type.")
                 .with_provider_name("TargetType")

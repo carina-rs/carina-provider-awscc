@@ -1,0 +1,14 @@
+acm
+cloudfront
+dynamodb
+ec2
+ecs
+iam
+kms
+logs
+organizations
+s3
+sqs
+sso
+sts
+wafv2

@@ -1246,7 +1246,8 @@ mod tests {
     fn conflicting_enum(changed_values: bool) {
         let identity = carina_provider_awscc::schemas::namespace::awscc_enum_identity(
             "Mode",
-            &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.Round1"),
+            &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.Round1")
+                .expect("valid AWSCC namespace"),
         );
         let first = AttributeType::enum_(
             identity.clone(),

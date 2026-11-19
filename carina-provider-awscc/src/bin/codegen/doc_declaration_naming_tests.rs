@@ -133,7 +133,8 @@ fn shared_enums_and_unions_show_used_by() {
         AttributeType::enum_(
             carina_provider_awscc::schemas::namespace::awscc_enum_identity(
                 "Mode",
-                &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.Round2"),
+                &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.Round2")
+                    .expect("valid AWSCC namespace"),
             ),
             Some(vec!["a".into()]),
             vec![],
@@ -184,7 +185,8 @@ fn shared_headings_and_anchors_do_not_depend_on_sibling_uses() {
         AttributeType::enum_(
             carina_provider_awscc::schemas::namespace::awscc_enum_identity(
                 "Mode",
-                &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.Round3"),
+                &carina_provider_awscc::schemas::namespace::AwsccNamespace::new("test.Round3")
+                    .expect("valid AWSCC namespace"),
             ),
             Some(vec!["a".into()]),
             vec![],

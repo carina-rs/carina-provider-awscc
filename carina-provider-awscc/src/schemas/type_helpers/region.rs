@@ -81,25 +81,6 @@ pub fn validate_aws_region(region: &str) -> Result<(), String> {
     }
 }
 
-/// Region API spelling -> DSL spelling pairs for the carina-core /
-/// carina-provider-protocol `StringEnum.dsl_aliases` field.
-///
-/// AWS region codes carry hyphens (`ap-northeast-1`) but the DSL
-/// identifier form replaces them with underscores (`ap_northeast_1`).
-/// Provider crates emit this list verbatim so the alias table
-/// survives the WASM-component boundary as data — a `fn` pointer
-/// would not (carina#2831).
-pub fn region_dsl_aliases() -> Vec<(String, String)> {
-    REGIONS
-        .iter()
-        .filter_map(|(code, _)| {
-            let api = (*code).to_string();
-            let dsl = api.replace('-', "_");
-            (api != dsl).then_some((api, dsl))
-        })
-        .collect()
-}
-
 /// Complete AWSCC regions using the catalog's fixed identity.
 pub fn region_completions() -> Vec<CompletionValue> {
     let identity = crate::schemas::catalog::ScalarType::Region.identity();

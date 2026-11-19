@@ -63,7 +63,8 @@ pub(crate) fn iam_policy_effect() -> AttributeType {
         &["Allow", "Deny"],
         crate::schemas::namespace::awscc_enum_identity(
             "Effect",
-            &crate::schemas::namespace::AwsccNamespace::new("iam.PolicyDocument.Statement"),
+            &crate::schemas::namespace::AwsccNamespace::new("iam.PolicyDocument.Statement")
+                .expect("valid AWSCC namespace"),
         ),
     )
 }
@@ -83,7 +84,8 @@ pub(crate) fn iam_policy_version() -> AttributeType {
         &["2012-10-17", "2008-10-17"],
         crate::schemas::namespace::awscc_enum_identity(
             "Version",
-            &crate::schemas::namespace::AwsccNamespace::new("iam.PolicyDocument"),
+            &crate::schemas::namespace::AwsccNamespace::new("iam.PolicyDocument")
+                .expect("valid AWSCC namespace"),
         ),
     )
 }
@@ -114,7 +116,8 @@ pub(crate) fn condition_type() -> AttributeType {
                 "ConditionOperator",
                 &crate::schemas::namespace::AwsccNamespace::new(
                     "iam.PolicyDocument.Statement.Condition",
-                ),
+                )
+                .expect("valid AWSCC namespace"),
             ),
             Some(operator_values),
             operator_aliases,

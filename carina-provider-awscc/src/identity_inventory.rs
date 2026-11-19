@@ -145,17 +145,32 @@ impl Inventory {
     }
 }
 
-fn migrated_inventory(route: &str) -> BTreeSet<String> {
+fn inventory_fixture(directory: &str, route: &str) -> BTreeSet<String> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/identity_inventory_before_572")
+        .join("tests/fixtures")
+        .join(directory)
         .join(format!("{route}.txt"));
     let expected = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
         .lines()
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    assert!(
+        !expected.is_empty(),
+        "empty inventory for {directory}/{route}"
+    );
+    expected
+}
+
+fn migrated_inventory(route: &str) -> BTreeSet<String> {
+    let expected = inventory_fixture("identity_inventory_before_572", route)
+        .into_iter()
         .map(|old| {
             let (site, identity) = old
                 .rsplit_once('\t')
-                .map_or((None, old), |(site, identity)| (Some(site), identity));
+                .map_or((None, old.as_str()), |(site, identity)| {
+                    (Some(site), identity)
+                });
             let migrated = identity
                 .strip_prefix("aws.")
                 .map_or_else(|| identity.to_string(), |tail| format!("awscc.{tail}"));
@@ -172,12 +187,23 @@ pub fn assert_migrated_inventory(route: &str, actual: BTreeSet<String>) {
 }
 
 pub fn assert_migrated_identities(route: &str, actual: BTreeSet<TypeIdentity>) {
-    let expected = migrated_inventory(route)
+    assert_identity_axes(route, actual, migrated_inventory(route));
+}
+
+pub fn assert_head_identity_pins(route: &str, actual: BTreeSet<TypeIdentity>) {
+    assert_identity_axes(
+        &format!("head pins/{route}"),
+        actual,
+        inventory_fixture("identity_inventory_head_pins", route),
+    );
+}
+
+fn assert_identity_axes(route: &str, actual: BTreeSet<TypeIdentity>, expected: BTreeSet<String>) {
+    let expected = expected
         .into_iter()
         .map(|name| {
-            // Baseline identity fixtures contain aws-owned identities and
-            // provider-less builtins. Compare axes too: rendering alone could
-            // disguise a missing provider as the first path segment.
+            // Compare provider ownership and the provider-less builtins too:
+            // rendering alone could disguise a missing provider as a path segment.
             let (provider, tail) = name
                 .strip_prefix("awscc.")
                 .map_or((None, name.as_str()), |tail| {

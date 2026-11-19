@@ -846,6 +846,15 @@ fn source_scan_rejects_all_shared_type_definitions_for_572() {
         "kms_reference::describe_key_failure",
         "kms_reference::resolve_core_reference_batch",
         "kms_reference::resolve_guest_reference_batch",
+        "Partition",
+        "Partition::from_region",
+        "ConditionOperator",
+        "ConditionOperatorBase",
+        "ConditionQualifier",
+        "MemberIdentityError",
+        "__carina_aws_catalog_identity",
+        "__private::AttributeType",
+        "__private::TypeIdentity",
     ] {
         let source = format!("{SHARED_CRATE_PREFIX}{item}");
         for source in [
@@ -1311,5 +1320,35 @@ fn sso_arns_keep_pattern_only_metadata_and_resource_language() {
         ] {
             assert!(!pattern.is_match(&invalid), "{invalid}");
         }
+    }
+}
+
+#[test]
+fn shared_schema_public_surface_has_clippy_and_source_scan_bans() {
+    let config = include_str!("../../../clippy.toml");
+    for row in include_str!("../../tests/fixtures/shared_schema_surface_5ad417e.txt").lines() {
+        if row.starts_with('#') || row.is_empty() {
+            continue;
+        }
+        let (kind, path) = row.split_once('\t').expect("surface fixture row");
+        assert!(
+            !shared_source_failures(path).is_empty(),
+            "shared schema API is allowlisted: {path}"
+        );
+        if matches!(kind, "constants" | "aliases") {
+            continue;
+        }
+        let marker = format!("disallowed-{kind} = [");
+        let section = config
+            .split_once(&marker)
+            .expect("Clippy ban section")
+            .1
+            .split_once("\n]")
+            .unwrap()
+            .0;
+        assert!(
+            section.contains(&format!("path = \"{path}\"")),
+            "missing {kind} ban: {path}"
+        );
     }
 }

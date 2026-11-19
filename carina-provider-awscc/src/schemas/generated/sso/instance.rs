@@ -48,7 +48,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_owner_account_id_attribute());
     #[inline(never)]
     fn build_status_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("status", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("Status", &crate::schemas::namespace::AwsccNamespace::new("sso.Instance")), Some(vec!["CREATE_IN_PROGRESS".to_string(), "DELETE_IN_PROGRESS".to_string(), "ACTIVE".to_string()]), vec![("CREATE_IN_PROGRESS".to_string(), "create_in_progress".to_string()), ("DELETE_IN_PROGRESS".to_string(), "delete_in_progress".to_string()), ("ACTIVE".to_string(), "active".to_string())], None, None))
+        AttributeSchema::provider_populated("status", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("Status", &crate::schemas::namespace::AwsccNamespace::new("sso.Instance").expect("valid AWSCC namespace")), Some(vec!["CREATE_IN_PROGRESS".to_string(), "DELETE_IN_PROGRESS".to_string(), "ACTIVE".to_string()]), vec![("CREATE_IN_PROGRESS".to_string(), "create_in_progress".to_string()), ("DELETE_IN_PROGRESS".to_string(), "delete_in_progress".to_string()), ("ACTIVE".to_string(), "active".to_string())], None, None))
                 .with_description("The status of the Identity Center (SSO) Instance, create_in_progress/delete_in_progress/active (read-only)")
                 .with_provider_name("Status")
             .build()

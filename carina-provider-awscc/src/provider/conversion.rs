@@ -1033,7 +1033,8 @@ mod tests {
             ],
             Some(crate::schemas::namespace::awscc_enum_identity(
                 "ViewerProtocolPolicy",
-                &crate::schemas::namespace::AwsccNamespace::new("cloudfront.Distribution"),
+                &crate::schemas::namespace::AwsccNamespace::new("cloudfront.Distribution")
+                    .expect("valid AWSCC namespace"),
             )),
             vec![(
                 "redirect-to-https".to_string(),
@@ -1399,7 +1400,8 @@ mod tests {
             ],
             Some(crate::schemas::namespace::awscc_enum_identity(
                 "LogGroupClass",
-                &crate::schemas::namespace::AwsccNamespace::new("logs.LogGroup"),
+                &crate::schemas::namespace::AwsccNamespace::new("logs.LogGroup")
+                    .expect("valid AWSCC namespace"),
             )),
             vec![],
         );
@@ -1485,7 +1487,8 @@ mod tests {
             vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
             Some(crate::schemas::namespace::awscc_enum_identity(
                 "AllowedMethod",
-                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket"),
+                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
+                    .expect("valid AWSCC namespace"),
             )),
             vec![],
         );
@@ -1523,7 +1526,8 @@ mod tests {
             vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
             Some(crate::schemas::namespace::awscc_enum_identity(
                 "AllowedMethod",
-                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket"),
+                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
+                    .expect("valid AWSCC namespace"),
             )),
             vec![],
         );
@@ -1557,7 +1561,8 @@ mod tests {
             vec!["GET".to_string(), "PUT".to_string()],
             Some(crate::schemas::namespace::awscc_enum_identity(
                 "AllowedMethod",
-                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket"),
+                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
+                    .expect("valid AWSCC namespace"),
             )),
             vec![],
         );
@@ -1596,7 +1601,8 @@ mod tests {
                 vec!["tcp".to_string(), "udp".to_string()],
                 Some(crate::schemas::namespace::awscc_enum_identity(
                     "Protocol",
-                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg"),
+                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
+                        .expect("valid AWSCC namespace"),
                 )),
                 vec![],
             ),
@@ -1666,7 +1672,8 @@ mod tests {
             vec!["Active".to_string(), "Inactive".to_string()],
             Some(crate::schemas::namespace::awscc_enum_identity(
                 "Status",
-                &crate::schemas::namespace::AwsccNamespace::new("test.resource"),
+                &crate::schemas::namespace::AwsccNamespace::new("test.resource")
+                    .expect("valid AWSCC namespace"),
             )),
             vec![],
         );
@@ -1754,7 +1761,8 @@ mod tests {
                 vec!["tcp".to_string(), "udp".to_string()],
                 Some(crate::schemas::namespace::awscc_enum_identity(
                     "Protocol",
-                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg"),
+                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
+                        .expect("valid AWSCC namespace"),
                 )),
                 vec![],
             ),
@@ -1789,7 +1797,8 @@ mod tests {
                 vec!["tcp".to_string(), "udp".to_string()],
                 Some(crate::schemas::namespace::awscc_enum_identity(
                     "Protocol",
-                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg"),
+                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
+                        .expect("valid AWSCC namespace"),
                 )),
                 vec![],
             ),
@@ -2462,7 +2471,8 @@ mod tests {
             vec!["ipsec.1".to_string()],
             Some(crate::schemas::namespace::awscc_enum_identity(
                 "Type",
-                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway"),
+                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                    .expect("valid AWSCC namespace"),
             )),
             vec![],
         );
@@ -2497,7 +2507,8 @@ mod tests {
             vec!["ipsec.1".to_string()],
             Some(crate::schemas::namespace::awscc_enum_identity(
                 "Type",
-                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway"),
+                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                    .expect("valid AWSCC namespace"),
             )),
             vec![],
         );
@@ -2527,7 +2538,8 @@ mod tests {
             vec!["ipsec.1".to_string()],
             Some(crate::schemas::namespace::awscc_enum_identity(
                 "Type",
-                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway"),
+                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                    .expect("valid AWSCC namespace"),
             )),
             vec![],
         );
@@ -2555,7 +2567,8 @@ mod tests {
             vec!["ipsec.1".to_string()],
             Some(crate::schemas::namespace::awscc_enum_identity(
                 "Type",
-                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway"),
+                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                    .expect("valid AWSCC namespace"),
             )),
             vec![],
         );
@@ -2643,7 +2656,8 @@ mod tests {
         let attr_type = AttributeType::enum_(
             crate::schemas::namespace::awscc_enum_identity(
                 "Effect",
-                &crate::schemas::namespace::AwsccNamespace::new("iam.PolicyDocument"),
+                &crate::schemas::namespace::AwsccNamespace::new("iam.PolicyDocument")
+                    .expect("valid AWSCC namespace"),
             ),
             Some(vec!["Allow".to_string(), "Deny".to_string()]),
             vec![

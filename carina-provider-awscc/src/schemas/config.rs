@@ -196,7 +196,8 @@ mod tests {
                 "awscc.ec2.Vpc.InstanceTenancy.default".to_string().into(),
             )),
             "InstanceTenancy",
-            &crate::schemas::namespace::AwsccNamespace::new("ec2.Vpc"),
+            &crate::schemas::namespace::AwsccNamespace::new("ec2.Vpc")
+                .expect("valid AWSCC namespace"),
             &["default", "dedicated", "host"],
         );
         assert!(result.is_ok());

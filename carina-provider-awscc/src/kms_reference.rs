@@ -12,6 +12,7 @@ use carina_provider_protocol::types::ReferenceRequest;
 use futures::{StreamExt, stream};
 
 use crate::partition::Partition;
+use crate::schemas::namespace::AWSCC_PROVIDER_NAME;
 
 const MAX_CONCURRENT_DESCRIBE_KEY: usize = 8;
 
@@ -108,28 +109,27 @@ impl ReferenceResolution {
         }
     }
 
-    fn into_core(self, provider_name: &str) -> Result<CoreOutcome, CoreError> {
+    fn into_core(self) -> Result<CoreOutcome, CoreError> {
         match self {
             Self::Resolved(value) => CoreOutcome::from_guest(value),
             Self::NotFound(failure) => Ok(CoreOutcome::NotFound(native_sdk_error(
-                provider_name,
                 failure,
                 KmsErrorKind::ApiError,
             ))),
             Self::AccessDenied(failure) => Err(CoreError::AccessDenied(
-                native_sdk_error(provider_name, failure, KmsErrorKind::ApiError).into(),
+                native_sdk_error(failure, KmsErrorKind::ApiError).into(),
             )),
             Self::Transient(failure) => Err(CoreError::InvalidReference(
-                native_sdk_error(provider_name, failure, KmsErrorKind::ApiError)
+                native_sdk_error(failure, KmsErrorKind::ApiError)
                     .with_retryability(Retryability::Transient)
                     .into(),
             )),
             Self::InvalidReference(failure) => Err(CoreError::InvalidReference(
-                native_sdk_error(provider_name, failure, KmsErrorKind::InvalidInput).into(),
+                native_sdk_error(failure, KmsErrorKind::InvalidInput).into(),
             )),
             Self::InvalidInput { operation, message } => Err(CoreError::InvalidReference(
                 CoreProviderError::invalid_input(ProviderText::new(message))
-                    .for_provider(provider_name)
+                    .for_provider(AWSCC_PROVIDER_NAME)
                     .with_operation(operation)
                     .into(),
             )),
@@ -138,7 +138,6 @@ impl ReferenceResolution {
 
     fn into_guest(
         self,
-        provider_name: &str,
     ) -> Result<carina_plugin_sdk::types::ReferenceOutcome, carina_plugin_sdk::types::ReferenceError>
     {
         use carina_plugin_sdk::types::{
@@ -148,22 +147,22 @@ impl ReferenceResolution {
         match self {
             Self::Resolved(value) => Ok(GuestOutcome::Resolved(value)),
             Self::NotFound(failure) => Ok(GuestOutcome::NotFound(
-                native_sdk_error(provider_name, failure, KmsErrorKind::ApiError).into(),
+                native_sdk_error(failure, KmsErrorKind::ApiError).into(),
             )),
             Self::AccessDenied(failure) => Err(GuestError::AccessDenied(
-                native_sdk_error(provider_name, failure, KmsErrorKind::ApiError).into(),
+                native_sdk_error(failure, KmsErrorKind::ApiError).into(),
             )),
             Self::Transient(failure) => Err(GuestError::InvalidReference(
-                native_sdk_error(provider_name, failure, KmsErrorKind::ApiError)
+                native_sdk_error(failure, KmsErrorKind::ApiError)
                     .with_retryability(Retryability::Transient)
                     .into(),
             )),
             Self::InvalidReference(failure) => Err(GuestError::InvalidReference(
-                native_sdk_error(provider_name, failure, KmsErrorKind::InvalidInput).into(),
+                native_sdk_error(failure, KmsErrorKind::InvalidInput).into(),
             )),
             Self::InvalidInput { operation, message } => Err(GuestError::InvalidReference(
                 CoreProviderError::invalid_input(ProviderText::new(message))
-                    .for_provider(provider_name)
+                    .for_provider(AWSCC_PROVIDER_NAME)
                     .with_operation(operation)
                     .into(),
             )),
@@ -176,11 +175,7 @@ enum KmsErrorKind {
     InvalidInput,
 }
 
-fn native_sdk_error(
-    provider_name: &str,
-    failure: DescribeKeyFailure,
-    kind: KmsErrorKind,
-) -> CoreProviderError {
+fn native_sdk_error(failure: DescribeKeyFailure, kind: KmsErrorKind) -> CoreProviderError {
     let code = failure.code.clone();
     let status = failure.status;
     let request_id = failure.request_id.clone();
@@ -192,7 +187,7 @@ fn native_sdk_error(
             CoreProviderError::api_error_caused_by("KMS reference resolution failed", failure)
         }
     }
-    .for_provider(provider_name)
+    .for_provider(AWSCC_PROVIDER_NAME)
     .with_operation("kms.DescribeKey")
     .with_retryability(Retryability::Unclassified);
     if let Some(code) = code {
@@ -249,7 +244,6 @@ async fn resolve_classified_kms_key_reference(
 /// Keep guest authoring errors typed until the SDK's WASM encoding boundary.
 pub async fn resolve_guest_reference_batch(
     client: &impl DescribeKeyClient,
-    provider_name: &str,
     region: &str,
     requests: Vec<ReferenceRequest>,
 ) -> Vec<Result<carina_plugin_sdk::types::ReferenceOutcome, carina_plugin_sdk::types::ReferenceError>>
@@ -257,7 +251,7 @@ pub async fn resolve_guest_reference_batch(
     resolve_classified_wire_reference_batch(client, region, requests)
         .await
         .into_iter()
-        .map(|result| result.into_guest(provider_name))
+        .map(|result| result.into_guest())
         .collect()
 }
 
@@ -280,17 +274,16 @@ async fn resolve_classified_wire_reference_batch(
     resolve_classified_reference_batch(client, region, requests).await
 }
 
-/// Project shared classifications directly to core outcomes, preserving classified causes.
+/// Project AWSCC classifications directly to core outcomes, preserving classified causes.
 pub async fn resolve_core_reference_batch(
     client: &impl DescribeKeyClient,
-    provider_name: &str,
     instance_region: &str,
     requests: &[carina_core::references::ReferenceRequest],
 ) -> Vec<Result<CoreOutcome, CoreError>> {
     resolve_classified_reference_batch(client, instance_region, requests.to_vec())
         .await
         .into_iter()
-        .map(|result| result.into_core(provider_name))
+        .map(|result| result.into_core())
         .collect()
 }
 
@@ -469,7 +462,7 @@ mod tests {
             assert!(failure.status.is_none());
             assert!(failure.request_id.is_none());
             let Err(ReferenceError::InvalidReference(error)) =
-                classify_failure(failure).into_guest("awscc")
+                classify_failure(failure).into_guest()
             else {
                 panic!("transport failure must be transient");
             };
@@ -505,13 +498,11 @@ mod tests {
 
     async fn resolve_guest_key_reference(
         client: &impl DescribeKeyClient,
-        provider_name: &str,
         region: &str,
         raw: &str,
     ) -> Result<ReferenceOutcome, ReferenceError> {
         resolve_guest_reference_batch(
             client,
-            provider_name,
             region,
             vec![ReferenceRequest {
                 ty: carina_provider_protocol::types::TypeIdentity {
@@ -565,15 +556,11 @@ mod tests {
                 HttpResponse::new(400.try_into().unwrap(), SdkBody::empty()),
             );
             let fake = client(Err(describe_key_failure(sdk)));
-            let result = resolve_core_reference_batch(
-                &fake,
-                "aws",
-                "us-east-1",
-                &[core_request("alias/customer")],
-            )
-            .await
-            .pop()
-            .unwrap();
+            let result =
+                resolve_core_reference_batch(&fake, "us-east-1", &[core_request("alias/customer")])
+                    .await
+                    .pop()
+                    .unwrap();
             let error = match result {
                 Ok(CoreOutcome::NotFound(error)) => error,
                 Err(CoreError::AccessDenied(error) | CoreError::InvalidReference(error)) => {
@@ -636,7 +623,7 @@ mod tests {
             },
             value: "alias/customer".into(),
         }];
-        let mut results = resolve_guest_reference_batch(&fake, "aws", "us-east-1", requests).await;
+        let mut results = resolve_guest_reference_batch(&fake, "us-east-1", requests).await;
         let Err(carina_plugin_sdk::types::ReferenceError::AccessDenied(error)) =
             results.pop().unwrap()
         else {
@@ -675,23 +662,20 @@ mod tests {
     async fn core_batch_rejects_missing_provider_without_a_call() {
         use carina_core::references::ReferenceError as CoreError;
 
-        for provider_name in ["aws", "awscc"] {
-            let fake = client(Ok(Some(KEY_ARN.into())));
-            let mut request = core_request("alias/ignored");
-            request.ty.provider = None;
-            let results =
-                resolve_core_reference_batch(&fake, provider_name, "us-east-1", &[request]).await;
-            let [Err(CoreError::InvalidReference(error))] = results.as_slice() else {
-                panic!("an identity without a provider must be invalid");
-            };
-            let wire = error.to_wire();
-            assert_eq!(wire.kind, ProviderErrorKind::InvalidInput);
-            assert_eq!(wire.message, "reference identity has no provider");
-            assert_eq!(wire.provider_name.as_deref(), Some(provider_name));
-            assert_eq!(wire.operation.as_deref(), Some("resolve_references"));
-            assert!(wire.cause.is_none());
-            assert!(fake.calls.lock().unwrap().is_empty());
-        }
+        let fake = client(Ok(Some(KEY_ARN.into())));
+        let mut request = core_request("alias/ignored");
+        request.ty.provider = None;
+        let results = resolve_core_reference_batch(&fake, "us-east-1", &[request]).await;
+        let [Err(CoreError::InvalidReference(error))] = results.as_slice() else {
+            panic!("an identity without a provider must be invalid");
+        };
+        let wire = error.to_wire();
+        assert_eq!(wire.kind, ProviderErrorKind::InvalidInput);
+        assert_eq!(wire.message, "reference identity has no provider");
+        assert_eq!(wire.provider_name.as_deref(), Some(AWSCC_PROVIDER_NAME));
+        assert_eq!(wire.operation.as_deref(), Some("resolve_references"));
+        assert!(wire.cause.is_none());
+        assert!(fake.calls.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -708,8 +692,7 @@ mod tests {
             missing.ty.provider = None;
             let mut requests = vec![core_request("alias/first"), core_request(other_arn)];
             requests.insert(missing_index, missing);
-            let mut results =
-                resolve_core_reference_batch(&fake, "aws", "us-east-1", &requests).await;
+            let mut results = resolve_core_reference_batch(&fake, "us-east-1", &requests).await;
             assert_eq!(results.len(), requests.len());
             assert!(matches!(
                 results.remove(missing_index),
@@ -732,37 +715,34 @@ mod tests {
             ReferenceError as CoreError, ReferenceOutcome as CoreOutcome,
         };
 
-        for provider_name in ["aws", "awscc"] {
-            let fake = client(Ok(Some(KEY_ARN.into())));
-            let mut wrong_segments = core_request("alias/wrong-segments");
-            wrong_segments.ty.segments = vec!["kms".into(), "Other".into()];
-            let mut wrong_kind = core_request("alias/wrong-kind");
-            wrong_kind.ty.kind = "Arn".into();
-            let requests = [wrong_segments, core_request("alias/customer"), wrong_kind];
-            let results =
-                resolve_core_reference_batch(&fake, provider_name, "us-east-1", &requests).await;
+        let fake = client(Ok(Some(KEY_ARN.into())));
+        let mut wrong_segments = core_request("alias/wrong-segments");
+        wrong_segments.ty.segments = vec!["kms".into(), "Other".into()];
+        let mut wrong_kind = core_request("alias/wrong-kind");
+        wrong_kind.ty.kind = "Arn".into();
+        let requests = [wrong_segments, core_request("alias/customer"), wrong_kind];
+        let results = resolve_core_reference_batch(&fake, "us-east-1", &requests).await;
 
-            assert_eq!(results.len(), requests.len());
-            assert!(matches!(&results[1], Ok(CoreOutcome::Resolved(value))
+        assert_eq!(results.len(), requests.len());
+        assert!(matches!(&results[1], Ok(CoreOutcome::Resolved(value))
                 if *value == canonical(KEY_ARN)));
-            for (index, identity) in [(0, "awscc.kms.Other.Reference"), (2, "awscc.kms.Key.Arn")] {
-                let Err(CoreError::InvalidReference(error)) = &results[index] else {
-                    panic!("unsupported identity must fail at its input position");
-                };
-                let wire = error.to_wire();
-                assert_eq!(wire.kind, ProviderErrorKind::InvalidInput);
-                assert_eq!(
-                    wire.message,
-                    format!("unsupported reference identity {identity}")
-                );
-                assert_eq!(wire.provider_name.as_deref(), Some(provider_name));
-                assert_eq!(wire.operation.as_deref(), Some("resolve_references"));
-            }
+        for (index, identity) in [(0, "awscc.kms.Other.Reference"), (2, "awscc.kms.Key.Arn")] {
+            let Err(CoreError::InvalidReference(error)) = &results[index] else {
+                panic!("unsupported identity must fail at its input position");
+            };
+            let wire = error.to_wire();
+            assert_eq!(wire.kind, ProviderErrorKind::InvalidInput);
             assert_eq!(
-                *fake.calls.lock().unwrap(),
-                [("us-east-1".into(), "alias/customer".into())]
+                wire.message,
+                format!("unsupported reference identity {identity}")
             );
+            assert_eq!(wire.provider_name.as_deref(), Some(AWSCC_PROVIDER_NAME));
+            assert_eq!(wire.operation.as_deref(), Some("resolve_references"));
         }
+        assert_eq!(
+            *fake.calls.lock().unwrap(),
+            [("us-east-1".into(), "alias/customer".into())]
+        );
     }
 
     #[tokio::test]
@@ -772,105 +752,97 @@ mod tests {
             ReferenceError as CoreError, ReferenceOutcome as CoreOutcome,
         };
 
-        for provider_name in ["aws", "awscc"] {
-            for (code, status, expected, retryability) in [
-                (
-                    "NotFoundException",
-                    404,
-                    "not-found",
-                    Retryability::Unclassified,
-                ),
-                (
-                    "AccessDeniedException",
-                    403,
-                    "denied",
-                    Retryability::Unclassified,
-                ),
-                (
-                    "ThrottlingException",
-                    429,
-                    "invalid",
-                    Retryability::Transient,
-                ),
-                (
-                    "InvalidKeyIdException",
-                    400,
-                    "invalid",
-                    Retryability::Unclassified,
-                ),
-            ] {
-                let fake = client(Err(DescribeKeyFailure {
-                    message: "service error: safe AWS failure details".into(),
-                    code: Some(code.into()),
-                    status: Some(status),
-                    request_id: Some("request-123".into()),
-                }));
-                let results = resolve_core_reference_batch(
-                    &fake,
-                    provider_name,
-                    "us-east-1",
-                    &[core_request("alias/customer")],
-                )
-                .await;
-                let results = results
-                    .into_iter()
-                    .map(|result| match result {
-                        Ok(CoreOutcome::Resolved(value)) => Ok(CoreOutcome::Resolved(value)),
-                        Ok(CoreOutcome::NotFound(error)) => {
-                            Ok(CoreOutcome::NotFound(error.into_host_for_test()))
-                        }
-                        Err(CoreError::AccessDenied(error)) => Err(CoreError::AccessDenied(
-                            error.as_ref().clone().into_host_for_test().into(),
-                        )),
-                        Err(CoreError::InvalidReference(error)) => {
-                            Err(CoreError::InvalidReference(
-                                error.as_ref().clone().into_host_for_test().into(),
-                            ))
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                assert_eq!(results.len(), 1);
-                let (actual, error) = match &results[0] {
-                    Ok(CoreOutcome::NotFound(error)) => ("not-found", error),
-                    Err(CoreError::AccessDenied(error)) => ("denied", error.as_ref()),
-                    Err(CoreError::InvalidReference(error)) => ("invalid", error.as_ref()),
-                    other => panic!("unexpected {other:?}"),
-                };
-                assert_eq!(actual, expected);
-                assert_eq!(error.retryability(), retryability, "{code}");
-                if let Err(reference_error) = &results[0] {
-                    let source = reference_error
-                        .source()
-                        .unwrap()
-                        .downcast_ref::<std::sync::Arc<CoreProviderError>>()
-                        .unwrap();
-                    assert!(std::ptr::eq(source.as_ref(), error));
-                }
-                assert!(error.detail().cause().is_some());
-                let wire = error.to_wire();
-                assert_eq!(
-                    wire.kind,
-                    if expected == "invalid" && retryability == Retryability::Unclassified {
-                        ProviderErrorKind::InvalidInput
-                    } else {
-                        ProviderErrorKind::ApiError
+        for (code, status, expected, retryability) in [
+            (
+                "NotFoundException",
+                404,
+                "not-found",
+                Retryability::Unclassified,
+            ),
+            (
+                "AccessDeniedException",
+                403,
+                "denied",
+                Retryability::Unclassified,
+            ),
+            (
+                "ThrottlingException",
+                429,
+                "invalid",
+                Retryability::Transient,
+            ),
+            (
+                "InvalidKeyIdException",
+                400,
+                "invalid",
+                Retryability::Unclassified,
+            ),
+        ] {
+            let fake = client(Err(DescribeKeyFailure {
+                message: "service error: safe AWS failure details".into(),
+                code: Some(code.into()),
+                status: Some(status),
+                request_id: Some("request-123".into()),
+            }));
+            let results =
+                resolve_core_reference_batch(&fake, "us-east-1", &[core_request("alias/customer")])
+                    .await;
+            let results = results
+                .into_iter()
+                .map(|result| match result {
+                    Ok(CoreOutcome::Resolved(value)) => Ok(CoreOutcome::Resolved(value)),
+                    Ok(CoreOutcome::NotFound(error)) => {
+                        Ok(CoreOutcome::NotFound(error.into_host_for_test()))
                     }
-                );
-                assert_eq!(wire.message, "KMS reference resolution failed");
-                assert_eq!(
-                    wire.cause.as_deref(),
-                    Some("service error: safe AWS failure details")
-                );
-                assert_eq!(wire.provider_name.as_deref(), Some(provider_name));
-                assert_eq!(wire.operation.as_deref(), Some("kms.DescribeKey"));
-                assert_eq!(wire.code.as_deref(), Some(code));
-                assert_eq!(wire.status, Some(status));
-                assert_eq!(wire.request_id.as_deref(), Some("request-123"));
-                assert_eq!(
-                    *fake.calls.lock().unwrap(),
-                    [("us-east-1".into(), "alias/customer".into())]
-                );
+                    Err(CoreError::AccessDenied(error)) => Err(CoreError::AccessDenied(
+                        error.as_ref().clone().into_host_for_test().into(),
+                    )),
+                    Err(CoreError::InvalidReference(error)) => Err(CoreError::InvalidReference(
+                        error.as_ref().clone().into_host_for_test().into(),
+                    )),
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(results.len(), 1);
+            let (actual, error) = match &results[0] {
+                Ok(CoreOutcome::NotFound(error)) => ("not-found", error),
+                Err(CoreError::AccessDenied(error)) => ("denied", error.as_ref()),
+                Err(CoreError::InvalidReference(error)) => ("invalid", error.as_ref()),
+                other => panic!("unexpected {other:?}"),
+            };
+            assert_eq!(actual, expected);
+            assert_eq!(error.retryability(), retryability, "{code}");
+            if let Err(reference_error) = &results[0] {
+                let source = reference_error
+                    .source()
+                    .unwrap()
+                    .downcast_ref::<std::sync::Arc<CoreProviderError>>()
+                    .unwrap();
+                assert!(std::ptr::eq(source.as_ref(), error));
             }
+            assert!(error.detail().cause().is_some());
+            let wire = error.to_wire();
+            assert_eq!(
+                wire.kind,
+                if expected == "invalid" && retryability == Retryability::Unclassified {
+                    ProviderErrorKind::InvalidInput
+                } else {
+                    ProviderErrorKind::ApiError
+                }
+            );
+            assert_eq!(wire.message, "KMS reference resolution failed");
+            assert_eq!(
+                wire.cause.as_deref(),
+                Some("service error: safe AWS failure details")
+            );
+            assert_eq!(wire.provider_name.as_deref(), Some(AWSCC_PROVIDER_NAME));
+            assert_eq!(wire.operation.as_deref(), Some("kms.DescribeKey"));
+            assert_eq!(wire.code.as_deref(), Some(code));
+            assert_eq!(wire.status, Some(status));
+            assert_eq!(wire.request_id.as_deref(), Some("request-123"));
+            assert_eq!(
+                *fake.calls.lock().unwrap(),
+                [("us-east-1".into(), "alias/customer".into())]
+            );
         }
     }
 
@@ -878,7 +850,7 @@ mod tests {
     async fn key_arn_is_validated_without_a_call() {
         let fake = client(Ok(None));
         assert!(
-            matches!(resolve_guest_key_reference(&fake, "aws", "us-west-2", KEY_ARN).await,
+            matches!(resolve_guest_key_reference(&fake, "us-west-2", KEY_ARN).await,
             Ok(ReferenceOutcome::Resolved(arn)) if arn == KEY_ARN)
         );
         assert!(fake.calls.lock().unwrap().is_empty());
@@ -892,7 +864,7 @@ mod tests {
         ] {
             let raw = format!("arn:aws:kms:us-east-1:123456789012:key/{key_id}");
             let fake = client(Ok(None));
-            let result = resolve_guest_key_reference(&fake, "aws", "us-west-2", &raw).await;
+            let result = resolve_guest_key_reference(&fake, "us-west-2", &raw).await;
             assert!(matches!(result, Ok(ReferenceOutcome::Resolved(arn)) if arn == raw));
             assert!(fake.calls.lock().unwrap().is_empty());
         }
@@ -907,7 +879,7 @@ mod tests {
             let returned = format!("arn:aws:kms:eu-west-1:999999999999:key/{key_id}");
             for raw in [key_id, "alias/MixedCase"] {
                 let fake = client(Ok(Some(returned.clone())));
-                let result = resolve_guest_key_reference(&fake, "awscc", "eu-west-1", raw).await;
+                let result = resolve_guest_key_reference(&fake, "eu-west-1", raw).await;
                 assert!(matches!(result, Ok(ReferenceOutcome::Resolved(arn)) if arn == returned));
                 assert_eq!(
                     *fake.calls.lock().unwrap(),
@@ -931,7 +903,7 @@ mod tests {
         ] {
             let fake = client(Ok(Some(KEY_ARN.into())));
             assert!(
-                matches!(resolve_guest_key_reference(&fake, "aws", "us-west-2", raw).await,
+                matches!(resolve_guest_key_reference(&fake, "us-west-2", raw).await,
                 Ok(ReferenceOutcome::Resolved(arn)) if arn == KEY_ARN)
             );
             assert_eq!(
@@ -948,7 +920,7 @@ mod tests {
             "arn:aws:kms:eu-west-1:999999999999:key/mrk-0123456789abcdef0123456789abcdef";
         let fake = client(Ok(Some(canonical.into())));
         assert!(
-            matches!(resolve_guest_key_reference(&fake, "aws", "us-east-1", raw).await,
+            matches!(resolve_guest_key_reference(&fake, "us-east-1", raw).await,
             Ok(ReferenceOutcome::Resolved(arn)) if arn == canonical)
         );
         assert_eq!(
@@ -978,7 +950,7 @@ mod tests {
         }
 
         let fake = client(Ok(Some(canonical.into())));
-        let result = resolve_guest_key_reference(&fake, "awscc", "us-east-1", raw).await;
+        let result = resolve_guest_key_reference(&fake, "us-east-1", raw).await;
         assert!(matches!(result, Ok(ReferenceOutcome::Resolved(arn)) if arn == canonical));
         assert_eq!(
             *fake.calls.lock().unwrap(),
@@ -991,7 +963,7 @@ mod tests {
         for (partition, instance_region, arn_region) in PARTITION_REGIONS {
             let key_arn = format!("arn:{partition}:kms:{arn_region}:123456789012:key/{KEY_ID}");
             let fake = client(Ok(None));
-            let result = resolve_guest_key_reference(&fake, "aws", instance_region, &key_arn).await;
+            let result = resolve_guest_key_reference(&fake, instance_region, &key_arn).await;
             assert!(
                 matches!(result, Ok(ReferenceOutcome::Resolved(arn)) if arn == key_arn),
                 "{partition}: {key_arn}"
@@ -1000,8 +972,7 @@ mod tests {
 
             let alias_arn = format!("arn:{partition}:kms:{arn_region}:123456789012:alias/customer");
             let fake = client(Ok(Some(key_arn.clone())));
-            let result =
-                resolve_guest_key_reference(&fake, "aws", instance_region, &alias_arn).await;
+            let result = resolve_guest_key_reference(&fake, instance_region, &alias_arn).await;
             assert!(
                 matches!(result, Ok(ReferenceOutcome::Resolved(arn)) if arn == key_arn),
                 "{partition}: {alias_arn}"
@@ -1020,7 +991,7 @@ mod tests {
                 "alias/aws/sqs",
             ] {
                 let fake = client(Ok(Some(instance_key_arn.clone())));
-                let result = resolve_guest_key_reference(&fake, "aws", instance_region, raw).await;
+                let result = resolve_guest_key_reference(&fake, instance_region, raw).await;
                 assert!(
                     matches!(result, Ok(ReferenceOutcome::Resolved(arn)) if arn == instance_key_arn),
                     "{partition}: {raw}"
@@ -1050,7 +1021,7 @@ mod tests {
                     let fake = client(Ok(Some(KEY_ARN.into())));
                     assert!(
                         matches!(
-                            resolve_guest_key_reference(&fake, "aws", instance_region, &raw).await,
+                            resolve_guest_key_reference(&fake, instance_region, &raw).await,
                             Err(ReferenceError::InvalidReference(_))
                         ),
                         "{instance_region}: {raw}"
@@ -1073,7 +1044,7 @@ mod tests {
             let fake = client(Ok(Some(KEY_ARN.into())));
             assert!(
                 matches!(
-                    resolve_guest_key_reference(&fake, "aws", "us-east-1", raw).await,
+                    resolve_guest_key_reference(&fake, "us-east-1", raw).await,
                     Err(ReferenceError::InvalidReference(_))
                 ),
                 "{raw}"
@@ -1093,40 +1064,37 @@ mod tests {
         ] {
             let fake = client(Ok(response.map(str::to_owned)));
             assert!(matches!(
-                resolve_guest_key_reference(&fake, "aws", "us-east-1", "alias/a").await,
+                resolve_guest_key_reference(&fake, "us-east-1", "alias/a").await,
                 Err(ReferenceError::InvalidReference(_))
             ));
         }
     }
 
     #[tokio::test]
-    async fn resolver_errors_use_the_callers_provider_name() {
-        for provider_name in ["aws", "awscc"] {
-            for (region, raw, response) in [
-                ("us-east-1", "alias/", Ok(None)),
-                ("cn-north-1", KEY_ARN, Ok(None)),
-                ("us-iso-east-1", "alias/a", Ok(None)),
-                ("us-east-1", "alias/a", Ok(None)),
-                (
-                    "us-east-1",
-                    "alias/a",
-                    Err(DescribeKeyFailure {
-                        message: "service error: KMS is unavailable".into(),
-                        code: None,
-                        status: None,
-                        request_id: None,
-                    }),
-                ),
-            ] {
-                let fake = client(response);
-                let error =
-                    match resolve_guest_key_reference(&fake, provider_name, region, raw).await {
-                        Err(ReferenceError::InvalidReference(error)) => error,
-                        other => panic!("unexpected {other:?}"),
-                    };
-                let error = error.to_wire();
-                assert_eq!(error.provider_name.as_deref(), Some(provider_name));
-            }
+    async fn resolver_errors_are_always_scoped_to_awscc() {
+        for (region, raw, response) in [
+            ("us-east-1", "alias/", Ok(None)),
+            ("cn-north-1", KEY_ARN, Ok(None)),
+            ("us-iso-east-1", "alias/a", Ok(None)),
+            ("us-east-1", "alias/a", Ok(None)),
+            (
+                "us-east-1",
+                "alias/a",
+                Err(DescribeKeyFailure {
+                    message: "service error: KMS is unavailable".into(),
+                    code: None,
+                    status: None,
+                    request_id: None,
+                }),
+            ),
+        ] {
+            let fake = client(response);
+            let error = match resolve_guest_key_reference(&fake, region, raw).await {
+                Err(ReferenceError::InvalidReference(error)) => error,
+                other => panic!("unexpected {other:?}"),
+            };
+            let error = error.to_wire();
+            assert_eq!(error.provider_name.as_deref(), Some(AWSCC_PROVIDER_NAME));
         }
     }
 
@@ -1232,8 +1200,7 @@ mod tests {
                 status,
                 request_id: Some("request-123".into()),
             }));
-            let result =
-                resolve_guest_key_reference(&fake, "aws", "us-east-1", "alias/aws/sqs").await;
+            let result = resolve_guest_key_reference(&fake, "us-east-1", "alias/aws/sqs").await;
             let (actual, error) = match result {
                 Ok(ReferenceOutcome::NotFound(e)) => ("not-found", e),
                 Err(ReferenceError::AccessDenied(e)) => ("denied", e),
@@ -1247,7 +1214,7 @@ mod tests {
                 error.cause.as_deref(),
                 Some("service error: AWS failure details")
             );
-            assert_eq!(error.provider_name.as_deref(), Some("aws"));
+            assert_eq!(error.provider_name.as_deref(), Some(AWSCC_PROVIDER_NAME));
             assert_eq!(error.code.as_deref(), code);
             assert_eq!(error.status, status);
             assert_eq!(error.request_id.as_deref(), Some("request-123"));
@@ -1262,6 +1229,7 @@ mod batch_tests {
         DescribeKeyClient, DescribeKeyFailure, MAX_CONCURRENT_DESCRIBE_KEY,
         resolve_guest_reference_batch,
     };
+    use crate::schemas::namespace::AWSCC_PROVIDER_NAME;
     use carina_core::test_utils::provider_text::NativeWireFixture as _;
     use carina_plugin_sdk::types::{ReferenceError, ReferenceOutcome};
     use carina_provider_protocol::types::{ReferenceRequest, TypeIdentity};
@@ -1303,49 +1271,45 @@ mod batch_tests {
     }
 
     #[tokio::test]
-    async fn batch_checks_each_identity_component_with_the_callers_provider_name() {
-        for provider_name in ["aws", "awscc"] {
-            let fake = Fake(Mutex::new(vec![]));
-            let mut wrong_provider = request("alias/ignored");
-            wrong_provider.ty.provider = "aws".into();
-            let mut wrong_segments = request("alias/ignored");
-            wrong_segments.ty.segments = vec!["kms".into(), "Other".into()];
-            let mut wrong_kind = request("alias/ignored");
-            wrong_kind.ty.kind = "Arn".into();
-            let key_arn =
-                "arn:aws:kms:us-east-1:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab";
-            let results = resolve_guest_reference_batch(
-                &fake,
-                provider_name,
-                "us-east-1",
-                vec![wrong_provider, request(key_arn), wrong_segments, wrong_kind],
-            )
-            .await;
-            assert_eq!(results.len(), 4);
-            assert!(matches!(&results[1], Ok(ReferenceOutcome::Resolved(arn)) if arn == key_arn));
-            for (index, identity) in [
-                (0, "aws.kms.Key.Reference"),
-                (2, "awscc.kms.Other.Reference"),
-                (3, "awscc.kms.Key.Arn"),
-            ] {
-                let Err(ReferenceError::InvalidReference(error)) = &results[index] else {
-                    panic!("unsupported identity must fail at its input position");
-                };
-                let error = error.to_wire();
-                assert_eq!(error.provider_name.as_deref(), Some(provider_name));
-                assert_eq!(
-                    error.kind,
-                    carina_provider_protocol::types::ProviderErrorKind::InvalidInput
-                );
-                assert_eq!(error.operation.as_deref(), Some("resolve_references"));
-                assert_eq!(
-                    error.message,
-                    format!("unsupported reference identity {identity}")
-                );
-                assert!(error.cause.is_none());
-            }
-            assert!(fake.0.lock().unwrap().is_empty());
+    async fn batch_checks_each_identity_component_with_fixed_awscc_provider() {
+        let fake = Fake(Mutex::new(vec![]));
+        let mut wrong_provider = request("alias/ignored");
+        wrong_provider.ty.provider = "aws".into();
+        let mut wrong_segments = request("alias/ignored");
+        wrong_segments.ty.segments = vec!["kms".into(), "Other".into()];
+        let mut wrong_kind = request("alias/ignored");
+        wrong_kind.ty.kind = "Arn".into();
+        let key_arn = "arn:aws:kms:us-east-1:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab";
+        let results = resolve_guest_reference_batch(
+            &fake,
+            "us-east-1",
+            vec![wrong_provider, request(key_arn), wrong_segments, wrong_kind],
+        )
+        .await;
+        assert_eq!(results.len(), 4);
+        assert!(matches!(&results[1], Ok(ReferenceOutcome::Resolved(arn)) if arn == key_arn));
+        for (index, identity) in [
+            (0, "aws.kms.Key.Reference"),
+            (2, "awscc.kms.Other.Reference"),
+            (3, "awscc.kms.Key.Arn"),
+        ] {
+            let Err(ReferenceError::InvalidReference(error)) = &results[index] else {
+                panic!("unsupported identity must fail at its input position");
+            };
+            let error = error.to_wire();
+            assert_eq!(error.provider_name.as_deref(), Some(AWSCC_PROVIDER_NAME));
+            assert_eq!(
+                error.kind,
+                carina_provider_protocol::types::ProviderErrorKind::InvalidInput
+            );
+            assert_eq!(error.operation.as_deref(), Some("resolve_references"));
+            assert_eq!(
+                error.message,
+                format!("unsupported reference identity {identity}")
+            );
+            assert!(error.cause.is_none());
         }
+        assert!(fake.0.lock().unwrap().is_empty());
     }
 
     #[tokio::test(start_paused = true)]
@@ -1389,7 +1353,6 @@ mod batch_tests {
         let count = MAX_CONCURRENT_DESCRIBE_KEY * 3 + 1;
         let results = resolve_guest_reference_batch(
             &client,
-            "aws",
             "us-east-1",
             (0..count)
                 .map(|index| request(&format!("alias/{index}")))
@@ -1417,7 +1380,7 @@ mod batch_tests {
     async fn empty_batch_never_calls_kms() {
         let fake = Fake(Mutex::new(vec![]));
         assert!(
-            resolve_guest_reference_batch(&fake, "aws", "us-east-1", vec![])
+            resolve_guest_reference_batch(&fake, "us-east-1", vec![])
                 .await
                 .is_empty()
         );

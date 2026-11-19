@@ -874,7 +874,7 @@ fn step4_emission_ignores_legacy_tag_carrier_fields() {
         &property,
         "Probe",
         &context,
-        &AwsccNamespace::new("test.Emission"),
+        &AwsccNamespace::new("test.Emission").expect("valid AWSCC namespace"),
         &BTreeMap::new(),
     )
     .unwrap();
@@ -1211,4 +1211,70 @@ fn object_string_union_order_is_independent() {
             );
         }
     }
+}
+
+#[test]
+fn catalog_arn_service_guard_matches_before_572() {
+    let expected = include_str!("../../../tests/fixtures/arn_services_before_572.txt")
+        .lines()
+        .collect::<BTreeSet<_>>();
+    let mut candidates = expected.clone();
+    let identities = AwsccType::ALL
+        .iter()
+        .copied()
+        .map(AwsccType::identity)
+        .chain(
+            StringIdentity::ALL
+                .iter()
+                .copied()
+                .map(StringIdentity::identity),
+        )
+        .collect::<Vec<_>>();
+    candidates.extend(
+        identities
+            .iter()
+            .filter_map(|id| id.segments.first().map(String::as_str)),
+    );
+    candidates.insert("unknown_service");
+    let actual = candidates
+        .into_iter()
+        .filter(|service| catalog_knows_arn_service(service))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        actual, expected,
+        "ARN service guard differs from a1bed43 and pinned 5ad417e catalogs"
+    );
+    for service in ["acm", "sqs", "sts"] {
+        assert!(
+            arn_identity(service, "FutureResource").is_err(),
+            "{service} must require an explicit ARN identity"
+        );
+    }
+}
+
+#[test]
+fn codegen_namespace_errors_propagate_without_panicking() {
+    let schema = ParsedCfnSchema::from_json(serde_json::json!({
+        "typeName": "AWS::aws::Vpc",
+        "properties": {"Mode": {"type": "string", "enum": ["on", "off"]}}
+    }))
+    .unwrap();
+    let result = std::panic::catch_unwind(|| generate_schema_code(&schema, &schema.type_name));
+    let error = result
+        .expect("namespace authoring errors must not panic")
+        .unwrap_err();
+    assert!(
+        error
+            .downcast_ref::<carina_provider_awscc::schemas::namespace::InvalidAwsccNamespace>()
+            .is_some(),
+        "{error:#}"
+    );
+    let namespace = AwsccNamespace::new("ec2.Vpc").unwrap();
+    let error = namespace_with_struct_path(&namespace, &["aws".into()]).unwrap_err();
+    assert!(
+        error
+            .downcast_ref::<carina_provider_awscc::schemas::namespace::InvalidAwsccNamespace>()
+            .is_some(),
+        "{error:#}"
+    );
 }

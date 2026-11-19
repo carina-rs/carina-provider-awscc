@@ -472,27 +472,12 @@ fn is_resource_identity(
     resource: &str,
     kind: &str,
 ) -> bool {
-    *identity == awscc_identity(&[service, resource], kind)
+    AwsccNamespace::new(&format!("{service}.{resource}"))
+        .is_ok_and(|namespace| *identity == awscc_identity(&namespace, kind))
 }
 
 fn catalog_knows_arn_service(service: &str) -> bool {
-    AwsccType::ALL
-        .iter()
-        .copied()
-        .map(AwsccType::identity)
-        .chain(
-            StringIdentity::ALL
-                .iter()
-                .copied()
-                .map(StringIdentity::identity),
-        )
-        .any(|identity| {
-            identity.kind == "Arn"
-                && identity
-                    .segments
-                    .first()
-                    .is_some_and(|known| known == service)
-        })
+    carina_provider_awscc::schemas::catalog::KNOWN_ARN_SERVICES.contains(&service)
 }
 
 fn arn_identity(service: &str, resource: &str) -> Result<StringIdentity> {
@@ -2909,11 +2894,11 @@ fn extend_struct_path(struct_path: &[String], struct_name: &str) -> Vec<String> 
 fn namespace_with_struct_path(
     namespace: &AwsccNamespace,
     struct_path: &[String],
-) -> AwsccNamespace {
+) -> Result<AwsccNamespace> {
     if struct_path.is_empty() {
-        namespace.clone()
+        Ok(namespace.clone())
     } else {
-        namespace.child(&struct_path.join("."))
+        Ok(namespace.child(&struct_path.join("."))?)
     }
 }
 
@@ -2923,19 +2908,19 @@ fn property_enum_identity(
     namespace: &AwsccNamespace,
     struct_path: &[String],
     info: &EnumInfo,
-) -> (String, AwsccNamespace) {
+) -> Result<(String, AwsccNamespace)> {
     // #588 owns this enum at resource scope, retaining the documented acronym
     // instead of deriving Vpc.VpcRegion from its enclosing VPC definition.
     // Keep schema emission and Markdown enum references on the same identity.
     if cfn_type == "AWS::Route53::HostedZone"
         && path == CfnPropertyPath::new(Some("VPC"), "VPCRegion")
     {
-        ("VPCRegion".to_string(), namespace.clone())
+        Ok(("VPCRegion".to_string(), namespace.clone()))
     } else {
-        (
+        Ok((
             info.type_name.clone(),
-            namespace_with_struct_path(namespace, struct_path),
-        )
+            namespace_with_struct_path(namespace, struct_path)?,
+        ))
     }
 }
 
@@ -4032,7 +4017,7 @@ fn emit_resource(
     let full_resource = full_resource_name_from_type(type_name)?;
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
     // AWSCC owns the provider prefix; codegen passes service/resource segments.
-    let namespace = AwsccNamespace::new(&dsl_resource);
+    let namespace = AwsccNamespace::new(&dsl_resource)?;
     let arn_helper = match resource_identity_parts(&dsl_resource) {
         Some((service, resource))
             if schema.properties.contains_key("Arn")
@@ -5575,16 +5560,26 @@ fn string_enum_type(
         .collect::<std::result::Result<Vec<_>, _>>()?;
     let aliases = known_enum_aliases();
     let dsl_aliases = dsl_aliases_code(&info.values, aliases.get(path.property));
-    let (kind, namespace) = property_enum_identity(cfn_type, path, namespace, structural, info);
+    let (kind, namespace) = property_enum_identity(cfn_type, path, namespace, structural, info)?;
     let values_code = values
         .iter()
         .map(|value| format!("{}.to_string()", rust_lit(value)))
         .collect::<Vec<_>>()
         .join(", ");
+    // The namespace was validated above. Generated declarations contain only
+    // these fixed literals; authoring/codegen failures have already propagated.
+    let namespace_code = if namespace.segments().is_empty() {
+        "crate::schemas::namespace::AwsccNamespace::root()".to_string()
+    } else {
+        format!(
+            "crate::schemas::namespace::AwsccNamespace::new({}).expect(\"valid AWSCC namespace\")",
+            rust_lit(namespace.segments()),
+        )
+    };
     let rust = format!(
-        "AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity({}, &crate::schemas::namespace::AwsccNamespace::new({})), Some(vec![{}]), {}, None, None)",
+        "AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity({}, &{}), Some(vec![{}]), {}, None, None)",
         rust_lit(&kind),
-        rust_lit(namespace.segments()),
+        namespace_code,
         values_code,
         dsl_aliases,
     );
@@ -9408,7 +9403,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // ELBv2 fixed-response status codes are constrained to ^(2|4|5)\d{2}$.
         // The CFN schema leaves them as plain strings; CloudControl only catches
         // bad values at apply-time. http_response_status_code is a carina-core
-        // built-in (carina_core::schema::TypeIdentity { provider: None, segments: Vec::new(), kind: "HttpResponseStatusCode".into() }).
+        // built-in with the provider-less HttpResponseStatusCode identity.
         m.insert(
             (
                 "AWS::ElasticLoadBalancingV2::Listener",
@@ -12685,7 +12680,7 @@ mod tests {
     ) -> Result<String> {
         reset_recursion_guard();
         let resource = dsl_resource_name_from_type(&schema.type_name)?;
-        let namespace = AwsccNamespace::new(&resource);
+        let namespace = AwsccNamespace::new(&resource)?;
         let mut enums = BTreeMap::new();
         if path.parent.is_none() {
             let (_, info) = super::cfn_type_to_carina_type_with_enum(
@@ -12839,7 +12834,7 @@ mod tests {
             prop,
             name,
             schema,
-            &AwsccNamespace::new("test.Resource"),
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
             CfnTypeGenerationPaths {
                 structural: &[],
@@ -13312,7 +13307,7 @@ mod tests {
                     &schema.properties[name],
                     name,
                     &schema,
-                    &AwsccNamespace::new("test.Resource"),
+                    &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                     &BTreeMap::new(),
                 );
                 assert!(enum_info.is_some(), "{kind}: {code}");
@@ -13381,7 +13376,8 @@ mod tests {
                                 &prop,
                                 "ConnectivityType",
                                 &context,
-                                &AwsccNamespace::new("test.Resource"),
+                                &AwsccNamespace::new("test.Resource")
+                                    .expect("valid AWSCC namespace"),
                                 &BTreeMap::new(),
                             )
                             .map(|value| value.0.rust),
@@ -13404,7 +13400,7 @@ mod tests {
                         prop,
                         "ConnectivityType",
                         &schema,
-                        &AwsccNamespace::new("test.Resource"),
+                        &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                         &BTreeMap::new(),
                     );
                     if !has_literal && property_type != "string" {
@@ -13580,7 +13576,8 @@ mod tests {
                                 prop,
                                 name,
                                 &schema,
-                                &AwsccNamespace::new("test.Resource"),
+                                &AwsccNamespace::new("test.Resource")
+                                    .expect("valid AWSCC namespace"),
                                 &BTreeMap::new(),
                             );
                             Ok(String::new())
@@ -13598,7 +13595,7 @@ mod tests {
                     prop,
                     name,
                     &schema,
-                    &AwsccNamespace::new("test.Resource"),
+                    &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                     &BTreeMap::new(),
                 );
                 assert_eq!(code, expected_type, "{cfn_type}.{name}: {property:?}");
@@ -13881,7 +13878,7 @@ mod tests {
         }
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let field = generated_budgets_field(&generated, "VPC.VPCRegion");
-        assert!(field.starts_with("AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity(\"VPCRegion\", &crate::schemas::namespace::AwsccNamespace::new(\"route53.HostedZone\"))"));
+        assert!(field.starts_with("AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity(\"VPCRegion\", &crate::schemas::namespace::AwsccNamespace::new(\"route53.HostedZone\").expect(\"valid AWSCC namespace\"))"));
         assert!(!generated.contains("crate::schemas::catalog::aws_region()"));
         assert!(
             generate_test_markdown(&schema, &schema.type_name)
@@ -14420,7 +14417,7 @@ mod tests {
                 &labels,
                 "Labels",
                 &schema,
-                &AwsccNamespace::new("test.Resource"),
+                &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                 &BTreeMap::new(),
             )
             .0,
@@ -14436,7 +14433,7 @@ mod tests {
             &misleading_tag_alias,
             "Pair",
             &schema,
-            &AwsccNamespace::new("test.Resource"),
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         )
         .0;
@@ -14834,7 +14831,7 @@ mod tests {
             &marker,
             "Marker",
             &schema,
-            &AwsccNamespace::new("test.AcronymPath"),
+            &AwsccNamespace::new("test.AcronymPath").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
             CfnTypeGenerationPaths {
                 structural: &["SseSpecification".to_string()],
@@ -15781,10 +15778,10 @@ mod tests {
         let namespace =
             "awscc.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination";
         let expected = format!(
-            "awscc_enum_identity(\"Format\", &crate::schemas::namespace::AwsccNamespace::new(\"{}\"))",
+            "awscc_enum_identity(\"Format\", &crate::schemas::namespace::AwsccNamespace::new(\"{}\").expect(\"valid AWSCC namespace\"))",
             namespace.strip_prefix("awscc.").unwrap()
         );
-        let identities = Regex::new(r#"awscc_enum_identity\("Format", &crate::schemas::namespace::AwsccNamespace::new\("[^"]+"\)\)"#).unwrap();
+        let identities = Regex::new(r#"awscc_enum_identity\("Format", &crate::schemas::namespace::AwsccNamespace::new\("[^"]+"\)\.expect\("valid AWSCC namespace"\)\)"#).unwrap();
         let emitted: Vec<_> = identities.find_iter(&generated).collect();
         assert!(!emitted.is_empty());
         for identity in emitted {
@@ -15822,7 +15819,7 @@ mod tests {
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         for parent in ["Left", "Right"] {
             assert!(generated.contains(&format!(
-                "crate::schemas::namespace::awscc_enum_identity(\"Mode\", &crate::schemas::namespace::AwsccNamespace::new(\"ec2.Route.{parent}.Entry\"))"
+                "crate::schemas::namespace::awscc_enum_identity(\"Mode\", &crate::schemas::namespace::AwsccNamespace::new(\"ec2.Route.{parent}.Entry\").expect(\"valid AWSCC namespace\"))"
             )));
         }
         assert!(!collect_definition_identity_paths(&schema).contains_key("Entry"));
@@ -16697,7 +16694,7 @@ mod tests {
         }
         assert!(
             generated_sns_field(&generated, "SignatureVersion")
-                .contains("crate::schemas::namespace::awscc_enum_identity(\"SignatureVersion\", &crate::schemas::namespace::AwsccNamespace::new(\"sns.Topic\"))")
+                .contains("crate::schemas::namespace::awscc_enum_identity(\"SignatureVersion\", &crate::schemas::namespace::AwsccNamespace::new(\"sns.Topic\").expect(\"valid AWSCC namespace\"))")
         );
         for value in ["1", "2"] {
             assert_eq!(dsl_enum_value(value), value);
@@ -16726,7 +16723,7 @@ mod tests {
             &schema.properties["Subscription"],
             "Subscription",
             &schema,
-            &AwsccNamespace::new("sns.Topic"),
+            &AwsccNamespace::new("sns.Topic").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         let field = generated_sns_field(&generated, "Subscription.Protocol");
@@ -18627,7 +18624,7 @@ mod tests {
                 // Markdown keeps the fixture's source resource identity.
                 let namespace = format!("ec2.Route{suffix}");
                 assert!(generated.contains(&format!(
-                    "(\"{property}\", AttributeType::map_with_key(AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity(\"{kind}\", &crate::schemas::namespace::AwsccNamespace::new(\"{namespace}\"))"
+                    "(\"{property}\", AttributeType::map_with_key(AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity(\"{kind}\", &crate::schemas::namespace::AwsccNamespace::new(\"{namespace}\").expect(\"valid AWSCC namespace\"))"
                 )), "key enum must preserve its property's identity: {generated}");
                 let namespace = format!("awscc.test.PatternMapKeys{suffix}");
                 for (wire, dsl) in [("ALPHA", "alpha"), ("BETA_2", "beta_2"), ("C3", "c3")] {
@@ -18640,7 +18637,7 @@ mod tests {
             assert!(markdown.contains("Map\\<[Entries]"), "{markdown}");
             assert!(markdown.contains("Map\\<[NestedKeys]"), "{markdown}");
             assert!(markdown.contains("Map\\<[Tags]"), "{markdown}");
-            assert!(generated.contains("\"array_keys\", AttributeType::refined_list(AttributeType::map_with_key(AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity(\"ArrayKeys\", &crate::schemas::namespace::AwsccNamespace::new(\"ec2.Route\"))"), "{generated}");
+            assert!(generated.contains("\"array_keys\", AttributeType::refined_list(AttributeType::map_with_key(AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity(\"ArrayKeys\", &crate::schemas::namespace::AwsccNamespace::new(\"ec2.Route\").expect(\"valid AWSCC namespace\"))"), "{generated}");
             assert!(markdown.contains("List\\<Map\\<[ArrayKeys]"), "{markdown}");
             assert!(markdown.contains("`awscc.test.PatternMapKeys.ArrayKeys.alpha`"));
             assert_eq!(
@@ -18835,7 +18832,7 @@ mod tests {
             property,
             "CustomResponseBodies",
             &schema,
-            &AwsccNamespace::new("test.TypedStructMap"),
+            &AwsccNamespace::new("test.TypedStructMap").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(enum_info.is_none());
@@ -18884,7 +18881,7 @@ mod tests {
             &property,
             "UnsupportedMap",
             &schema,
-            &AwsccNamespace::new("test.UnsupportedObjectMap"),
+            &AwsccNamespace::new("test.UnsupportedObjectMap").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
     }
@@ -19835,7 +19832,7 @@ mod tests {
             items,
             "Items",
             &schema,
-            &AwsccNamespace::new("test.ArrayReadOnly"),
+            &AwsccNamespace::new("test.ArrayReadOnly").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(
@@ -21413,7 +21410,7 @@ mod tests {
             &prop,
             "IpProtocol",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert!(
@@ -21518,7 +21515,7 @@ mod tests {
             &prop,
             "MinimumProtocolVersion",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
             CfnTypeGenerationPaths {
                 structural: &[],
@@ -21639,7 +21636,7 @@ mod tests {
             &prop,
             "CidrIp",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -21683,7 +21680,7 @@ mod tests {
             &prop,
             "CidrIpv6",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -21727,7 +21724,7 @@ mod tests {
             &prop,
             "PrivateIpAddress",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -21771,7 +21768,7 @@ mod tests {
             &prop,
             "PublicIp",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -21815,7 +21812,7 @@ mod tests {
             &prop,
             "SecondaryPrivateIpAddressCount",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -21859,7 +21856,7 @@ mod tests {
             &prop,
             "AvailabilityZone",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -21879,7 +21876,7 @@ mod tests {
             &prop,
             "AvailabilityZoneId",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -22047,7 +22044,7 @@ mod tests {
             &prop,
             "Ipv4NetmaskLength",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert!(
@@ -22100,7 +22097,7 @@ mod tests {
             &prop,
             "SomeCount",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(type_str, "AttributeType::int()");
@@ -22140,7 +22137,7 @@ mod tests {
             &prop,
             "SomeCount",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert!(
@@ -22189,7 +22186,7 @@ mod tests {
             &prop,
             "SomeCount",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert!(
@@ -22247,7 +22244,7 @@ mod tests {
             &prop,
             "RetentionInDays",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -22500,7 +22497,7 @@ mod tests {
             &prop,
             "DefaultSecurityGroup",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -22550,7 +22547,7 @@ mod tests {
             &prop,
             "FromPort",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert!(
@@ -22648,7 +22645,7 @@ mod tests {
             &prop,
             "FromPort",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert!(
@@ -23003,7 +23000,7 @@ mod tests {
             &prop,
             "KeyPolicy",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
 
@@ -23026,7 +23023,7 @@ mod tests {
             prop,
             "RepositoryPolicyText",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
 
@@ -23049,7 +23046,7 @@ mod tests {
             prop,
             "InlinePolicy",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
 
@@ -23080,7 +23077,7 @@ mod tests {
                 &prop,
                 "FreeFormJson",
                 &schema,
-                &AwsccNamespace::new(""),
+                &AwsccNamespace::root(),
                 &BTreeMap::new(),
             )
         })
@@ -23112,7 +23109,7 @@ mod tests {
                 &prop,
                 "BareObject",
                 &schema,
-                &AwsccNamespace::new(""),
+                &AwsccNamespace::root(),
                 &BTreeMap::new(),
             )
         })
@@ -23200,7 +23197,7 @@ mod tests {
             &property,
             "Choice",
             &schema,
-            &AwsccNamespace::new("test.ArrayRefOneOf"),
+            &AwsccNamespace::new("test.ArrayRefOneOf").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(enum_info.is_none());
@@ -23208,7 +23205,7 @@ mod tests {
             &definition,
             "Choice",
             &schema,
-            &AwsccNamespace::new("test.ArrayRefOneOf"),
+            &AwsccNamespace::new("test.ArrayRefOneOf").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(inline_enum.is_none());
@@ -23616,7 +23613,7 @@ mod tests {
             &schema.properties["KeySchema"],
             "KeySchema",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
 
@@ -24178,7 +24175,7 @@ mod tests {
             &prop,
             "OutputSchemaVersion",
             &schema,
-            &AwsccNamespace::new("s3.Bucket"),
+            &AwsccNamespace::new("s3.Bucket").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(enum_info.is_some(), "const value should produce enum info");
@@ -24214,7 +24211,7 @@ mod tests {
             &prop,
             "AllowedMethods",
             &schema,
-            &AwsccNamespace::new("s3.Bucket"),
+            &AwsccNamespace::new("s3.Bucket").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -24270,7 +24267,7 @@ mod tests {
             &prop,
             "HttpMethod",
             &schema,
-            &AwsccNamespace::new("ec2.Vpc"),
+            &AwsccNamespace::new("ec2.Vpc").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -24336,7 +24333,7 @@ mod tests {
             &prop,
             "BlockedEncryptionTypes",
             &schema,
-            &AwsccNamespace::new("s3.Bucket"),
+            &AwsccNamespace::new("s3.Bucket").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -24387,7 +24384,7 @@ mod tests {
             &prop,
             "Limit",
             &schema,
-            &AwsccNamespace::new("wafv2.WebAcl"),
+            &AwsccNamespace::new("wafv2.WebAcl").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -24428,7 +24425,7 @@ mod tests {
             &prop,
             "Weight",
             &schema,
-            &AwsccNamespace::new("example.Thing"),
+            &AwsccNamespace::new("example.Thing").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -24464,7 +24461,7 @@ mod tests {
             &prop,
             "Toggle",
             &schema,
-            &AwsccNamespace::new("example.Thing"),
+            &AwsccNamespace::new("example.Thing").expect("valid AWSCC namespace"),
             &enums,
         );
         assert_eq!(type_str, "AttributeType::bool()");
@@ -26363,7 +26360,7 @@ mod tests {
             &prop,
             "LogGroupName",
             &schema,
-            &AwsccNamespace::new("test.StringPattern"),
+            &AwsccNamespace::new("test.StringPattern").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(
@@ -26396,7 +26393,7 @@ mod tests {
             &prop,
             "KmsKeyId",
             &schema,
-            &AwsccNamespace::new("logs.LogGroup"),
+            &AwsccNamespace::new("logs.LogGroup").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert_eq!(type_str, "crate::schemas::catalog::kms_key_reference()");
@@ -26512,7 +26509,7 @@ mod tests {
             &prop,
             "PrivateDnsSpecifiedDomains",
             &schema,
-            &AwsccNamespace::new("ec2.VpcEndpoint"),
+            &AwsccNamespace::new("ec2.VpcEndpoint").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -26551,7 +26548,7 @@ mod tests {
             &prop,
             "SomeArray",
             &schema,
-            &AwsccNamespace::new("ec2.VpcEndpoint"),
+            &AwsccNamespace::new("ec2.VpcEndpoint").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -26590,7 +26587,7 @@ mod tests {
             &prop,
             "SomeArray",
             &schema,
-            &AwsccNamespace::new("ec2.VpcEndpoint"),
+            &AwsccNamespace::new("ec2.VpcEndpoint").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -26783,7 +26780,7 @@ mod tests {
             &prop,
             "Payload",
             &schema,
-            &AwsccNamespace::new("test.Resource"),
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
 
@@ -27624,7 +27621,7 @@ mod tests {
             property,
             "FieldIndexPolicies",
             &schema,
-            &AwsccNamespace::new("logs.LogGroup"),
+            &AwsccNamespace::new("logs.LogGroup").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         reset_property_mode_emission_state();
@@ -27641,7 +27638,7 @@ mod tests {
             "FieldIndexPolicies",
             property,
             &schema,
-            &AwsccNamespace::new("logs.LogGroup"),
+            &AwsccNamespace::new("logs.LogGroup").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(
@@ -27691,7 +27688,7 @@ mod tests {
             "FieldIndexPolicies",
             &schema.properties["FieldIndexPolicies"],
             &schema,
-            &AwsccNamespace::new("logs.LogGroup"),
+            &AwsccNamespace::new("logs.LogGroup").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -27794,7 +27791,7 @@ mod tests {
                         &prop,
                         "Values",
                         &schema,
-                        &AwsccNamespace::new("test.Resource"),
+                        &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                         &BTreeMap::new(),
                     );
                     assert!(enum_info.is_none());
@@ -27866,7 +27863,7 @@ mod tests {
             &prop,
             "Values",
             &schema,
-            &AwsccNamespace::new("test.Resource"),
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(enum_info.is_some());
@@ -27909,14 +27906,14 @@ mod tests {
             &inline,
             "Values",
             &schema,
-            &AwsccNamespace::new("test.Resource"),
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         let (referenced_type, referenced_enum) = cfn_type_to_carina_type_with_enum(
             &referenced,
             "Values",
             &schema,
-            &AwsccNamespace::new("test.Resource"),
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
 
@@ -27988,7 +27985,7 @@ mod tests {
             &fields,
             "AddressFields",
             &schema,
-            &AwsccNamespace::new("test.Resource"),
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(enum_info.is_none());
@@ -28035,7 +28032,7 @@ mod tests {
             &property,
             "EvaluationWindowSec",
             &schema,
-            &AwsccNamespace::new("test.Resource"),
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(enum_info.is_none());
@@ -28065,7 +28062,7 @@ mod tests {
             &property,
             "FormattedValue",
             &schema,
-            &AwsccNamespace::new("test.Resource"),
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
 
@@ -28265,7 +28262,7 @@ mod tests {
             &prop,
             "ExpirationDate",
             &schema,
-            &AwsccNamespace::new("s3.Bucket"),
+            &AwsccNamespace::new("s3.Bucket").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(
@@ -28759,7 +28756,7 @@ mod tests {
             &prop,
             "SomeValue",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert!(
@@ -28842,7 +28839,7 @@ mod tests {
             &prop,
             "ObservedAt",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert!(
@@ -28890,7 +28887,7 @@ mod tests {
             &prop,
             "Url",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert!(
@@ -28943,7 +28940,7 @@ mod tests {
             &prop,
             "ObjectSizeGreaterThan",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert!(
@@ -29020,7 +29017,7 @@ mod tests {
             &prop,
             "BoundedValue",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         // Range validation is encoded in the generated validator fn name.
@@ -29054,7 +29051,7 @@ mod tests {
             &prop,
             "ObjectSizeGreaterThan",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         // Should mention both constraints
@@ -29089,7 +29086,7 @@ mod tests {
             &prop,
             "SomeName",
             &schema,
-            &AwsccNamespace::new(""),
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         // Should mention both constraints
@@ -30405,7 +30402,7 @@ mod tests {
                         &schema.properties["Tags"],
                         "Tags",
                         &schema,
-                        &AwsccNamespace::new("test.Resource"),
+                        &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                         &BTreeMap::new(),
                     )
                     .0;
@@ -30456,7 +30453,7 @@ mod tests {
                 &schema.properties["Labels"],
                 "Labels",
                 &schema,
-                &AwsccNamespace::new("test.Resource"),
+                &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                 &BTreeMap::new(),
             )
             .0;
@@ -30523,7 +30520,7 @@ mod tests {
                     &schema.properties["Tags"],
                     "Tags",
                     schema,
-                    &AwsccNamespace::new("test.Resource"),
+                    &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                     &BTreeMap::new(),
                 )
                 .0
@@ -30707,7 +30704,7 @@ mod tests {
             schema.properties.get("Tags").unwrap(),
             "Tags",
             &schema,
-            &AwsccNamespace::new("test.Resource"),
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert_eq!(

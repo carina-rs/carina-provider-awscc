@@ -145,7 +145,16 @@ macro_rules! define_awscc_type_catalog {
                 match self { $(Self::$variant => stringify!($variant)),* }
             }
             pub fn identity(self) -> carina_core::schema::TypeIdentity {
-                match self { $(Self::$variant => $crate::schemas::namespace::awscc_identity(&[$($segment),*], $kind)),* }
+                match self { $(Self::$variant => {
+                    let segments: &[&str] = &[$($segment),*];
+                    let namespace = if segments.is_empty() {
+                        $crate::schemas::namespace::AwsccNamespace::root()
+                    } else {
+                        $crate::schemas::namespace::AwsccNamespace::new(&segments.join("."))
+                            .expect("valid AWSCC catalog namespace")
+                    };
+                    $crate::schemas::namespace::awscc_identity(&namespace, $kind)
+                }),* }
             }
             pub const fn valid_sample(self) -> &'static str {
                 match self { $(Self::$variant => $sample),* }

@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use crate::identity_inventory::{Inventory, assert_migrated_identities, assert_migrated_inventory};
+use crate::identity_inventory::{
+    Inventory, assert_head_identity_pins, assert_migrated_identities, assert_migrated_inventory,
+};
 use carina_core::parser::{LoadedProviderContext, ProviderContext, parse_file};
 use carina_core::provider::{ProviderFactory, provider_custom_types_from_factories};
 use carina_core::schema::{AttributeSchema, ResourceSchema};
@@ -40,11 +42,6 @@ fn namespace_inventory_native() {
             &crate::AwsccProviderFactory.provider_config_attribute_types(),
         ),
     );
-    assert_migrated_identities("catalog", catalog_inventory().identities);
-    assert_migrated_identities(
-        "resolver",
-        BTreeSet::from([crate::schemas::catalog::ScalarType::KmsKeyReference.identity()]),
-    );
     let completions = crate::AwsccProviderFactory.config_completions();
     assert_migrated_inventory(
         "native_completions",
@@ -53,6 +50,15 @@ fn namespace_inventory_native() {
             .flatten()
             .map(|v| v.value.clone())
             .collect(),
+    );
+}
+
+#[test]
+fn namespace_catalog_and_resolver_match_head_pins() {
+    assert_head_identity_pins("catalog", catalog_inventory().identities);
+    assert_head_identity_pins(
+        "resolver",
+        BTreeSet::from([crate::schemas::catalog::ScalarType::KmsKeyReference.identity()]),
     );
 }
 
@@ -191,9 +197,7 @@ fn namespace_provider_region_rejects_old_full_form_through_host() {
 #[cfg(unix)]
 fn namespace_generation_aborts_if_codegen_build_fails() {
     use std::os::unix::fs::PermissionsExt;
-    let scratch =
-        tempfile::tempdir_in(std::env::var_os("CARGO_TARGET_DIR").expect("build target directory"))
-            .unwrap();
+    let scratch = tempfile::tempdir().unwrap();
     let bin = scratch.path().join("bin");
     let target = scratch.path().join("target");
     std::fs::create_dir_all(&bin).unwrap();
@@ -215,12 +219,12 @@ fn namespace_generation_aborts_if_codegen_build_fails() {
         ))
         .arg("--from-cache-only")
         .current_dir(scratch.path())
+        // Fake cargo compiles nothing; inherit no build environment from nextest.
+        .env_clear()
         .env(
             "PATH",
             format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
         )
-        // This is a fake cargo and stale binary: no compiler is run here.
-        .env("CARGO_TARGET_DIR", target)
         .output()
         .unwrap();
     assert_eq!(

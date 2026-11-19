@@ -33,7 +33,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_arn_attribute());
     #[inline(never)]
     fn build_feature_set_attribute() -> AttributeSchema {
-        AttributeSchema::optional("feature_set", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("FeatureSet", &crate::schemas::namespace::AwsccNamespace::new("organizations.Organization")), Some(vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()]), vec![("ALL".to_string(), "all".to_string()), ("CONSOLIDATED_BILLING".to_string(), "consolidated_billing".to_string())], None, None))
+        AttributeSchema::optional("feature_set", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("FeatureSet", &crate::schemas::namespace::AwsccNamespace::new("organizations.Organization").expect("valid AWSCC namespace")), Some(vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()]), vec![("ALL".to_string(), "all".to_string()), ("CONSOLIDATED_BILLING".to_string(), "consolidated_billing".to_string())], None, None))
                 .with_description("Specifies the feature set supported by the new organization. Each feature set supports different levels of functionality.")
                 .with_provider_name("FeatureSet")
                 .with_default(Value::Concrete(ConcreteValue::String("ALL".to_string().into())))

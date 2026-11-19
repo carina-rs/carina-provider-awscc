@@ -431,10 +431,8 @@ impl Provider for AwsccProvider {
                 .and_then(|client| client.instance_region().map(|region| (client, region)));
             Ok(match scope {
                 Ok((client, region)) => {
-                    crate::kms_reference::resolve_core_reference_batch(
-                        client, "awscc", region, requests,
-                    )
-                    .await
+                    crate::kms_reference::resolve_core_reference_batch(client, region, requests)
+                        .await
                 }
                 Err(reason) => requests
                     .iter()

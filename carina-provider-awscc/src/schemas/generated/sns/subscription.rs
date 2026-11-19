@@ -60,7 +60,7 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_endpoint_attribute());
     #[inline(never)]
     fn build_filter_policy_scope_attribute() -> AttributeSchema {
-        AttributeSchema::optional("filter_policy_scope", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("FilterPolicyScope", &crate::schemas::namespace::AwsccNamespace::new("sns.Subscription")), Some(vec!["MessageAttributes".to_string(), "MessageBody".to_string()]), vec![("MessageAttributes".to_string(), "message_attributes".to_string()), ("MessageBody".to_string(), "message_body".to_string())], None, None))
+        AttributeSchema::optional("filter_policy_scope", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("FilterPolicyScope", &crate::schemas::namespace::AwsccNamespace::new("sns.Subscription").expect("valid AWSCC namespace")), Some(vec!["MessageAttributes".to_string(), "MessageBody".to_string()]), vec![("MessageAttributes".to_string(), "message_attributes".to_string()), ("MessageBody".to_string(), "message_body".to_string())], None, None))
                 .with_description("This attribute lets you choose the filtering scope by using one of the following string value types: MessageAttributes (default) and MessageBody.")
                 .with_provider_name("FilterPolicyScope")
             .build()
@@ -68,7 +68,7 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_filter_policy_scope_attribute());
     #[inline(never)]
     fn build_protocol_attribute() -> AttributeSchema {
-        AttributeSchema::required("protocol", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("Protocol", &crate::schemas::namespace::AwsccNamespace::new("sns.Subscription")), Some(vec!["http".to_string(), "https".to_string(), "email".to_string(), "email-json".to_string(), "sms".to_string(), "sqs".to_string(), "application".to_string(), "lambda".to_string(), "firehose".to_string()]), vec![("http".to_string(), "http".to_string()), ("https".to_string(), "https".to_string()), ("email".to_string(), "email".to_string()), ("email-json".to_string(), "email_json".to_string()), ("sms".to_string(), "sms".to_string()), ("sqs".to_string(), "sqs".to_string()), ("application".to_string(), "application".to_string()), ("lambda".to_string(), "lambda".to_string()), ("firehose".to_string(), "firehose".to_string())], None, None))
+        AttributeSchema::required("protocol", AttributeType::enum_(crate::schemas::namespace::awscc_enum_identity("Protocol", &crate::schemas::namespace::AwsccNamespace::new("sns.Subscription").expect("valid AWSCC namespace")), Some(vec!["http".to_string(), "https".to_string(), "email".to_string(), "email-json".to_string(), "sms".to_string(), "sqs".to_string(), "application".to_string(), "lambda".to_string(), "firehose".to_string()]), vec![("http".to_string(), "http".to_string()), ("https".to_string(), "https".to_string()), ("email".to_string(), "email".to_string()), ("email-json".to_string(), "email_json".to_string()), ("sms".to_string(), "sms".to_string()), ("sqs".to_string(), "sqs".to_string()), ("application".to_string(), "application".to_string()), ("lambda".to_string(), "lambda".to_string()), ("firehose".to_string(), "firehose".to_string())], None, None))
                 .create_only()
                 .with_description("The subscription's protocol.")
                 .with_provider_name("Protocol")

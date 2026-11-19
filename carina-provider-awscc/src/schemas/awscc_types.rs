@@ -258,7 +258,8 @@ pub fn s3_notification_event() -> AttributeType {
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_TopicConfiguration.html
     string_enum(
         "Event",
-        &super::namespace::AwsccNamespace::new("s3.Bucket.NotificationConfiguration"),
+        &super::namespace::AwsccNamespace::new("s3.Bucket.NotificationConfiguration")
+            .expect("valid AWSCC namespace"),
         &[
             ("s3:ObjectCreated:*", "object_created_all"),
             ("s3:ObjectCreated:Put", "object_created_put"),
@@ -343,7 +344,8 @@ pub fn s3_analytics_destination() -> AttributeType {
                 "format",
                 string_enum(
                     "Format",
-                    &super::namespace::AwsccNamespace::new("s3.Bucket.AnalyticsDestination"),
+                    &super::namespace::AwsccNamespace::new("s3.Bucket.AnalyticsDestination")
+                        .expect("valid AWSCC namespace"),
                     &[("CSV", "csv")],
                 ),
             )
@@ -383,7 +385,8 @@ pub fn sns_subscription_delivery_policy() -> AttributeType {
         "BackoffFunction",
         &super::namespace::AwsccNamespace::new(
             "sns.Subscription.DeliveryPolicy.HealthyRetryPolicy",
-        ),
+        )
+        .expect("valid AWSCC namespace"),
         &[
             ("arithmetic", "arithmetic"),
             ("exponential", "exponential"),
@@ -393,7 +396,8 @@ pub fn sns_subscription_delivery_policy() -> AttributeType {
     );
     let header_content_type = string_enum(
         "HeaderContentType",
-        &super::namespace::AwsccNamespace::new("sns.Subscription.DeliveryPolicy.RequestPolicy"),
+        &super::namespace::AwsccNamespace::new("sns.Subscription.DeliveryPolicy.RequestPolicy")
+            .expect("valid AWSCC namespace"),
         &[
             ("text/css", "text_css"),
             ("text/csv", "text_csv"),
@@ -527,7 +531,8 @@ pub fn sns_subscription_replay_policy() -> AttributeType {
                 "point_type",
                 string_enum(
                     "PointType",
-                    &super::namespace::AwsccNamespace::new("sns.Subscription.ReplayPolicy"),
+                    &super::namespace::AwsccNamespace::new("sns.Subscription.ReplayPolicy")
+                        .expect("valid AWSCC namespace"),
                     &[("Timestamp", "timestamp")],
                 ),
             )
@@ -587,7 +592,8 @@ pub fn logs_field_index_policy() -> AttributeType {
                                 "Type",
                                 &super::namespace::AwsccNamespace::new(
                                     "logs.LogGroup.FieldIndexPolicy.FieldIndexConfiguration",
-                                ),
+                                )
+                                .expect("valid AWSCC namespace"),
                                 &[("FIELD_INDEX", "field_index"), ("FACET", "facet")],
                             ),
                         )
@@ -721,7 +727,7 @@ pub fn logs_data_protection_policy() -> AttributeType {
                 "version",
                 string_enum(
                     "Version",
-                    &super::namespace::AwsccNamespace::new("logs.LogGroup.DataProtectionPolicy"),
+                    &super::namespace::AwsccNamespace::new("logs.LogGroup.DataProtectionPolicy").expect("valid AWSCC namespace"),
                     &[("2021-06-01", "v2021_06_01")],
                 ),
             )

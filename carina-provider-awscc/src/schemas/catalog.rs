@@ -5,7 +5,7 @@ use super::catalog_definition::{
     IdentityDefinition, catalog_definition, catalog_values, define_awscc_type_catalog,
 };
 pub use super::catalog_scalar::*;
-use super::namespace::awscc_identity;
+use super::namespace::{AwsccNamespace, awscc_identity};
 use super::pattern::{
     ApprovedPattern, refined_string, refined_string_with_validator,
     string_definition_with_validator,
@@ -16,6 +16,26 @@ use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeType, CompiledPattern, RawShape, StringIdentityLayer, TypeIdentity, legacy_validator,
 };
+
+/// Services whose known ARN domains require an explicit resource identity.
+/// Retained from a1bed43's AWSCC catalog and pinned 5ad417e catalog; this guard
+/// must not silently fall back to generic Arn when a resource is unsupported.
+pub const KNOWN_ARN_SERVICES: &[&str] = &[
+    "acm",
+    "cloudfront",
+    "dynamodb",
+    "ec2",
+    "ecs",
+    "iam",
+    "kms",
+    "logs",
+    "organizations",
+    "s3",
+    "sqs",
+    "sso",
+    "sts",
+    "wafv2",
+];
 
 /// One reusable definition per String identity. CFN fields can only combine
 /// this layer with `StringMemberConstraints` through `AttributeType::string_member`.
@@ -64,7 +84,7 @@ pub fn arn() -> AttributeType {
     // Preserve the provider-scoped awscc.Arn identity without delegating any
     // partition validation to the shared AWS types crate.
     refined_string_with_validator(
-        awscc_identity(&[], "Arn"),
+        awscc_identity(&AwsccNamespace::root(), "Arn"),
         Some(ApprovedPattern::whole(&arn_regex("[^:]+:.*$"))),
         None,
         legacy_validator(|value| {
@@ -92,7 +112,10 @@ pub fn iam_policy_arn() -> AttributeType {
 
 fn iam_arn(resource: &str, prefix: &'static str) -> AttributeType {
     refined_string_with_validator(
-        awscc_identity(&["iam", resource], "Arn"),
+        awscc_identity(
+            &AwsccNamespace::new(&format!("iam.{resource}")).expect("valid IAM type namespace"),
+            "Arn",
+        ),
         Some(ApprovedPattern::whole(&arn_regex(&format!(
             "iam::[^:]*:{prefix}.+$"
         )))),
@@ -110,8 +133,6 @@ fn iam_arn(resource: &str, prefix: &'static str) -> AttributeType {
     )
 }
 
-const KMS_KEY_ARN_REST: &str = "kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})$";
-
 /// KMS key ID, alias, or ARN.
 pub fn kms_key_id() -> AttributeType {
     let uuid = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
@@ -120,7 +141,10 @@ pub fn kms_key_id() -> AttributeType {
         crate::partition::regex_fragment()
     );
     refined_string_with_validator(
-        awscc_identity(&["kms", "Key"], "Id"),
+        awscc_identity(
+            &AwsccNamespace::new("kms.Key").expect("valid AWSCC namespace"),
+            "Id",
+        ),
         Some(ApprovedPattern::whole(&pattern)),
         None,
         legacy_validator(|value| {
@@ -169,22 +193,19 @@ fn validate_kms_key_id(value: &str) -> Result<(), String> {
 
 /// KMS key ARN with a UUID or multi-region key ID; aliases are excluded.
 pub fn kms_key_arn() -> AttributeType {
-    static PATTERN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-        regex::Regex::new(&arn_regex(KMS_KEY_ARN_REST)).expect("KMS key ARN pattern must compile")
-    });
     refined_string_with_validator(
-        awscc_identity(&["kms", "Key"], "Arn"),
-        Some(ApprovedPattern::whole(&arn_regex(KMS_KEY_ARN_REST))),
+        awscc_identity(
+            &AwsccNamespace::new("kms.Key").expect("valid AWSCC namespace"),
+            "Arn",
+        ),
+        Some(ApprovedPattern::whole(
+            super::type_helpers::kms::kms_key_arn_pattern(),
+        )),
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(value)) = value {
-                if PATTERN.is_match(value.expose_plaintext()) {
-                    Ok(())
-                } else {
-                    Err("expected a KMS key ARN with a UUID or multi-region key ID"
-                        .to_string()
-                        .into())
-                }
+                super::type_helpers::kms::validate_kms_key_arn(value.expose_plaintext())
+                    .map_err(Into::into)
             } else {
                 Err("Expected string".to_string().into())
             }
@@ -196,7 +217,10 @@ pub fn kms_key_arn() -> AttributeType {
 /// IAM Identity Center instance ARN; retain the pattern-only shared shape.
 pub fn sso_instance_arn() -> AttributeType {
     refined_string(
-        Some(awscc_identity(&["sso", "Instance"], "Arn")),
+        Some(awscc_identity(
+            &AwsccNamespace::new("sso.Instance").expect("valid AWSCC namespace"),
+            "Arn",
+        )),
         Some(ApprovedPattern::whole(&arn_regex("sso:::instance/.+$"))),
         None,
         None,
@@ -206,7 +230,10 @@ pub fn sso_instance_arn() -> AttributeType {
 /// IAM Identity Center permission-set ARN; retain the pattern-only shared shape.
 pub fn sso_permission_set_arn() -> AttributeType {
     refined_string(
-        Some(awscc_identity(&["sso", "PermissionSet"], "Arn")),
+        Some(awscc_identity(
+            &AwsccNamespace::new("sso.PermissionSet").expect("valid AWSCC namespace"),
+            "Arn",
+        )),
         Some(ApprovedPattern::whole(&arn_regex(
             "sso:::permissionSet/.+$",
         ))),
