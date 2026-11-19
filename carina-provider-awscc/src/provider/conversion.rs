@@ -1072,7 +1072,7 @@ mod tests {
     }
 
     // awscc#254 literal reproduction: read the real generated
-    // `aws.cloudfront.Distribution` `distribution_config` from a
+    // `awscc.cloudfront.Distribution` `distribution_config` from a
     // CloudControl-shaped response (PascalCase keys, raw API enum
     // values) and assert the nested enum leaves are persisted as the
     // API-canonical value, then lift to the canonical fully-qualified identifier

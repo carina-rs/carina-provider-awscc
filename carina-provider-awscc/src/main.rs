@@ -1948,47 +1948,6 @@ mod tests {
     }
 
     #[test]
-    fn namespace_inventory_sdk_and_callback_bindings() {
-        use carina_provider_awscc::identity_inventory::{
-            Inventory, assert_migrated_identities, assert_migrated_inventory,
-        };
-        let provider = AwsccProcessProvider::new();
-        let cache = ProviderSchemaCache::from_provider(&provider).unwrap();
-        let inventory = Inventory::schemas(cache.schemas(), cache.config());
-        assert_migrated_identities("sdk", inventory.identities);
-        assert_migrated_inventory(
-            "sdk_sites",
-            carina_provider_awscc::identity_inventory::identity_sites(
-                cache.schemas(),
-                cache.config(),
-            ),
-        );
-        let mut bindings = BTreeMap::new();
-        for schema in cache.schemas() {
-            let parts = schema.parts();
-            for attribute in parts.attributes.values() {
-                collect_callbacks(attribute.attr_type(), &mut bindings);
-            }
-            for definition in parts.defs.values() {
-                collect_callbacks(definition, &mut bindings);
-            }
-        }
-        for ty in cache.config().parts().values() {
-            collect_callbacks(ty, &mut bindings);
-        }
-        assert_migrated_identities("callbacks", bindings.keys().cloned().collect());
-        assert_migrated_inventory(
-            "sdk_completions",
-            provider
-                .config_completions()
-                .values()
-                .flatten()
-                .map(|v| v.value.clone())
-                .collect(),
-        );
-    }
-
-    #[test]
     fn namespace_walk_every_sdk_identity_is_awscc_or_builtin() {
         let provider = AwsccProcessProvider::new();
         let cache = ProviderSchemaCache::from_provider(&provider).unwrap();

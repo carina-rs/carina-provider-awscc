@@ -1,9 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use crate::identity_inventory::{
-    Inventory, assert_head_identity_pins, assert_migrated_identities, assert_migrated_inventory,
-};
+use crate::identity_inventory::{Inventory, assert_head_identity_pins};
 use carina_core::parser::{LoadedProviderContext, ProviderContext, parse_file};
 use carina_core::provider::{ProviderFactory, provider_custom_types_from_factories};
 use carina_core::schema::{AttributeSchema, ResourceSchema};
@@ -33,27 +31,6 @@ fn catalog_inventory() -> Inventory {
 }
 
 #[test]
-fn namespace_inventory_native() {
-    assert_migrated_identities("native", native_inventory().identities);
-    assert_migrated_inventory(
-        "native_sites",
-        crate::identity_inventory::identity_sites(
-            &super::all_schemas(),
-            &crate::AwsccProviderFactory.provider_config_attribute_types(),
-        ),
-    );
-    let completions = crate::AwsccProviderFactory.config_completions();
-    assert_migrated_inventory(
-        "native_completions",
-        completions
-            .values()
-            .flatten()
-            .map(|v| v.value.clone())
-            .collect(),
-    );
-}
-
-#[test]
 fn namespace_catalog_and_resolver_match_head_pins() {
     assert_head_identity_pins("catalog", catalog_inventory().identities);
     assert_head_identity_pins(
@@ -68,6 +45,37 @@ fn namespace_walk_every_native_identity_is_awscc_or_builtin() {
     // backstop for identities that bypass the construction seam that way.
     native_inventory().assert_owned();
     catalog_inventory().assert_owned();
+}
+
+#[test]
+#[should_panic(expected = "AWSCC declares foreign identities")]
+fn namespace_walk_rejects_providerless_nonbuiltin_identity() {
+    // A lost provider must not disguise an AWSCC declaration as a core builtin.
+    let declaration = carina_core::schema::AttributeType::refined_string(
+        Some(carina_core::schema::TypeIdentity {
+            provider: None,
+            segments: vec!["ec2".into(), "Vpc".into()],
+            kind: "Id".into(),
+        }),
+        None,
+        None,
+        None,
+    );
+    let mut inventory = Inventory::default();
+    inventory.walk(&declaration, &BTreeMap::new());
+    inventory.assert_owned();
+}
+
+#[test]
+fn namespace_walk_accepts_core_builtin_registry() {
+    let builtins = carina_core::schema::builtin_type_registry();
+    let mut inventory = Inventory::default();
+    for (identity, declaration) in builtins {
+        assert_eq!(identity.provider, None);
+        inventory.walk(declaration, &BTreeMap::new());
+    }
+    assert_eq!(inventory.identities, builtins.keys().cloned().collect());
+    inventory.assert_owned();
 }
 
 #[test]

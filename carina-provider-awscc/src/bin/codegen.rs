@@ -7856,7 +7856,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         );
         // Copy the 45 VPCRegion values verbatim, in documentation order. This
         // belongs to HostedZone's VPC definition, reached through VPCs items,
-        // rather than the shared aws.Region domain (awscc#588 / #572).
+        // rather than the provider-wide awscc.Region domain (awscc#588 / #572).
         // The normal closed enum retains ap_northeast_1; quoted API strings
         // and the old Region / aws.Region qualifiers require DSL migration.
         // https://docs.aws.amazon.com/Route53/latest/APIReference/API_VPC.html
@@ -13879,7 +13879,6 @@ mod tests {
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let field = generated_budgets_field(&generated, "VPC.VPCRegion");
         assert!(field.starts_with("AttributeType::enum_(crate::schemas::namespace::awscc_identity(\"VPCRegion\", &crate::schemas::namespace::AwsccNamespace::new(\"route53.HostedZone\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()"));
-        assert!(!generated.contains("crate::schemas::catalog::aws_region()"));
         assert!(
             generate_test_markdown(&schema, &schema.type_name)
                 .unwrap()

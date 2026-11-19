@@ -235,7 +235,7 @@ pub fn kms_key_arn() -> AttributeType {
     )
 }
 
-/// IAM Identity Center instance ARN; retain the pattern-only shared shape.
+/// IAM Identity Center instance ARN with pattern-only validation.
 pub fn sso_instance_arn() -> AttributeType {
     refined_string(
         Some(
@@ -251,7 +251,7 @@ pub fn sso_instance_arn() -> AttributeType {
     )
 }
 
-/// IAM Identity Center permission-set ARN; retain the pattern-only shared shape.
+/// IAM Identity Center permission-set ARN with pattern-only validation.
 pub fn sso_permission_set_arn() -> AttributeType {
     refined_string(
         Some(

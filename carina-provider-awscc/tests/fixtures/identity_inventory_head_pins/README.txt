@@ -11,5 +11,7 @@ resolver.txt pins the accepted identity of the owned KMS resolver. It is an
 explicit head pin, not an observation of the base resolver's implementation.
 
 Both files carry awscc names and are compared exactly, without provider mapping.
-The published schema/callback/completion migration baseline remains separately
-in identity_inventory_before_572.
+The one-time published schema/callback/completion comparison against base
+a1bed43 passed at becce5e and is recorded in the PR body; its fixtures and
+comparison tests have been removed. These head pins retain the catalog and
+resolver invariants.

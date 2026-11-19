@@ -1,9 +1,0 @@
-These seven fixtures were reproduced from `a1bed43` with its pinned core/SDK dependencies and unchanged production code. The only additions to the extracted source were test instrumentation and the inventory walker. All seven reproduced files match the original captures byte for byte.
-
-`native` and `native_sites` walk every resource schema/definition from `schemas::all_schemas()` plus `AwsccProviderFactory.provider_config_attribute_types()`. `sdk` and `sdk_sites` walk the schemas/config registered by `AwsccProcessProvider` through `ProviderSchemaCache`. The site inventories use the protocol schema export, so separate occurrences and definitions are retained. `callbacks` is the base guest's `collect_callbacks` table over those resource/config schemas. Each `*_completions` file is the corresponding factory/guest config-completion table.
-
-Counts: native 335, SDK 335, callback identities 43, native/SDK sites 993 each, native/SDK completion strings 38 each. The migration tests compare exact structured identities and occurrence sets, mapping only provider `aws` to `awscc`; provider-less identities remain unchanged.
-
-`catalog.txt` and `resolver.txt` were previously mixed into this directory even though their collections were assembled from helper declarations for #572. They are now explicitly named head pins in `../identity_inventory_head_pins/`; they are not historical captures. The base did already declare `aws.kms.Key.Id` in `StringIdentity::KmsKeyId` and `catalog::kms_key_id()`.
-
-The separate `../arn_services_before_572.txt` contains the 14 services with an `Arn` identity in the base `AwsccType::ALL` plus the pinned 5ad417e `AwsType::ALL`: extracted from all 22 AWSCC catalog rows and all 77 pinned shared catalog rows, following the exact base guard predicate. Refinement rows use identities from the latter set.

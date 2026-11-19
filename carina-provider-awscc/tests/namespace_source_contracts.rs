@@ -1,7 +1,7 @@
 //! Source-level backstops for emitter assertions and the upstream-test manifest.
 #![cfg(not(target_arch = "wasm32"))]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use syn::visit::Visit;
 
@@ -18,7 +18,7 @@ struct Sources {
     path: String,
     function: String,
     literals: Vec<Literal>,
-    tests: BTreeSet<String>,
+    tests: BTreeSet<(String, String)>,
 }
 
 impl Sources {
@@ -70,7 +70,8 @@ impl<'ast> Visit<'ast> for Sources {
                 .last()
                 .is_some_and(|segment| segment.ident == "test")
         }) {
-            self.tests.insert(self.function.clone());
+            self.tests
+                .insert((self.path.clone(), self.function.clone()));
         }
         syn::visit::visit_item_fn(self, item);
         self.function = previous;
@@ -131,11 +132,8 @@ fn retired(value: &str) -> bool {
             ["awscc_enum_", "identity"].concat(),
         ]
     });
-    static OLD_NAMESPACE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-        regex::Regex::new(r"\baws\.(?:[a-z][A-Za-z0-9_]*\.)?[A-Z][A-Za-z0-9_]*").unwrap()
-    });
     SPELLINGS.iter().any(|spelling| value.contains(spelling))
-        || OLD_NAMESPACE.is_match(value)
+        || old_namespace_spelling(value)
         || (value.contains("awscc_identity")
             && [
                 ".expect(\"valid AWSCC identity\")",
@@ -150,64 +148,158 @@ fn retired(value: &str) -> bool {
             }))
 }
 
-#[test]
-fn emitter_assertions_use_current_spellings() {
-    let sources = sources();
-    if let Some(path) = std::env::var_os("AWSCC_EMITTER_AUDIT_OUTPUT") {
-        let mut audit = "source\tfunction\tline\tretired\tliteral_json\n".to_string();
-        for literal in &sources.literals {
-            audit.push_str(&format!(
-                "{}\t{}\t{}\t{}\t{}\n",
-                literal.path,
-                literal.function,
-                literal.line,
-                retired(&literal.value),
-                serde_json::to_string(&literal.value).unwrap()
+fn old_namespace_spelling(value: &str) -> bool {
+    static OLD_NAMESPACE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r"\baws\.(?:[A-Z][A-Za-z0-9_]*|[a-z][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*)(?:\.[A-Za-z_][A-Za-z0-9_]*)*",
+        )
+        .unwrap()
+    });
+    OLD_NAMESPACE.find_iter(value).any(|candidate| {
+        // AWS documentation hostnames and URL text are not type spellings.
+        if matches!(candidate.as_str(), "aws.amazon.com" | "aws.amazon.com.cn") {
+            return false;
+        }
+        let token_start = value[..candidate.start()]
+            .char_indices()
+            .rev()
+            .find(|(_, c)| c.is_whitespace() || ['"', '\'', '`', '<', '>'].contains(c))
+            .map_or(0, |(index, c)| index + c.len_utf8());
+        !value[token_start..candidate.start()].contains("://")
+    })
+}
+
+type SpellingKey = (String, String, String);
+
+fn check_spellings(
+    literals: &[Literal],
+    exemptions: &BTreeMap<SpellingKey, usize>,
+) -> Result<(), String> {
+    let mut observed = BTreeMap::<SpellingKey, Vec<usize>>::new();
+    for literal in literals.iter().filter(|literal| retired(&literal.value)) {
+        observed
+            .entry((
+                literal.path.clone(),
+                literal.function.clone(),
+                literal.value.clone(),
+            ))
+            .or_default()
+            .push(literal.line);
+    }
+    let mut failures = Vec::new();
+    for (key, lines) in &observed {
+        let expected = exemptions.get(key).copied().unwrap_or(0);
+        if lines.len() != expected {
+            failures.push(format!(
+                "{}\t{}\tlines {lines:?}\t{}: {} occurrences; expected {expected}",
+                key.0,
+                key.1,
+                serde_json::to_string(&key.2).unwrap(),
+                lines.len()
             ));
         }
-        std::fs::write(path, audit).unwrap();
     }
-    let mut exemptions = BTreeSet::new();
+    for key in exemptions.keys() {
+        if !observed.contains_key(key) {
+            failures.push(format!("unused emitter spelling exemption: {key:?}"));
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "assert on the current emitter spelling (#572):\n{}",
+            failures.join("\n")
+        ))
+    }
+}
+
+#[test]
+fn emitter_assertions_use_current_spellings() {
+    let mut exemptions = BTreeMap::new();
     for row in include_str!("fixtures/emitter_spelling_exceptions_572.tsv")
         .lines()
         .skip(1)
     {
-        let columns = row.splitn(4, '\t').collect::<Vec<_>>();
-        assert_eq!(columns.len(), 4, "{row}");
-        assert!(!columns[3].is_empty(), "exemptions need a reason: {row}");
+        let columns = row.splitn(5, '\t').collect::<Vec<_>>();
+        assert_eq!(columns.len(), 5, "{row}");
+        assert!(!columns[4].is_empty(), "exemptions need a reason: {row}");
         let value: String = serde_json::from_str(columns[2]).unwrap();
-        exemptions.insert((columns[0].to_string(), columns[1].to_string(), value));
-    }
-    let mut failures = Vec::new();
-    let mut used = BTreeSet::new();
-    for literal in sources
-        .literals
-        .iter()
-        .filter(|literal| retired(&literal.value))
-    {
-        let key = (
-            literal.path.clone(),
-            literal.function.clone(),
-            literal.value.clone(),
+        let occurrences: usize = columns[3].parse().unwrap();
+        assert!(
+            occurrences > 0,
+            "exemptions need an exact positive count: {row}"
         );
-        if exemptions.contains(&key) {
-            used.insert(key);
-        } else {
-            failures.push(format!(
-                "{}\t{}\t{}\t{}",
-                literal.path,
-                literal.function,
-                literal.line,
-                serde_json::to_string(&literal.value).unwrap()
-            ));
-        }
+        assert!(
+            exemptions
+                .insert(
+                    (columns[0].to_string(), columns[1].to_string(), value),
+                    occurrences,
+                )
+                .is_none(),
+            "duplicate exemption: {row}"
+        );
     }
-    assert!(
-        failures.is_empty(),
-        "assert on the current emitter spelling (#572):\n{}",
-        failures.join("\n")
-    );
-    assert_eq!(exemptions, used, "unused emitter spelling exemptions");
+    check_spellings(&sources().literals, &exemptions).unwrap();
+}
+
+#[test]
+fn old_namespace_spelling_detects_nested_identities_without_matching_aws_text() {
+    for tail in [
+        "test.resource.Status.x",
+        "test.resource.deeper.Status.x",
+        "test.resource.status.x",
+        "ec2.Vpc.Id",
+        "Region.ap_northeast_1",
+        "Arn",
+    ] {
+        let value = format!("{}.{}", "aws", tail);
+        assert!(old_namespace_spelling(&value), "missed {value}");
+    }
+    for value in [
+        "arn:aws:ec2:ap-northeast-1:123456789012:vpc/vpc-12345678",
+        "aws:PrincipalArn",
+        "amazonaws.com",
+        "aws.amazon.com",
+        "aws.amazon.com.cn",
+        "https://docs.aws.amazon.com/AWSCloudFormation/latest/",
+        "https://aws.example.com/path",
+        "https://aws.test.resource.Status.x/path",
+        "awscc.ec2.Vpc.Id",
+    ] {
+        assert!(!old_namespace_spelling(value), "false positive {value}");
+    }
+    for separator in [" ", "\u{a0}", "\u{2003}"] {
+        let diagnostic = format!(
+            "https://aws.amazon.com/{separator}{}.{}",
+            "aws", "test.resource.Status.x"
+        );
+        assert!(old_namespace_spelling(&diagnostic));
+    }
+}
+
+#[test]
+fn emitter_spelling_exemptions_pin_each_occurrence_including_top_level() {
+    for function in ["probe", ""] {
+        let value = format!("{}.{}", "aws", "test.resource.Status.x");
+        let literal = |line| Literal {
+            path: "src/probe.rs".into(),
+            function: function.into(),
+            line,
+            value: value.clone(),
+        };
+        let exemptions =
+            BTreeMap::from([(("src/probe.rs".into(), function.into(), value.clone()), 1)]);
+        check_spellings(&[literal(1)], &exemptions).unwrap();
+        let failure = check_spellings(&[literal(1), literal(2)], &exemptions).unwrap_err();
+        assert!(failure.contains("2 occurrences; expected 1"), "{failure}");
+        assert!(failure.contains("lines [1, 2]"), "{failure}");
+        assert!(
+            check_spellings(&[], &exemptions)
+                .unwrap_err()
+                .contains("unused")
+        );
+    }
 }
 
 #[test]
@@ -218,15 +310,34 @@ fn ported_test_manifest_names_existing_tests() {
         .lines()
         .skip(1)
     {
-        let columns = row.splitn(4, '\t').collect::<Vec<_>>();
-        assert_eq!(columns.len(), 4, "{row}");
+        let columns = row.splitn(5, '\t').collect::<Vec<_>>();
+        assert_eq!(columns.len(), 5, "{row}");
         if matches!(columns[2], "ported" | "already ported") {
             checked += 1;
             assert!(
-                tests.contains(columns[1]),
-                "manifest test does not exist: {row}"
+                tests.contains(&(columns[3].to_string(), columns[1].to_string())),
+                "manifest test does not exist in its recorded local source file: {row}"
             );
         }
     }
     assert!(checked > 0);
+}
+
+#[test]
+fn ported_test_manifest_distinguishes_same_name_in_different_files() {
+    let mut sources = Sources {
+        path: "src/actual.rs".into(),
+        ..Sources::default()
+    };
+    sources.visit_file(&syn::parse_file("#[test] fn same_name() {}").unwrap());
+    assert!(
+        sources
+            .tests
+            .contains(&("src/actual.rs".into(), "same_name".into()))
+    );
+    assert!(
+        !sources
+            .tests
+            .contains(&("src/other.rs".into(), "same_name".into()))
+    );
 }

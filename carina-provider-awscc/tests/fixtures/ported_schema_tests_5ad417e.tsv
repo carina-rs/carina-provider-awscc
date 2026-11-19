@@ -1,329 +1,329 @@
-source	test	status	reason
-assume_role/tests.rs	each_load_preserves_options_region_and_refreshes_base_credentials	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	exhausted_not_sent_failures_retain_classification_and_retry_bounds	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	invalid_configuration_errors_keep_the_sdk_error_category	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	missing_sts_credentials_is_an_unhandled_credentials_error	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	not_sent_connect_failure_is_retried	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	omitted_session_name_keeps_sdk_default_and_omits_optional_fields	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	regression_concurrent_loads_share_failure_and_then_clear_the_slot	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	regression_concurrent_loads_share_success_and_then_clear_the_slot	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	regression_dropped_load_keeps_the_transmitted_assume_role_in_flight	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	regression_operation_cannot_disable_the_assume_role_resend_guard	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	response_timeout_after_transmit_is_not_resent_and_surfaces_maybe_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	review_round2_malformed_success_response_does_not_expose_credentials	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	review_round2_response_error_does_not_retain_raw_credentials	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	review_round2_service_error_keeps_code_without_raw_response_or_message	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	service_client_caches_role_credentials_and_refreshes_at_expiry	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-assume_role/tests.rs	session_duration_overflow_is_invalid_configuration_without_sending	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-catalog.rs	acm_resource_record_type_catalog_identity_values_and_aliases	not ported	Full shared catalog/macro contract or an unowned constructor; local catalogs have distinct row sets and no refines API.
-catalog.rs	all_identities_are_unique_and_match_their_constructors	not ported	Full shared catalog/macro contract or an unowned constructor; local catalogs have distinct row sets and no refines API.
-catalog.rs	arn_catalog_rows_accept_every_partition_and_reject_unknown_partitions	not ported	Full shared catalog/macro contract or an unowned constructor; local catalogs have distinct row sets and no refines API.
-catalog.rs	catalog_metadata_snapshot	not ported	Full shared catalog/macro contract or an unowned constructor; local catalogs have distinct row sets and no refines API.
-catalog.rs	dns_record_type_catalog_identity_values_and_aliases	not ported	No owned catalog row: DnsRecordType
-catalog.rs	elbv2_matcher_catalog_rows_report_errors_and_reject_wrong_types	ported	Original assertions/vectors; matching owned catalog paths/identities.
-catalog.rs	exported_macro_supports_each_optional_row_field_present_and_absent	not ported	Full shared catalog/macro contract or an unowned constructor; local catalogs have distinct row sets and no refines API.
-catalog.rs	iam_name_catalog_rows_match_smithy_constraints_and_callbacks	ported	Original assertions/vectors; matching owned catalog paths/identities.
-catalog.rs	logs_log_group_retention_integer_enum_matches_awscc	ported	Original assertions/vectors; matching owned catalog paths/identities.
-catalog.rs	organizations_account_arn_matches_smithy_account_resource_and_shared_partitions	not ported	Not a ported declaration: AWSCC already overrode the shared account ARN definition at a1bed43 with a broader Organizations service grammar; keeping it is required by #572 scope. Existing catalog ARN tests pin that grammar.
-catalog.rs	organizations_account_email_catalog_exposes_identity_bounds_and_core_validation	not ported	Not a ported implementation: AWSCC already enforced 6..=64 characters in the semantic callback at a1bed43, whereas this upstream test requires the callback to accept out-of-bounds emails. Existing organizations_tests cover AWSCC direct callback bounds.
-catalog.rs	organizations_organization_arn_matches_smithy_resource_and_id_bounds	not ported	Not a ported declaration: AWSCC already overrode the shared organization ARN definition at a1bed43 with a broader Organizations service grammar; keeping it is required by #572 scope. Existing catalog ARN tests pin that grammar.
-catalog.rs	s3_lifecycle_date_accepts_only_canonical_utc_rfc3339	not ported	Not a ported implementation: AWSCC already accepted .000Z for its s3.Bucket.LifecycleDate at a1bed43; upstream s3.BucketLifecycleConfiguration.LifecycleDate rejects it. Keep AWSCC cached-schema spelling and measured-behavior comment unchanged.
-catalog.rs	validator_declarations_match_constructor_shapes_and_the_registry_contract	not ported	Full shared catalog/macro contract or an unowned constructor; local catalogs have distinct row sets and no refines API.
-common/enums.rs	acronym_lowercase_digits_lowercase_as_one_word	already ported	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
-common/enums.rs	already_snake_or_kebab_normalizes_separators	already ported	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
-common/enums.rs	colon_values_become_snake	already ported	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
-common/enums.rs	empty_passes_through	already ported	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
-common/enums.rs	mixed_dotted_values_become_snake	already ported	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
-common/enums.rs	pascal_case_to_snake_case	already ported	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
-common/enums.rs	pure_digits_pass_through	already ported	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
-common/enums.rs	pure_dotted_numeric_passes_through	already ported	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
-common/enums.rs	route53_record_types_lowercase	already ported	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
-common/enums.rs	shouty_snake_lowercases	already ported	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
-common/enums.rs	slash_values_become_snake	already ported	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
-common/integer.rs	member_ranges_preserve_one_identity_across_declarations	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-common/integer.rs	wire_bounds_intersect_existing_ranges_and_preserve_semantic_validation	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-common/member.rs	finite_candidates_check_the_full_named_policy_before_callback	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-common/member.rs	integer_binding_keeps_the_declared_range_and_callback	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-common/member.rs	standalone_constraints_are_not_donated_to_members	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-common/partition.rs	all_contains_every_partition_once	not ported	Partition was already AWSCC-owned at a1bed43, with its own SDK-metadata coverage; not copied for #572.
-common/partition.rs	arn_partition_ids_and_pattern_accept_exactly_all	not ported	Partition was already AWSCC-owned at a1bed43, with its own SDK-metadata coverage; not copied for #572.
-common/resend_guard.rs	absent_attempt_phase_fails_closed_to_maybe_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard.rs	all_attempts_pre_transmit_is_not_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard.rs	maybe_sent_attempt_then_pre_transmit_failure_is_maybe_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard.rs	maybe_sent_attempt_then_pre_transmit_timeout_keeps_transient_final_attempt	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard.rs	maybe_sent_attempt_then_response_error_is_maybe_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard.rs	non_idempotent_retry_is_allowed_when_previous_attempt_never_reached_transmit	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard.rs	non_idempotent_retry_is_refused_when_transmit_was_reached_without_finalizer	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard.rs	other_connector_failure_after_transmit_stays_maybe_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard.rs	post_transmit_readonly_unclassified_connector_failure_is_rewritten	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard.rs	pre_transmit_orchestrator_timeout_is_typed_not_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard.rs	pre_transmit_other_failure_is_typed_not_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard.rs	pre_transmit_readonly_unclassified_connector_failure_is_not_rewritten	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard.rs	serialization_failure_keeps_construction_variant_and_source	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard.rs	typed_classification_carries_final_attempt_transience	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	authorization_signature_is_not_printed	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	connector_and_orchestrator_summaries_never_format_errors	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	each_retry_reports_the_previous_failure_and_early_final_failure_is_counted	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	exhausted_retries_print_gave_up_after_three_attempts	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	http_summaries_only_use_typed_metadata_and_response_fields	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	non_retryable_first_failure_prints_nothing	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	operation_timeout_after_two_started_attempts_prints_one_gave_up	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	operation_timeout_before_the_first_retry_stays_silent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	operation_timeout_during_backoff_does_not_count_a_phantom_third_attempt	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	presigned_query_signature_is_not_printed	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	redacts_sensitive_values_case_insensitively_and_removes_all_url_queries	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	retry_error_codes_require_the_complete_bounded_ascii_shape	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	retry_line_uses_sdk_counts_and_monotonic_wait	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	retry_summaries_omit_request_ids_from_headers_and_metadata	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	retryable_failure_with_one_configured_attempt_prints_nothing	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	sdk_attempt_timeout_is_retried_with_the_next_attempt_number	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	security_session_token_is_not_printed	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	service_failures_keep_their_type_and_print_status_only	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	service_failures_report_typed_code_without_request_id_or_message	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	single_not_found_response_prints_nothing	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/resend_guard/retry_visibility_tests.rs	successful_retry_prints_only_retry_lines	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	construction_failure_was_not_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	guard_annotated_dispatch_failure_uses_operation_verdict	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	io_dispatch_failure_may_have_been_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	mock_response_preserves_explicit_not_sent_transience	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	nested_guard_verdict_does_not_annotate_timeout	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	orchestrator_service_failures_have_expected_outcomes	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	prior_maybe_sent_attempt_preserves_the_final_attempt_verdict	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	raw_transport_not_sent_without_operation_verdict_may_have_been_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	resend_safety_truth_table	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	response_error_ignores_guard_verdict	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	response_error_may_have_been_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	service_error_with_operation_verdict_uses_verdict	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	service_error_without_operation_verdict_may_have_been_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	timeout_error_may_have_been_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	unclassified_dispatch_failure_may_have_been_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	wasi_permanent_error_codes_are_permanent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	wasi_transient_error_codes_are_transient	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/send_outcome.rs	wrapped_transport_not_sent_without_operation_verdict_may_have_been_sent	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/transience.rs	dependency_block_is_permanent_for_resend	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/transience.rs	provider_transience_survives_nested_diagnostics_without_changing_sources	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/transience.rs	sdk_transience_rejects_construction_and_response_decode_errors	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/transience.rs	sdk_transience_uses_aws_codes_and_http_status	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/transience.rs	sdk_transience_uses_shared_connector_classification	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/transience.rs	server_item_codes_match_sdk_server_errors	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-common/transience.rs	transient_aws_error_is_classified_from_structured_detail	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-host_credentials.rs	asks_the_host_again_when_credentials_are_requested_again	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-host_credentials.rs	maps_credentials_and_expiry	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-host_credentials.rs	maps_credentials_without_token_or_expiry	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-host_credentials.rs	native_default_reports_the_sdk_stub_error	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-host_credentials.rs	not_found_is_credentials_not_loaded_with_host_message	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-host_credentials.rs	provider_failed_keeps_host_message	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-identity_layers_tests.rs	catalog_definitions_never_contain_member_constraints	ported	Original String/Int member-layer assertions over every AwsccType, ScalarType and StringIdentity row; nonzero Int/Reference coverage and exact examined row count.
-identity_layers_tests.rs	closed_definition_rejects_inconsistent_values	not ported	Finite/alias/open-constraint rejection API was exercised, then removed in review round 3: production only uses open enums with no values, aliases, pattern or length; IdentityDefinition now exposes only open_enum. The corresponding test is inapplicable after this authorized API trim.
-identity_layers_tests.rs	enum_cannot_borrow_a_string_identity_callback	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	enum_definitions_validate_finite_sets_and_reject_unsupported_open_constraints	not ported	Finite/alias/open-constraint rejection API was exercised, then removed in review round 3: production only uses open enums with no values, aliases, pattern or length; IdentityDefinition now exposes only open_enum. The corresponding test is inapplicable after this authorized API trim.
-identity_layers_tests.rs	finite_values_encode_the_checked_policy_without_member_bases	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	identity_layer_is_the_single_structural_owner	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	identity_layer_reports_only_the_first_failure	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	member_keeps_identity_length	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	members_keep_lowercase_ids_and_arn_whole_value_checks	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	members_preserve_one_identity_and_separate_smithy_layers	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	named_string_member_constraints_transport_as_a_string	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	semantic_callback_cannot_bypass_identity_pattern	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	standalone_constraints_are_identity_metadata	ported	Original assertions/vectors; owned catalog or fallible identity-definition paths.
-identity_layers_tests.rs	standalone_invalid_value_has_one_diagnostic	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	string_identity_keeps_its_semantic_callback	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	structural_int_identity_binds_without_a_callback	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-identity_layers_tests.rs	structural_string_identity_binds_without_a_callback	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-kms_reference.rs	alias_arn_keeps_its_own_region_and_account	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	aws_codes_determine_typed_outcomes_and_preserve_metadata	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	batch_bounds_concurrency_and_keeps_positions_when_calls_finish_out_of_order	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	batch_checks_each_identity_component_with_fixed_awscc_provider	already ported	Upstream batch_checks_each_identity_component_with_the_callers_provider_name renamed to batch_checks_each_identity_component_with_fixed_awscc_provider; AWSCC owns its fixed provider name (#572).
-kms_reference.rs	core_batch_keeps_positions_around_missing_providers	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	core_batch_keeps_positions_around_unsupported_identity_components	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	core_batch_maps_wire_failures_and_preserves_their_sources_and_metadata	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	core_batch_rejects_missing_provider_without_a_call	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	core_batch_retains_classified_cause_and_opaque_text_without_changing_retryability	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	cross_partition_references_are_invalid_without_a_call	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	describe_key_preserves_returned_casing_and_raw_request	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	empty_batch_never_calls_kms	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	guest_batch_retains_classified_cause_and_opaque_text_until_encoding	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	ids_and_aliases_describe_the_raw_value_in_the_instance_region	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	key_arn_is_validated_without_a_call	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	key_arn_preserves_authored_casing_without_a_call	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	key_reference_validates_offline_and_resolves_alias_arn	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	malformed_inputs_never_call_kms	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	resolver_errors_are_always_scoped_to_awscc	already ported	Upstream resolver_errors_use_the_callers_provider_name renamed to resolver_errors_are_always_scoped_to_awscc; AWSCC owns its fixed provider name (#572). The upstream ["aws", "awscc"] provider loop was dropped; all original region/input/failure cases still assert awscc metadata.
-kms_reference.rs	same_partition_references_resolve_in_every_partition	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	sdk_failure_does_not_format_credential_sources	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	sdk_failure_preserves_service_message_and_metadata_without_debug	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	sdk_transport_failures_preserve_immediate_display_in_cause_without_walking_sources	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-kms_reference.rs	successes_require_a_valid_key_arn	already ported	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
-lib.rs	aws_account_id_owns_pattern_and_length_in_its_callback	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	az_accepts_aws_format	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	az_has_namespace	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	az_has_to_dsl	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	az_rejects_invalid_az	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	az_rejects_quoted_dsl_format	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	az_rejects_quoted_kind_shorthand_format	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	az_rejects_wrong_namespace	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	az_validator_rejects_dsl_spelling	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	canonicalize_enum_value_matches	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	canonicalize_enum_value_no_match	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	cloudfront_hosted_zone_id_carries_identity_and_validates_values	not ported	No ported production implementation: cloudfront_hosted_zone_id
-lib.rs	condition_operator_to_aws_basic	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	condition_operator_to_aws_for_all_values	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	condition_operator_to_aws_if_exists	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	condition_operator_to_aws_unknown	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	condition_operator_to_snake_roundtrip	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	condition_operator_total_count_matches_cross_product	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	condition_operator_typed_roundtrip	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	condition_type_string_enum_includes_qualifier_and_if_exists_variants	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	find_matching_enum_value_case_insensitive	ported	Complete original assertions/vectors; owned enum-matching helper.
-lib.rs	find_matching_enum_value_exact	ported	Complete original assertions/vectors; owned enum-matching helper.
-lib.rs	find_matching_enum_value_underscore_to_hyphen	ported	Complete original assertions/vectors; owned enum-matching helper.
-lib.rs	flow_log_id_invalid	not ported	No ported production implementation: validate_prefixed_resource_id
-lib.rs	flow_log_id_valid	not ported	No ported production implementation: validate_prefixed_resource_id
-lib.rs	grantee_accepts_email_format	not ported	No ported production implementation: s3_grantee
-lib.rs	grantee_accepts_id_format	not ported	No ported production implementation: s3_grantee
-lib.rs	grantee_accepts_multiple_specs	not ported	No ported production implementation: s3_grantee
-lib.rs	grantee_accepts_uri_format	not ported	No ported production implementation: s3_grantee
-lib.rs	grantee_rejects_empty_string	not ported	No ported production implementation: s3_grantee
-lib.rs	grantee_rejects_invalid_prefix	not ported	No ported production implementation: s3_grantee
-lib.rs	hand_written_string_enum_identities_are_structural	not ported	No ported production implementation: bucket_encryption_rules, bucket_lifecycle_rules, bucket_replication_rules, bucket_target_object_key_format, s3_redirect_all_requests_to, sqs_redrive_allow_policy
-lib.rs	iam_oidc_provider_arn_carries_identity_and_validates_values	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	iam_policy_arn_carries_identity_and_validates_values	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	iam_policy_document_principal_map_validates	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	iam_policy_document_principal_string_validates	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	iam_policy_document_resource_comparison_treats_string_lists_as_unordered	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	iam_policy_document_struct_names_are_plain_and_effect_identity_is_structural	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	iam_policy_document_type_validates	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	iam_policy_effect_is_string_enum	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	iam_policy_string_lists_are_unordered_but_statements_remain_ordered	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	iam_policy_version_is_string_enum	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	iam_role_arn_carries_identity_and_validates_values	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	iam_role_id_invalid_empty_after_prefix	not ported	No ported production implementation: validate_iam_role_id
-lib.rs	iam_role_id_invalid_prefix	not ported	No ported production implementation: validate_iam_role_id
-lib.rs	iam_role_id_valid	not ported	No ported production implementation: validate_iam_role_id
-lib.rs	identity_store_id_carries_identity_and_validates_values	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	ipam_id_invalid	not ported	No ported production implementation: validate_prefixed_resource_id
-lib.rs	ipam_id_valid	not ported	No ported production implementation: validate_prefixed_resource_id
-lib.rs	is_uuid_invalid	not ported	No ported production implementation: is_uuid
-lib.rs	is_uuid_valid	not ported	No ported production implementation: is_uuid
-lib.rs	kms_key_id_carries_identity_and_validates_values	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	lifecycle_filter_declares_at_most_one_group_at_its_source	not ported	No ported production implementation: bucket_lifecycle_rules
-lib.rs	region_accepts_aws_format	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	region_completions_generates_dsl_format	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	region_completions_uses_provider_prefix	not ported	Removed in review round 3: fixed-provider completion calls made this a self-comparison. region_completions_generates_dsl_format retains the awscc.Region.af_south_1 pin.
-lib.rs	region_dsl_aliases_generates_api_to_dsl_pairs	not ported	No ported production implementation: region_dsl_aliases
-lib.rs	region_rejects_availability_zone	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	region_rejects_invalid_region	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	region_rejects_quoted_canonical_namespace_literal	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	region_rejects_quoted_dsl_format	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	region_rejects_quoted_dsl_format_without_aws_prefix	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	region_rejects_wrong_namespace	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	region_validates_all_valid_regions	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	region_validator_rejects_dsl_spelling	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	route53_hosted_zone_id_carries_identity_and_validates_values	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	s3_redirect_protocol_has_dsl_aliases	not ported	S3 constructor was not ported or declared by AWSCC; preserve the whole upstream test rather than deleting assertions.
-lib.rs	s3_sse_algorithm_has_dsl_aliases	not ported	S3 constructor was not ported or declared by AWSCC; preserve the whole upstream test rather than deleting assertions.
-lib.rs	security_group_rule_id_invalid	not ported	No ported production implementation: validate_prefixed_resource_id
-lib.rs	security_group_rule_id_valid	not ported	No ported production implementation: validate_prefixed_resource_id
-lib.rs	sqs_redrive_policy_struct_names_are_plain	not ported	No ported production implementation: sqs_redrive_allow_policy, sqs_redrive_policy
-lib.rs	sso_instance_arn_carries_identity_and_validates_values	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	sso_permission_set_arn_carries_identity_and_validates_values	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	sso_principal_id_carries_identity_and_validates_values	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	subnet_route_table_association_id_valid	not ported	No ported production implementation: validate_prefixed_resource_id
-lib.rs	transit_gateway_attachment_id_invalid	not ported	No ported production implementation: validate_prefixed_resource_id
-lib.rs	transit_gateway_attachment_id_valid	not ported	No ported production implementation: validate_prefixed_resource_id
-lib.rs	validate_arn_accepts_valid_partitions	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_arn_invalid	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_arn_rejects_empty_partition	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_arn_rejects_empty_service	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_arn_rejects_invalid_partition	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_arn_type_with_value	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_arn_valid	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_availability_zone_id_invalid	not ported	No ported production implementation: validate_availability_zone_id
-lib.rs	validate_availability_zone_id_type_with_value	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_availability_zone_id_valid	not ported	No ported production implementation: validate_availability_zone_id
-lib.rs	validate_availability_zone_invalid	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_availability_zone_local_zone	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_availability_zone_valid	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_availability_zone_wavelength_zone	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_aws_account_id_invalid	not ported	No ported production implementation: validate_aws_account_id
-lib.rs	validate_aws_account_id_valid	not ported	No ported production implementation: validate_aws_account_id
-lib.rs	validate_aws_resource_id_invalid	not ported	No ported production implementation: validate_aws_resource_id
-lib.rs	validate_aws_resource_id_type_with_value	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_aws_resource_id_valid	not ported	No ported production implementation: validate_aws_resource_id
-lib.rs	validate_condition_operators_accepts_if_exists	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_condition_operators_accepts_valid	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_condition_operators_rejects_pascal_case	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_condition_operators_rejects_unknown	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_arn_accepts_aws_managed	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_arn_accepts_customer_managed	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_arn_accepts_path_prefix	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_arn_error_says_iam_policy_arn	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_arn_error_says_iam_role_arn	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_arn_rejects_empty_resource_name	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_arn_rejects_invalid_resource_chars	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_arn_rejects_non_digit_account	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_arn_rejects_non_empty_region	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_arn_rejects_short_account_id	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_policy_document_accepts_for_all_values_string_equals	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_policy_document_basic	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_policy_document_invalid_effect	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_iam_policy_document_invalid_version	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_ipam_pool_id_invalid	not ported	No ported production implementation: validate_ipam_pool_id
-lib.rs	validate_ipam_pool_id_valid	not ported	No ported production implementation: validate_ipam_pool_id
-lib.rs	validate_kms_key_id_alias	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_kms_key_id_arn	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_kms_key_id_uuid	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_service_arn_valid	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_service_arn_wrong_prefix	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_service_arn_wrong_service	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_tgw_route_table_id_invalid	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_tgw_route_table_id_valid	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_vpc_cidr_block_association_id_invalid	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	validate_vpc_cidr_block_association_id_valid	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-lib.rs	vpc_id_carries_identity_and_callback_owned_pattern	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-member_identity_tests.rs	an_enum_cannot_take_a_string_identity	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	anonymous_integer_bounds_live_only_in_the_member_layer	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	anonymous_shared_strings_publish_only_member_constraints	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	arn_and_kms_syntax_is_owned_by_the_identity_pattern	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	attaching_an_identity_rejects_disjoint_member_bounds	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	competing_reference_patterns_are_an_error_instead_of_a_dropped_check	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	enum_alias_targets_must_belong_to_the_checked_value_set	not ported	Finite/alias/open-constraint rejection API was exercised, then removed in review round 3: production only uses open enums with no values, aliases, pattern or length; IdentityDefinition now exposes only open_enum. The corresponding test is inapplicable after this authorized API trim.
-member_identity_tests.rs	enum_identity_attachment_rejects_relabeling_and_conflicting_definitions	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	enum_subsets_cannot_install_values_outside_the_carrier	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	handwritten_reference_keeps_its_grammar_without_an_input_rule	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	independently_requested_catalog_definitions_remain_identical	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	int_enum_constructors_share_the_catalog_callback	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	integer_tightening_keeps_the_original_identity_range	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	local_enum_builders_cannot_relabel_identified_carriers	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	narrowing_an_enum_preserves_an_explicitly_empty_alias_set	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	open_enum_cannot_hide_slot_constraints_in_its_base	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	reference_binding_rejects_a_different_existing_identity	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	references_cannot_absorb_slot_local_constraints	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	replacing_a_string_identity_cannot_discard_its_pattern	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	replacing_an_int_identity_cannot_discard_its_range	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-member_identity_tests.rs	resource_id_accepts_digit_bearing_prefixes	not ported	Depends on unported validate_aws_resource_id free validator; the owned resource-ID constructor retains its complete upstream value-validation test.
-member_identity_tests.rs	same_identity_with_a_different_callback_is_a_conflicting_definition	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-sdk/mod.rs	installs_permanent_resend_guard	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-sdk/tests.rs	every_sdk_dependency_has_a_feature_and_guarded_service	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-sdk/tests.rs	regression_s3_express_session_auth_is_disabled	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-sdk/tests.rs	review_round1_s3_express_override_cannot_start_create_session	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-sdk_config.rs	registers_each_generation_and_expiry_before_returning_signing_credentials	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-sdk_config.rs	registration_failure_never_returns_signing_credentials	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-sdk_config.rs	review_round1_wasm_loader_defaults_to_host_credentials	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-sdk_config.rs	review_round1_wasm_loader_keeps_credentials_override	not ported	SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
-services/elbv2.rs	elbv2_grpc_matcher_codes_validate_boundaries_lists_and_ranges	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-services/elbv2.rs	elbv2_health_check_port_is_anonymous_and_validates_whole_strings	not ported	The unused shared helper port was removed; AWSCC already had its own distinct named HealthCheckPort declaration at a1bed43.
-services/elbv2.rs	elbv2_health_check_port_pattern_covers_every_port	not ported	The unused shared helper port was removed; AWSCC already had its own distinct named HealthCheckPort declaration at a1bed43.
-services/elbv2.rs	elbv2_http_matcher_codes_validate_boundaries_lists_and_ranges	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-services/iam/identity.rs	iam_paths_are_anonymous_and_preserve_distinct_smithy_grammars	not ported	The combined upstream test requires unported iam_path_prefix. The unused iam_path production port was removed; the pre-existing AWSCC anonymous-path test now pins its expected declaration directly.
-services/kms.rs	patterns_accept_current_partitions_and_regions	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-services/kms.rs	patterns_reject_malformed_arns	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-services/kms.rs	reference_pattern_accepts_uuid_and_mrk_ids_in_both_cases	ported	Original assertions/vectors; owned paths and awscc identity/provider only.
-services/route53.rs	route53_dns_name_preserves_anonymous_bounds_and_decoded_label_grammar	not ported	No ported production implementation: route53_dns_name
-services/s3/object_lock.rs	object_lock_rule_accepts_days_retention	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-services/s3/object_lock.rs	object_lock_rule_accepts_years_retention	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-services/s3/object_lock.rs	object_lock_rule_allows_default_retention_to_be_omitted	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-services/s3/object_lock.rs	object_lock_rule_empty_period_reports_exclusive_union_error	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-services/s3/object_lock.rs	object_lock_rule_rejects_mode_without_retention_period	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-services/s3/object_lock.rs	object_lock_rule_rejects_retention_period_without_mode	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
-services/s3/object_lock.rs	object_lock_rule_reports_days_and_years_as_mutually_exclusive	not ported	Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+source	test	status	local_source	reason
+assume_role/tests.rs	each_load_preserves_options_region_and_refreshes_base_credentials	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	exhausted_not_sent_failures_retain_classification_and_retry_bounds	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	invalid_configuration_errors_keep_the_sdk_error_category	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	missing_sts_credentials_is_an_unhandled_credentials_error	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	not_sent_connect_failure_is_retried	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	omitted_session_name_keeps_sdk_default_and_omits_optional_fields	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	regression_concurrent_loads_share_failure_and_then_clear_the_slot	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	regression_concurrent_loads_share_success_and_then_clear_the_slot	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	regression_dropped_load_keeps_the_transmitted_assume_role_in_flight	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	regression_operation_cannot_disable_the_assume_role_resend_guard	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	response_timeout_after_transmit_is_not_resent_and_surfaces_maybe_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	review_round2_malformed_success_response_does_not_expose_credentials	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	review_round2_response_error_does_not_retain_raw_credentials	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	review_round2_service_error_keeps_code_without_raw_response_or_message	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	service_client_caches_role_credentials_and_refreshes_at_expiry	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+assume_role/tests.rs	session_duration_overflow_is_invalid_configuration_without_sending	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+catalog.rs	acm_resource_record_type_catalog_identity_values_and_aliases	not ported		Full shared catalog/macro contract or an unowned constructor; local catalogs have distinct row sets and no refines API.
+catalog.rs	all_identities_are_unique_and_match_their_constructors	not ported		Full shared catalog/macro contract or an unowned constructor; local catalogs have distinct row sets and no refines API.
+catalog.rs	arn_catalog_rows_accept_every_partition_and_reject_unknown_partitions	not ported		Full shared catalog/macro contract or an unowned constructor; local catalogs have distinct row sets and no refines API.
+catalog.rs	catalog_metadata_snapshot	not ported		Full shared catalog/macro contract or an unowned constructor; local catalogs have distinct row sets and no refines API.
+catalog.rs	dns_record_type_catalog_identity_values_and_aliases	not ported		No owned catalog row: DnsRecordType
+catalog.rs	elbv2_matcher_catalog_rows_report_errors_and_reject_wrong_types	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; matching owned catalog paths/identities.
+catalog.rs	exported_macro_supports_each_optional_row_field_present_and_absent	not ported		Full shared catalog/macro contract or an unowned constructor; local catalogs have distinct row sets and no refines API.
+catalog.rs	iam_name_catalog_rows_match_smithy_constraints_and_callbacks	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; matching owned catalog paths/identities.
+catalog.rs	logs_log_group_retention_integer_enum_matches_awscc	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; matching owned catalog paths/identities.
+catalog.rs	organizations_account_arn_matches_smithy_account_resource_and_shared_partitions	not ported		Not a ported declaration: AWSCC already overrode the shared account ARN definition at a1bed43 with a broader Organizations service grammar; keeping it is required by #572 scope. Existing catalog ARN tests pin that grammar.
+catalog.rs	organizations_account_email_catalog_exposes_identity_bounds_and_core_validation	not ported		Not a ported implementation: AWSCC already enforced 6..=64 characters in the semantic callback at a1bed43, whereas this upstream test requires the callback to accept out-of-bounds emails. Existing organizations_tests cover AWSCC direct callback bounds.
+catalog.rs	organizations_organization_arn_matches_smithy_resource_and_id_bounds	not ported		Not a ported declaration: AWSCC already overrode the shared organization ARN definition at a1bed43 with a broader Organizations service grammar; keeping it is required by #572 scope. Existing catalog ARN tests pin that grammar.
+catalog.rs	s3_lifecycle_date_accepts_only_canonical_utc_rfc3339	not ported		Not a ported implementation: AWSCC already accepted .000Z for its s3.Bucket.LifecycleDate at a1bed43; upstream s3.BucketLifecycleConfiguration.LifecycleDate rejects it. Keep AWSCC cached-schema spelling and measured-behavior comment unchanged.
+catalog.rs	validator_declarations_match_constructor_shapes_and_the_registry_contract	not ported		Full shared catalog/macro contract or an unowned constructor; local catalogs have distinct row sets and no refines API.
+common/enums.rs	acronym_lowercase_digits_lowercase_as_one_word	already ported	src/schemas/type_helpers/enums.rs	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
+common/enums.rs	already_snake_or_kebab_normalizes_separators	already ported	src/schemas/type_helpers/enums.rs	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
+common/enums.rs	colon_values_become_snake	already ported	src/schemas/type_helpers/enums.rs	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
+common/enums.rs	empty_passes_through	already ported	src/schemas/type_helpers/enums.rs	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
+common/enums.rs	mixed_dotted_values_become_snake	already ported	src/schemas/type_helpers/enums.rs	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
+common/enums.rs	pascal_case_to_snake_case	already ported	src/schemas/type_helpers/enums.rs	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
+common/enums.rs	pure_digits_pass_through	already ported	src/schemas/type_helpers/enums.rs	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
+common/enums.rs	pure_dotted_numeric_passes_through	already ported	src/schemas/type_helpers/enums.rs	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
+common/enums.rs	route53_record_types_lowercase	already ported	src/schemas/type_helpers/enums.rs	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
+common/enums.rs	shouty_snake_lowercases	already ported	src/schemas/type_helpers/enums.rs	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
+common/enums.rs	slash_values_become_snake	already ported	src/schemas/type_helpers/enums.rs	All 11 enum normalization tests are in schemas/type_helpers/enums.rs.
+common/integer.rs	member_ranges_preserve_one_identity_across_declarations	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+common/integer.rs	wire_bounds_intersect_existing_ranges_and_preserve_semantic_validation	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+common/member.rs	finite_candidates_check_the_full_named_policy_before_callback	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+common/member.rs	integer_binding_keeps_the_declared_range_and_callback	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+common/member.rs	standalone_constraints_are_not_donated_to_members	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+common/partition.rs	all_contains_every_partition_once	not ported		Partition was already AWSCC-owned at a1bed43, with its own SDK-metadata coverage; not copied for #572.
+common/partition.rs	arn_partition_ids_and_pattern_accept_exactly_all	not ported		Partition was already AWSCC-owned at a1bed43, with its own SDK-metadata coverage; not copied for #572.
+common/resend_guard.rs	absent_attempt_phase_fails_closed_to_maybe_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard.rs	all_attempts_pre_transmit_is_not_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard.rs	maybe_sent_attempt_then_pre_transmit_failure_is_maybe_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard.rs	maybe_sent_attempt_then_pre_transmit_timeout_keeps_transient_final_attempt	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard.rs	maybe_sent_attempt_then_response_error_is_maybe_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard.rs	non_idempotent_retry_is_allowed_when_previous_attempt_never_reached_transmit	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard.rs	non_idempotent_retry_is_refused_when_transmit_was_reached_without_finalizer	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard.rs	other_connector_failure_after_transmit_stays_maybe_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard.rs	post_transmit_readonly_unclassified_connector_failure_is_rewritten	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard.rs	pre_transmit_orchestrator_timeout_is_typed_not_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard.rs	pre_transmit_other_failure_is_typed_not_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard.rs	pre_transmit_readonly_unclassified_connector_failure_is_not_rewritten	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard.rs	serialization_failure_keeps_construction_variant_and_source	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard.rs	typed_classification_carries_final_attempt_transience	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	authorization_signature_is_not_printed	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	connector_and_orchestrator_summaries_never_format_errors	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	each_retry_reports_the_previous_failure_and_early_final_failure_is_counted	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	exhausted_retries_print_gave_up_after_three_attempts	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	http_summaries_only_use_typed_metadata_and_response_fields	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	non_retryable_first_failure_prints_nothing	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	operation_timeout_after_two_started_attempts_prints_one_gave_up	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	operation_timeout_before_the_first_retry_stays_silent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	operation_timeout_during_backoff_does_not_count_a_phantom_third_attempt	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	presigned_query_signature_is_not_printed	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	redacts_sensitive_values_case_insensitively_and_removes_all_url_queries	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	retry_error_codes_require_the_complete_bounded_ascii_shape	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	retry_line_uses_sdk_counts_and_monotonic_wait	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	retry_summaries_omit_request_ids_from_headers_and_metadata	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	retryable_failure_with_one_configured_attempt_prints_nothing	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	sdk_attempt_timeout_is_retried_with_the_next_attempt_number	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	security_session_token_is_not_printed	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	service_failures_keep_their_type_and_print_status_only	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	service_failures_report_typed_code_without_request_id_or_message	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	single_not_found_response_prints_nothing	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/resend_guard/retry_visibility_tests.rs	successful_retry_prints_only_retry_lines	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	construction_failure_was_not_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	guard_annotated_dispatch_failure_uses_operation_verdict	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	io_dispatch_failure_may_have_been_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	mock_response_preserves_explicit_not_sent_transience	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	nested_guard_verdict_does_not_annotate_timeout	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	orchestrator_service_failures_have_expected_outcomes	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	prior_maybe_sent_attempt_preserves_the_final_attempt_verdict	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	raw_transport_not_sent_without_operation_verdict_may_have_been_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	resend_safety_truth_table	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	response_error_ignores_guard_verdict	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	response_error_may_have_been_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	service_error_with_operation_verdict_uses_verdict	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	service_error_without_operation_verdict_may_have_been_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	timeout_error_may_have_been_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	unclassified_dispatch_failure_may_have_been_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	wasi_permanent_error_codes_are_permanent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	wasi_transient_error_codes_are_transient	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/send_outcome.rs	wrapped_transport_not_sent_without_operation_verdict_may_have_been_sent	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/transience.rs	dependency_block_is_permanent_for_resend	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/transience.rs	provider_transience_survives_nested_diagnostics_without_changing_sources	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/transience.rs	sdk_transience_rejects_construction_and_response_decode_errors	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/transience.rs	sdk_transience_uses_aws_codes_and_http_status	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/transience.rs	sdk_transience_uses_shared_connector_classification	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/transience.rs	server_item_codes_match_sdk_server_errors	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+common/transience.rs	transient_aws_error_is_classified_from_structured_detail	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+host_credentials.rs	asks_the_host_again_when_credentials_are_requested_again	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+host_credentials.rs	maps_credentials_and_expiry	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+host_credentials.rs	maps_credentials_without_token_or_expiry	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+host_credentials.rs	native_default_reports_the_sdk_stub_error	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+host_credentials.rs	not_found_is_credentials_not_loaded_with_host_message	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+host_credentials.rs	provider_failed_keeps_host_message	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+identity_layers_tests.rs	catalog_definitions_never_contain_member_constraints	ported	src/schemas/ported_type_tests.rs	Original String/Int member-layer assertions over every AwsccType, ScalarType and StringIdentity row; nonzero Int/Reference coverage and exact examined row count.
+identity_layers_tests.rs	closed_definition_rejects_inconsistent_values	not ported		Finite/alias/open-constraint rejection API was exercised, then removed in review round 3: production only uses open enums with no values, aliases, pattern or length; IdentityDefinition now exposes only open_enum. The corresponding test is inapplicable after this authorized API trim.
+identity_layers_tests.rs	enum_cannot_borrow_a_string_identity_callback	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+identity_layers_tests.rs	enum_definitions_validate_finite_sets_and_reject_unsupported_open_constraints	not ported		Finite/alias/open-constraint rejection API was exercised, then removed in review round 3: production only uses open enums with no values, aliases, pattern or length; IdentityDefinition now exposes only open_enum. The corresponding test is inapplicable after this authorized API trim.
+identity_layers_tests.rs	finite_values_encode_the_checked_policy_without_member_bases	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+identity_layers_tests.rs	identity_layer_is_the_single_structural_owner	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+identity_layers_tests.rs	identity_layer_reports_only_the_first_failure	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+identity_layers_tests.rs	member_keeps_identity_length	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+identity_layers_tests.rs	members_keep_lowercase_ids_and_arn_whole_value_checks	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+identity_layers_tests.rs	members_preserve_one_identity_and_separate_smithy_layers	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+identity_layers_tests.rs	named_string_member_constraints_transport_as_a_string	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+identity_layers_tests.rs	semantic_callback_cannot_bypass_identity_pattern	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+identity_layers_tests.rs	standalone_constraints_are_identity_metadata	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned catalog or fallible identity-definition paths.
+identity_layers_tests.rs	standalone_invalid_value_has_one_diagnostic	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+identity_layers_tests.rs	string_identity_keeps_its_semantic_callback	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+identity_layers_tests.rs	structural_int_identity_binds_without_a_callback	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+identity_layers_tests.rs	structural_string_identity_binds_without_a_callback	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+kms_reference.rs	alias_arn_keeps_its_own_region_and_account	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	aws_codes_determine_typed_outcomes_and_preserve_metadata	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	batch_bounds_concurrency_and_keeps_positions_when_calls_finish_out_of_order	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	batch_checks_each_identity_component_with_fixed_awscc_provider	already ported	src/kms_reference.rs	Upstream batch_checks_each_identity_component_with_the_callers_provider_name renamed to batch_checks_each_identity_component_with_fixed_awscc_provider; AWSCC owns its fixed provider name (#572).
+kms_reference.rs	core_batch_keeps_positions_around_missing_providers	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	core_batch_keeps_positions_around_unsupported_identity_components	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	core_batch_maps_wire_failures_and_preserves_their_sources_and_metadata	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	core_batch_rejects_missing_provider_without_a_call	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	core_batch_retains_classified_cause_and_opaque_text_without_changing_retryability	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	cross_partition_references_are_invalid_without_a_call	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	describe_key_preserves_returned_casing_and_raw_request	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	empty_batch_never_calls_kms	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	guest_batch_retains_classified_cause_and_opaque_text_until_encoding	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	ids_and_aliases_describe_the_raw_value_in_the_instance_region	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	key_arn_is_validated_without_a_call	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	key_arn_preserves_authored_casing_without_a_call	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	key_reference_validates_offline_and_resolves_alias_arn	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	malformed_inputs_never_call_kms	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	resolver_errors_are_always_scoped_to_awscc	already ported	src/kms_reference.rs	Upstream resolver_errors_use_the_callers_provider_name renamed to resolver_errors_are_always_scoped_to_awscc; AWSCC owns its fixed provider name (#572). The upstream ["aws", "awscc"] provider loop was dropped; all original region/input/failure cases still assert awscc metadata.
+kms_reference.rs	same_partition_references_resolve_in_every_partition	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	sdk_failure_does_not_format_credential_sources	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	sdk_failure_preserves_service_message_and_metadata_without_debug	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	sdk_transport_failures_preserve_immediate_display_in_cause_without_walking_sources	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+kms_reference.rs	successes_require_a_valid_key_arn	already ported	src/kms_reference.rs	All 24 resolver tests are in src/kms_reference.rs; provider ownership fixed to awscc.
+lib.rs	aws_account_id_owns_pattern_and_length_in_its_callback	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	az_accepts_aws_format	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	az_has_namespace	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	az_has_to_dsl	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	az_rejects_invalid_az	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	az_rejects_quoted_dsl_format	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	az_rejects_quoted_kind_shorthand_format	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	az_rejects_wrong_namespace	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	az_validator_rejects_dsl_spelling	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	canonicalize_enum_value_matches	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	canonicalize_enum_value_no_match	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	cloudfront_hosted_zone_id_carries_identity_and_validates_values	not ported		No ported production implementation: cloudfront_hosted_zone_id
+lib.rs	condition_operator_to_aws_basic	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	condition_operator_to_aws_for_all_values	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	condition_operator_to_aws_if_exists	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	condition_operator_to_aws_unknown	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	condition_operator_to_snake_roundtrip	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	condition_operator_total_count_matches_cross_product	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	condition_operator_typed_roundtrip	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	condition_type_string_enum_includes_qualifier_and_if_exists_variants	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	find_matching_enum_value_case_insensitive	ported	src/schemas/ported_type_tests.rs	Complete original assertions/vectors; owned enum-matching helper.
+lib.rs	find_matching_enum_value_exact	ported	src/schemas/ported_type_tests.rs	Complete original assertions/vectors; owned enum-matching helper.
+lib.rs	find_matching_enum_value_underscore_to_hyphen	ported	src/schemas/ported_type_tests.rs	Complete original assertions/vectors; owned enum-matching helper.
+lib.rs	flow_log_id_invalid	not ported		No ported production implementation: validate_prefixed_resource_id
+lib.rs	flow_log_id_valid	not ported		No ported production implementation: validate_prefixed_resource_id
+lib.rs	grantee_accepts_email_format	not ported		No ported production implementation: s3_grantee
+lib.rs	grantee_accepts_id_format	not ported		No ported production implementation: s3_grantee
+lib.rs	grantee_accepts_multiple_specs	not ported		No ported production implementation: s3_grantee
+lib.rs	grantee_accepts_uri_format	not ported		No ported production implementation: s3_grantee
+lib.rs	grantee_rejects_empty_string	not ported		No ported production implementation: s3_grantee
+lib.rs	grantee_rejects_invalid_prefix	not ported		No ported production implementation: s3_grantee
+lib.rs	hand_written_string_enum_identities_are_structural	not ported		No ported production implementation: bucket_encryption_rules, bucket_lifecycle_rules, bucket_replication_rules, bucket_target_object_key_format, s3_redirect_all_requests_to, sqs_redrive_allow_policy
+lib.rs	iam_oidc_provider_arn_carries_identity_and_validates_values	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	iam_policy_arn_carries_identity_and_validates_values	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	iam_policy_document_principal_map_validates	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	iam_policy_document_principal_string_validates	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	iam_policy_document_resource_comparison_treats_string_lists_as_unordered	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	iam_policy_document_struct_names_are_plain_and_effect_identity_is_structural	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	iam_policy_document_type_validates	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	iam_policy_effect_is_string_enum	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	iam_policy_string_lists_are_unordered_but_statements_remain_ordered	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	iam_policy_version_is_string_enum	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	iam_role_arn_carries_identity_and_validates_values	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	iam_role_id_invalid_empty_after_prefix	not ported		No ported production implementation: validate_iam_role_id
+lib.rs	iam_role_id_invalid_prefix	not ported		No ported production implementation: validate_iam_role_id
+lib.rs	iam_role_id_valid	not ported		No ported production implementation: validate_iam_role_id
+lib.rs	identity_store_id_carries_identity_and_validates_values	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	ipam_id_invalid	not ported		No ported production implementation: validate_prefixed_resource_id
+lib.rs	ipam_id_valid	not ported		No ported production implementation: validate_prefixed_resource_id
+lib.rs	is_uuid_invalid	not ported		No ported production implementation: is_uuid
+lib.rs	is_uuid_valid	not ported		No ported production implementation: is_uuid
+lib.rs	kms_key_id_carries_identity_and_validates_values	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	lifecycle_filter_declares_at_most_one_group_at_its_source	not ported		No ported production implementation: bucket_lifecycle_rules
+lib.rs	region_accepts_aws_format	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	region_completions_generates_dsl_format	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	region_completions_uses_provider_prefix	not ported		Removed in review round 3: fixed-provider completion calls made this a self-comparison. region_completions_generates_dsl_format retains the awscc.Region.af_south_1 pin.
+lib.rs	region_dsl_aliases_generates_api_to_dsl_pairs	not ported		No ported production implementation: region_dsl_aliases
+lib.rs	region_rejects_availability_zone	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	region_rejects_invalid_region	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	region_rejects_quoted_canonical_namespace_literal	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	region_rejects_quoted_dsl_format	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	region_rejects_quoted_dsl_format_without_aws_prefix	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	region_rejects_wrong_namespace	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	region_validates_all_valid_regions	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	region_validator_rejects_dsl_spelling	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	route53_hosted_zone_id_carries_identity_and_validates_values	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	s3_redirect_protocol_has_dsl_aliases	not ported		S3 constructor was not ported or declared by AWSCC; preserve the whole upstream test rather than deleting assertions.
+lib.rs	s3_sse_algorithm_has_dsl_aliases	not ported		S3 constructor was not ported or declared by AWSCC; preserve the whole upstream test rather than deleting assertions.
+lib.rs	security_group_rule_id_invalid	not ported		No ported production implementation: validate_prefixed_resource_id
+lib.rs	security_group_rule_id_valid	not ported		No ported production implementation: validate_prefixed_resource_id
+lib.rs	sqs_redrive_policy_struct_names_are_plain	not ported		No ported production implementation: sqs_redrive_allow_policy, sqs_redrive_policy
+lib.rs	sso_instance_arn_carries_identity_and_validates_values	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	sso_permission_set_arn_carries_identity_and_validates_values	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	sso_principal_id_carries_identity_and_validates_values	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	subnet_route_table_association_id_valid	not ported		No ported production implementation: validate_prefixed_resource_id
+lib.rs	transit_gateway_attachment_id_invalid	not ported		No ported production implementation: validate_prefixed_resource_id
+lib.rs	transit_gateway_attachment_id_valid	not ported		No ported production implementation: validate_prefixed_resource_id
+lib.rs	validate_arn_accepts_valid_partitions	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_arn_invalid	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_arn_rejects_empty_partition	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_arn_rejects_empty_service	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_arn_rejects_invalid_partition	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_arn_type_with_value	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_arn_valid	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_availability_zone_id_invalid	not ported		No ported production implementation: validate_availability_zone_id
+lib.rs	validate_availability_zone_id_type_with_value	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_availability_zone_id_valid	not ported		No ported production implementation: validate_availability_zone_id
+lib.rs	validate_availability_zone_invalid	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_availability_zone_local_zone	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_availability_zone_valid	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_availability_zone_wavelength_zone	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_aws_account_id_invalid	not ported		No ported production implementation: validate_aws_account_id
+lib.rs	validate_aws_account_id_valid	not ported		No ported production implementation: validate_aws_account_id
+lib.rs	validate_aws_resource_id_invalid	not ported		No ported production implementation: validate_aws_resource_id
+lib.rs	validate_aws_resource_id_type_with_value	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_aws_resource_id_valid	not ported		No ported production implementation: validate_aws_resource_id
+lib.rs	validate_condition_operators_accepts_if_exists	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_condition_operators_accepts_valid	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_condition_operators_rejects_pascal_case	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_condition_operators_rejects_unknown	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_arn_accepts_aws_managed	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_arn_accepts_customer_managed	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_arn_accepts_path_prefix	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_arn_error_says_iam_policy_arn	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_arn_error_says_iam_role_arn	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_arn_rejects_empty_resource_name	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_arn_rejects_invalid_resource_chars	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_arn_rejects_non_digit_account	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_arn_rejects_non_empty_region	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_arn_rejects_short_account_id	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_policy_document_accepts_for_all_values_string_equals	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_policy_document_basic	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_policy_document_invalid_effect	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_iam_policy_document_invalid_version	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_ipam_pool_id_invalid	not ported		No ported production implementation: validate_ipam_pool_id
+lib.rs	validate_ipam_pool_id_valid	not ported		No ported production implementation: validate_ipam_pool_id
+lib.rs	validate_kms_key_id_alias	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_kms_key_id_arn	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_kms_key_id_uuid	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_service_arn_valid	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_service_arn_wrong_prefix	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_service_arn_wrong_service	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_tgw_route_table_id_invalid	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_tgw_route_table_id_valid	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_vpc_cidr_block_association_id_invalid	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	validate_vpc_cidr_block_association_id_valid	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+lib.rs	vpc_id_carries_identity_and_callback_owned_pattern	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+member_identity_tests.rs	an_enum_cannot_take_a_string_identity	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	anonymous_integer_bounds_live_only_in_the_member_layer	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	anonymous_shared_strings_publish_only_member_constraints	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	arn_and_kms_syntax_is_owned_by_the_identity_pattern	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	attaching_an_identity_rejects_disjoint_member_bounds	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	competing_reference_patterns_are_an_error_instead_of_a_dropped_check	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	enum_alias_targets_must_belong_to_the_checked_value_set	not ported		Finite/alias/open-constraint rejection API was exercised, then removed in review round 3: production only uses open enums with no values, aliases, pattern or length; IdentityDefinition now exposes only open_enum. The corresponding test is inapplicable after this authorized API trim.
+member_identity_tests.rs	enum_identity_attachment_rejects_relabeling_and_conflicting_definitions	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	enum_subsets_cannot_install_values_outside_the_carrier	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	handwritten_reference_keeps_its_grammar_without_an_input_rule	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	independently_requested_catalog_definitions_remain_identical	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	int_enum_constructors_share_the_catalog_callback	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	integer_tightening_keeps_the_original_identity_range	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	local_enum_builders_cannot_relabel_identified_carriers	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	narrowing_an_enum_preserves_an_explicitly_empty_alias_set	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	open_enum_cannot_hide_slot_constraints_in_its_base	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	reference_binding_rejects_a_different_existing_identity	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	references_cannot_absorb_slot_local_constraints	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	replacing_a_string_identity_cannot_discard_its_pattern	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	replacing_an_int_identity_cannot_discard_its_range	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+member_identity_tests.rs	resource_id_accepts_digit_bearing_prefixes	not ported		Depends on unported validate_aws_resource_id free validator; the owned resource-ID constructor retains its complete upstream value-validation test.
+member_identity_tests.rs	same_identity_with_a_different_callback_is_a_conflicting_definition	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+sdk/mod.rs	installs_permanent_resend_guard	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+sdk/tests.rs	every_sdk_dependency_has_a_feature_and_guarded_service	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+sdk/tests.rs	regression_s3_express_session_auth_is_disabled	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+sdk/tests.rs	review_round1_s3_express_override_cannot_start_create_session	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+sdk_config.rs	registers_each_generation_and_expiry_before_returning_signing_credentials	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+sdk_config.rs	registration_failure_never_returns_signing_credentials	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+sdk_config.rs	review_round1_wasm_loader_defaults_to_host_credentials	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+sdk_config.rs	review_round1_wasm_loader_keeps_credentials_override	not ported		SDK/credentials/retry runtime implementation remains in carina-aws-types; not a schema port.
+services/elbv2.rs	elbv2_grpc_matcher_codes_validate_boundaries_lists_and_ranges	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+services/elbv2.rs	elbv2_health_check_port_is_anonymous_and_validates_whole_strings	not ported		The unused shared helper port was removed; AWSCC already had its own distinct named HealthCheckPort declaration at a1bed43.
+services/elbv2.rs	elbv2_health_check_port_pattern_covers_every_port	not ported		The unused shared helper port was removed; AWSCC already had its own distinct named HealthCheckPort declaration at a1bed43.
+services/elbv2.rs	elbv2_http_matcher_codes_validate_boundaries_lists_and_ranges	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+services/iam/identity.rs	iam_paths_are_anonymous_and_preserve_distinct_smithy_grammars	not ported		The combined upstream test requires unported iam_path_prefix. The unused iam_path production port was removed; the pre-existing AWSCC anonymous-path test now pins its expected declaration directly.
+services/kms.rs	patterns_accept_current_partitions_and_regions	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+services/kms.rs	patterns_reject_malformed_arns	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+services/kms.rs	reference_pattern_accepts_uuid_and_mrk_ids_in_both_cases	ported	src/schemas/ported_type_tests.rs	Original assertions/vectors; owned paths and awscc identity/provider only.
+services/route53.rs	route53_dns_name_preserves_anonymous_bounds_and_decoded_label_grammar	not ported		No ported production implementation: route53_dns_name
+services/s3/object_lock.rs	object_lock_rule_accepts_days_retention	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+services/s3/object_lock.rs	object_lock_rule_accepts_years_retention	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+services/s3/object_lock.rs	object_lock_rule_allows_default_retention_to_be_omitted	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+services/s3/object_lock.rs	object_lock_rule_empty_period_reports_exclusive_union_error	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+services/s3/object_lock.rs	object_lock_rule_rejects_mode_without_retention_period	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+services/s3/object_lock.rs	object_lock_rule_rejects_retention_period_without_mode	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
+services/s3/object_lock.rs	object_lock_rule_reports_days_and_years_as_mutually_exclusive	not ported		Tests an API not ported by AWSCC (member adapters, shared macro/refines, integer helper or unowned S3 object-lock types).
