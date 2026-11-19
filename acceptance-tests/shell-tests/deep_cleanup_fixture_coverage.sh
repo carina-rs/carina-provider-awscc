@@ -82,6 +82,14 @@ extract_function() {
     ' "$RUN_TESTS_SH"
 }
 
+extract_fixture_resource_types() {
+    # Match declaration block heads, including let bindings and data-source
+    # reads. Type annotations and enum values also use the awscc namespace.
+    sed -nE \
+        's/^[[:space:]]*(let[[:space:]]+[[:alpha:]_][[:alnum:]_]*[[:space:]]*=[[:space:]]*)?(read[[:space:]]+)?(awscc\.[[:alnum:]_]+\.[[:alnum:]_]+)[[:space:]]*\{.*/\3/p' \
+        "$@"
+}
+
 # Scan every fixture recursively, but never treat this test directory as
 # fixture input if a .crn file is added here later.
 if ! find "$ACCEPTANCE_TESTS_DIR" \
@@ -91,7 +99,7 @@ if ! find "$ACCEPTANCE_TESTS_DIR" \
 fi
 
 while IFS= read -r -d '' fixture_file; do
-    grep -Eho 'awscc\.[[:alnum:]_]+\.[[:alnum:]_]+' "$fixture_file" || true
+    extract_fixture_resource_types "$fixture_file"
 done < "$FIXTURE_FILES_FILE" | LC_ALL=C sort -u > "$FIXTURE_TYPES_FILE"
 
 fixture_type_count=$(wc -l < "$FIXTURE_TYPES_FILE" | tr -d '[:space:]')
