@@ -243,7 +243,7 @@ fn review_r7_top_level_arn_displays_include_local_constraints() {
     assert!(
         markdown
             .lines()
-            .any(|line| line.contains("aws.") && line.contains("37..=49"))
+            .any(|line| line.contains("awscc.iam.Role.Arn") && line.contains("37..=49"))
     );
 }
 

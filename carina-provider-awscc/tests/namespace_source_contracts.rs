@@ -38,6 +38,8 @@ impl Sources {
                 attribute = false;
                 if let proc_macro2::TokenTree::Group(group) = &token
                     && group.delimiter() == proc_macro2::Delimiter::Bracket
+                    && syn::parse2::<syn::Meta>(group.stream())
+                        .is_ok_and(|meta| meta.path().is_ident("doc"))
                 {
                     continue;
                 }
@@ -58,8 +60,16 @@ impl Sources {
 }
 
 impl<'ast> Visit<'ast> for Sources {
-    fn visit_attribute(&mut self, _: &'ast syn::Attribute) {
+    fn visit_attribute(&mut self, attribute: &'ast syn::Attribute) {
         // Doc comments are attributes, not asserted string literals.
+        if attribute.path().is_ident("doc") {
+            return;
+        }
+        match &attribute.meta {
+            syn::Meta::List(list) => self.tokens(list.tokens.clone()),
+            syn::Meta::NameValue(value) => self.visit_expr(&value.value),
+            syn::Meta::Path(_) => {}
+        }
     }
 
     fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
@@ -127,7 +137,7 @@ fn retired(value: &str) -> bool {
             ["enum_", "identity("].concat(),
             ["carina_core::schema::", "enum_identity"].concat(),
             ["carina_aws_", "types::"].concat(),
-            ["Some(\"", "aws."].concat(),
+            ["Some(\"", "aws", "."].concat(),
             ["TypeIdentity::", "new"].concat(),
             ["awscc_enum_", "identity"].concat(),
         ]
@@ -151,7 +161,7 @@ fn retired(value: &str) -> bool {
 fn old_namespace_spelling(value: &str) -> bool {
     static OLD_NAMESPACE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         regex::Regex::new(
-            r"\baws\.(?:[A-Z][A-Za-z0-9_]*|[a-z][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*)(?:\.[A-Za-z_][A-Za-z0-9_]*)*",
+            r"\baws\.(?:$|\{|(?:[A-Z][A-Za-z0-9_]*|[a-z][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*)(?:\.[A-Za-z_][A-Za-z0-9_]*)*)",
         )
         .unwrap()
     });
@@ -241,6 +251,70 @@ fn emitter_assertions_use_current_spellings() {
         );
     }
     check_spellings(&sources().literals, &exemptions).unwrap();
+}
+
+#[test]
+fn old_namespace_spelling_detects_bare_and_interpolated_prefixes() {
+    for tail in ["", "{tail}.{member}", "{namespace}.{kind}"] {
+        let value = format!("{}.{tail}", "aws");
+        assert!(old_namespace_spelling(&value), "missed {value}");
+    }
+    for value in [
+        "aws",
+        "awscc.",
+        "awscc.{tail}.{member}",
+        "arn:aws:ec2:ap-northeast-1:123456789012:vpc/vpc-12345678",
+        "aws:PrincipalArn",
+        "amazonaws.com",
+        "aws.amazon.com",
+        "https://example.com/aws.",
+        "https://example.com/aws.{tail}",
+    ] {
+        assert!(!old_namespace_spelling(value), "false positive {value}");
+    }
+}
+
+#[test]
+fn attribute_literals_are_scanned_except_documentation() {
+    let legacy = format!("{}.{}", "aws", "test.resource.Status.x");
+    for source in [
+        format!("#[should_panic(expected = {legacy:?})] fn probe() {{}}"),
+        format!("#[diagnostic = {legacy:?}] fn probe() {{}}"),
+        format!("#[cfg_attr(test, should_panic(expected = {legacy:?}))] fn probe() {{}}"),
+        format!("cases! {{ #[should_panic(expected = {legacy:?})] fn probe() {{}} }}"),
+    ] {
+        let mut sources = Sources::default();
+        sources.visit_file(&syn::parse_file(&source).unwrap());
+        assert_eq!(sources.literals.len(), 1, "{source}");
+        assert_eq!(sources.literals[0].value, legacy, "{source}");
+        assert!(
+            check_spellings(&sources.literals, &BTreeMap::new()).is_err(),
+            "retired attribute spelling must fail the contract: {source}"
+        );
+    }
+    for value in [
+        "awscc.test.resource.Status.x",
+        "arn:aws:kms",
+        "aws:PrincipalArn",
+    ] {
+        let source = format!("#[should_panic(expected = {value:?})] fn probe() {{}}");
+        let mut sources = Sources::default();
+        sources.visit_file(&syn::parse_file(&source).unwrap());
+        assert_eq!(sources.literals.len(), 1, "{source}");
+        assert_eq!(sources.literals[0].value, value, "{source}");
+        check_spellings(&sources.literals, &BTreeMap::new()).unwrap();
+    }
+    for source in [
+        format!("#[doc = {legacy:?}] fn probe() {{}}"),
+        format!("#[doc(alias = {legacy:?})] fn probe() {{}}"),
+        format!("/// {legacy}\nfn probe() {{}}"),
+        format!("cases! {{ #[doc = {legacy:?}] fn probe() {{}} }}"),
+    ] {
+        let mut sources = Sources::default();
+        sources.visit_file(&syn::parse_file(&source).unwrap());
+        assert!(sources.literals.is_empty(), "{source}");
+        check_spellings(&sources.literals, &BTreeMap::new()).unwrap();
+    }
 }
 
 #[test]

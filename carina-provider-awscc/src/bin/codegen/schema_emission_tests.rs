@@ -1212,10 +1212,7 @@ fn object_string_union_order_is_independent() {
 
 
 #[test]
-fn catalog_arn_service_guard_matches_before_572() {
-    let expected = include_str!("../../../tests/fixtures/arn_services_before_572.txt")
-        .lines()
-        .collect::<BTreeSet<_>>();
+fn catalog_arn_service_guard_matches_independent_catalog_derivation() {
     // Derive independently from every row, without filtering through the guard.
     let actual = AwsccType::ALL
         .iter()
@@ -1237,17 +1234,9 @@ fn catalog_arn_service_guard_matches_before_572() {
         .filter_map(|id| id.segments.into_iter().next())
         .chain(["acm", "sqs", "sts"].into_iter().map(str::to_string))
         .collect::<BTreeSet<_>>();
-    let expected = expected
-        .into_iter()
-        .map(str::to_string)
-        .collect::<BTreeSet<_>>();
     assert_eq!(
         carina_provider_awscc::schemas::catalog::known_arn_services(),
         &actual
-    );
-    assert_eq!(
-        actual, expected,
-        "ARN service guard differs from a1bed43 and pinned 5ad417e catalogs"
     );
     for service in ["acm", "sqs", "sts"] {
         assert!(

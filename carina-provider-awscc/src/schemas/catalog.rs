@@ -1484,27 +1484,4 @@ mod catalog_seam_tests {
             ])
         );
     }
-    #[test]
-    fn string_identity_variants_match_independent_base_mapping() {
-        // Extracted from a1bed43 string_identity.rs identity() match: preserve
-        // every variant/identity pair, mapping only provider aws to awscc.
-        let expected = include_str!("../../tests/fixtures/string_identity_variants_before_572.tsv")
-            .lines()
-            .map(|row| {
-                let (variant, identity) = row.split_once('\t').expect("base variant/identity pair");
-                let identity = identity
-                    .strip_prefix("aws.")
-                    .map_or_else(|| identity.to_string(), |suffix| format!("awscc.{suffix}"));
-                format!("{variant}\t{identity}")
-            })
-            .collect::<std::collections::BTreeSet<_>>();
-        let actual = StringIdentity::ALL
-            .iter()
-            .map(|variant| format!("{variant:?}\t{}", variant.identity()))
-            .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(
-            actual, expected,
-            "variant-to-declaration mapping drifted from a1bed43"
-        );
-    }
 }

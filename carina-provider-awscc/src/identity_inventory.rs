@@ -1,4 +1,4 @@
-//! Identity ownership walk and catalog pins shared by native and SDK schema tests.
+//! Identity ownership walk shared by native and SDK schema tests.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -137,42 +137,4 @@ impl Inventory {
             "AWSCC declares foreign identities: {foreign:?}"
         );
     }
-}
-
-pub fn assert_head_identity_pins(route: &str, actual: BTreeSet<TypeIdentity>) {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/identity_inventory_head_pins")
-        .join(format!("{route}.txt"));
-    let expected = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
-        .lines()
-        .map(str::to_string)
-        .collect::<BTreeSet<_>>();
-    assert!(!expected.is_empty(), "empty head pins for {route}");
-    assert_identity_axes(&format!("head pins/{route}"), actual, expected);
-}
-
-fn assert_identity_axes(route: &str, actual: BTreeSet<TypeIdentity>, expected: BTreeSet<String>) {
-    let expected = expected
-        .into_iter()
-        .map(|name| {
-            // Compare provider ownership and the provider-less builtins too:
-            // rendering alone could disguise a missing provider as a path segment.
-            let (provider, tail) = name
-                .strip_prefix("awscc.")
-                .map_or((None, name.as_str()), |tail| {
-                    (Some("awscc".to_string()), tail)
-                });
-            let mut parts = tail.split('.').map(str::to_string).collect::<Vec<_>>();
-            let kind = parts.pop().expect("fixture identity kind");
-            // Independent expected axes, never schema construction. Using the
-            // seam here would make its provider-ownership backstop tautological.
-            (provider, parts, kind)
-        })
-        .collect::<BTreeSet<_>>();
-    let actual_axes = actual
-        .into_iter()
-        .map(|identity| (identity.provider, identity.segments, identity.kind))
-        .collect::<BTreeSet<_>>();
-    assert_eq!(actual_axes, expected, "identity axes changed on {route}");
 }

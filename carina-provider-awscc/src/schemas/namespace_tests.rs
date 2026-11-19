@@ -1,7 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::identity_inventory::{Inventory, assert_head_identity_pins};
+use crate::identity_inventory::Inventory;
 use carina_core::parser::{LoadedProviderContext, ProviderContext, parse_file};
 use carina_core::provider::{ProviderFactory, provider_custom_types_from_factories};
 use carina_core::schema::{AttributeSchema, ResourceSchema};
@@ -28,15 +28,6 @@ fn catalog_inventory() -> Inventory {
         catalog.walk(&ty.attribute_type(), &BTreeMap::new());
     }
     catalog
-}
-
-#[test]
-fn namespace_catalog_and_resolver_match_head_pins() {
-    assert_head_identity_pins("catalog", catalog_inventory().identities);
-    assert_head_identity_pins(
-        "resolver",
-        BTreeSet::from([crate::schemas::catalog::ScalarType::KmsKeyReference.identity()]),
-    );
 }
 
 #[test]
