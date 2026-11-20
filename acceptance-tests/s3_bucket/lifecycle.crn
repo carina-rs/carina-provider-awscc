@@ -7,7 +7,7 @@
 #        destroy cleans up the bucket.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 awscc.s3.Bucket {
@@ -16,14 +16,14 @@ awscc.s3.Bucket {
   lifecycle_configuration = {
     rule {
       id                 = 'expire-old-objects'
-      status             = aws.s3.Bucket.LifecycleConfiguration.Rule.Status.enabled
+      status             = awscc.s3.Bucket.LifecycleConfiguration.Rule.Status.enabled
       expiration_in_days = 90
     }
     rule {
       id     = 'transition-to-glacier'
-      status = aws.s3.Bucket.LifecycleConfiguration.Rule.Status.enabled
+      status = awscc.s3.Bucket.LifecycleConfiguration.Rule.Status.enabled
       transitions = [{
-        storage_class      = aws.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.glacier
+        storage_class      = awscc.s3.Bucket.LifecycleConfiguration.Rule.Transition.StorageClass.glacier
         transition_in_days = 30
       }]
     }

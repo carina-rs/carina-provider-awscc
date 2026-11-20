@@ -1,11 +1,11 @@
 //! Resolve comparison-only KMS inputs in the initialized AWSCC instance's scope.
 
+use crate::kms_reference::{
+    DescribeKeyClient, DescribeKeyFailure, describe_key_failure, resolve_guest_reference_batch,
+};
 use crate::provider::{AwsccProviderConfig, account_guard};
 use crate::resend_safety::kms_idempotency;
 use crate::{AwsccProvider, BoundedSdkConfig};
-use carina_aws_types::kms_reference::{
-    DescribeKeyClient, DescribeKeyFailure, describe_key_failure, resolve_guest_reference_batch,
-};
 use carina_aws_types::sdk::{kms, sts::StsClient};
 use carina_core::provider::BoxFuture;
 #[cfg(test)]
@@ -160,9 +160,7 @@ impl AwsccProvider {
             .kms_client()
             .and_then(|client| client.instance_region().map(|region| (client, region)));
         match scope {
-            Ok((client, region)) => {
-                resolve_guest_reference_batch(client, "awscc", region, requests).await
-            }
+            Ok((client, region)) => resolve_guest_reference_batch(client, region, requests).await,
             Err(reason) => requests
                 .into_iter()
                 .map(|_| {
@@ -218,7 +216,7 @@ mod tests {
     fn request(value: &str) -> ReferenceRequest {
         ReferenceRequest {
             ty: carina_provider_protocol::types::TypeIdentity {
-                provider: "aws".into(),
+                provider: "awscc".into(),
                 segments: vec!["kms".into(), "Key".into()],
                 kind: "Reference".into(),
             },
@@ -245,7 +243,7 @@ mod tests {
         let provider =
             AwsccProvider::from_sdk_config(BoundedSdkConfig::for_test(config), &Default::default())
                 .await;
-        let identity = carina_aws_types::AwsType::KmsKeyReference.identity();
+        let identity = crate::schemas::catalog::ScalarType::KmsKeyReference.identity();
         let mut providerless = identity.clone();
         providerless.provider = None;
         let results = Provider::resolve_references(
@@ -284,6 +282,44 @@ mod tests {
         );
         assert!(results[2].is_ok());
         assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn guest_batch_rejects_old_aws_identity_without_describe_key() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mock = MockAws::builder()
+            .with_service(IdentityAndKms(calls.clone()))
+            .build();
+        let config = aws_types::SdkConfig::builder()
+            .region(aws_types::region::Region::new("us-east-1"))
+            .credentials_provider(mock.credentials_provider())
+            .http_client(mock.http_client())
+            .build();
+        let provider =
+            AwsccProvider::from_sdk_config(BoundedSdkConfig::for_test(config), &Default::default())
+                .await;
+        // Keep the old wire identity as an explicit rejection case (#572).
+        let old = ReferenceRequest {
+            ty: carina_provider_protocol::types::TypeIdentity {
+                provider: "aws".into(),
+                segments: vec!["kms".into(), "Key".into()],
+                kind: "Reference".into(),
+            },
+            value: "alias/customer".into(),
+        };
+        let result = provider.resolve_references(vec![old]).await;
+        let Err(ReferenceError::InvalidReference(error)) = &result[0] else {
+            panic!("old AWS identity must be rejected");
+        };
+        assert!(
+            error
+                .as_ref()
+                .clone()
+                .into_host_for_test()
+                .to_string()
+                .contains("unsupported reference identity aws.kms.Key.Reference")
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
@@ -390,7 +426,7 @@ mod tests {
             // The native Provider trait and WASM Guest delegate to the same method.
             use carina_core::provider::Provider;
             let core_request = carina_core::references::ReferenceRequest {
-                ty: carina_aws_types::AwsType::KmsKeyReference.identity(),
+                ty: crate::schemas::catalog::ScalarType::KmsKeyReference.identity(),
                 value: "alias/customer".into(),
             };
             let results = Provider::resolve_references(&provider, &[core_request])

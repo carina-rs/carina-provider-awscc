@@ -862,7 +862,10 @@ fn all_of_compatibility_views_preserve_emitted_bounds_and_unconditional_requirem
         code.contains("false, Some((Some(2), Some(5))), carina_core::schema::ListElements::Unique"),
         "{code}"
     );
-    assert!(code.contains("enum_identity(\"Mode\""), "{code}");
+    assert!(
+        code.contains("crate::schemas::namespace::awscc_identity(\"Mode\""),
+        "{code}"
+    );
     assert!(code.contains("Some((Some(1), Some(9)))"), "{code}");
     assert!(
         code.contains("StructField::required(\"a\", AttributeType::string())"),

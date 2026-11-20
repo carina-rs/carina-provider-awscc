@@ -83,7 +83,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ipam_id_attribute());
     #[inline(never)]
     fn build_metered_account_attribute() -> AttributeSchema {
-        AttributeSchema::optional("metered_account", AttributeType::enum_(carina_core::schema::enum_identity("MeteredAccount", Some("aws.ec2.Ipam")), Some(vec!["ipam-owner".to_string(), "resource-owner".to_string()]), vec![("ipam-owner".to_string(), "ipam_owner".to_string()), ("resource-owner".to_string(), "resource_owner".to_string())], None, None))
+        AttributeSchema::optional("metered_account", AttributeType::enum_(crate::schemas::namespace::awscc_identity("MeteredAccount", &crate::schemas::namespace::AwsccNamespace::new("ec2.Ipam").expect("valid AWSCC namespace")).expect("valid AWSCC identity").into_core(), Some(vec!["ipam-owner".to_string(), "resource-owner".to_string()]), vec![("ipam-owner".to_string(), "ipam_owner".to_string()), ("resource-owner".to_string(), "resource_owner".to_string())], None, None))
                 .with_description("A metered account is an account that is charged for active IP addresses managed in IPAM")
                 .with_provider_name("MeteredAccount")
             .build()
@@ -141,7 +141,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_tier_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tier", AttributeType::enum_(carina_core::schema::enum_identity("Tier", Some("aws.ec2.Ipam")), Some(vec!["free".to_string(), "advanced".to_string()]), vec![("free".to_string(), "free".to_string()), ("advanced".to_string(), "advanced".to_string())], None, None))
+        AttributeSchema::optional("tier", AttributeType::enum_(crate::schemas::namespace::awscc_identity("Tier", &crate::schemas::namespace::AwsccNamespace::new("ec2.Ipam").expect("valid AWSCC namespace")).expect("valid AWSCC identity").into_core(), Some(vec!["free".to_string(), "advanced".to_string()]), vec![("free".to_string(), "free".to_string()), ("advanced".to_string(), "advanced".to_string())], None, None))
                 .with_description("The tier of the IPAM.")
                 .with_provider_name("Tier")
             .build()

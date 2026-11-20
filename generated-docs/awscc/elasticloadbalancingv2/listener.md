@@ -13,14 +13,14 @@ Specifies a listener for an Application Load Balancer, Network Load Balancer, or
 awscc.elasticloadbalancingv2.Listener {
   load_balancer_arn = 'arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:loadbalancer/app/registry-alb/abc123'
   port              = 443
-  protocol          = aws.elasticloadbalancingv2.Listener.Protocol.https
+  protocol          = awscc.elasticloadbalancingv2.Listener.Protocol.https
 
   certificate {
     certificate_arn = 'arn:aws:acm:ap-northeast-1:123456789012:certificate/aaaa-bbbb'
   }
 
   default_action {
-    type             = aws.elasticloadbalancingv2.Listener.Action.Type.forward
+    type             = awscc.elasticloadbalancingv2.Listener.Action.Type.forward
     target_group_arn = 'arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:targetgroup/registry-tg/def456'
   }
 }
@@ -58,7 +58,7 @@ The listener attributes. Attributes that you do not modify retain their current 
 
 ### `load_balancer_arn`
 
-- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
+- **Type:** `awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -98,11 +98,11 @@ The protocol for connections from clients to the load balancer. For Application 
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `HTTP1Only` | `aws.elasticloadbalancingv2.Listener.AlpnPolicy.http1_only` |
-| `HTTP2Only` | `aws.elasticloadbalancingv2.Listener.AlpnPolicy.http2_only` |
-| `HTTP2Optional` | `aws.elasticloadbalancingv2.Listener.AlpnPolicy.http2_optional` |
-| `HTTP2Preferred` | `aws.elasticloadbalancingv2.Listener.AlpnPolicy.http2_preferred` |
-| `None` | `aws.elasticloadbalancingv2.Listener.AlpnPolicy.none` |
+| `HTTP1Only` | `awscc.elasticloadbalancingv2.Listener.AlpnPolicy.http1_only` |
+| `HTTP2Only` | `awscc.elasticloadbalancingv2.Listener.AlpnPolicy.http2_only` |
+| `HTTP2Optional` | `awscc.elasticloadbalancingv2.Listener.AlpnPolicy.http2_optional` |
+| `HTTP2Preferred` | `awscc.elasticloadbalancingv2.Listener.AlpnPolicy.http2_preferred` |
+| `None` | `awscc.elasticloadbalancingv2.Listener.AlpnPolicy.none` |
 
 Shorthand formats: `http1_only` or `AlpnPolicy.http1_only`
 
@@ -110,9 +110,9 @@ Shorthand formats: `http1_only` or `AlpnPolicy.http1_only`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `deny` | `aws.elasticloadbalancingv2.Listener.Action.AuthenticateCognitoConfig.OnUnauthenticatedRequest.deny` |
-| `allow` | `aws.elasticloadbalancingv2.Listener.Action.AuthenticateCognitoConfig.OnUnauthenticatedRequest.allow` |
-| `authenticate` | `aws.elasticloadbalancingv2.Listener.Action.AuthenticateCognitoConfig.OnUnauthenticatedRequest.authenticate` |
+| `deny` | `awscc.elasticloadbalancingv2.Listener.Action.AuthenticateCognitoConfig.OnUnauthenticatedRequest.deny` |
+| `allow` | `awscc.elasticloadbalancingv2.Listener.Action.AuthenticateCognitoConfig.OnUnauthenticatedRequest.allow` |
+| `authenticate` | `awscc.elasticloadbalancingv2.Listener.Action.AuthenticateCognitoConfig.OnUnauthenticatedRequest.authenticate` |
 
 Shorthand formats: `deny` or `OnUnauthenticatedRequest.deny`
 
@@ -120,9 +120,9 @@ Shorthand formats: `deny` or `OnUnauthenticatedRequest.deny`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `deny` | `aws.elasticloadbalancingv2.Listener.Action.AuthenticateOidcConfig.OnUnauthenticatedRequest.deny` |
-| `allow` | `aws.elasticloadbalancingv2.Listener.Action.AuthenticateOidcConfig.OnUnauthenticatedRequest.allow` |
-| `authenticate` | `aws.elasticloadbalancingv2.Listener.Action.AuthenticateOidcConfig.OnUnauthenticatedRequest.authenticate` |
+| `deny` | `awscc.elasticloadbalancingv2.Listener.Action.AuthenticateOidcConfig.OnUnauthenticatedRequest.deny` |
+| `allow` | `awscc.elasticloadbalancingv2.Listener.Action.AuthenticateOidcConfig.OnUnauthenticatedRequest.allow` |
+| `authenticate` | `awscc.elasticloadbalancingv2.Listener.Action.AuthenticateOidcConfig.OnUnauthenticatedRequest.authenticate` |
 
 Shorthand formats: `deny` or `OnUnauthenticatedRequest.deny`
 
@@ -130,11 +130,11 @@ Shorthand formats: `deny` or `OnUnauthenticatedRequest.deny`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `text/plain` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text_plain` |
-| `text/css` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text_css` |
-| `text/html` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text_html` |
-| `application/javascript` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.application_javascript` |
-| `application/json` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.application_json` |
+| `text/plain` | `awscc.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text_plain` |
+| `text/css` | `awscc.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text_css` |
+| `text/html` | `awscc.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text_html` |
+| `application/javascript` | `awscc.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.application_javascript` |
+| `application/json` | `awscc.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.application_json` |
 
 Shorthand formats: `text_plain` or `ContentType.text_plain`
 
@@ -142,9 +142,9 @@ Shorthand formats: `text_plain` or `ContentType.text_plain`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `single-string` | `aws.elasticloadbalancingv2.Listener.Action.JwtValidationConfig.JwtValidationActionAdditionalClaim.Format.single_string` |
-| `string-array` | `aws.elasticloadbalancingv2.Listener.Action.JwtValidationConfig.JwtValidationActionAdditionalClaim.Format.string_array` |
-| `space-separated-values` | `aws.elasticloadbalancingv2.Listener.Action.JwtValidationConfig.JwtValidationActionAdditionalClaim.Format.space_separated_values` |
+| `single-string` | `awscc.elasticloadbalancingv2.Listener.Action.JwtValidationConfig.JwtValidationActionAdditionalClaim.Format.single_string` |
+| `string-array` | `awscc.elasticloadbalancingv2.Listener.Action.JwtValidationConfig.JwtValidationActionAdditionalClaim.Format.string_array` |
+| `space-separated-values` | `awscc.elasticloadbalancingv2.Listener.Action.JwtValidationConfig.JwtValidationActionAdditionalClaim.Format.space_separated_values` |
 
 Shorthand formats: `single_string` or `Format.single_string`
 
@@ -152,8 +152,8 @@ Shorthand formats: `single_string` or `Format.single_string`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `HTTP_301` | `aws.elasticloadbalancingv2.Listener.Action.RedirectConfig.StatusCode.http_301` |
-| `HTTP_302` | `aws.elasticloadbalancingv2.Listener.Action.RedirectConfig.StatusCode.http_302` |
+| `HTTP_301` | `awscc.elasticloadbalancingv2.Listener.Action.RedirectConfig.StatusCode.http_301` |
+| `HTTP_302` | `awscc.elasticloadbalancingv2.Listener.Action.RedirectConfig.StatusCode.http_302` |
 
 Shorthand formats: `http_301` or `StatusCode.http_301`
 
@@ -161,12 +161,12 @@ Shorthand formats: `http_301` or `StatusCode.http_301`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `forward` | `aws.elasticloadbalancingv2.Listener.Action.Type.forward` |
-| `authenticate-oidc` | `aws.elasticloadbalancingv2.Listener.Action.Type.authenticate_oidc` |
-| `authenticate-cognito` | `aws.elasticloadbalancingv2.Listener.Action.Type.authenticate_cognito` |
-| `redirect` | `aws.elasticloadbalancingv2.Listener.Action.Type.redirect` |
-| `fixed-response` | `aws.elasticloadbalancingv2.Listener.Action.Type.fixed_response` |
-| `jwt-validation` | `aws.elasticloadbalancingv2.Listener.Action.Type.jwt_validation` |
+| `forward` | `awscc.elasticloadbalancingv2.Listener.Action.Type.forward` |
+| `authenticate-oidc` | `awscc.elasticloadbalancingv2.Listener.Action.Type.authenticate_oidc` |
+| `authenticate-cognito` | `awscc.elasticloadbalancingv2.Listener.Action.Type.authenticate_cognito` |
+| `redirect` | `awscc.elasticloadbalancingv2.Listener.Action.Type.redirect` |
+| `fixed-response` | `awscc.elasticloadbalancingv2.Listener.Action.Type.fixed_response` |
+| `jwt-validation` | `awscc.elasticloadbalancingv2.Listener.Action.Type.jwt_validation` |
 
 Shorthand formats: `forward` or `Type.forward`
 
@@ -174,8 +174,8 @@ Shorthand formats: `forward` or `Type.forward`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `on` | `aws.elasticloadbalancingv2.Listener.MutualAuthentication.AdvertiseTrustStoreCaNames.on` |
-| `off` | `aws.elasticloadbalancingv2.Listener.MutualAuthentication.AdvertiseTrustStoreCaNames.off` |
+| `on` | `awscc.elasticloadbalancingv2.Listener.MutualAuthentication.AdvertiseTrustStoreCaNames.on` |
+| `off` | `awscc.elasticloadbalancingv2.Listener.MutualAuthentication.AdvertiseTrustStoreCaNames.off` |
 
 Shorthand formats: `on` or `AdvertiseTrustStoreCaNames.on`
 
@@ -183,9 +183,9 @@ Shorthand formats: `on` or `AdvertiseTrustStoreCaNames.on`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `off` | `aws.elasticloadbalancingv2.Listener.MutualAuthentication.Mode.off` |
-| `passthrough` | `aws.elasticloadbalancingv2.Listener.MutualAuthentication.Mode.passthrough` |
-| `verify` | `aws.elasticloadbalancingv2.Listener.MutualAuthentication.Mode.verify` |
+| `off` | `awscc.elasticloadbalancingv2.Listener.MutualAuthentication.Mode.off` |
+| `passthrough` | `awscc.elasticloadbalancingv2.Listener.MutualAuthentication.Mode.passthrough` |
+| `verify` | `awscc.elasticloadbalancingv2.Listener.MutualAuthentication.Mode.verify` |
 
 Shorthand formats: `off` or `Mode.off`
 
@@ -193,14 +193,14 @@ Shorthand formats: `off` or `Mode.off`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `HTTP` | `aws.elasticloadbalancingv2.Listener.Protocol.http` |
-| `HTTPS` | `aws.elasticloadbalancingv2.Listener.Protocol.https` |
-| `TCP` | `aws.elasticloadbalancingv2.Listener.Protocol.tcp` |
-| `TLS` | `aws.elasticloadbalancingv2.Listener.Protocol.tls` |
-| `UDP` | `aws.elasticloadbalancingv2.Listener.Protocol.udp` |
-| `TCP_UDP` | `aws.elasticloadbalancingv2.Listener.Protocol.tcp_udp` |
-| `QUIC` | `aws.elasticloadbalancingv2.Listener.Protocol.quic` |
-| `TCP_QUIC` | `aws.elasticloadbalancingv2.Listener.Protocol.tcp_quic` |
+| `HTTP` | `awscc.elasticloadbalancingv2.Listener.Protocol.http` |
+| `HTTPS` | `awscc.elasticloadbalancingv2.Listener.Protocol.https` |
+| `TCP` | `awscc.elasticloadbalancingv2.Listener.Protocol.tcp` |
+| `TLS` | `awscc.elasticloadbalancingv2.Listener.Protocol.tls` |
+| `UDP` | `awscc.elasticloadbalancingv2.Listener.Protocol.udp` |
+| `TCP_UDP` | `awscc.elasticloadbalancingv2.Listener.Protocol.tcp_udp` |
+| `QUIC` | `awscc.elasticloadbalancingv2.Listener.Protocol.quic` |
+| `TCP_QUIC` | `awscc.elasticloadbalancingv2.Listener.Protocol.tcp_quic` |
 
 Shorthand formats: `http` or `Protocol.http`
 
@@ -210,7 +210,7 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `certificate_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the certificate. |
+| `certificate_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the certificate. |
 
 ### default_actions
 
@@ -223,7 +223,7 @@ Shorthand formats: `http` or `Protocol.http`
 | `jwt_validation_config` | [Struct(JwtValidationConfig)](#default_actionsjwt_validation_config) | No | [HTTPS listeners] Information for validating JWT access tokens in client requests. Specify only when ``Type`` is ``jwt-validation``. |
 | `order` | `Int (range: 1..=50000)` | No | The order for the action. This value is required for rules with multiple actions. The action with the lowest value for order is performed first. |
 | `redirect_config` | [Struct(RedirectConfig)](#default_actionsredirect_config) | No | [Application Load Balancer] Information for creating a redirect action. Specify only when ``Type`` is ``redirect``. |
-| `target_group_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the target group. Specify only when ``Type`` is ``forward`` and you want to route to a single target group. To route to multiple target groups, you must use ``ForwardConfig`` instead. |
+| `target_group_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the target group. Specify only when ``Type`` is ``forward`` and you want to route to a single target group. To route to multiple target groups, you must use ``ForwardConfig`` instead. |
 | `type` | [Type](#default_actionstype-type) | Yes | The type of action. |
 
 ### default_actions.authenticate_cognito_config
@@ -235,7 +235,7 @@ Shorthand formats: `http` or `Protocol.http`
 | `scope` | `String` | No | The set of user claims to be requested from the IdP. The default is ``openid``. To verify which scope values your IdP supports and how to separate multiple values, see the documentation for your IdP. |
 | `session_cookie_name` | `String` | No | The name of the cookie used to maintain session information. The default is AWSELBAuthSessionCookie. |
 | `session_timeout` | `String (pattern: /^[1-9][0-9]*\z/ (Full))` | No | The maximum duration of the authentication session, in seconds. The default is 604800 seconds (7 days). |
-| `user_pool_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the Amazon Cognito user pool. |
+| `user_pool_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the Amazon Cognito user pool. |
 | `user_pool_client_id` | `String` | Yes | The ID of the Amazon Cognito user pool client. |
 | `user_pool_domain` | `String` | Yes | The domain prefix or fully-qualified domain name of the Amazon Cognito user pool. |
 
@@ -286,7 +286,7 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `target_group_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the target group. |
+| `target_group_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the target group. |
 | `weight` | `Int (range: 0..=999)` | No | The weight. The range is 0 to 999. |
 
 ### default_actions.jwt_validation_config
@@ -330,13 +330,13 @@ Shorthand formats: `http` or `Protocol.http`
 | `advertise_trust_store_ca_names` | [AdvertiseTrustStoreCaNames](#mutual_authenticationadvertise_trust_store_ca_names-advertisetruststorecanames) | No | Indicates whether trust store CA certificate names are advertised. |
 | `ignore_client_certificate_expiry` | `Bool` | No | Indicates whether expired client certificates are ignored. |
 | `mode` | [Mode](#mutual_authenticationmode-mode) | No | The client certificate handling method. Options are ``off``, ``passthrough`` or ``verify``. The default value on initial resource creation is ``off``. After mutual authentication is turned on, you must explicitly set the ``Mode`` to ``off`` to turn it off; removing the property from your template will not turn it off. |
-| `trust_store_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the trust store. |
+| `trust_store_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the trust store. |
 
 ## Attribute Reference
 
 ### `listener_arn`
 
-- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
+- **Type:** `awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 
 

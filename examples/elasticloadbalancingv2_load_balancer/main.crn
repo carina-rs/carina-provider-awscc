@@ -8,8 +8,8 @@ provider awscc {
 
 awscc.elasticloadbalancingv2.LoadBalancer {
   name            = 'registry-alb'
-  type            = aws.elasticloadbalancingv2.LoadBalancer.Type.application
-  scheme          = aws.elasticloadbalancingv2.LoadBalancer.Scheme.internet_facing
+  type            = awscc.elasticloadbalancingv2.LoadBalancer.Type.application
+  scheme          = awscc.elasticloadbalancingv2.LoadBalancer.Scheme.internet_facing
   subnets         = ['subnet-aaaa1111', 'subnet-bbbb2222']
   security_groups = ['sg-cccc3333']
 

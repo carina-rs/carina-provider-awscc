@@ -72,9 +72,8 @@ fn scheduler_expression_matches_every_live_probe_row() {
 fn scheduler_expression_catalog_callback_keeps_identity_bounds_and_all_vectors() {
     let row = super::catalog::AwsccType::ALL
         .iter()
-        .find(|row| row.identity().to_string() == "aws.scheduler.Schedule.ScheduleExpression")
-        .expect("ScheduleExpression must be an awscc-local catalog row under aws");
-    assert_eq!(row.refines(), None);
+        .find(|row| row.identity().to_string() == "awscc.scheduler.Schedule.ScheduleExpression")
+        .expect("ScheduleExpression must be an awscc-owned catalog row");
     let attribute_type = row.attribute_type();
     let RawShape::String {
         identity_layer:
@@ -89,7 +88,7 @@ fn scheduler_expression_catalog_callback_keeps_identity_bounds_and_all_vectors()
     else {
         panic!("ScheduleExpression must retain its string identity and callback");
     };
-    assert_eq!(identity.provider.as_deref(), Some("aws"));
+    assert_eq!(identity.provider.as_deref(), Some("awscc"));
     assert_eq!(identity.segments, ["scheduler", "Schedule"]);
     assert_eq!(identity.kind, "ScheduleExpression");
     assert_eq!(length, Some((Some(1), Some(256))));
@@ -371,6 +370,6 @@ fn role_references_retain_the_scheduler_sinks_cfn_length() {
                 pattern: Some(_),
                 length: Some((Some(1), Some(1600))),
             },
-        } if identity.to_string() == "aws.Arn"
+        } if identity.to_string() == "awscc.Arn"
     ));
 }

@@ -20,9 +20,9 @@ let scheduler_role = awscc.iam.Role {
   role_name = 'carina-example-scheduler-role'
 
   assume_role_policy_document = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+      effect = awscc.iam.PolicyDocument.Statement.Effect.allow
 
       principal = {
         service = 'scheduler.amazonaws.com'
@@ -38,9 +38,9 @@ awscc.iam.RolePolicy {
   role_name   = scheduler_role.role_name
 
   policy_document = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      effect   = awscc.iam.PolicyDocument.Statement.Effect.allow
       action   = 'sns:Publish'
       resource = notifications.topic_arn
     }
@@ -54,10 +54,10 @@ awscc.scheduler.Schedule {
   # Carina-managed schedules in the default group.
   group_name          = 'default'
   schedule_expression = 'rate(6 hours)'
-  state               = aws.scheduler.Schedule.ScheduleState.enabled
+  state               = awscc.scheduler.Schedule.ScheduleState.enabled
 
   flexible_time_window = {
-    mode = aws.scheduler.Schedule.FlexibleTimeWindow.FlexibleTimeWindowMode.off
+    mode = awscc.scheduler.Schedule.FlexibleTimeWindow.FlexibleTimeWindowMode.off
   }
 
   target = {

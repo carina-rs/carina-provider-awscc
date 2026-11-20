@@ -125,7 +125,7 @@ fn option_d_documented_restorations_and_drops_preserve_cfn() {
 fn option_d_policy_grammar_keeps_documented_structure_and_existing_spelling() {
     let schema = cfn_schema_for_codegen_tests("AWS::IAM::Role");
     let rust = generate_schema_code(&schema, &schema.type_name).unwrap();
-    assert!(rust.contains("carina_aws_types::iam_policy_document()"), "{rust}");
+    assert!(rust.contains("crate::schemas::type_helpers::policy_seed::iam_policy_document()"), "{rust}");
     assert!(rust.contains(".with_documented_iam_grammar()"), "{rust}");
     assert!(!rust.contains("__CfnJsonValue"), "{rust}");
     let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
@@ -330,9 +330,9 @@ fn non_replacing_kms_overrides_preserve_reference_input_rules() {
             );
             let rust = generate_schema_code(&schema, &schema.type_name).unwrap();
             let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-            assert!(rust.contains("carina_aws_types::kms_key_reference()"), "{case}: {rust}");
+            assert!(rust.contains("crate::schemas::catalog::kms_key_reference()"), "{case}: {rust}");
             assert!(rust.contains("schema.input_rule("), "{case}: {rust}");
-            assert!(markdown.contains("aws.kms.Key.Reference"), "{case}: {markdown}");
+            assert!(markdown.contains("awscc.kms.Key.Reference"), "{case}: {markdown}");
             assert!(
                 markdown.contains("## Additional Input Constraints"),
                 "{case}: {markdown}",
@@ -356,7 +356,7 @@ fn deprecated_kms_property_keeps_runtime_rules_and_documented_rows() {
         let rules = context.reference_input_rules();
         assert!(!rules.is_empty(), "deprecated runtime slots retain their rules");
         assert!(rust.contains("build_kms_key_id_attribute"), "{rust}");
-        assert!(rust.contains("carina_aws_types::kms_key_reference()"), "{rust}");
+        assert!(rust.contains("crate::schemas::catalog::kms_key_reference()"), "{rust}");
         assert_eq!(rust.matches("schema.input_rule(").count(), rules.len(), "{rust}");
 
         // Render Markdown with a fresh context, independent of the Rust visit.
@@ -435,7 +435,7 @@ fn type_replacing_kms_override_has_no_reference_input_rules() {
         );
         assert!(!rust.contains("kms_key_reference()"), "{rust}");
         assert!(!rust.contains("schema.input_rule("), "{rust}");
-        assert!(!markdown.contains("aws.kms.Key.Reference"), "{markdown}");
+        assert!(!markdown.contains("awscc.kms.Key.Reference"), "{markdown}");
         assert!(
             !markdown.contains("## Additional Input Constraints"),
             "{markdown}",
@@ -726,7 +726,7 @@ fn write_loosening_report(sites: &[serde_json::Value], directory: &std::path::Pa
         // All named AWS strings plus the historical anonymous gateway union.
         // CIDR unions had no old structural pattern/length, only core checks.
         let metadata = if let Some(identity_name) = site["identity"].as_str() {
-            if !identity_name.starts_with("aws.") {
+            if !identity_name.starts_with("awscc.") {
                 continue;
             }
             let metadata = if site["legacy"].is_null() {

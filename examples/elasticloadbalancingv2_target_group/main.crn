@@ -8,10 +8,10 @@ provider awscc {
 
 awscc.elasticloadbalancingv2.TargetGroup {
   name              = 'registry-tg'
-  protocol          = aws.elasticloadbalancingv2.TargetGroup.Protocol.http
+  protocol          = awscc.elasticloadbalancingv2.TargetGroup.Protocol.http
   port              = 8080
   vpc_id            = 'vpc-dddd4444'
-  target_type       = aws.elasticloadbalancingv2.TargetGroup.TargetType.ip
+  target_type       = awscc.elasticloadbalancingv2.TargetGroup.TargetType.ip
   health_check_path = '/health'
 
   target {

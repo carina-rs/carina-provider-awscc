@@ -36,7 +36,7 @@ The friendly name of the member account.
 
 ### `email`
 
-- **Type:** `aws.organizations.Account.Email (identity constraints: len: 6..=64, member constraints: pattern: /[^\s@]+@[^\s@]+\.[^\s@]+/ (Full), len: 6..=64, custom validator)`
+- **Type:** `awscc.organizations.Account.Email (identity constraints: len: 6..=64, member constraints: pattern: /[^\s@]+@[^\s@]+\.[^\s@]+/ (Full), len: 6..=64, custom validator)`
 - **Required:** Yes
 
 The email address of the owner to assign to the new member account.
@@ -50,7 +50,7 @@ List of parent nodes for the member account. Currently only one parent at a time
 
 ### `role_name`
 
-- **Type:** `aws.organizations.Account.RoleName (identity constraints: pattern: /^[\w+=,.@-]+\z/ (Full), len: 1..=64, member constraints: pattern: /[\w+=,.@-]{1,64}/ (Full), len: 1..=64, custom validator)`
+- **Type:** `awscc.organizations.Account.RoleName (identity constraints: pattern: /^[\w+=,.@-]+\z/ (Full), len: 1..=64, member constraints: pattern: /[\w+=,.@-]{1,64}/ (Full), len: 1..=64, custom validator)`
 - **Required:** No
 - **Write-only:** Yes
 - **Default:** `"OrganizationAccountAccessRole"`
@@ -70,8 +70,8 @@ A list of tags that you want to attach to the newly created account. For each ta
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `INVITED` | `aws.organizations.Account.JoinedMethod.invited` |
-| `CREATED` | `aws.organizations.Account.JoinedMethod.created` |
+| `INVITED` | `awscc.organizations.Account.JoinedMethod.invited` |
+| `CREATED` | `awscc.organizations.Account.JoinedMethod.created` |
 
 Shorthand formats: `invited` or `JoinedMethod.invited`
 
@@ -79,11 +79,11 @@ Shorthand formats: `invited` or `JoinedMethod.invited`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `PENDING_ACTIVATION` | `aws.organizations.Account.State.pending_activation` |
-| `ACTIVE` | `aws.organizations.Account.State.active` |
-| `SUSPENDED` | `aws.organizations.Account.State.suspended` |
-| `PENDING_CLOSURE` | `aws.organizations.Account.State.pending_closure` |
-| `CLOSED` | `aws.organizations.Account.State.closed` |
+| `PENDING_ACTIVATION` | `awscc.organizations.Account.State.pending_activation` |
+| `ACTIVE` | `awscc.organizations.Account.State.active` |
+| `SUSPENDED` | `awscc.organizations.Account.State.suspended` |
+| `PENDING_CLOSURE` | `awscc.organizations.Account.State.pending_closure` |
+| `CLOSED` | `awscc.organizations.Account.State.closed` |
 
 Shorthand formats: `pending_activation` or `State.pending_activation`
 
@@ -91,9 +91,9 @@ Shorthand formats: `pending_activation` or `State.pending_activation`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ACTIVE` | `aws.organizations.Account.Status.active` |
-| `SUSPENDED` | `aws.organizations.Account.Status.suspended` |
-| `PENDING_CLOSURE` | `aws.organizations.Account.Status.pending_closure` |
+| `ACTIVE` | `awscc.organizations.Account.Status.active` |
+| `SUSPENDED` | `awscc.organizations.Account.Status.suspended` |
+| `PENDING_CLOSURE` | `awscc.organizations.Account.Status.pending_closure` |
 
 Shorthand formats: `active` or `Status.active`
 
@@ -101,13 +101,13 @@ Shorthand formats: `active` or `Status.active`
 
 ### `account_id`
 
-- **Type:** `aws.AccountId (identity constraints: pattern: /^[0-9]{12}$/ (Full), len: 12..=12, member constraints: pattern: /^\d{12}$/ (Full), len: unbounded..=12)`
+- **Type:** `awscc.AccountId (identity constraints: pattern: /^[0-9]{12}$/ (Full), len: 12..=12, member constraints: pattern: /^\d{12}$/ (Full), len: unbounded..=12)`
 
 If the account was created successfully, the unique identifier (ID) of the new account.
 
 ### `arn`
 
-- **Type:** `aws.organizations.Account.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):organizations:.*$/ (Full), member constraints: pattern: /^arn:aws.*:organizations::\d{12}:account\/o-[a-z0-9]{10,32}\/\d{12}/ (Full), custom validator)`
+- **Type:** `awscc.organizations.Account.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):organizations:.*$/ (Full), member constraints: pattern: /^arn:aws.*:organizations::\d{12}:account\/o-[a-z0-9]{10,32}\/\d{12}/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of the account.
 

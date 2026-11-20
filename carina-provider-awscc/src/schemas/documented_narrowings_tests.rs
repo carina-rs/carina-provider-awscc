@@ -55,7 +55,7 @@ provider awscc { region = awscc.Region.ap_northeast_1 }
 awscc.iam.Role {
   role_name = 'documented-policy'
   assume_role_policy_document = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
       effect = allow
       principal = { service = 'ec2.amazonaws.com' }
@@ -104,7 +104,7 @@ fn security_group_protocols_include_named_aliases_and_every_protocol_number() {
 provider awscc { region = awscc.Region.ap_northeast_1 }
 awscc.ec2.SecurityGroupIngress {
   group_id = 'sg-0123456789abcdef0'
-  ip_protocol = aws.ec2.SecurityGroupIngress.IpProtocol.6
+  ip_protocol = awscc.ec2.SecurityGroupIngress.IpProtocol.6
   from_port = 80
   to_port = 80
   cidr_ip = '10.0.0.0/8'

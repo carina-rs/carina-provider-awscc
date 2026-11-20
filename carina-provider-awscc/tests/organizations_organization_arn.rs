@@ -4,6 +4,6 @@ mod common;
 fn arn_identity_is_provider_scoped() {
     common::assert_arn_identity(
         carina_provider_awscc::schemas::generated::organizations::organization::arn(),
-        "aws.organizations.Organization.Arn",
+        "awscc.organizations.Organization.Arn",
     );
 }

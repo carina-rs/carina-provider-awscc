@@ -13,7 +13,7 @@ Contains the Rules that identify the requests that you want to allow, block, or 
 awscc.wafv2.WebAcl {
   name        = 'carina-example-web-acl'
   description = 'Regional protection for the example workload'
-  scope       = aws.wafv2.WebAcl.Scope.regional
+  scope       = awscc.wafv2.WebAcl.Scope.regional
 
   default_action = {
     allow = {}
@@ -122,11 +122,11 @@ Collection of Rules.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CLOUDFRONT` | `aws.wafv2.WebAcl.AssociationConfig.RequestBody.cloudfront` |
-| `API_GATEWAY` | `aws.wafv2.WebAcl.AssociationConfig.RequestBody.api_gateway` |
-| `COGNITO_USER_POOL` | `aws.wafv2.WebAcl.AssociationConfig.RequestBody.cognito_user_pool` |
-| `APP_RUNNER_SERVICE` | `aws.wafv2.WebAcl.AssociationConfig.RequestBody.app_runner_service` |
-| `VERIFIED_ACCESS_INSTANCE` | `aws.wafv2.WebAcl.AssociationConfig.RequestBody.verified_access_instance` |
+| `CLOUDFRONT` | `awscc.wafv2.WebAcl.AssociationConfig.RequestBody.cloudfront` |
+| `API_GATEWAY` | `awscc.wafv2.WebAcl.AssociationConfig.RequestBody.api_gateway` |
+| `COGNITO_USER_POOL` | `awscc.wafv2.WebAcl.AssociationConfig.RequestBody.cognito_user_pool` |
+| `APP_RUNNER_SERVICE` | `awscc.wafv2.WebAcl.AssociationConfig.RequestBody.app_runner_service` |
+| `VERIFIED_ACCESS_INSTANCE` | `awscc.wafv2.WebAcl.AssociationConfig.RequestBody.verified_access_instance` |
 
 Shorthand formats: `cloudfront` or `RequestBody.cloudfront`
 
@@ -134,10 +134,10 @@ Shorthand formats: `cloudfront` or `RequestBody.cloudfront`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `KB_16` | `aws.wafv2.WebAcl.AssociationConfig.RequestBodyAssociatedResourceTypeConfig.SizeInspectionLimit.kb_16` |
-| `KB_32` | `aws.wafv2.WebAcl.AssociationConfig.RequestBodyAssociatedResourceTypeConfig.SizeInspectionLimit.kb_32` |
-| `KB_48` | `aws.wafv2.WebAcl.AssociationConfig.RequestBodyAssociatedResourceTypeConfig.SizeInspectionLimit.kb_48` |
-| `KB_64` | `aws.wafv2.WebAcl.AssociationConfig.RequestBodyAssociatedResourceTypeConfig.SizeInspectionLimit.kb_64` |
+| `KB_16` | `awscc.wafv2.WebAcl.AssociationConfig.RequestBodyAssociatedResourceTypeConfig.SizeInspectionLimit.kb_16` |
+| `KB_32` | `awscc.wafv2.WebAcl.AssociationConfig.RequestBodyAssociatedResourceTypeConfig.SizeInspectionLimit.kb_32` |
+| `KB_48` | `awscc.wafv2.WebAcl.AssociationConfig.RequestBodyAssociatedResourceTypeConfig.SizeInspectionLimit.kb_48` |
+| `KB_64` | `awscc.wafv2.WebAcl.AssociationConfig.RequestBodyAssociatedResourceTypeConfig.SizeInspectionLimit.kb_64` |
 
 Shorthand formats: `kb_16` or `SizeInspectionLimit.kb_16`
 
@@ -145,9 +145,9 @@ Shorthand formats: `kb_16` or `SizeInspectionLimit.kb_16`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `TEXT_PLAIN` | `aws.wafv2.WebAcl.CustomResponseBody.ResponseContentType.text_plain` |
-| `TEXT_HTML` | `aws.wafv2.WebAcl.CustomResponseBody.ResponseContentType.text_html` |
-| `APPLICATION_JSON` | `aws.wafv2.WebAcl.CustomResponseBody.ResponseContentType.application_json` |
+| `TEXT_PLAIN` | `awscc.wafv2.WebAcl.CustomResponseBody.ResponseContentType.text_plain` |
+| `TEXT_HTML` | `awscc.wafv2.WebAcl.CustomResponseBody.ResponseContentType.text_html` |
+| `APPLICATION_JSON` | `awscc.wafv2.WebAcl.CustomResponseBody.ResponseContentType.application_json` |
 
 Shorthand formats: `text_plain` or `ResponseContentType.text_plain`
 
@@ -155,8 +155,8 @@ Shorthand formats: `text_plain` or `ResponseContentType.text_plain`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `SUBSTITUTION` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.DataProtectionAction.substitution` |
-| `HASH` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.DataProtectionAction.hash` |
+| `SUBSTITUTION` | `awscc.wafv2.WebAcl.DataProtectionConfig.DataProtect.DataProtectionAction.substitution` |
+| `HASH` | `awscc.wafv2.WebAcl.DataProtectionConfig.DataProtect.DataProtectionAction.hash` |
 
 Shorthand formats: `substitution` or `DataProtectionAction.substitution`
 
@@ -164,11 +164,11 @@ Shorthand formats: `substitution` or `DataProtectionAction.substitution`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `SINGLE_HEADER` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.single_header` |
-| `SINGLE_COOKIE` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.single_cookie` |
-| `SINGLE_QUERY_ARGUMENT` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.single_query_argument` |
-| `QUERY_STRING` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.query_string` |
-| `BODY` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.body` |
+| `SINGLE_HEADER` | `awscc.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.single_header` |
+| `SINGLE_COOKIE` | `awscc.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.single_cookie` |
+| `SINGLE_QUERY_ARGUMENT` | `awscc.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.single_query_argument` |
+| `QUERY_STRING` | `awscc.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.query_string` |
+| `BODY` | `awscc.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.body` |
 
 Shorthand formats: `single_header` or `FieldType.single_header`
 
@@ -176,9 +176,9 @@ Shorthand formats: `single_header` or `FieldType.single_header`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.continue` |
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.no_match` |
+| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.continue` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.no_match` |
 
 Shorthand formats: `continue` or `OversizeHandling.continue`
 
@@ -186,9 +186,9 @@ Shorthand formats: `continue` or `OversizeHandling.continue`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ALL` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.all` |
-| `KEY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.key` |
-| `VALUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.value` |
+| `ALL` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.all` |
+| `KEY` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.key` |
+| `VALUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.value` |
 
 Shorthand formats: `all` or `MapMatchScope.all`
 
@@ -196,9 +196,9 @@ Shorthand formats: `all` or `MapMatchScope.all`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.continue` |
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.no_match` |
+| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.continue` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.no_match` |
 
 Shorthand formats: `continue` or `OversizeHandling.continue`
 
@@ -206,9 +206,9 @@ Shorthand formats: `continue` or `OversizeHandling.continue`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.continue` |
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.no_match` |
+| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.continue` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.no_match` |
 
 Shorthand formats: `continue` or `OversizeHandling.continue`
 
@@ -216,9 +216,9 @@ Shorthand formats: `continue` or `OversizeHandling.continue`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ALL` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.all` |
-| `KEY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.key` |
-| `VALUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.value` |
+| `ALL` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.all` |
+| `KEY` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.key` |
+| `VALUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.value` |
 
 Shorthand formats: `all` or `MapMatchScope.all`
 
@@ -226,9 +226,9 @@ Shorthand formats: `all` or `MapMatchScope.all`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.continue` |
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.no_match` |
+| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.continue` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.no_match` |
 
 Shorthand formats: `continue` or `OversizeHandling.continue`
 
@@ -236,8 +236,8 @@ Shorthand formats: `continue` or `OversizeHandling.continue`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.no_match` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
@@ -245,8 +245,8 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.no_match` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
@@ -254,9 +254,9 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.no_match` |
-| `EVALUATE_AS_STRING` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.evaluate_as_string` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.no_match` |
+| `EVALUATE_AS_STRING` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.evaluate_as_string` |
 
 Shorthand formats: `match` or `BodyParsingFallbackBehavior.match`
 
@@ -264,9 +264,9 @@ Shorthand formats: `match` or `BodyParsingFallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ALL` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.all` |
-| `KEY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.key` |
-| `VALUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.value` |
+| `ALL` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.all` |
+| `KEY` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.key` |
+| `VALUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.value` |
 
 Shorthand formats: `all` or `JsonMatchScope.all`
 
@@ -274,9 +274,9 @@ Shorthand formats: `all` or `JsonMatchScope.all`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.continue` |
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.no_match` |
+| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.continue` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.no_match` |
 
 Shorthand formats: `continue` or `OversizeHandling.continue`
 
@@ -284,8 +284,8 @@ Shorthand formats: `continue` or `OversizeHandling.continue`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.no_match` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
@@ -293,8 +293,8 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.no_match` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
@@ -302,8 +302,8 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ACTIVE_UNDER_DDOS` | `aws.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.active_under_ddos` |
-| `ALWAYS_ON` | `aws.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.always_on` |
+| `ACTIVE_UNDER_DDOS` | `awscc.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.active_under_ddos` |
+| `ALWAYS_ON` | `awscc.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.always_on` |
 
 Shorthand formats: `active_under_ddos` or `AlbLowReputationMode.active_under_ddos`
 
@@ -311,8 +311,8 @@ Shorthand formats: `active_under_ddos` or `AlbLowReputationMode.active_under_ddo
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CLOUDFRONT` | `aws.wafv2.WebAcl.Scope.cloudfront` |
-| `REGIONAL` | `aws.wafv2.WebAcl.Scope.regional` |
+| `CLOUDFRONT` | `awscc.wafv2.WebAcl.Scope.cloudfront` |
+| `REGIONAL` | `awscc.wafv2.WebAcl.Scope.regional` |
 
 Shorthand formats: `cloudfront` or `Scope.cloudfront`
 
@@ -320,11 +320,11 @@ Shorthand formats: `cloudfront` or `Scope.cloudfront`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `EXACTLY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.exactly` |
-| `STARTS_WITH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.starts_with` |
-| `ENDS_WITH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.ends_with` |
-| `CONTAINS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.contains` |
-| `CONTAINS_WORD` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.contains_word` |
+| `EXACTLY` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.exactly` |
+| `STARTS_WITH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.starts_with` |
+| `ENDS_WITH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.ends_with` |
+| `CONTAINS` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.contains` |
+| `CONTAINS_WORD` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.contains_word` |
 
 Shorthand formats: `exactly` or `PositionalConstraint.exactly`
 
@@ -332,27 +332,27 @@ Shorthand formats: `exactly` or `PositionalConstraint.exactly`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.lowercase` |
-| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
-| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode` |
-| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
-| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
-| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.css_decode` |
-| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
+| `NONE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
@@ -360,256 +360,256 @@ Shorthand formats: `none` or `TextTransformationType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `AF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.af` |
-| `AX` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ax` |
-| `AL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.al` |
-| `DZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.dz` |
-| `AS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.as` |
-| `AD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ad` |
-| `AO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ao` |
-| `AI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ai` |
-| `AQ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.aq` |
-| `AG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ag` |
-| `AR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ar` |
-| `AM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.am` |
-| `AW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.aw` |
-| `AU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.au` |
-| `AT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.at` |
-| `AZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.az` |
-| `BS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bs` |
-| `BH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bh` |
-| `BD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bd` |
-| `BB` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bb` |
-| `BY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.by` |
-| `BE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.be` |
-| `BZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bz` |
-| `BJ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bj` |
-| `BM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bm` |
-| `BT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bt` |
-| `BO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bo` |
-| `BQ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bq` |
-| `BA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ba` |
-| `BW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bw` |
-| `BV` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bv` |
-| `BR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.br` |
-| `IO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.io` |
-| `BN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bn` |
-| `BG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bg` |
-| `BF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bf` |
-| `BI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bi` |
-| `KH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kh` |
-| `CM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cm` |
-| `CA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ca` |
-| `CV` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cv` |
-| `KY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ky` |
-| `CF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cf` |
-| `TD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.td` |
-| `CL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cl` |
-| `CN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cn` |
-| `CX` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cx` |
-| `CC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cc` |
-| `CO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.co` |
-| `KM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.km` |
-| `CG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cg` |
-| `CD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cd` |
-| `CK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ck` |
-| `CR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cr` |
-| `CI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ci` |
-| `HR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hr` |
-| `CU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cu` |
-| `CW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cw` |
-| `CY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cy` |
-| `CZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cz` |
-| `DK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.dk` |
-| `DJ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.dj` |
-| `DM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.dm` |
-| `DO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.do` |
-| `EC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ec` |
-| `EG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.eg` |
-| `SV` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sv` |
-| `GQ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gq` |
-| `ER` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.er` |
-| `EE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ee` |
-| `ET` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.et` |
-| `FK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fk` |
-| `FO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fo` |
-| `FJ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fj` |
-| `FI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fi` |
-| `FR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fr` |
-| `GF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gf` |
-| `PF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pf` |
-| `TF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tf` |
-| `GA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ga` |
-| `GM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gm` |
-| `GE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ge` |
-| `DE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.de` |
-| `GH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gh` |
-| `GI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gi` |
-| `GR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gr` |
-| `GL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gl` |
-| `GD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gd` |
-| `GP` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gp` |
-| `GU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gu` |
-| `GT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gt` |
-| `GG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gg` |
-| `GN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gn` |
-| `GW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gw` |
-| `GY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gy` |
-| `HT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ht` |
-| `HM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hm` |
-| `VA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.va` |
-| `HN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hn` |
-| `HK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hk` |
-| `HU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hu` |
-| `IS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.is` |
-| `IN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.in` |
-| `ID` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.id` |
-| `IR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ir` |
-| `IQ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.iq` |
-| `IE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ie` |
-| `IM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.im` |
-| `IL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.il` |
-| `IT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.it` |
-| `JM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.jm` |
-| `JP` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.jp` |
-| `JE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.je` |
-| `JO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.jo` |
-| `KZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kz` |
-| `KE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ke` |
-| `KI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ki` |
-| `KP` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kp` |
-| `KR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kr` |
-| `KW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kw` |
-| `KG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kg` |
-| `LA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.la` |
-| `LV` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lv` |
-| `LB` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lb` |
-| `LS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ls` |
-| `LR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lr` |
-| `LY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ly` |
-| `LI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.li` |
-| `LT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lt` |
-| `LU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lu` |
-| `MO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mo` |
-| `MK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mk` |
-| `MG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mg` |
-| `MW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mw` |
-| `MY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.my` |
-| `MV` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mv` |
-| `ML` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ml` |
-| `MT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mt` |
-| `MH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mh` |
-| `MQ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mq` |
-| `MR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mr` |
-| `MU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mu` |
-| `YT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.yt` |
-| `MX` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mx` |
-| `FM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fm` |
-| `MD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.md` |
-| `MC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mc` |
-| `MN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mn` |
-| `ME` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.me` |
-| `MS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ms` |
-| `MA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ma` |
-| `MZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mz` |
-| `MM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mm` |
-| `NA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.na` |
-| `NR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nr` |
-| `NP` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.np` |
-| `NL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nl` |
-| `NC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nc` |
-| `NZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nz` |
-| `NI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ni` |
-| `NE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ne` |
-| `NG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ng` |
-| `NU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nu` |
-| `NF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nf` |
-| `MP` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mp` |
-| `NO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.no` |
-| `OM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.om` |
-| `PK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pk` |
-| `PW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pw` |
-| `PS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ps` |
-| `PA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pa` |
-| `PG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pg` |
-| `PY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.py` |
-| `PE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pe` |
-| `PH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ph` |
-| `PN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pn` |
-| `PL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pl` |
-| `PT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pt` |
-| `PR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pr` |
-| `QA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.qa` |
-| `RE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.re` |
-| `RO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ro` |
-| `RU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ru` |
-| `RW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.rw` |
-| `BL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bl` |
-| `SH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sh` |
-| `KN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kn` |
-| `LC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lc` |
-| `MF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mf` |
-| `PM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pm` |
-| `VC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vc` |
-| `WS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ws` |
-| `SM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sm` |
-| `ST` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.st` |
-| `SA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sa` |
-| `SN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sn` |
-| `RS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.rs` |
-| `SC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sc` |
-| `SL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sl` |
-| `SG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sg` |
-| `SX` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sx` |
-| `SK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sk` |
-| `SI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.si` |
-| `SB` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sb` |
-| `SO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.so` |
-| `ZA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.za` |
-| `GS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gs` |
-| `SS` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ss` |
-| `ES` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.es` |
-| `LK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lk` |
-| `SD` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sd` |
-| `SR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sr` |
-| `SJ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sj` |
-| `SZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sz` |
-| `SE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.se` |
-| `CH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ch` |
-| `SY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sy` |
-| `TW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tw` |
-| `TJ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tj` |
-| `TZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tz` |
-| `TH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.th` |
-| `TL` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tl` |
-| `TG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tg` |
-| `TK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tk` |
-| `TO` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.to` |
-| `TT` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tt` |
-| `TN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tn` |
-| `TR` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tr` |
-| `TM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tm` |
-| `TC` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tc` |
-| `TV` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tv` |
-| `UG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ug` |
-| `UA` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ua` |
-| `AE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ae` |
-| `GB` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gb` |
-| `US` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.us` |
-| `UM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.um` |
-| `UY` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.uy` |
-| `UZ` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.uz` |
-| `VU` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vu` |
-| `VE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ve` |
-| `VN` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vn` |
-| `VG` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vg` |
-| `VI` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vi` |
-| `WF` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.wf` |
-| `EH` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.eh` |
-| `YE` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ye` |
-| `ZM` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.zm` |
-| `ZW` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.zw` |
-| `XK` | `aws.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.xk` |
+| `AF` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.af` |
+| `AX` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ax` |
+| `AL` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.al` |
+| `DZ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.dz` |
+| `AS` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.as` |
+| `AD` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ad` |
+| `AO` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ao` |
+| `AI` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ai` |
+| `AQ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.aq` |
+| `AG` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ag` |
+| `AR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ar` |
+| `AM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.am` |
+| `AW` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.aw` |
+| `AU` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.au` |
+| `AT` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.at` |
+| `AZ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.az` |
+| `BS` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bs` |
+| `BH` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bh` |
+| `BD` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bd` |
+| `BB` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bb` |
+| `BY` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.by` |
+| `BE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.be` |
+| `BZ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bz` |
+| `BJ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bj` |
+| `BM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bm` |
+| `BT` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bt` |
+| `BO` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bo` |
+| `BQ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bq` |
+| `BA` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ba` |
+| `BW` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bw` |
+| `BV` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bv` |
+| `BR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.br` |
+| `IO` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.io` |
+| `BN` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bn` |
+| `BG` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bg` |
+| `BF` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bf` |
+| `BI` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bi` |
+| `KH` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kh` |
+| `CM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cm` |
+| `CA` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ca` |
+| `CV` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cv` |
+| `KY` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ky` |
+| `CF` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cf` |
+| `TD` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.td` |
+| `CL` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cl` |
+| `CN` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cn` |
+| `CX` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cx` |
+| `CC` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cc` |
+| `CO` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.co` |
+| `KM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.km` |
+| `CG` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cg` |
+| `CD` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cd` |
+| `CK` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ck` |
+| `CR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cr` |
+| `CI` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ci` |
+| `HR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hr` |
+| `CU` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cu` |
+| `CW` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cw` |
+| `CY` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cy` |
+| `CZ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.cz` |
+| `DK` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.dk` |
+| `DJ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.dj` |
+| `DM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.dm` |
+| `DO` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.do` |
+| `EC` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ec` |
+| `EG` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.eg` |
+| `SV` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sv` |
+| `GQ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gq` |
+| `ER` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.er` |
+| `EE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ee` |
+| `ET` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.et` |
+| `FK` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fk` |
+| `FO` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fo` |
+| `FJ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fj` |
+| `FI` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fi` |
+| `FR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fr` |
+| `GF` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gf` |
+| `PF` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pf` |
+| `TF` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tf` |
+| `GA` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ga` |
+| `GM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gm` |
+| `GE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ge` |
+| `DE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.de` |
+| `GH` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gh` |
+| `GI` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gi` |
+| `GR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gr` |
+| `GL` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gl` |
+| `GD` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gd` |
+| `GP` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gp` |
+| `GU` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gu` |
+| `GT` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gt` |
+| `GG` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gg` |
+| `GN` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gn` |
+| `GW` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gw` |
+| `GY` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gy` |
+| `HT` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ht` |
+| `HM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hm` |
+| `VA` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.va` |
+| `HN` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hn` |
+| `HK` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hk` |
+| `HU` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.hu` |
+| `IS` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.is` |
+| `IN` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.in` |
+| `ID` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.id` |
+| `IR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ir` |
+| `IQ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.iq` |
+| `IE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ie` |
+| `IM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.im` |
+| `IL` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.il` |
+| `IT` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.it` |
+| `JM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.jm` |
+| `JP` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.jp` |
+| `JE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.je` |
+| `JO` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.jo` |
+| `KZ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kz` |
+| `KE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ke` |
+| `KI` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ki` |
+| `KP` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kp` |
+| `KR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kr` |
+| `KW` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kw` |
+| `KG` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kg` |
+| `LA` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.la` |
+| `LV` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lv` |
+| `LB` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lb` |
+| `LS` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ls` |
+| `LR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lr` |
+| `LY` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ly` |
+| `LI` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.li` |
+| `LT` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lt` |
+| `LU` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lu` |
+| `MO` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mo` |
+| `MK` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mk` |
+| `MG` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mg` |
+| `MW` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mw` |
+| `MY` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.my` |
+| `MV` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mv` |
+| `ML` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ml` |
+| `MT` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mt` |
+| `MH` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mh` |
+| `MQ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mq` |
+| `MR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mr` |
+| `MU` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mu` |
+| `YT` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.yt` |
+| `MX` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mx` |
+| `FM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.fm` |
+| `MD` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.md` |
+| `MC` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mc` |
+| `MN` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mn` |
+| `ME` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.me` |
+| `MS` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ms` |
+| `MA` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ma` |
+| `MZ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mz` |
+| `MM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mm` |
+| `NA` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.na` |
+| `NR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nr` |
+| `NP` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.np` |
+| `NL` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nl` |
+| `NC` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nc` |
+| `NZ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nz` |
+| `NI` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ni` |
+| `NE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ne` |
+| `NG` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ng` |
+| `NU` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nu` |
+| `NF` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.nf` |
+| `MP` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mp` |
+| `NO` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.no` |
+| `OM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.om` |
+| `PK` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pk` |
+| `PW` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pw` |
+| `PS` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ps` |
+| `PA` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pa` |
+| `PG` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pg` |
+| `PY` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.py` |
+| `PE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pe` |
+| `PH` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ph` |
+| `PN` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pn` |
+| `PL` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pl` |
+| `PT` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pt` |
+| `PR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pr` |
+| `QA` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.qa` |
+| `RE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.re` |
+| `RO` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ro` |
+| `RU` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ru` |
+| `RW` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.rw` |
+| `BL` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.bl` |
+| `SH` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sh` |
+| `KN` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.kn` |
+| `LC` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lc` |
+| `MF` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.mf` |
+| `PM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.pm` |
+| `VC` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vc` |
+| `WS` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ws` |
+| `SM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sm` |
+| `ST` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.st` |
+| `SA` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sa` |
+| `SN` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sn` |
+| `RS` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.rs` |
+| `SC` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sc` |
+| `SL` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sl` |
+| `SG` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sg` |
+| `SX` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sx` |
+| `SK` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sk` |
+| `SI` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.si` |
+| `SB` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sb` |
+| `SO` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.so` |
+| `ZA` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.za` |
+| `GS` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gs` |
+| `SS` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ss` |
+| `ES` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.es` |
+| `LK` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.lk` |
+| `SD` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sd` |
+| `SR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sr` |
+| `SJ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sj` |
+| `SZ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sz` |
+| `SE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.se` |
+| `CH` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ch` |
+| `SY` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.sy` |
+| `TW` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tw` |
+| `TJ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tj` |
+| `TZ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tz` |
+| `TH` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.th` |
+| `TL` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tl` |
+| `TG` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tg` |
+| `TK` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tk` |
+| `TO` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.to` |
+| `TT` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tt` |
+| `TN` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tn` |
+| `TR` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tr` |
+| `TM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tm` |
+| `TC` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tc` |
+| `TV` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.tv` |
+| `UG` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ug` |
+| `UA` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ua` |
+| `AE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ae` |
+| `GB` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.gb` |
+| `US` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.us` |
+| `UM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.um` |
+| `UY` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.uy` |
+| `UZ` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.uz` |
+| `VU` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vu` |
+| `VE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ve` |
+| `VN` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vn` |
+| `VG` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vg` |
+| `VI` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.vi` |
+| `WF` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.wf` |
+| `EH` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.eh` |
+| `YE` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.ye` |
+| `ZM` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.zm` |
+| `ZW` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.zw` |
+| `XK` | `awscc.wafv2.WebAcl.Rule.Statement.GeoMatchStatement.CountryCodes.xk` |
 
 Shorthand formats: `af` or `CountryCodes.af`
 
@@ -617,8 +617,8 @@ Shorthand formats: `af` or `CountryCodes.af`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.FallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.FallbackBehavior.no_match` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
@@ -626,9 +626,9 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `FIRST` | `aws.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.first` |
-| `LAST` | `aws.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.last` |
-| `ANY` | `aws.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.any` |
+| `FIRST` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.first` |
+| `LAST` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.last` |
+| `ANY` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.any` |
 
 Shorthand formats: `first` or `Position.first`
 
@@ -636,8 +636,8 @@ Shorthand formats: `first` or `Position.first`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `LABEL` | `aws.wafv2.WebAcl.Rule.Statement.LabelMatchStatement.LabelMatchScope.label` |
-| `NAMESPACE` | `aws.wafv2.WebAcl.Rule.Statement.LabelMatchStatement.LabelMatchScope.namespace` |
+| `LABEL` | `awscc.wafv2.WebAcl.Rule.Statement.LabelMatchStatement.LabelMatchScope.label` |
+| `NAMESPACE` | `awscc.wafv2.WebAcl.Rule.Statement.LabelMatchStatement.LabelMatchScope.namespace` |
 
 Shorthand formats: `label` or `LabelMatchScope.label`
 
@@ -645,8 +645,8 @@ Shorthand formats: `label` or `LabelMatchScope.label`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `JSON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.json` |
-| `FORM_ENCODED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.form_encoded` |
+| `JSON` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.json` |
+| `FORM_ENCODED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.form_encoded` |
 
 Shorthand formats: `json` or `PayloadType.json`
 
@@ -654,9 +654,9 @@ Shorthand formats: `json` or `PayloadType.json`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `LOW` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.low` |
-| `MEDIUM` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.medium` |
-| `HIGH` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.high` |
+| `LOW` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.low` |
+| `MEDIUM` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.medium` |
+| `HIGH` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.high` |
 
 Shorthand formats: `low` or `SensitivityToAct.low`
 
@@ -664,8 +664,8 @@ Shorthand formats: `low` or `SensitivityToAct.low`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ENABLED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.enabled` |
-| `DISABLED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.disabled` |
+| `ENABLED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.enabled` |
+| `DISABLED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.disabled` |
 
 Shorthand formats: `enabled` or `UsageOfAction.enabled`
 
@@ -673,9 +673,9 @@ Shorthand formats: `enabled` or `UsageOfAction.enabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `LOW` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.low` |
-| `MEDIUM` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.medium` |
-| `HIGH` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.high` |
+| `LOW` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.low` |
+| `MEDIUM` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.medium` |
+| `HIGH` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.high` |
 
 Shorthand formats: `low` or `SensitivityToAct.low`
 
@@ -683,8 +683,8 @@ Shorthand formats: `low` or `SensitivityToAct.low`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `JSON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.json` |
-| `FORM_ENCODED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.form_encoded` |
+| `JSON` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.json` |
+| `FORM_ENCODED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.form_encoded` |
 
 Shorthand formats: `json` or `PayloadType.json`
 
@@ -692,8 +692,8 @@ Shorthand formats: `json` or `PayloadType.json`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `COMMON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.common` |
-| `TARGETED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.targeted` |
+| `COMMON` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.common` |
+| `TARGETED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.targeted` |
 
 Shorthand formats: `common` or `InspectionLevel.common`
 
@@ -701,8 +701,8 @@ Shorthand formats: `common` or `InspectionLevel.common`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `JSON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.PayloadType.json` |
-| `FORM_ENCODED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.PayloadType.form_encoded` |
+| `JSON` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.PayloadType.json` |
+| `FORM_ENCODED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.PayloadType.form_encoded` |
 
 Shorthand formats: `json` or `PayloadType.json`
 
@@ -710,10 +710,10 @@ Shorthand formats: `json` or `PayloadType.json`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONSTANT` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.constant` |
-| `IP` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.ip` |
-| `FORWARDED_IP` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.forwarded_ip` |
-| `CUSTOM_KEYS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.custom_keys` |
+| `CONSTANT` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.constant` |
+| `IP` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.ip` |
+| `FORWARDED_IP` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.forwarded_ip` |
+| `CUSTOM_KEYS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.custom_keys` |
 
 Shorthand formats: `constant` or `AggregateKeyType.constant`
 
@@ -721,27 +721,27 @@ Shorthand formats: `constant` or `AggregateKeyType.constant`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.lowercase` |
-| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.cmd_line` |
-| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.url_decode` |
-| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.base64_decode` |
-| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.hex_decode` |
-| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.css_decode` |
-| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.utf8_to_unicode` |
+| `NONE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitCookie.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
@@ -749,27 +749,27 @@ Shorthand formats: `none` or `TextTransformationType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.lowercase` |
-| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.cmd_line` |
-| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.url_decode` |
-| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.base64_decode` |
-| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.hex_decode` |
-| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.css_decode` |
-| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.utf8_to_unicode` |
+| `NONE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitHeader.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
@@ -777,8 +777,8 @@ Shorthand formats: `none` or `TextTransformationType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.no_match` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
@@ -786,8 +786,8 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.no_match` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
@@ -795,27 +795,27 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.lowercase` |
-| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.cmd_line` |
-| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.url_decode` |
-| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.base64_decode` |
-| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.hex_decode` |
-| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.css_decode` |
-| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.utf8_to_unicode` |
+| `NONE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryArgument.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
@@ -823,27 +823,27 @@ Shorthand formats: `none` or `TextTransformationType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.lowercase` |
-| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.cmd_line` |
-| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.url_decode` |
-| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.base64_decode` |
-| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.hex_decode` |
-| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.css_decode` |
-| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.utf8_to_unicode` |
+| `NONE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitQueryString.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
@@ -851,27 +851,27 @@ Shorthand formats: `none` or `TextTransformationType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.lowercase` |
-| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.cmd_line` |
-| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.url_decode` |
-| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.base64_decode` |
-| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.hex_decode` |
-| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.css_decode` |
-| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.utf8_to_unicode` |
+| `NONE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitUriPath.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
@@ -879,27 +879,27 @@ Shorthand formats: `none` or `TextTransformationType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.lowercase` |
-| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
-| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.url_decode` |
-| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
-| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
-| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.css_decode` |
-| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
+| `NONE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
@@ -907,27 +907,27 @@ Shorthand formats: `none` or `TextTransformationType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.lowercase` |
-| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.cmd_line` |
-| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.url_decode` |
-| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.base64_decode` |
-| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.hex_decode` |
-| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.css_decode` |
-| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
+| `NONE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.Rule.Statement.RegexPatternSetReferenceStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
@@ -935,12 +935,12 @@ Shorthand formats: `none` or `TextTransformationType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `EQ` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.eq` |
-| `NE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.ne` |
-| `LE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.le` |
-| `LT` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.lt` |
-| `GE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.ge` |
-| `GT` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.gt` |
+| `EQ` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.eq` |
+| `NE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.ne` |
+| `LE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.le` |
+| `LT` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.lt` |
+| `GE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.ge` |
+| `GT` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.gt` |
 
 Shorthand formats: `eq` or `ComparisonOperator.eq`
 
@@ -948,27 +948,27 @@ Shorthand formats: `eq` or `ComparisonOperator.eq`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.lowercase` |
-| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.cmd_line` |
-| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.url_decode` |
-| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.base64_decode` |
-| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.hex_decode` |
-| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.css_decode` |
-| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
+| `NONE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
@@ -976,8 +976,8 @@ Shorthand formats: `none` or `TextTransformationType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `LOW` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.SensitivityLevel.low` |
-| `HIGH` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.SensitivityLevel.high` |
+| `LOW` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.SensitivityLevel.low` |
+| `HIGH` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.SensitivityLevel.high` |
 
 Shorthand formats: `low` or `SensitivityLevel.low`
 
@@ -985,27 +985,27 @@ Shorthand formats: `low` or `SensitivityLevel.low`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.lowercase` |
-| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
-| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.url_decode` |
-| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
-| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
-| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.css_decode` |
-| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
+| `NONE` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
@@ -1013,27 +1013,27 @@ Shorthand formats: `none` or `TextTransformationType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.lowercase` |
-| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
-| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.url_decode` |
-| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
-| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
-| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.css_decode` |
-| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
+| `NONE` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.Rule.Statement.XssMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
@@ -1493,8 +1493,8 @@ Used by: `rules.statement`, `statement.and_statement.statements`, `statement.man
 |-------|------|----------|-------------|
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
 | `positional_constraint` | [PositionalConstraint](#statementbyte_match_statementpositional_constraint-positionalconstraint) | Yes |  |
-| `search_string` | `aws.wafv2.WebACL.ByteMatchSearchString (custom validator)` | No |  |
-| `search_string_base64` | `aws.wafv2.WebACL.ByteMatchSearchStringBase64 (custom validator)` | No |  |
+| `search_string` | `awscc.wafv2.WebACL.ByteMatchSearchString (custom validator)` | No |  |
+| `search_string_base64` | `awscc.wafv2.WebACL.ByteMatchSearchStringBase64 (custom validator)` | No |  |
 | `text_transformations` | List\<[Struct(TextTransformation)](#statementbyte_match_statementtext_transformations)\> (items: 1..unbounded, ordered) | Yes |  |
 
 ### statement.byte_match_statement.text_transformations
@@ -1515,7 +1515,7 @@ Used by: `rules.statement`, `statement.and_statement.statements`, `statement.man
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | `aws.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)` | Yes |  |
+| `arn` | `awscc.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)` | Yes |  |
 | `ip_set_forwarded_ip_config` | [Struct(IPSetForwardedIPConfiguration)](#statementip_set_reference_statementip_set_forwarded_ip_config) | No |  |
 
 ### statement.ip_set_reference_statement.ip_set_forwarded_ip_config
@@ -1795,7 +1795,7 @@ Used by: `rules.statement`, `statement.and_statement.statements`, `statement.man
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | `aws.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)` | Yes |  |
+| `arn` | `awscc.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)` | Yes |  |
 | `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
 | `text_transformations` | List\<[Struct(TextTransformation)](#statementregex_pattern_set_reference_statementtext_transformations)\> (items: 1..unbounded, ordered) | Yes |  |
 
@@ -1810,7 +1810,7 @@ Used by: `rules.statement`, `statement.and_statement.statements`, `statement.man
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | `aws.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)` | Yes |  |
+| `arn` | `awscc.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 20..=2048, custom validator)` | Yes |  |
 | `excluded_rules` | List\<[Struct(ExcludedRule)](#excluded_rule)\> (items: unbounded..=100, ordered) | No |  |
 | `rule_action_overrides` | List\<[Struct(RuleActionOverride)](#rule_action_override)\> (items: unbounded..=100, ordered) | No | Action overrides for rules in the rule group. |
 
@@ -1873,7 +1873,7 @@ Used by: `rules.visibility_config`, `visibility_config`
 
 ### `arn`
 
-- **Type:** `aws.wafv2.WebAcl.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):wafv2:.*$/ (Full), member constraints: len: 20..=2048, custom validator)`
+- **Type:** `awscc.wafv2.WebAcl.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):wafv2:.*$/ (Full), member constraints: len: 20..=2048, custom validator)`
 
 ### `capacity`
 

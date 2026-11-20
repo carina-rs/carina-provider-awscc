@@ -4,7 +4,7 @@
 # After destroy, the KMS key lingers in PendingDeletion for the 7-day minimum window.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 awscc.kms.Key {

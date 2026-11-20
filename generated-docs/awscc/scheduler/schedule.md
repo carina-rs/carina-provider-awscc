@@ -23,9 +23,9 @@ let scheduler_role = awscc.iam.Role {
   role_name = 'carina-example-scheduler-role'
 
   assume_role_policy_document = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+      effect = awscc.iam.PolicyDocument.Statement.Effect.allow
 
       principal = {
         service = 'scheduler.amazonaws.com'
@@ -41,9 +41,9 @@ awscc.iam.RolePolicy {
   role_name   = scheduler_role.role_name
 
   policy_document = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      effect   = awscc.iam.PolicyDocument.Statement.Effect.allow
       action   = 'sns:Publish'
       resource = notifications.topic_arn
     }
@@ -57,10 +57,10 @@ awscc.scheduler.Schedule {
   # Carina-managed schedules in the default group.
   group_name          = 'default'
   schedule_expression = 'rate(6 hours)'
-  state               = aws.scheduler.Schedule.ScheduleState.enabled
+  state               = awscc.scheduler.Schedule.ScheduleState.enabled
 
   flexible_time_window = {
-    mode = aws.scheduler.Schedule.FlexibleTimeWindow.FlexibleTimeWindowMode.off
+    mode = awscc.scheduler.Schedule.FlexibleTimeWindow.FlexibleTimeWindowMode.off
   }
 
   target = {
@@ -94,14 +94,14 @@ The date, in UTC, before which the schedule can invoke its target. Depending on 
 
 ### `group_name`
 
-- **Type:** `aws.scheduler.Schedule.GroupName (identity constraints: len: 1..=64, member constraints: pattern: /^[0-9a-zA-Z-_.]+$/ (Full), len: 1..=64, custom validator)`
+- **Type:** `awscc.scheduler.Schedule.GroupName (identity constraints: len: 1..=64, member constraints: pattern: /^[0-9a-zA-Z-_.]+$/ (Full), len: 1..=64, custom validator)`
 - **Required:** No
 
 The name of the schedule group to associate with this schedule. If you omit this, the default schedule group is used. Carina requires group_name to be omitted or set to the literal 'default'. Cloud Control identifies schedules by Name only and reads them in the default group, so a schedule in another group can be created but never read or tracked.
 
 ### `kms_key_arn`
 
-- **Type:** `aws.kms.Key.Reference (pattern: /^((arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})|alias/[a-zA-Z0-9:/_-]+))|(alias/[a-zA-Z0-9:/_-]+)|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)`
+- **Type:** `awscc.kms.Key.Reference (pattern: /^((arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})|alias/[a-zA-Z0-9:/_-]+))|(alias/[a-zA-Z0-9:/_-]+)|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)`
 - **Required:** No
 
 The ARN for a KMS Key that will be used to encrypt customer data.
@@ -114,7 +114,7 @@ The ARN for a KMS Key that will be used to encrypt customer data.
 
 ### `schedule_expression`
 
-- **Type:** `aws.scheduler.Schedule.ScheduleExpression (identity constraints: len: 1..=256, member constraints: len: 1..=256, custom validator)`
+- **Type:** `awscc.scheduler.Schedule.ScheduleExpression (identity constraints: len: 1..=256, member constraints: len: 1..=256, custom validator)`
 - **Required:** Yes
 
 The scheduling expression.
@@ -149,8 +149,8 @@ The date, in UTC, after which the schedule can begin invoking its target. Depend
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `OFF` | `aws.scheduler.Schedule.FlexibleTimeWindow.FlexibleTimeWindowMode.off` |
-| `FLEXIBLE` | `aws.scheduler.Schedule.FlexibleTimeWindow.FlexibleTimeWindowMode.flexible` |
+| `OFF` | `awscc.scheduler.Schedule.FlexibleTimeWindow.FlexibleTimeWindowMode.off` |
+| `FLEXIBLE` | `awscc.scheduler.Schedule.FlexibleTimeWindow.FlexibleTimeWindowMode.flexible` |
 
 Shorthand formats: `off` or `FlexibleTimeWindowMode.off`
 
@@ -158,8 +158,8 @@ Shorthand formats: `off` or `FlexibleTimeWindowMode.off`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ENABLED` | `aws.scheduler.Schedule.ScheduleState.enabled` |
-| `DISABLED` | `aws.scheduler.Schedule.ScheduleState.disabled` |
+| `ENABLED` | `awscc.scheduler.Schedule.ScheduleState.enabled` |
+| `DISABLED` | `awscc.scheduler.Schedule.ScheduleState.disabled` |
 
 Shorthand formats: `enabled` or `ScheduleState.enabled`
 
@@ -167,9 +167,9 @@ Shorthand formats: `enabled` or `ScheduleState.enabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `EC2` | `aws.scheduler.Schedule.Target.EcsParameters.LaunchType.ec2` |
-| `FARGATE` | `aws.scheduler.Schedule.Target.EcsParameters.LaunchType.fargate` |
-| `EXTERNAL` | `aws.scheduler.Schedule.Target.EcsParameters.LaunchType.external` |
+| `EC2` | `awscc.scheduler.Schedule.Target.EcsParameters.LaunchType.ec2` |
+| `FARGATE` | `awscc.scheduler.Schedule.Target.EcsParameters.LaunchType.fargate` |
+| `EXTERNAL` | `awscc.scheduler.Schedule.Target.EcsParameters.LaunchType.external` |
 
 Shorthand formats: `ec2` or `LaunchType.ec2`
 
@@ -177,8 +177,8 @@ Shorthand formats: `ec2` or `LaunchType.ec2`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ENABLED` | `aws.scheduler.Schedule.Target.EcsParameters.NetworkConfiguration.AwsVpcConfiguration.AssignPublicIp.enabled` |
-| `DISABLED` | `aws.scheduler.Schedule.Target.EcsParameters.NetworkConfiguration.AwsVpcConfiguration.AssignPublicIp.disabled` |
+| `ENABLED` | `awscc.scheduler.Schedule.Target.EcsParameters.NetworkConfiguration.AwsVpcConfiguration.AssignPublicIp.enabled` |
+| `DISABLED` | `awscc.scheduler.Schedule.Target.EcsParameters.NetworkConfiguration.AwsVpcConfiguration.AssignPublicIp.disabled` |
 
 Shorthand formats: `enabled` or `AssignPublicIp.enabled`
 
@@ -186,8 +186,8 @@ Shorthand formats: `enabled` or `AssignPublicIp.enabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `distinctInstance` | `aws.scheduler.Schedule.Target.EcsParameters.PlacementConstraint.PlacementConstraintType.distinct_instance` |
-| `memberOf` | `aws.scheduler.Schedule.Target.EcsParameters.PlacementConstraint.PlacementConstraintType.member_of` |
+| `distinctInstance` | `awscc.scheduler.Schedule.Target.EcsParameters.PlacementConstraint.PlacementConstraintType.distinct_instance` |
+| `memberOf` | `awscc.scheduler.Schedule.Target.EcsParameters.PlacementConstraint.PlacementConstraintType.member_of` |
 
 Shorthand formats: `distinct_instance` or `PlacementConstraintType.distinct_instance`
 
@@ -195,9 +195,9 @@ Shorthand formats: `distinct_instance` or `PlacementConstraintType.distinct_inst
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `instanceId` | `aws.scheduler.Schedule.Target.EcsParameters.PlacementStrategy.Field.instance_id` |
-| `cpu` | `aws.scheduler.Schedule.Target.EcsParameters.PlacementStrategy.Field.cpu` |
-| `memory` | `aws.scheduler.Schedule.Target.EcsParameters.PlacementStrategy.Field.memory` |
+| `instanceId` | `awscc.scheduler.Schedule.Target.EcsParameters.PlacementStrategy.Field.instance_id` |
+| `cpu` | `awscc.scheduler.Schedule.Target.EcsParameters.PlacementStrategy.Field.cpu` |
+| `memory` | `awscc.scheduler.Schedule.Target.EcsParameters.PlacementStrategy.Field.memory` |
 
 Shorthand formats: `instance_id` or `Field.instance_id`
 
@@ -205,9 +205,9 @@ Shorthand formats: `instance_id` or `Field.instance_id`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `random` | `aws.scheduler.Schedule.Target.EcsParameters.PlacementStrategy.PlacementStrategyType.random` |
-| `spread` | `aws.scheduler.Schedule.Target.EcsParameters.PlacementStrategy.PlacementStrategyType.spread` |
-| `binpack` | `aws.scheduler.Schedule.Target.EcsParameters.PlacementStrategy.PlacementStrategyType.binpack` |
+| `random` | `awscc.scheduler.Schedule.Target.EcsParameters.PlacementStrategy.PlacementStrategyType.random` |
+| `spread` | `awscc.scheduler.Schedule.Target.EcsParameters.PlacementStrategy.PlacementStrategyType.spread` |
+| `binpack` | `awscc.scheduler.Schedule.Target.EcsParameters.PlacementStrategy.PlacementStrategyType.binpack` |
 
 Shorthand formats: `random` or `PlacementStrategyType.random`
 
@@ -215,7 +215,7 @@ Shorthand formats: `random` or `PlacementStrategyType.random`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `TASK_DEFINITION` | `aws.scheduler.Schedule.Target.EcsParameters.PropagateTags.task_definition` |
+| `TASK_DEFINITION` | `awscc.scheduler.Schedule.Target.EcsParameters.PropagateTags.task_definition` |
 
 Shorthand formats: `task_definition` or `PropagateTags.task_definition`
 
@@ -232,14 +232,14 @@ Shorthand formats: `task_definition` or `PropagateTags.task_definition`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | `aws.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 1..=1600, custom validator)` | Yes | The Amazon Resource Name (ARN) of the target. |
+| `arn` | `awscc.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 1..=1600, custom validator)` | Yes | The Amazon Resource Name (ARN) of the target. |
 | `dead_letter_config` | [Struct(DeadLetterConfig)](#targetdead_letter_config) | No |  |
 | `ecs_parameters` | [Struct(EcsParameters)](#targetecs_parameters) | No |  |
 | `event_bridge_parameters` | [Struct(EventBridgeParameters)](#targetevent_bridge_parameters) | No |  |
 | `input` | `String (len: 1..unbounded)` | No | The text, or well-formed JSON, passed to the target. If you are configuring a templated Lambda, AWS Step Functions, or Amazon EventBridge target, the input must be a well-formed JSON. For all other target types, a JSON is not required. If you do not specify anything for this field, EventBridge Scheduler delivers a default notification to the target. |
 | `kinesis_parameters` | [Struct(KinesisParameters)](#targetkinesis_parameters) | No |  |
 | `retry_policy` | [Struct(RetryPolicy)](#targetretry_policy) | No |  |
-| `role_arn` | `aws.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /^arn:aws[a-z-]*:iam::\d{12}:role\/[\w+=,.@\/-]+$/ (Full), len: 1..=1600, custom validator)` | Yes | The Amazon Resource Name (ARN) of the IAM role to be used for this target when the schedule is triggered. |
+| `role_arn` | `awscc.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /^arn:aws[a-z-]*:iam::\d{12}:role\/[\w+=,.@\/-]+$/ (Full), len: 1..=1600, custom validator)` | Yes | The Amazon Resource Name (ARN) of the IAM role to be used for this target when the schedule is triggered. |
 | `sage_maker_pipeline_parameters` | [Struct(SageMakerPipelineParameters)](#targetsage_maker_pipeline_parameters) | No |  |
 | `sqs_parameters` | [Struct(SqsParameters)](#targetsqs_parameters) | No |  |
 
@@ -247,7 +247,7 @@ Shorthand formats: `task_definition` or `PropagateTags.task_definition`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | `aws.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /^arn:aws[a-z-]*:sqs:[a-z0-9\-]+:\d{12}:[a-zA-Z0-9\-_]+$/ (Full), len: 1..=1600, custom validator)` | No | The ARN of the SQS queue specified as the target for the dead-letter queue. |
+| `arn` | `awscc.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /^arn:aws[a-z-]*:sqs:[a-z0-9\-]+:\d{12}:[a-zA-Z0-9\-_]+$/ (Full), len: 1..=1600, custom validator)` | No | The ARN of the SQS queue specified as the target for the dead-letter queue. |
 
 ### target.ecs_parameters
 
@@ -266,7 +266,7 @@ Shorthand formats: `task_definition` or `PropagateTags.task_definition`
 | `reference_id` | `String (len: unbounded..=1024)` | No | The reference ID to use for the task. |
 | `tags` | List\<Map\<`String (pattern: /.+/ (Full))`, `String (len: 1..=256)`\>\> (items: unbounded..=50, unordered) | No | The metadata that you apply to the task to help you categorize and organize them. Each tag consists of a key and an optional value, both of which you define. To learn more, see RunTask in the Amazon ECS API Reference. |
 | `task_count` | `Float (range: 1..=10)` | No | The number of tasks to create based on TaskDefinition. The default is 1. |
-| `task_definition_arn` | `aws.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 1..=1600, custom validator)` | Yes | The ARN of the task definition to use if the event target is an Amazon ECS task. |
+| `task_definition_arn` | `awscc.Arn (identity constraints: pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), member constraints: len: 1..=1600, custom validator)` | Yes | The ARN of the task definition to use if the event target is an Amazon ECS task. |
 
 ### target.ecs_parameters.capacity_provider_strategy
 
@@ -353,7 +353,7 @@ Shorthand formats: `task_definition` or `PropagateTags.task_definition`
 
 ### `arn`
 
-- **Type:** `aws.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /^arn:aws[a-z-]*:scheduler:[a-z0-9\-]+:\d{12}:schedule\/[0-9a-zA-Z-_.]+\/[0-9a-zA-Z-_.]+$/ (Full), len: 1..=1224, custom validator)`
+- **Type:** `awscc.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /^arn:aws[a-z-]*:scheduler:[a-z0-9\-]+:\d{12}:schedule\/[0-9a-zA-Z-_.]+\/[0-9a-zA-Z-_.]+$/ (Full), len: 1..=1224, custom validator)`
 
 The Amazon Resource Name (ARN) of the schedule.
 

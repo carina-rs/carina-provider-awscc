@@ -17,7 +17,9 @@ pub(super) enum DocumentKind {
 impl DocumentKind {
     pub(super) fn constructor(self) -> &'static str {
         match self {
-            Self::IamPolicyDocument => "carina_aws_types::iam_policy_document()",
+            Self::IamPolicyDocument => {
+                "crate::schemas::type_helpers::policy_seed::iam_policy_document()"
+            }
             Self::S3AnalyticsDestination => {
                 "crate::schemas::awscc_types::s3_analytics_destination()"
             }

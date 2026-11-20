@@ -8,7 +8,7 @@ let network = use { source = '../network' }
 arguments {
   cidr_block : Ipv4Cidr
   subnet_cidr: Ipv4Cidr
-  az         : aws.AvailabilityZone.ZoneName
+  az         : awscc.AvailabilityZone.ZoneName
 }
 
 let net = network {

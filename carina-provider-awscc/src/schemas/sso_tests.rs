@@ -95,9 +95,8 @@ fn sso_permission_set_session_duration_length_vectors() {
 fn sso_permission_set_session_duration_catalog_identity_bounds_and_callback() {
     let row = super::catalog::AwsccType::ALL
         .iter()
-        .find(|row| row.identity().to_string() == "aws.sso.PermissionSet.SessionDuration")
-        .expect("SessionDuration must be an awscc-local catalog row under aws");
-    assert_eq!(row.refines(), None);
+        .find(|row| row.identity().to_string() == "awscc.sso.PermissionSet.SessionDuration")
+        .expect("SessionDuration must be an awscc-owned catalog row");
     assert_eq!(row.valid_sample(), "PT8H");
     let attribute_type = row.attribute_type();
     let RawShape::String {
@@ -114,7 +113,7 @@ fn sso_permission_set_session_duration_catalog_identity_bounds_and_callback() {
     else {
         panic!("SessionDuration must retain its string identity, grammar, and callback");
     };
-    assert_eq!(identity.provider.as_deref(), Some("aws"));
+    assert_eq!(identity.provider.as_deref(), Some("awscc"));
     assert_eq!(identity.segments, ["sso", "PermissionSet"]);
     assert_eq!(identity.kind, "SessionDuration");
     assert_eq!(length, Some((Some(1), Some(100))));

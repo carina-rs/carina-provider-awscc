@@ -71,7 +71,7 @@ print macros or logging as guest diagnostic exits. Use `panic_diagnostic` /
 ## Crate Structure
 
 - **carina-provider-awscc**: The AWSCC provider implementation. Includes a `codegen` binary for generating resource definitions from CloudFormation schemas. Builds as both a native binary and a WASM component.
-- **carina-aws-types**: AWS-specific type definitions owned by `carina-provider-aws` and consumed here as a rev-pinned git dependency.
+- **carina-aws-types**: SDK and runtime support owned by `carina-provider-aws` and consumed here as a rev-pinned git dependency. AWSCC owns its schema type definitions and the `awscc` namespace.
 
 ## Dependencies on carina (main repo)
 

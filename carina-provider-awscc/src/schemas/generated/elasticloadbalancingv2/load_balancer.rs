@@ -51,7 +51,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_enable_capacity_reservation_provision_stabilize_attribute());
     #[inline(never)]
     fn build_enable_prefix_for_ipv6_source_nat_attribute() -> AttributeSchema {
-        AttributeSchema::optional("enable_prefix_for_ipv6_source_nat", AttributeType::enum_(carina_core::schema::enum_identity("EnablePrefixForIpv6SourceNat", Some("aws.elasticloadbalancingv2.LoadBalancer")), Some(vec!["on".to_string(), "off".to_string()]), vec![("on".to_string(), "on".to_string()), ("off".to_string(), "off".to_string())], None, None))
+        AttributeSchema::optional("enable_prefix_for_ipv6_source_nat", AttributeType::enum_(crate::schemas::namespace::awscc_identity("EnablePrefixForIpv6SourceNat", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.LoadBalancer").expect("valid AWSCC namespace")).expect("valid AWSCC identity").into_core(), Some(vec!["on".to_string(), "off".to_string()]), vec![("on".to_string(), "on".to_string()), ("off".to_string(), "off".to_string())], None, None))
                 .with_description("[Network Load Balancers with UDP listeners] Indicates whether to use an IPv6 prefix from each subnet for source NAT. The IP address type must be ``dualstack``. The default value is ``off``.")
                 .with_provider_name("EnablePrefixForIpv6SourceNat")
             .build()
@@ -59,7 +59,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_enable_prefix_for_ipv6_source_nat_attribute());
     #[inline(never)]
     fn build_enforce_security_group_inbound_rules_on_private_link_traffic_attribute() -> AttributeSchema {
-        AttributeSchema::optional("enforce_security_group_inbound_rules_on_private_link_traffic", AttributeType::enum_(carina_core::schema::enum_identity("EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic", Some("aws.elasticloadbalancingv2.LoadBalancer")), Some(vec!["on".to_string(), "off".to_string()]), vec![("on".to_string(), "on".to_string()), ("off".to_string(), "off".to_string())], None, None))
+        AttributeSchema::optional("enforce_security_group_inbound_rules_on_private_link_traffic", AttributeType::enum_(crate::schemas::namespace::awscc_identity("EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.LoadBalancer").expect("valid AWSCC namespace")).expect("valid AWSCC identity").into_core(), Some(vec!["on".to_string(), "off".to_string()]), vec![("on".to_string(), "on".to_string()), ("off".to_string(), "off".to_string())], None, None))
                 .with_description("Indicates whether to evaluate inbound security group rules for traffic sent to a Network Load Balancer through privatelink. The default is ``on``. You can't configure this property on a Network Load Balancer unless you associated a security group with the load balancer when you created it.")
                 .with_provider_name("EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic")
             .build()
@@ -67,7 +67,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_enforce_security_group_inbound_rules_on_private_link_traffic_attribute());
     #[inline(never)]
     fn build_ip_address_type_attribute() -> AttributeSchema {
-        AttributeSchema::optional("ip_address_type", AttributeType::enum_(carina_core::schema::enum_identity("IpAddressType", Some("aws.elasticloadbalancingv2.LoadBalancer")), Some(vec!["ipv4".to_string(), "dualstack".to_string(), "dualstack-without-public-ipv4".to_string()]), vec![("ipv4".to_string(), "ipv4".to_string()), ("dualstack".to_string(), "dualstack".to_string()), ("dualstack-without-public-ipv4".to_string(), "dualstack_without_public_ipv4".to_string())], None, None))
+        AttributeSchema::optional("ip_address_type", AttributeType::enum_(crate::schemas::namespace::awscc_identity("IpAddressType", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.LoadBalancer").expect("valid AWSCC namespace")).expect("valid AWSCC identity").into_core(), Some(vec!["ipv4".to_string(), "dualstack".to_string(), "dualstack-without-public-ipv4".to_string()]), vec![("ipv4".to_string(), "ipv4".to_string()), ("dualstack".to_string(), "dualstack".to_string()), ("dualstack-without-public-ipv4".to_string(), "dualstack_without_public_ipv4".to_string())], None, None))
                 .with_description("The IP address type. Internal load balancers must use ``ipv4``. [Application Load Balancers] The possible values are ``ipv4`` (IPv4 addresses), ``dualstack`` (IPv4 and IPv6 addresses), and ``dualstack-without-public-ipv4`` (public IPv6 addresses and private IPv4 and IPv6 addresses). Application Load Balancer authentication supports IPv4 addresses only when connecting to an Identity Provider (IdP) or Amazon Cognito endpoint. Without a public IPv4 address the load balancer can't complete the authentication process, resulting in HTTP 500 errors. [Network Load Balancers and Gateway Load Balancers] The possible values are ``ipv4`` (IPv4 addresses) and ``dualstack`` (IPv4 and IPv6 addresses).")
                 .with_provider_name("IpAddressType")
             .build()
@@ -134,7 +134,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_name_attribute());
     #[inline(never)]
     fn build_scheme_attribute() -> AttributeSchema {
-        AttributeSchema::optional("scheme", AttributeType::enum_(carina_core::schema::enum_identity("Scheme", Some("aws.elasticloadbalancingv2.LoadBalancer")), Some(vec!["internet-facing".to_string(), "internal".to_string()]), vec![("internet-facing".to_string(), "internet_facing".to_string()), ("internal".to_string(), "internal".to_string())], None, None))
+        AttributeSchema::optional("scheme", AttributeType::enum_(crate::schemas::namespace::awscc_identity("Scheme", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.LoadBalancer").expect("valid AWSCC namespace")).expect("valid AWSCC identity").into_core(), Some(vec!["internet-facing".to_string(), "internal".to_string()]), vec![("internet-facing".to_string(), "internet_facing".to_string()), ("internal".to_string(), "internal".to_string())], None, None))
                 .create_only()
                 .with_description("The nodes of an Internet-facing load balancer have public IP addresses. The DNS name of an Internet-facing load balancer is publicly resolvable to the public IP addresses of the nodes. Therefore, Internet-facing load balancers can route requests from clients over the internet. The nodes of an internal load balancer have only private IP addresses. The DNS name of an internal load balancer is publicly resolvable to the private IP addresses of the nodes. Therefore, internal load balancers can route requests only from clients with access to the VPC for the load balancer. The default is an Internet-facing load balancer. You can't specify a scheme for a Gateway Load Balancer.")
                 .with_provider_name("Scheme")
@@ -181,7 +181,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_type_attribute() -> AttributeSchema {
-        AttributeSchema::optional("type", AttributeType::enum_(carina_core::schema::enum_identity("Type", Some("aws.elasticloadbalancingv2.LoadBalancer")), Some(vec!["application".to_string(), "network".to_string(), "gateway".to_string()]), vec![("application".to_string(), "application".to_string()), ("network".to_string(), "network".to_string()), ("gateway".to_string(), "gateway".to_string())], None, None))
+        AttributeSchema::optional("type", AttributeType::enum_(crate::schemas::namespace::awscc_identity("Type", &crate::schemas::namespace::AwsccNamespace::new("elasticloadbalancingv2.LoadBalancer").expect("valid AWSCC namespace")).expect("valid AWSCC identity").into_core(), Some(vec!["application".to_string(), "network".to_string(), "gateway".to_string()]), vec![("application".to_string(), "application".to_string()), ("network".to_string(), "network".to_string()), ("gateway".to_string(), "gateway".to_string())], None, None))
                 .create_only()
                 .with_description("The type of load balancer. The default is ``application``.")
                 .with_provider_name("Type")

@@ -7,7 +7,7 @@ use carina_core::schema::StringIdentityParts;
 fn arn_identity_is_provider_scoped() {
     common::assert_arn_identity(
         carina_provider_awscc::schemas::generated::iam::oidc_provider::arn(),
-        "aws.iam.OidcProvider.Arn",
+        "awscc.iam.OidcProvider.Arn",
     );
 }
 

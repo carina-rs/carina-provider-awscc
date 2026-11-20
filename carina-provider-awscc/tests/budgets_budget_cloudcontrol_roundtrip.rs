@@ -39,7 +39,7 @@ fn string(value: &str) -> Value {
 
 fn enum_value(wire: &str) -> Value {
     Value::Concrete(ConcreteValue::enum_identifier(
-        carina_aws_types::dsl_enum_value(wire),
+        carina_provider_awscc::schemas::type_helpers::dsl_enum_value(wire),
     ))
 }
 

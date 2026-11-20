@@ -12,7 +12,7 @@ Specifies a virtual private gateway. A virtual private gateway is the endpoint o
 
 ```crn
 awscc.ec2.VpnGateway {
-  type = aws.ec2.VpnGateway.Type.ipsec_1
+  type = awscc.ec2.VpnGateway.Type.ipsec_1
 
   tags = {
     Environment = 'example'
@@ -51,7 +51,7 @@ The type of VPN connection the virtual private gateway supports.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ipsec.1` | `aws.ec2.VpnGateway.Type.ipsec_1` |
+| `ipsec.1` | `awscc.ec2.VpnGateway.Type.ipsec_1` |
 
 Shorthand formats: `ipsec_1` or `Type.ipsec_1`
 
@@ -68,7 +68,7 @@ Shorthand formats: `ipsec_1` or `Type.ipsec_1`
 
 ### `vpn_gateway_id`
 
-- **Type:** `aws.ec2.VpnGateway.Id (pattern: /^vgw-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.VpnGateway.Id (pattern: /^vgw-[0-9a-f]{8,}$/ (Full))`
 
 
 

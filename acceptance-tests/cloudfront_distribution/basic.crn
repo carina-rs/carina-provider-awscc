@@ -6,7 +6,7 @@
 # This fixture has a custom run.sh because deploy/delete commonly takes 5-15 minutes.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 let distribution = awscc.cloudfront.Distribution {

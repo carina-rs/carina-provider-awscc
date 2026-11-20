@@ -3,7 +3,7 @@
 # Tests: public hosted zone name, config, and hosted zone tags.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 awscc.route53.HostedZone {

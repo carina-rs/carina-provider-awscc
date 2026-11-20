@@ -10,9 +10,9 @@ let execution_role = awscc.iam.Role {
   role_name = 'carina-example-execution-role'
 
   assume_role_policy_document = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+      effect = awscc.iam.PolicyDocument.Statement.Effect.allow
 
       principal = {
         service = 'lambda.amazonaws.com'
@@ -32,9 +32,9 @@ awscc.iam.RolePolicy {
   role_name   = execution_role.role_name
 
   policy_document = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      effect   = awscc.iam.PolicyDocument.Statement.Effect.allow
       action   = 's3:ListAllMyBuckets'
       resource = '*'
     }

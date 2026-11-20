@@ -70,7 +70,7 @@ async fn flow_log_integer_validator_dispatches_through_the_wasm_guest() {
             (
                 "resource_type".to_string(),
                 Value::Concrete(ConcreteValue::enum_identifier(
-                    "aws.ec2.FlowLog.ResourceType.vpc",
+                    "awscc.ec2.FlowLog.ResourceType.vpc",
                 )),
             ),
         ]);

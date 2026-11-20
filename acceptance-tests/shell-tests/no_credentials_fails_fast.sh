@@ -51,7 +51,7 @@ cat > "$CASE_DIR/main.crn" <<EOF
 provider awscc {
   source = "file://$AWSCC_WASM"
   version = "$PROVIDER_VERSION"
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 awscc.ec2.Vpc {

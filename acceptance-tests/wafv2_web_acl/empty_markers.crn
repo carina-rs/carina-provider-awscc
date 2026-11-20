@@ -4,7 +4,7 @@
 # only valid value is an empty struct.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 awscc.wafv2.WebAcl {

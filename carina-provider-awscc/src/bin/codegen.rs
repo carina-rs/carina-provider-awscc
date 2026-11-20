@@ -13,13 +13,14 @@
 //!   carina-codegen --file schema.json --type-name AWS::EC2::VPC
 
 use anyhow::{Context, Result};
-use carina_aws_types::dsl_enum_value;
 use carina_core::schema::AttributeType;
 use carina_core::schema::{ListElements, PatternMatch, PatternSpec};
 use carina_docgen::example::{self, DocExample, ExampleKind};
 use carina_docgen::{Heading, PageBuilder, TableCell};
 use carina_provider_awscc::schemas::catalog::AwsccType;
+use carina_provider_awscc::schemas::namespace::{AwsccNamespace, awscc_identity};
 use carina_provider_awscc::schemas::pattern::{ApprovedPattern, SUBSTRING_PATTERN_EXCEPTIONS};
+use carina_provider_awscc::schemas::type_helpers::dsl_enum_value;
 use clap::{Parser, ValueEnum};
 use heck::{ToPascalCase, ToSnakeCase};
 use regex::Regex;
@@ -469,33 +470,14 @@ fn is_resource_identity(
     resource: &str,
     kind: &str,
 ) -> bool {
-    identity.provider.as_deref() == Some("aws")
+    identity.provider.as_deref()
+        == Some(carina_provider_awscc::schemas::namespace::AWSCC_PROVIDER_NAME)
         && identity.kind == kind
-        && matches!(
-            identity.segments.as_slice(),
-            [identity_service, identity_resource]
-                if identity_service == service && identity_resource == resource
-        )
+        && matches!(identity.segments.as_slice(), [s, r] if s == service && r == resource)
 }
 
 fn catalog_knows_arn_service(service: &str) -> bool {
-    AwsccType::ALL
-        .iter()
-        .copied()
-        .map(AwsccType::identity)
-        .chain(
-            carina_aws_types::AwsType::ALL
-                .iter()
-                .copied()
-                .map(carina_aws_types::AwsType::identity),
-        )
-        .any(|identity| {
-            identity.kind == "Arn"
-                && identity
-                    .segments
-                    .first()
-                    .is_some_and(|known| known == service)
-        })
+    carina_provider_awscc::schemas::catalog::known_arn_services().contains(service)
 }
 
 fn arn_identity(service: &str, resource: &str) -> Result<StringIdentity> {
@@ -523,7 +505,7 @@ fn arn_identity(service: &str, resource: &str) -> Result<StringIdentity> {
     }
     if catalog_knows_arn_service(service) {
         anyhow::bail!(
-            "AWS service {service:?} is cataloged, but resource {resource:?} has no Arn row; add it to AwsType or AwsccType"
+            "AWS service {service:?} is cataloged, but resource {resource:?} has no Arn row; add it to the AWSCC catalog"
         );
     }
     Ok(StringIdentity::Arn)
@@ -978,7 +960,7 @@ impl TagMapType {
         self,
         cfn_type: &str,
         path: CfnPropertyPath<'_>,
-        namespace: &str,
+        namespace: &AwsccNamespace,
         structural: &[String],
     ) -> Result<(EmittedType, Option<EnumInfo>)> {
         let info = key_enum_info(&self.key).cloned();
@@ -2909,33 +2891,36 @@ fn extend_struct_path(struct_path: &[String], struct_name: &str) -> Vec<String> 
     extended
 }
 
-fn namespace_with_struct_path(namespace: &str, struct_path: &[String]) -> String {
+fn namespace_with_struct_path(
+    namespace: &AwsccNamespace,
+    struct_path: &[String],
+) -> Result<AwsccNamespace> {
     if struct_path.is_empty() {
-        namespace.to_string()
+        Ok(namespace.clone())
     } else {
-        format!("{}.{}", namespace, struct_path.join("."))
+        Ok(namespace.child(&struct_path.join("."))?)
     }
 }
 
 fn property_enum_identity(
     cfn_type: &str,
     path: CfnPropertyPath<'_>,
-    namespace: &str,
+    namespace: &AwsccNamespace,
     struct_path: &[String],
     info: &EnumInfo,
-) -> (String, String) {
+) -> Result<(String, AwsccNamespace)> {
     // #588 owns this enum at resource scope, retaining the documented acronym
     // instead of deriving Vpc.VpcRegion from its enclosing VPC definition.
     // Keep schema emission and Markdown enum references on the same identity.
     if cfn_type == "AWS::Route53::HostedZone"
         && path == CfnPropertyPath::new(Some("VPC"), "VPCRegion")
     {
-        ("VPCRegion".to_string(), namespace.to_string())
+        Ok(("VPCRegion".to_string(), namespace.clone()))
     } else {
-        (
+        Ok((
             info.type_name.clone(),
-            namespace_with_struct_path(namespace, struct_path),
-        )
+            namespace_with_struct_path(namespace, struct_path)?,
+        ))
     }
 }
 
@@ -3145,7 +3130,7 @@ fn source_list_has_struct(prop: &SchemaProperty, schema: &CfnSchema) -> QueryRes
 }
 
 fn uses_core_schema_types_path(s: &str) -> bool {
-    // Paths such as `carina_aws_types::vpc_id()` already carry their namespace.
+    // Paths such as `crate::schemas::catalog::vpc_id()` already carry their namespace.
     s.match_indices("types::").any(|(index, _)| {
         s[..index]
             .chars()
@@ -3811,7 +3796,7 @@ fn write_map_requirement_notes(
 /// that survives overrides and records its emitted read-only fields.
 fn generate_top_level_attribute_type(
     classified: EmissionProperty<'_>,
-    namespace: &str,
+    namespace: &AwsccNamespace,
     enums: &BTreeMap<String, EnumInfo>,
 ) -> Result<EmittedType> {
     let property_path = classified.path();
@@ -3832,7 +3817,7 @@ fn generate_top_level_attribute_type(
 /// IntRange, IntEnum, and ToDsl) must not face a second variant allowlist here.
 fn generate_attribute_type(
     classified: EmissionProperty<'_>,
-    namespace: &str,
+    namespace: &AwsccNamespace,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
 ) -> Result<EmittedType> {
@@ -3847,7 +3832,7 @@ fn generate_attribute_type(
 
 fn generate_attribute_type_inner(
     classified: EmissionProperty<'_>,
-    namespace: &str,
+    namespace: &AwsccNamespace,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
 ) -> Result<EmittedType> {
@@ -4031,8 +4016,8 @@ fn emit_resource(
     let resource = parts[2].to_snake_case();
     let full_resource = full_resource_name_from_type(type_name)?;
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
-    // Namespace for AWS type identities: aws.ec2.Vpc
-    let namespace = format!("aws.{}", dsl_resource);
+    // AWSCC owns the provider prefix; codegen passes service/resource segments.
+    let namespace = AwsccNamespace::new(&dsl_resource)?;
     let arn_helper = match resource_identity_parts(&dsl_resource) {
         Some((service, resource))
             if schema.properties.contains_key("Arn")
@@ -5540,7 +5525,7 @@ fn emit_map_key(
     key: StringLeaf<'_>,
     cfn_type: &str,
     path: CfnPropertyPath<'_>,
-    namespace: &str,
+    namespace: &AwsccNamespace,
     structural: &[String],
     source: type_emission::SourceNotes<'_>,
 ) -> Result<EmittedType> {
@@ -5558,7 +5543,7 @@ fn string_enum_type(
     literal: &emission_plan::LiteralPlan,
     cfn_type: &str,
     path: CfnPropertyPath<'_>,
-    namespace: &str,
+    namespace: &AwsccNamespace,
     structural: &[String],
     info: &EnumInfo,
 ) -> Result<EmittedType> {
@@ -5575,23 +5560,33 @@ fn string_enum_type(
         .collect::<std::result::Result<Vec<_>, _>>()?;
     let aliases = known_enum_aliases();
     let dsl_aliases = dsl_aliases_code(&info.values, aliases.get(path.property));
-    let (kind, namespace) = property_enum_identity(cfn_type, path, namespace, structural, info);
+    let (kind, namespace) = property_enum_identity(cfn_type, path, namespace, structural, info)?;
     let values_code = values
         .iter()
         .map(|value| format!("{}.to_string()", rust_lit(value)))
         .collect::<Vec<_>>()
         .join(", ");
+    // The namespace was validated above. Generated declarations contain only
+    // these fixed literals; authoring/codegen failures have already propagated.
+    let namespace_code = if namespace.segments().is_empty() {
+        "crate::schemas::namespace::AwsccNamespace::root()".to_string()
+    } else {
+        format!(
+            "crate::schemas::namespace::AwsccNamespace::new({}).expect(\"valid AWSCC namespace\")",
+            rust_lit(namespace.segments()),
+        )
+    };
     let rust = format!(
-        "AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), Some(vec![{}]), {}, None, None)",
+        "AttributeType::enum_(crate::schemas::namespace::awscc_identity({}, &{}).expect(\"valid AWSCC identity\").into_core(), Some(vec![{}]), {}, None, None)",
         rust_lit(&kind),
-        rust_lit(&namespace),
+        namespace_code,
         values_code,
         dsl_aliases,
     );
     Ok(EmittedType::new(
         rust,
         AttributeType::enum_(
-            carina_core::schema::enum_identity(&kind, Some(&namespace)),
+            awscc_identity(&kind, &namespace)?.into_core(),
             Some(values.iter().map(|value| (*value).to_string()).collect()),
             dsl_aliases_values(&info.values, aliases.get(path.property)),
             None,
@@ -5644,7 +5639,7 @@ fn generate_struct_type(
     def_name: &str,
     projection: &Projection,
     schema: &EmissionContext<'_>,
-    namespace: &str,
+    namespace: &AwsccNamespace,
     enums: &BTreeMap<String, EnumInfo>,
     paths: StructGenerationPaths<'_>,
 ) -> Result<EmittedType> {
@@ -6518,7 +6513,10 @@ impl StringLeaf<'_> {
             } => (string_identity::emit_type(identity, &constraints), None),
             Self::Enum(leaf) => leaf.emit(cfn_type, prop_name),
             Self::Reference(kind) => (
-                EmittedType::new(kind.constructor(), carina_aws_types::kms_key_reference()),
+                EmittedType::new(
+                    kind.constructor(),
+                    carina_provider_awscc::schemas::catalog::kms_key_reference(),
+                ),
                 None,
             ),
             Self::Inferred { rust_type } => (rust_type, None),
@@ -6823,7 +6821,8 @@ fn catalog_int_enum_for_property(
 ) -> Option<(&'static str, &'static [i64], AttributeType)> {
     let dsl_resource = dsl_resource_name_from_type(resource_type).ok()?;
     let (service, resource) = resource_identity_parts(&dsl_resource)?;
-    let retention = carina_aws_types::AwsType::LogsLogGroupRetentionInDays;
+    let retention =
+        carina_provider_awscc::schemas::catalog::ScalarType::LogsLogGroupRetentionInDays;
     AwsccType::ALL
         .iter()
         .filter_map(|row| {
@@ -6840,10 +6839,6 @@ fn catalog_int_enum_for_property(
         // not silently replace an anonymous, evidence-bearing integer subset.
         // Keep the scalar union for those domains (for example IPv6 masks).
         .chain(retention.allowed_int_values().map(|values| {
-            #[expect(
-                clippy::disallowed_methods,
-                reason = "This fixed integer retention row carries no partition-bearing ARN (#593)"
-            )]
             let ty = retention.attribute_type();
             (
                 retention.identity(),
@@ -7273,7 +7268,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             TypeOverride::identity(Some(StringIdentity::IamRoleId)),
         );
         // RoleName: 1..=64 ASCII alphanumeric characters or _+=,.@-.
-        // The producer and consumer share aws.iam.Role.Name, including read-back.
+        // The producer and consumer use awscc.iam.Role.Name, including read-back.
         // https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html#API_CreateRole_RequestParameters
         // https://docs.aws.amazon.com/IAM/latest/APIReference/API_PutRolePolicy.html#API_PutRolePolicy_RequestParameters
         for cfn_type in ["AWS::IAM::Role", "AWS::IAM::RolePolicy"] {
@@ -7290,7 +7285,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             );
         }
         // PolicyName: 1..=128 ASCII alphanumeric characters or _+=,.@-.
-        // Both standalone and inline policies use shared aws.iam.Policy.Name.
+        // Both standalone and inline policies use awscc.iam.Policy.Name.
         // https://docs.aws.amazon.com/IAM/latest/APIReference/API_PutRolePolicy.html#API_PutRolePolicy_RequestParameters
         for key in [
             ("AWS::IAM::RolePolicy", "PolicyName"),
@@ -7481,7 +7476,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         );
 
         // Organizations Account email: core validation plus 6..=64 characters, as an
-        // AWSCC refinement of AwsType::OrganizationsAccountEmail. Creation-only rules are not
+        // AWSCC OrganizationsAccountEmail grammar. Creation-only rules are not
         // applied to historical read values.
         // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-Email
         m.insert_evidenced(
@@ -7861,7 +7856,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         );
         // Copy the 45 VPCRegion values verbatim, in documentation order. This
         // belongs to HostedZone's VPC definition, reached through VPCs items,
-        // rather than the shared aws.Region domain (awscc#588 / #572).
+        // rather than the provider-wide awscc.Region domain (awscc#588 / #572).
         // The normal closed enum retains ap_northeast_1; quoted API strings
         // and the old Region / aws.Region qualifiers require DSL migration.
         // https://docs.aws.amazon.com/Route53/latest/APIReference/API_VPC.html
@@ -8791,7 +8786,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         );
         // SignatureVersion defaults to "1" (SHA1); "2" selects SHA256.
         // Like IAM PolicyDocument.Version, numeric DSL values require the
-        // fully qualified form, e.g. aws.sns.Topic.SignatureVersion.2.
+        // fully qualified form, e.g. awscc.sns.Topic.SignatureVersion.2.
         // Bare 1/2 parse as integers; no enum aliases are needed (carina#3051).
         // https://docs.aws.amazon.com/sns/latest/api/API_SetTopicAttributes.html
         // https://docs.aws.amazon.com/sns/latest/dg/sns-verify-signature-of-message-configure-message-signature.html
@@ -9372,8 +9367,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 default: None,
             },
         );
-        // Reuse shared ELBv2 String domains. HealthCheckPort stays anonymous;
-        // matcher identities are aws.elasticloadbalancingv2.TargetGroup.{HttpCode,GrpcCode}.
+        // Reuse AWSCC's ELBv2 String domains. HealthCheckPort stays anonymous;
+        // matcher identities are awscc.elasticloadbalancingv2.TargetGroup.{HttpCode,GrpcCode}.
         // HTTP spans 200..=599 and gRPC 0..=99; protocol-specific restrictions
         // remain cross-field. Matcher items allow N, comma lists and N-N ranges.
         // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_CreateTargetGroup.html
@@ -9408,7 +9403,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // ELBv2 fixed-response status codes are constrained to ^(2|4|5)\d{2}$.
         // The CFN schema leaves them as plain strings; CloudControl only catches
         // bad values at apply-time. http_response_status_code is a carina-core
-        // built-in (TypeIdentity::bare("HttpResponseStatusCode")).
+        // built-in with the provider-less HttpResponseStatusCode identity.
         m.insert(
             (
                 "AWS::ElasticLoadBalancingV2::Listener",
@@ -10740,7 +10735,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert_evidenced(
             ("AWS::Logs::LogGroup", "RetentionInDays"),
             NarrowingKind::IntEnum(
-                carina_aws_types::AwsType::LogsLogGroupRetentionInDays
+                carina_provider_awscc::schemas::catalog::ScalarType::LogsLogGroupRetentionInDays
                     .allowed_int_values()
                     .unwrap()
                     .to_vec(),
@@ -11308,7 +11303,7 @@ fn classify_resource_id(prop_name: &str, resource_type: Option<&str>) -> Resourc
 }
 
 /// Get the specific resource ID type function for a property name.
-/// Returns the function name (e.g., "carina_aws_types::vpc_id()") or generic aws_resource_id.
+/// Returns the function name (e.g., "crate::schemas::catalog::vpc_id()") or generic aws_resource_id.
 ///
 /// `resource_type` is the CloudFormation type name of the enclosing resource; see
 /// `classify_resource_id`.
@@ -11535,7 +11530,7 @@ fn cfn_type_to_carina_type_with_enum(
     prop: &SchemaProperty,
     prop_name: &str,
     schema: &EmissionContext<'_>,
-    namespace: &str,
+    namespace: &AwsccNamespace,
     enums: &BTreeMap<String, EnumInfo>,
 ) -> Result<(EmittedType, Option<EnumInfo>)> {
     let property_path = [prop_name.to_string()];
@@ -11661,7 +11656,7 @@ fn generate_object_map_type(
     value: &SchemaProperty,
     prop_name: &str,
     schema: &EmissionContext<'_>,
-    namespace: &str,
+    namespace: &AwsccNamespace,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
 ) -> Result<(EmittedType, Option<EnumInfo>)> {
@@ -11743,7 +11738,7 @@ fn generate_object_map_type(
 fn cfn_type_to_carina_type_with_enum_with_paths(
     prop: &SchemaProperty,
     schema: &EmissionContext<'_>,
-    namespace: &str,
+    namespace: &AwsccNamespace,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
 ) -> Result<(EmittedType, Option<EnumInfo>)> {
@@ -11762,7 +11757,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
 fn cfn_type_to_carina_type_with_enum_with_paths_unnoted(
     prop: &SchemaProperty,
     schema: &EmissionContext<'_>,
-    namespace: &str,
+    namespace: &AwsccNamespace,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
 ) -> Result<(EmittedType, Option<EnumInfo>)> {
@@ -11792,7 +11787,7 @@ struct RefGenerationState<'a> {
 
 fn cfn_type_to_carina_type_with_enum_resolved(
     classified: EmissionProperty<'_>,
-    namespace: &str,
+    namespace: &AwsccNamespace,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
     ref_state: RefGenerationState<'_>,
@@ -11810,7 +11805,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
 
 fn cfn_type_to_carina_type_with_enum_resolved_inner(
     classified: EmissionProperty<'_>,
-    namespace: &str,
+    namespace: &AwsccNamespace,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
     ref_state: RefGenerationState<'_>,
@@ -12529,7 +12524,7 @@ mod tests {
         prop: &CfnProperty,
         prop_name: &str,
         schema: &ParsedCfnSchema,
-        namespace: &str,
+        namespace: &AwsccNamespace,
         enums: &BTreeMap<String, EnumInfo>,
     ) -> (String, Option<EnumInfo>) {
         let property = fixture_property(schema, prop_name, prop);
@@ -12544,7 +12539,7 @@ mod tests {
         prop: &CfnProperty,
         prop_name: &str,
         schema: &ParsedCfnSchema,
-        namespace: &str,
+        namespace: &AwsccNamespace,
         enums: &BTreeMap<String, EnumInfo>,
         paths: CfnTypeGenerationPaths<'_>,
     ) -> (String, Option<EnumInfo>) {
@@ -12575,7 +12570,7 @@ mod tests {
         prop_name: &str,
         prop: &CfnProperty,
         schema: &ParsedCfnSchema,
-        namespace: &str,
+        namespace: &AwsccNamespace,
         enums: &BTreeMap<String, EnumInfo>,
     ) -> String {
         let property = fixture_property(schema, prop_name, prop);
@@ -12685,7 +12680,7 @@ mod tests {
     ) -> Result<String> {
         reset_recursion_guard();
         let resource = dsl_resource_name_from_type(&schema.type_name)?;
-        let namespace = format!("aws.{resource}");
+        let namespace = AwsccNamespace::new(&resource)?;
         let mut enums = BTreeMap::new();
         if path.parent.is_none() {
             let (_, info) = super::cfn_type_to_carina_type_with_enum(
@@ -12839,7 +12834,7 @@ mod tests {
             prop,
             name,
             schema,
-            "aws.test.Resource",
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
             CfnTypeGenerationPaths {
                 structural: &[],
@@ -13312,7 +13307,7 @@ mod tests {
                     &schema.properties[name],
                     name,
                     &schema,
-                    "aws.test.Resource",
+                    &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                     &BTreeMap::new(),
                 );
                 assert!(enum_info.is_some(), "{kind}: {code}");
@@ -13381,7 +13376,8 @@ mod tests {
                                 &prop,
                                 "ConnectivityType",
                                 &context,
-                                "aws.test.Resource",
+                                &AwsccNamespace::new("test.Resource")
+                                    .expect("valid AWSCC namespace"),
                                 &BTreeMap::new(),
                             )
                             .map(|value| value.0.rust),
@@ -13404,7 +13400,7 @@ mod tests {
                         prop,
                         "ConnectivityType",
                         &schema,
-                        "aws.test.Resource",
+                        &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                         &BTreeMap::new(),
                     );
                     if !has_literal && property_type != "string" {
@@ -13580,7 +13576,8 @@ mod tests {
                                 prop,
                                 name,
                                 &schema,
-                                "aws.test.Resource",
+                                &AwsccNamespace::new("test.Resource")
+                                    .expect("valid AWSCC namespace"),
                                 &BTreeMap::new(),
                             );
                             Ok(String::new())
@@ -13598,7 +13595,7 @@ mod tests {
                     prop,
                     name,
                     &schema,
-                    "aws.test.Resource",
+                    &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                     &BTreeMap::new(),
                 );
                 assert_eq!(code, expected_type, "{cfn_type}.{name}: {property:?}");
@@ -13881,12 +13878,11 @@ mod tests {
         }
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let field = generated_budgets_field(&generated, "VPC.VPCRegion");
-        assert!(field.starts_with("AttributeType::enum_(carina_core::schema::enum_identity(\"VPCRegion\", Some(\"aws.route53.HostedZone\"))"));
-        assert!(!generated.contains("carina_aws_types::aws_region()"));
+        assert!(field.starts_with("AttributeType::enum_(crate::schemas::namespace::awscc_identity(\"VPCRegion\", &crate::schemas::namespace::AwsccNamespace::new(\"route53.HostedZone\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()"));
         assert!(
             generate_test_markdown(&schema, &schema.type_name)
                 .unwrap()
-                .contains("aws.route53.HostedZone.VPCRegion.us_isob_east_1")
+                .contains("awscc.route53.HostedZone.VPCRegion.us_isob_east_1")
         );
     }
 
@@ -14420,7 +14416,7 @@ mod tests {
                 &labels,
                 "Labels",
                 &schema,
-                "aws.test.Resource",
+                &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                 &BTreeMap::new(),
             )
             .0,
@@ -14436,7 +14432,7 @@ mod tests {
             &misleading_tag_alias,
             "Pair",
             &schema,
-            "aws.test.Resource",
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         )
         .0;
@@ -14834,7 +14830,7 @@ mod tests {
             &marker,
             "Marker",
             &schema,
-            "aws.test.AcronymPath",
+            &AwsccNamespace::new("test.AcronymPath").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
             CfnTypeGenerationPaths {
                 structural: &["SseSpecification".to_string()],
@@ -15779,9 +15775,12 @@ mod tests {
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         let namespace =
-            "aws.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination";
-        let expected = format!("enum_identity(\"Format\", Some(\"{namespace}\"))");
-        let identities = Regex::new(r#"enum_identity\("Format", Some\("[^"]+"\)\)"#).unwrap();
+            "awscc.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination";
+        let expected = format!(
+            "awscc_identity(\"Format\", &crate::schemas::namespace::AwsccNamespace::new({}).expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()",
+            rust_lit(namespace.strip_prefix("awscc.").unwrap())
+        );
+        let identities = Regex::new(r#"awscc_identity\("Format", &crate::schemas::namespace::AwsccNamespace::new\("[^"]+"\)\.expect\("valid AWSCC namespace"\)\)\.expect\("valid AWSCC identity"\)\.into_core\(\)"#).unwrap();
         let emitted: Vec<_> = identities.find_iter(&generated).collect();
         assert!(!emitted.is_empty());
         for identity in emitted {
@@ -15819,7 +15818,7 @@ mod tests {
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         for parent in ["Left", "Right"] {
             assert!(generated.contains(&format!(
-                "enum_identity(\"Mode\", Some(\"aws.ec2.Route.{parent}.Entry\"))"
+                "crate::schemas::namespace::awscc_identity(\"Mode\", &crate::schemas::namespace::AwsccNamespace::new(\"ec2.Route.{parent}.Entry\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()"
             )));
         }
         assert!(!collect_definition_identity_paths(&schema).contains_key("Entry"));
@@ -16186,7 +16185,7 @@ mod tests {
                 assert_all_generated_struct_fields(
                     code,
                     "S3BucketSource.S3BucketOwner",
-                    "carina_aws_types::aws_account_id()",
+                    "crate::schemas::catalog::aws_account_id()",
                 );
             }
         }
@@ -16694,12 +16693,12 @@ mod tests {
         }
         assert!(
             generated_sns_field(&generated, "SignatureVersion")
-                .contains("enum_identity(\"SignatureVersion\", Some(\"aws.sns.Topic\"))")
+                .contains("crate::schemas::namespace::awscc_identity(\"SignatureVersion\", &crate::schemas::namespace::AwsccNamespace::new(\"sns.Topic\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()")
         );
         for value in ["1", "2"] {
             assert_eq!(dsl_enum_value(value), value);
             assert!(markdown.contains(&format!(
-                "| `{value}` | `aws.sns.Topic.SignatureVersion.{value}` |"
+                "| `{value}` | `awscc.sns.Topic.SignatureVersion.{value}` |"
             )));
         }
         assert!(!markdown.contains("Shorthand formats: `1`"));
@@ -16723,7 +16722,7 @@ mod tests {
             &schema.properties["Subscription"],
             "Subscription",
             &schema,
-            "aws.sns.Topic",
+            &AwsccNamespace::new("sns.Topic").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         let field = generated_sns_field(&generated, "Subscription.Protocol");
@@ -17126,8 +17125,9 @@ mod tests {
                 }
             }
             assert!(
-                generated_cloudwatch_field(&generated, "MetricDataQuery.AccountId")
-                    .starts_with(&expected_type_prefix("carina_aws_types::aws_account_id()"))
+                generated_cloudwatch_field(&generated, "MetricDataQuery.AccountId").starts_with(
+                    &expected_type_prefix("crate::schemas::catalog::aws_account_id()")
+                )
             );
             assert!(
                 generated_cloudwatch_field(&generated, "MetricDataQuery.Label")
@@ -18055,11 +18055,11 @@ mod tests {
         for (constructor, _identity) in [
             (
                 "wafv2_byte_match_search_string",
-                "aws.wafv2.WebACL.ByteMatchSearchString",
+                "awscc.wafv2.WebACL.ByteMatchSearchString",
             ),
             (
                 "wafv2_byte_match_search_string_base64",
-                "aws.wafv2.WebACL.ByteMatchSearchStringBase64",
+                "awscc.wafv2.WebACL.ByteMatchSearchStringBase64",
             ),
         ] {
             assert!(generated.contains(&expected_type_prefix(&format!(
@@ -18621,11 +18621,14 @@ mod tests {
             ] {
                 // The partial-schema helper emits Rust under EC2.Route, while
                 // Markdown keeps the fixture's source resource identity.
-                let namespace = format!("aws.ec2.Route{suffix}");
+                let namespace = format!("ec2.Route{suffix}");
                 assert!(generated.contains(&format!(
-                    "(\"{property}\", AttributeType::map_with_key(AttributeType::enum_(carina_core::schema::enum_identity(\"{kind}\", Some(\"{namespace}\"))"
+                    "({property}, AttributeType::map_with_key(AttributeType::enum_(crate::schemas::namespace::awscc_identity({kind}, &crate::schemas::namespace::AwsccNamespace::new({namespace}).expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()",
+                    property = rust_lit(property),
+                    kind = rust_lit(kind),
+                    namespace = rust_lit(&namespace),
                 )), "key enum must preserve its property's identity: {generated}");
-                let namespace = format!("aws.test.PatternMapKeys{suffix}");
+                let namespace = format!("awscc.test.PatternMapKeys{suffix}");
                 for (wire, dsl) in [("ALPHA", "alpha"), ("BETA_2", "beta_2"), ("C3", "c3")] {
                     assert!(
                         markdown.contains(&format!("| `{wire}` | `{namespace}.{kind}.{dsl}` |")),
@@ -18636,9 +18639,9 @@ mod tests {
             assert!(markdown.contains("Map\\<[Entries]"), "{markdown}");
             assert!(markdown.contains("Map\\<[NestedKeys]"), "{markdown}");
             assert!(markdown.contains("Map\\<[Tags]"), "{markdown}");
-            assert!(generated.contains("\"array_keys\", AttributeType::refined_list(AttributeType::map_with_key(AttributeType::enum_(carina_core::schema::enum_identity(\"ArrayKeys\", Some(\"aws.ec2.Route\"))"), "{generated}");
+            assert!(generated.contains("\"array_keys\", AttributeType::refined_list(AttributeType::map_with_key(AttributeType::enum_(crate::schemas::namespace::awscc_identity(\"ArrayKeys\", &crate::schemas::namespace::AwsccNamespace::new(\"ec2.Route\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()"), "{generated}");
             assert!(markdown.contains("List\\<Map\\<[ArrayKeys]"), "{markdown}");
-            assert!(markdown.contains("`aws.test.PatternMapKeys.ArrayKeys.alpha`"));
+            assert!(markdown.contains("`awscc.test.PatternMapKeys.ArrayKeys.alpha`"));
             assert_eq!(
                 generated.contains("NEW_GATEWAY"),
                 pattern.contains("NEW_GATEWAY")
@@ -18831,7 +18834,7 @@ mod tests {
             property,
             "CustomResponseBodies",
             &schema,
-            "aws.test.TypedStructMap",
+            &AwsccNamespace::new("test.TypedStructMap").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(enum_info.is_none());
@@ -18880,7 +18883,7 @@ mod tests {
             &property,
             "UnsupportedMap",
             &schema,
-            "aws.test.UnsupportedObjectMap",
+            &AwsccNamespace::new("test.UnsupportedObjectMap").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
     }
@@ -19562,7 +19565,7 @@ mod tests {
                     ("PriceClass_All", "price_class_all"),
                     ("None", "none"),
                 ][..],
-                "aws.cloudfront.Distribution.DistributionConfig.PriceClass",
+                "awscc.cloudfront.Distribution.DistributionConfig.PriceClass",
             ),
             (
                 "ViewerCertificate.MinimumProtocolVersion",
@@ -19577,7 +19580,7 @@ mod tests {
                     ("TLSv1.3_2025", "tlsv1_3_2025"),
                     ("TLSv1.2_2025", "tlsv1_2_2025"),
                 ][..],
-                "aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion",
+                "awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion",
             ),
         ] {
             let (parent, _) = key.split_once('.').unwrap();
@@ -19831,7 +19834,7 @@ mod tests {
             items,
             "Items",
             &schema,
-            "aws.test.ArrayReadOnly",
+            &AwsccNamespace::new("test.ArrayReadOnly").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(
@@ -21196,11 +21199,11 @@ mod tests {
         for (path, constructor) in [
             (
                 "Matcher.HttpCode",
-                "carina_aws_types::elbv2_target_group_http_code()",
+                "crate::schemas::catalog::elbv2_target_group_http_code()",
             ),
             (
                 "Matcher.GrpcCode",
-                "carina_aws_types::elbv2_target_group_grpc_code()",
+                "crate::schemas::catalog::elbv2_target_group_grpc_code()",
             ),
         ] {
             for section in [inline, definitions] {
@@ -21212,11 +21215,15 @@ mod tests {
             "### `health_check_port`\n".to_string(),
             format!(
                 "| `http_code` | {} |",
-                shared_type(carina_aws_types::elbv2_target_group_http_code())
+                shared_type(
+                    carina_provider_awscc::schemas::catalog::elbv2_target_group_http_code()
+                )
             ),
             format!(
                 "| `grpc_code` | {} |",
-                shared_type(carina_aws_types::elbv2_target_group_grpc_code())
+                shared_type(
+                    carina_provider_awscc::schemas::catalog::elbv2_target_group_grpc_code()
+                )
             ),
             "- **Type:** [Struct(Matcher)](#matcher-1)".to_string(),
         ] {
@@ -21401,8 +21408,13 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        let (_, enum_info) =
-            cfn_type_to_carina_type_with_enum(&prop, "IpProtocol", &schema, "", &BTreeMap::new());
+        let (_, enum_info) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "IpProtocol",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         assert!(
             enum_info.is_some(),
             "IpProtocol should produce EnumInfo via overrides"
@@ -21505,7 +21517,7 @@ mod tests {
             &prop,
             "MinimumProtocolVersion",
             &schema,
-            "",
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
             CfnTypeGenerationPaths {
                 structural: &[],
@@ -21622,8 +21634,13 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        let (type_str, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "CidrIp", &schema, "", &BTreeMap::new());
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "CidrIp",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         assert_eq!(
             type_str,
             "AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))",
@@ -21661,8 +21678,13 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        let (type_str, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "CidrIpv6", &schema, "", &BTreeMap::new());
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "CidrIpv6",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         assert_eq!(
             type_str,
             "AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv6Cidr.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))",
@@ -21704,7 +21726,7 @@ mod tests {
             &prop,
             "PrivateIpAddress",
             &schema,
-            "",
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -21744,8 +21766,13 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        let (type_str, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "PublicIp", &schema, "", &BTreeMap::new());
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "PublicIp",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         assert_eq!(
             type_str,
             "AttributeType::string_member(crate::schemas::string_identity::StringIdentity::Ipv4Address.identity_layer(), carina_core::schema::StringMemberConstraints::new(None, None))",
@@ -21787,7 +21814,7 @@ mod tests {
             &prop,
             "SecondaryPrivateIpAddressCount",
             &schema,
-            "",
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -21831,7 +21858,7 @@ mod tests {
             &prop,
             "AvailabilityZone",
             &schema,
-            "",
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -21851,7 +21878,7 @@ mod tests {
             &prop,
             "AvailabilityZoneId",
             &schema,
-            "",
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -22019,7 +22046,7 @@ mod tests {
             &prop,
             "Ipv4NetmaskLength",
             &schema,
-            "",
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert!(
@@ -22068,8 +22095,13 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        let (type_str, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "SomeCount", &schema, "", &BTreeMap::new());
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "SomeCount",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         assert_eq!(type_str, "AttributeType::int()");
     }
 
@@ -22103,8 +22135,13 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        let (type_str, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "SomeCount", &schema, "", &BTreeMap::new());
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "SomeCount",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         assert!(
             type_str.contains("AttributeType::refined_int("),
             "Integer with only minimum should produce refined Int type, got: {}",
@@ -22147,8 +22184,13 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        let (type_str, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "SomeCount", &schema, "", &BTreeMap::new());
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "SomeCount",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         assert!(
             type_str.contains("AttributeType::refined_int("),
             "Integer with only maximum should produce refined Int type, got: {}",
@@ -22163,9 +22205,10 @@ mod tests {
 
     #[test]
     fn test_selected_integer_enum_uses_identified_validator() {
-        let retention_values = carina_aws_types::AwsType::LogsLogGroupRetentionInDays
-            .allowed_int_values()
-            .unwrap();
+        let retention_values =
+            carina_provider_awscc::schemas::catalog::ScalarType::LogsLogGroupRetentionInDays
+                .allowed_int_values()
+                .unwrap();
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Single("integer".to_string())),
             description: Some("Retention in days.".to_string()),
@@ -22203,12 +22246,12 @@ mod tests {
             &prop,
             "RetentionInDays",
             &schema,
-            "",
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
             type_str,
-            "carina_aws_types::logs_log_group_retention_in_days()"
+            "crate::schemas::catalog::logs_log_group_retention_in_days()"
         );
 
         assert_eq!(
@@ -22456,7 +22499,7 @@ mod tests {
             &prop,
             "DefaultSecurityGroup",
             &schema,
-            "",
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -22502,8 +22545,13 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        let (type_str, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "FromPort", &schema, "", &BTreeMap::new());
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "FromPort",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         assert!(
             type_str.contains("Some((Some(-1), Some(65535)))"),
             "FromPort should carry override range, got: {}",
@@ -22595,8 +22643,13 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        let (type_str, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "FromPort", &schema, "", &BTreeMap::new());
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "FromPort",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         assert!(
             type_str.contains(
                 "Some((Some(carina_core::FiniteF64::new(0.0).expect(\"finite float range endpoint\")), Some(carina_core::FiniteF64::new(65535.0).expect(\"finite float range endpoint\"))))"
@@ -22615,7 +22668,7 @@ mod tests {
     fn test_get_resource_id_type_vpc_id() {
         assert_eq!(
             get_resource_id_type("VpcId", None),
-            "carina_aws_types::vpc_id()"
+            "crate::schemas::catalog::vpc_id()"
         );
     }
 
@@ -22623,7 +22676,7 @@ mod tests {
     fn test_get_resource_id_type_subnet_id() {
         assert_eq!(
             get_resource_id_type("SubnetId", None),
-            "carina_aws_types::subnet_id()"
+            "crate::schemas::catalog::subnet_id()"
         );
     }
 
@@ -22631,21 +22684,21 @@ mod tests {
     fn test_get_resource_id_type_security_group_id() {
         assert_eq!(
             get_resource_id_type("SecurityGroupId", None),
-            "carina_aws_types::security_group_id()"
+            "crate::schemas::catalog::security_group_id()"
         );
         assert_eq!(
             get_resource_id_type("DestinationSecurityGroupId", None),
-            "carina_aws_types::security_group_id()"
+            "crate::schemas::catalog::security_group_id()"
         );
         assert_eq!(
             get_resource_id_type("SourceSecurityGroupId", None),
-            "carina_aws_types::security_group_id()"
+            "crate::schemas::catalog::security_group_id()"
         );
         // Bare "GroupId" should NOT match SecurityGroupId without a resource-type hint
         // — it's too broad and catches non-EC2 identifiers.
         assert_eq!(
             get_resource_id_type("GroupId", None),
-            "carina_aws_types::aws_resource_id()"
+            "crate::schemas::catalog::aws_resource_id()"
         );
     }
 
@@ -22660,7 +22713,7 @@ mod tests {
         ] {
             assert_eq!(
                 get_resource_id_type("GroupId", Some(resource_type)),
-                "carina_aws_types::security_group_id()",
+                "crate::schemas::catalog::security_group_id()",
                 "GroupId on {resource_type} should be SecurityGroupId",
             );
         }
@@ -22670,7 +22723,7 @@ mod tests {
         // (e.g., identitystore false-positive from issue #128).
         assert_eq!(
             get_resource_id_type("GroupId", Some("AWS::IdentityStore::Group")),
-            "carina_aws_types::aws_resource_id()",
+            "crate::schemas::catalog::aws_resource_id()",
         );
     }
 
@@ -22678,7 +22731,7 @@ mod tests {
     fn test_get_resource_id_type_egress_only_internet_gateway_id() {
         assert_eq!(
             get_resource_id_type("EgressOnlyInternetGatewayId", None),
-            "carina_aws_types::egress_only_internet_gateway_id()"
+            "crate::schemas::catalog::egress_only_internet_gateway_id()"
         );
     }
 
@@ -22686,7 +22739,7 @@ mod tests {
     fn test_get_resource_id_type_internet_gateway_id() {
         assert_eq!(
             get_resource_id_type("InternetGatewayId", None),
-            "carina_aws_types::internet_gateway_id()"
+            "crate::schemas::catalog::internet_gateway_id()"
         );
     }
 
@@ -22694,7 +22747,7 @@ mod tests {
     fn test_get_resource_id_type_route_table_id() {
         assert_eq!(
             get_resource_id_type("RouteTableId", None),
-            "carina_aws_types::route_table_id()"
+            "crate::schemas::catalog::route_table_id()"
         );
     }
 
@@ -22702,7 +22755,7 @@ mod tests {
     fn test_get_resource_id_type_nat_gateway_id() {
         assert_eq!(
             get_resource_id_type("NatGatewayId", None),
-            "carina_aws_types::nat_gateway_id()"
+            "crate::schemas::catalog::nat_gateway_id()"
         );
     }
 
@@ -22710,7 +22763,7 @@ mod tests {
     fn test_get_resource_id_type_vpc_peering_connection_id() {
         assert_eq!(
             get_resource_id_type("VpcPeeringConnectionId", None),
-            "carina_aws_types::vpc_peering_connection_id()"
+            "crate::schemas::catalog::vpc_peering_connection_id()"
         );
     }
 
@@ -22718,7 +22771,7 @@ mod tests {
     fn test_get_resource_id_type_transit_gateway_id() {
         assert_eq!(
             get_resource_id_type("TransitGatewayId", None),
-            "carina_aws_types::transit_gateway_id()"
+            "crate::schemas::catalog::transit_gateway_id()"
         );
     }
 
@@ -22726,7 +22779,7 @@ mod tests {
     fn test_get_resource_id_type_vpn_gateway_id() {
         assert_eq!(
             get_resource_id_type("VpnGatewayId", None),
-            "carina_aws_types::vpn_gateway_id()"
+            "crate::schemas::catalog::vpn_gateway_id()"
         );
     }
 
@@ -22734,7 +22787,7 @@ mod tests {
     fn test_get_resource_id_type_vpc_endpoint_id() {
         assert_eq!(
             get_resource_id_type("VpcEndpointId", None),
-            "carina_aws_types::vpc_endpoint_id()"
+            "crate::schemas::catalog::vpc_endpoint_id()"
         );
     }
 
@@ -22744,7 +22797,7 @@ mod tests {
         // Previously, due to operator precedence, anything ending with "endpointid" matched
         assert_eq!(
             get_resource_id_type("ServiceEndpointId", None),
-            "carina_aws_types::aws_resource_id()"
+            "crate::schemas::catalog::aws_resource_id()"
         );
     }
 
@@ -22752,7 +22805,7 @@ mod tests {
     fn test_get_resource_id_type_fallback() {
         assert_eq!(
             get_resource_id_type("SomeUnknownId", None),
-            "carina_aws_types::aws_resource_id()"
+            "crate::schemas::catalog::aws_resource_id()"
         );
     }
 
@@ -22886,7 +22939,7 @@ mod tests {
             let kind = classify_resource_id(input, None);
             let is_generic = kind == ResourceIdKind::Generic;
             let type_is_generic =
-                get_resource_id_type(input, None) == "carina_aws_types::aws_resource_id()";
+                get_resource_id_type(input, None) == "crate::schemas::catalog::aws_resource_id()";
             let identity_is_generic =
                 get_resource_id_identity(input, None) == StringIdentity::ResourceId;
             assert_eq!(
@@ -22916,7 +22969,7 @@ mod tests {
         // Non-overridden properties are unaffected
         assert_eq!(
             infer_string_type("VpcId", "AWS::IAM::Role"),
-            Some("carina_aws_types::vpc_id()".to_string())
+            Some("crate::schemas::catalog::vpc_id()".to_string())
         );
         // EC2 Route's GatewayId should use gateway_id (union), not generic aws_resource_id
         assert_eq!(
@@ -22926,7 +22979,7 @@ mod tests {
         // Other resources' GatewayId should use generic resource ID type
         assert_eq!(
             infer_string_type("GatewayId", "AWS::EC2::VPNGatewayRoutePropagation"),
-            Some("carina_aws_types::aws_resource_id()".to_string())
+            Some("crate::schemas::catalog::aws_resource_id()".to_string())
         );
     }
 
@@ -22945,10 +22998,18 @@ mod tests {
         }))
         .unwrap();
 
-        let (carina_type, enum_info) =
-            cfn_type_to_carina_type_with_enum(&prop, "KeyPolicy", &schema, "", &BTreeMap::new());
+        let (carina_type, enum_info) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "KeyPolicy",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
 
-        assert_eq!(carina_type, "carina_aws_types::iam_policy_document()");
+        assert_eq!(
+            carina_type,
+            "crate::schemas::type_helpers::policy_seed::iam_policy_document()"
+        );
         assert!(enum_info.is_none());
     }
 
@@ -22964,11 +23025,14 @@ mod tests {
             prop,
             "RepositoryPolicyText",
             &schema,
-            "",
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
 
-        assert_eq!(carina_type, "carina_aws_types::iam_policy_document()");
+        assert_eq!(
+            carina_type,
+            "crate::schemas::type_helpers::policy_seed::iam_policy_document()"
+        );
         assert!(enum_info.is_none());
     }
 
@@ -22980,10 +23044,18 @@ mod tests {
             .get("InlinePolicy")
             .expect("cached SSO PermissionSet schema should declare InlinePolicy");
 
-        let (carina_type, enum_info) =
-            cfn_type_to_carina_type_with_enum(prop, "InlinePolicy", &schema, "", &BTreeMap::new());
+        let (carina_type, enum_info) = cfn_type_to_carina_type_with_enum(
+            prop,
+            "InlinePolicy",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
 
-        assert_eq!(carina_type, "carina_aws_types::iam_policy_document()");
+        assert_eq!(
+            carina_type,
+            "crate::schemas::type_helpers::policy_seed::iam_policy_document()"
+        );
         assert!(enum_info.is_none());
     }
 
@@ -23003,7 +23075,13 @@ mod tests {
         .unwrap();
 
         let panic = std::panic::catch_unwind(|| {
-            cfn_type_to_carina_type_with_enum(&prop, "FreeFormJson", &schema, "", &BTreeMap::new())
+            cfn_type_to_carina_type_with_enum(
+                &prop,
+                "FreeFormJson",
+                &schema,
+                &AwsccNamespace::root(),
+                &BTreeMap::new(),
+            )
         })
         .expect_err("an unlisted object|string property must fail classification");
         let message = panic
@@ -23029,7 +23107,13 @@ mod tests {
         let schema = empty_schema("AWS::Test::Resource");
 
         let panic = std::panic::catch_unwind(|| {
-            cfn_type_to_carina_type_with_enum(&prop, "BareObject", &schema, "", &BTreeMap::new())
+            cfn_type_to_carina_type_with_enum(
+                &prop,
+                "BareObject",
+                &schema,
+                &AwsccNamespace::root(),
+                &BTreeMap::new(),
+            )
         })
         .expect_err("an unlisted bare object property must fail classification");
         let message = panic
@@ -23115,7 +23199,7 @@ mod tests {
             &property,
             "Choice",
             &schema,
-            "aws.test.ArrayRefOneOf",
+            &AwsccNamespace::new("test.ArrayRefOneOf").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(enum_info.is_none());
@@ -23123,7 +23207,7 @@ mod tests {
             &definition,
             "Choice",
             &schema,
-            "aws.test.ArrayRefOneOf",
+            &AwsccNamespace::new("test.ArrayRefOneOf").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(inline_enum.is_none());
@@ -23531,7 +23615,7 @@ mod tests {
             &schema.properties["KeySchema"],
             "KeySchema",
             &schema,
-            "",
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
 
@@ -23585,17 +23669,17 @@ mod tests {
             (
                 "AWS::IAM::Role",
                 "RoleName",
-                "carina_aws_types::iam_role_name()",
+                "crate::schemas::catalog::iam_role_name()",
             ),
             (
                 "AWS::IAM::RolePolicy",
                 "RoleName",
-                "carina_aws_types::iam_role_name()",
+                "crate::schemas::catalog::iam_role_name()",
             ),
             (
                 "AWS::IAM::RolePolicy",
                 "PolicyName",
-                "carina_aws_types::iam_policy_name()",
+                "crate::schemas::catalog::iam_policy_name()",
             ),
         ] {
             let schema = cfn_schema_for_codegen_tests(cfn_type);
@@ -23627,7 +23711,7 @@ mod tests {
             assert_all_generated_struct_fields(
                 &generated,
                 "Policy.PolicyName",
-                "carina_aws_types::iam_policy_name()",
+                "crate::schemas::catalog::iam_policy_name()",
             );
             if expose_definition {
                 let (inline, definitions) =
@@ -23636,7 +23720,7 @@ mod tests {
                     assert_all_generated_struct_fields(
                         section,
                         "Policy.PolicyName",
-                        "carina_aws_types::iam_policy_name()",
+                        "crate::schemas::catalog::iam_policy_name()",
                     );
                 }
             }
@@ -23699,7 +23783,7 @@ mod tests {
             (overrides.get(&("AWS::Logs::LogGroup", "RetentionInDays")))
                 .and_then(TypeOverride::kind),
             Some(&NarrowingKind::IntEnum(
-                carina_aws_types::AwsType::LogsLogGroupRetentionInDays
+                carina_provider_awscc::schemas::catalog::ScalarType::LogsLogGroupRetentionInDays
                     .allowed_int_values()
                     .unwrap()
                     .to_vec()
@@ -23747,12 +23831,12 @@ mod tests {
     fn test_infer_string_type_availability_zone() {
         assert_eq!(
             infer_string_type("AvailabilityZone", ""),
-            Some("carina_aws_types::availability_zone()".to_string())
+            Some("crate::schemas::catalog::availability_zone()".to_string())
         );
         // AvailabilityZoneId should use availability_zone_id()
         assert_eq!(
             infer_string_type("AvailabilityZoneId", ""),
-            Some("carina_aws_types::availability_zone_id()".to_string())
+            Some("crate::schemas::catalog::availability_zone_id()".to_string())
         );
     }
 
@@ -23760,11 +23844,11 @@ mod tests {
     fn test_infer_string_type_owner_id() {
         assert_eq!(
             infer_string_type("SourceSecurityGroupOwnerId", ""),
-            Some("carina_aws_types::aws_account_id()".to_string())
+            Some("crate::schemas::catalog::aws_account_id()".to_string())
         );
         assert_eq!(
             infer_string_type("PeerOwnerId", ""),
-            Some("carina_aws_types::aws_account_id()".to_string())
+            Some("crate::schemas::catalog::aws_account_id()".to_string())
         );
     }
 
@@ -23772,35 +23856,35 @@ mod tests {
     fn test_infer_string_type_new_resource_ids() {
         assert_eq!(
             infer_string_type("InstanceId", ""),
-            Some("carina_aws_types::instance_id()".to_string())
+            Some("crate::schemas::catalog::instance_id()".to_string())
         );
         assert_eq!(
             infer_string_type("NetworkInterfaceId", ""),
-            Some("carina_aws_types::network_interface_id()".to_string())
+            Some("crate::schemas::catalog::network_interface_id()".to_string())
         );
         assert_eq!(
             infer_string_type("EniId", ""),
-            Some("carina_aws_types::network_interface_id()".to_string())
+            Some("crate::schemas::catalog::network_interface_id()".to_string())
         );
         assert_eq!(
             infer_string_type("AllocationId", ""),
-            Some("carina_aws_types::allocation_id()".to_string())
+            Some("crate::schemas::catalog::allocation_id()".to_string())
         );
         assert_eq!(
             infer_string_type("PrefixListId", ""),
-            Some("carina_aws_types::prefix_list_id()".to_string())
+            Some("crate::schemas::catalog::prefix_list_id()".to_string())
         );
         assert_eq!(
             infer_string_type("DestinationPrefixListId", ""),
-            Some("carina_aws_types::prefix_list_id()".to_string())
+            Some("crate::schemas::catalog::prefix_list_id()".to_string())
         );
         assert_eq!(
             infer_string_type("CarrierGatewayId", ""),
-            Some("carina_aws_types::carrier_gateway_id()".to_string())
+            Some("crate::schemas::catalog::carrier_gateway_id()".to_string())
         );
         assert_eq!(
             infer_string_type("LocalGatewayId", ""),
-            Some("carina_aws_types::local_gateway_id()".to_string())
+            Some("crate::schemas::catalog::local_gateway_id()".to_string())
         );
     }
 
@@ -23808,11 +23892,11 @@ mod tests {
     fn test_infer_string_type_ipam_pool_id() {
         assert_eq!(
             infer_string_type("IpamPoolId", ""),
-            Some("carina_aws_types::ipam_pool_id()".to_string())
+            Some("crate::schemas::catalog::ipam_pool_id()".to_string())
         );
         assert_eq!(
             infer_string_type("Ipv4IpamPoolId", ""),
-            Some("carina_aws_types::ipam_pool_id()".to_string())
+            Some("crate::schemas::catalog::ipam_pool_id()".to_string())
         );
     }
 
@@ -23820,7 +23904,7 @@ mod tests {
     fn test_infer_string_type_default_network_acl() {
         assert_eq!(
             infer_string_type("DefaultNetworkAcl", ""),
-            Some("carina_aws_types::network_acl_id()".to_string())
+            Some("crate::schemas::catalog::network_acl_id()".to_string())
         );
     }
 
@@ -24063,7 +24147,7 @@ mod tests {
         // Should have a structured identity (post-#3222, `namespace`
         // was replaced by `identity: Some(enum_identity(...))`).
         assert!(
-            generated.contains("carina_core::schema::enum_identity("),
+            generated.contains("crate::schemas::namespace::awscc_identity("),
             "Enum should include structured identity: {generated}"
         );
         // Should handle hyphens in values via dsl_aliases. Per #199 / D7,
@@ -24093,7 +24177,7 @@ mod tests {
             &prop,
             "OutputSchemaVersion",
             &schema,
-            "aws.s3.Bucket",
+            &AwsccNamespace::new("s3.Bucket").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(enum_info.is_some(), "const value should produce enum info");
@@ -24129,7 +24213,7 @@ mod tests {
             &prop,
             "AllowedMethods",
             &schema,
-            "aws.s3.Bucket",
+            &AwsccNamespace::new("s3.Bucket").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -24181,8 +24265,13 @@ mod tests {
         }))
         .unwrap();
         let enums = BTreeMap::new();
-        let (_, enum_info) =
-            cfn_type_to_carina_type_with_enum(&prop, "HttpMethod", &schema, "aws.ec2.Vpc", &enums);
+        let (_, enum_info) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "HttpMethod",
+            &schema,
+            &AwsccNamespace::new("ec2.Vpc").expect("valid AWSCC namespace"),
+            &enums,
+        );
         assert!(
             enum_info.is_some(),
             "enum-only $ref definition should produce enum info"
@@ -24246,7 +24335,7 @@ mod tests {
             &prop,
             "BlockedEncryptionTypes",
             &schema,
-            "aws.s3.Bucket",
+            &AwsccNamespace::new("s3.Bucket").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -24293,8 +24382,13 @@ mod tests {
         }))
         .unwrap();
         let enums = BTreeMap::new();
-        let (type_str, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "Limit", &schema, "aws.wafv2.WebAcl", &enums);
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "Limit",
+            &schema,
+            &AwsccNamespace::new("wafv2.WebAcl").expect("valid AWSCC namespace"),
+            &enums,
+        );
         assert!(
             type_str.contains("AttributeType::refined_int(")
                 || type_str.contains("AttributeType::int()"),
@@ -24333,7 +24427,7 @@ mod tests {
             &prop,
             "Weight",
             &schema,
-            "aws.example.Thing",
+            &AwsccNamespace::new("example.Thing").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -24369,7 +24463,7 @@ mod tests {
             &prop,
             "Toggle",
             &schema,
-            "aws.example.Thing",
+            &AwsccNamespace::new("example.Thing").expect("valid AWSCC namespace"),
             &enums,
         );
         assert_eq!(type_str, "AttributeType::bool()");
@@ -24825,10 +24919,10 @@ mod tests {
         });
         let md = generate_test_markdown(&schema, "AWS::EC2::SecurityGroup").unwrap();
         let egress_count = md
-            .matches("aws.ec2.SecurityGroup.Egress.IpProtocol.tcp")
+            .matches("awscc.ec2.SecurityGroup.Egress.IpProtocol.tcp")
             .count();
         let ingress_count = md
-            .matches("aws.ec2.SecurityGroup.Ingress.IpProtocol.tcp")
+            .matches("awscc.ec2.SecurityGroup.Ingress.IpProtocol.tcp")
             .count();
         assert_eq!(
             egress_count,
@@ -25407,11 +25501,11 @@ mod tests {
             "{md}"
         );
         assert!(
-            md.contains("aws.test.InlineOptions.Left.Options.Mode.a"),
+            md.contains("awscc.test.InlineOptions.Left.Options.Mode.a"),
             "{md}"
         );
         assert!(
-            md.contains("aws.test.InlineOptions.Right.Options.Mode.x"),
+            md.contains("awscc.test.InlineOptions.Right.Options.Mode.x"),
             "{md}"
         );
         carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
@@ -25701,7 +25795,7 @@ mod tests {
             "both fields must link to that one section:\n{md}"
         );
         assert_eq!(
-            md.matches("aws.test.Resource.Rule.Protocol.tcp").count(),
+            md.matches("awscc.test.Resource.Rule.Protocol.tcp").count(),
             1,
             "the shared enum table should be emitted once:\n{md}"
         );
@@ -25804,7 +25898,7 @@ mod tests {
         // With structural disambiguation, the two Status enums keep the same
         // plain kind and differ by namespace.
         assert!(
-            md.contains("aws.test.Resource.ConfigA.Status.disabled"),
+            md.contains("awscc.test.Resource.ConfigA.Status.disabled"),
             "Expected ConfigA structural DSL identifier.\nEnum Values section:\n{}",
             md.lines()
                 .filter(|l| l.contains("Status") || l.contains("status"))
@@ -25812,7 +25906,7 @@ mod tests {
                 .join("\n")
         );
         assert!(
-            md.contains("aws.test.Resource.ConfigB.Status.suspended"),
+            md.contains("awscc.test.Resource.ConfigB.Status.suspended"),
             "Expected ConfigB structural DSL identifier.\nEnum Values section:\n{}",
             md.lines()
                 .filter(|l| l.contains("Status") || l.contains("status"))
@@ -25821,7 +25915,7 @@ mod tests {
         );
 
         assert!(
-            !md.contains("aws.test.Resource.Status."),
+            !md.contains("awscc.test.Resource.Status."),
             "Should not have ambiguous root-scoped Status identifiers"
         );
     }
@@ -26015,7 +26109,7 @@ mod tests {
 
         assert!(
             generated.contains(
-                r#"AttributeSchema::optional("policy_document", carina_aws_types::iam_policy_document())"#
+                r#"AttributeSchema::optional("policy_document", crate::schemas::type_helpers::policy_seed::iam_policy_document())"#
             ),
             "Should resolve PolicyDocument to iam_policy_document: {generated}"
         );
@@ -26268,7 +26362,7 @@ mod tests {
             &prop,
             "LogGroupName",
             &schema,
-            "aws.test.StringPattern",
+            &AwsccNamespace::new("test.StringPattern").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(
@@ -26301,10 +26395,10 @@ mod tests {
             &prop,
             "KmsKeyId",
             &schema,
-            "aws.logs.LogGroup",
+            &AwsccNamespace::new("logs.LogGroup").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
-        assert_eq!(type_str, "carina_aws_types::kms_key_reference()");
+        assert_eq!(type_str, "crate::schemas::catalog::kms_key_reference()");
     }
 
     #[test]
@@ -26417,7 +26511,7 @@ mod tests {
             &prop,
             "PrivateDnsSpecifiedDomains",
             &schema,
-            "aws.ec2.VpcEndpoint",
+            &AwsccNamespace::new("ec2.VpcEndpoint").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -26456,7 +26550,7 @@ mod tests {
             &prop,
             "SomeArray",
             &schema,
-            "aws.ec2.VpcEndpoint",
+            &AwsccNamespace::new("ec2.VpcEndpoint").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -26495,7 +26589,7 @@ mod tests {
             &prop,
             "SomeArray",
             &schema,
-            "aws.ec2.VpcEndpoint",
+            &AwsccNamespace::new("ec2.VpcEndpoint").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -26688,7 +26782,7 @@ mod tests {
             &prop,
             "Payload",
             &schema,
-            "aws.test.Resource",
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
 
@@ -27529,7 +27623,7 @@ mod tests {
             property,
             "FieldIndexPolicies",
             &schema,
-            "aws.logs.LogGroup",
+            &AwsccNamespace::new("logs.LogGroup").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         reset_property_mode_emission_state();
@@ -27546,7 +27640,7 @@ mod tests {
             "FieldIndexPolicies",
             property,
             &schema,
-            "aws.logs.LogGroup",
+            &AwsccNamespace::new("logs.LogGroup").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(
@@ -27596,7 +27690,7 @@ mod tests {
             "FieldIndexPolicies",
             &schema.properties["FieldIndexPolicies"],
             &schema,
-            "aws.logs.LogGroup",
+            &AwsccNamespace::new("logs.LogGroup").expect("valid AWSCC namespace"),
             &enums,
         );
         assert!(
@@ -27699,7 +27793,7 @@ mod tests {
                         &prop,
                         "Values",
                         &schema,
-                        "aws.test.Resource",
+                        &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                         &BTreeMap::new(),
                     );
                     assert!(enum_info.is_none());
@@ -27771,7 +27865,7 @@ mod tests {
             &prop,
             "Values",
             &schema,
-            "aws.test.Resource",
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(enum_info.is_some());
@@ -27814,14 +27908,14 @@ mod tests {
             &inline,
             "Values",
             &schema,
-            "aws.test.Resource",
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         let (referenced_type, referenced_enum) = cfn_type_to_carina_type_with_enum(
             &referenced,
             "Values",
             &schema,
-            "aws.test.Resource",
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
 
@@ -27893,7 +27987,7 @@ mod tests {
             &fields,
             "AddressFields",
             &schema,
-            "aws.test.Resource",
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(enum_info.is_none());
@@ -27940,7 +28034,7 @@ mod tests {
             &property,
             "EvaluationWindowSec",
             &schema,
-            "aws.test.Resource",
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(enum_info.is_none());
@@ -27970,7 +28064,7 @@ mod tests {
             &property,
             "FormattedValue",
             &schema,
-            "aws.test.Resource",
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
 
@@ -28042,7 +28136,7 @@ mod tests {
         );
         assert!(
             !generated.contains(
-                "evaluation_window_sec\", AttributeType::enum_(carina_core::schema::enum_identity"
+                "evaluation_window_sec\", AttributeType::enum_(crate::schemas::namespace::awscc_identity"
             ),
             "EvaluationWindowSec must not serialize through a string enum: {generated}"
         );
@@ -28170,7 +28264,7 @@ mod tests {
             &prop,
             "ExpirationDate",
             &schema,
-            "aws.s3.Bucket",
+            &AwsccNamespace::new("s3.Bucket").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert!(
@@ -28660,8 +28754,13 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        let (type_str, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "SomeValue", &schema, "", &BTreeMap::new());
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "SomeValue",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         assert!(
             type_str.contains("AttributeType::refined_int("),
             "int64 format should produce refined Int type: {type_str}"
@@ -28738,8 +28837,13 @@ mod tests {
         }
         assert_eq!(constraints.min_length, Some(20));
         assert_eq!(constraints.max_length, Some(64));
-        let (code, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "ObservedAt", &schema, "", &BTreeMap::new());
+        let (code, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "ObservedAt",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         assert!(
             code.starts_with("AttributeType::refined_string(None,"),
             "{code}"
@@ -28781,8 +28885,13 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        let (type_str, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "Url", &schema, "", &BTreeMap::new());
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "Url",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         assert!(
             type_str.contains("AttributeType::refined_string("),
             "uri format should produce refined String type: {type_str}"
@@ -28833,7 +28942,7 @@ mod tests {
             &prop,
             "ObjectSizeGreaterThan",
             &schema,
-            "",
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         assert!(
@@ -28906,8 +29015,13 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        let (type_str, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "BoundedValue", &schema, "", &BTreeMap::new());
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "BoundedValue",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         // Range validation is encoded in the generated validator fn name.
         assert!(
             type_str.contains("Some((Some(0), Some(100)))"),
@@ -28939,7 +29053,7 @@ mod tests {
             &prop,
             "ObjectSizeGreaterThan",
             &schema,
-            "",
+            &AwsccNamespace::root(),
             &BTreeMap::new(),
         );
         // Should mention both constraints
@@ -28970,8 +29084,13 @@ mod tests {
             "properties": {}
         }))
         .unwrap();
-        let (type_str, _) =
-            cfn_type_to_carina_type_with_enum(&prop, "SomeName", &schema, "", &BTreeMap::new());
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "SomeName",
+            &schema,
+            &AwsccNamespace::root(),
+            &BTreeMap::new(),
+        );
         // Should mention both constraints
         assert!(
             type_str.contains("Some(carina_core::schema::PatternSpec::new(\"^[a-z]+$\", carina_core::schema::PatternMatch::Full))"),
@@ -30285,7 +30404,7 @@ mod tests {
                         &schema.properties["Tags"],
                         "Tags",
                         &schema,
-                        "aws.test.Resource",
+                        &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                         &BTreeMap::new(),
                     )
                     .0;
@@ -30336,7 +30455,7 @@ mod tests {
                 &schema.properties["Labels"],
                 "Labels",
                 &schema,
-                "aws.test.Resource",
+                &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                 &BTreeMap::new(),
             )
             .0;
@@ -30403,7 +30522,7 @@ mod tests {
                     &schema.properties["Tags"],
                     "Tags",
                     schema,
-                    "aws.test.Resource",
+                    &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
                     &BTreeMap::new(),
                 )
                 .0
@@ -30587,7 +30706,7 @@ mod tests {
             schema.properties.get("Tags").unwrap(),
             "Tags",
             &schema,
-            "aws.test.Resource",
+            &AwsccNamespace::new("test.Resource").expect("valid AWSCC namespace"),
             &BTreeMap::new(),
         );
         assert_eq!(
@@ -31837,12 +31956,12 @@ mod tests {
         let md = generate_test_markdown(&schema, "AWS::EC2::VPC").unwrap();
         // DSL Identifier column must use snake_case
         assert!(
-            md.contains("`aws.ec2.Vpc.ObjectOwnership.bucket_owner_enforced`"),
+            md.contains("`awscc.ec2.Vpc.ObjectOwnership.bucket_owner_enforced`"),
             "DSL Identifier column must use snake_case: {md}"
         );
         // The PascalCase form must NOT appear as the DSL Identifier
         assert!(
-            !md.contains("`aws.ec2.Vpc.ObjectOwnership.BucketOwnerEnforced`"),
+            !md.contains("`awscc.ec2.Vpc.ObjectOwnership.BucketOwnerEnforced`"),
             "DSL Identifier column must not use the API spelling: {md}"
         );
         // Shorthand formats line must use snake_case (first value: ObjectWriter -> object_writer).

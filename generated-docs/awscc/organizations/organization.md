@@ -14,7 +14,7 @@ awscc.organizations.Organization {
   # The account must not already belong to an organization. Destroying this
   # resource deletes the organization, which requires that it have no member
   # accounts.
-  feature_set = aws.organizations.Organization.FeatureSet.all
+  feature_set = awscc.organizations.Organization.FeatureSet.all
 }
 ```
 
@@ -34,8 +34,8 @@ Specifies the feature set supported by the new organization. Each feature set su
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ALL` | `aws.organizations.Organization.FeatureSet.all` |
-| `CONSOLIDATED_BILLING` | `aws.organizations.Organization.FeatureSet.consolidated_billing` |
+| `ALL` | `awscc.organizations.Organization.FeatureSet.all` |
+| `CONSOLIDATED_BILLING` | `awscc.organizations.Organization.FeatureSet.consolidated_billing` |
 
 Shorthand formats: `all` or `FeatureSet.all`
 
@@ -43,7 +43,7 @@ Shorthand formats: `all` or `FeatureSet.all`
 
 ### `arn`
 
-- **Type:** `aws.organizations.Organization.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):organizations:.*$/ (Full), member constraints: pattern: /^arn:aws.*:organizations::\d{12}:organization\/o-[a-z0-9]{10,32}/ (Full), custom validator)`
+- **Type:** `awscc.organizations.Organization.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):organizations:.*$/ (Full), member constraints: pattern: /^arn:aws.*:organizations::\d{12}:organization\/o-[a-z0-9]{10,32}/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of an organization.
 
@@ -55,7 +55,7 @@ The unique identifier (ID) of an organization.
 
 ### `management_account_arn`
 
-- **Type:** `aws.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /^arn:aws.*:organizations::\d{12}:account\/o-[a-z0-9]{10,32}\/\d{12}/ (Full), custom validator)`
+- **Type:** `awscc.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /^arn:aws.*:organizations::\d{12}:account\/o-[a-z0-9]{10,32}\/\d{12}/ (Full), custom validator)`
 
 The Amazon Resource Name (ARN) of the account that is designated as the management account for the organization.
 
@@ -67,7 +67,7 @@ The email address that is associated with the AWS account that is designated as 
 
 ### `management_account_id`
 
-- **Type:** `aws.AccountId (identity constraints: pattern: /^[0-9]{12}$/ (Full), len: 12..=12, member constraints: pattern: /^\d{12}$/ (Full))`
+- **Type:** `awscc.AccountId (identity constraints: pattern: /^[0-9]{12}$/ (Full), len: 12..=12, member constraints: pattern: /^\d{12}$/ (Full))`
 
 The unique identifier (ID) of the management account of an organization.
 

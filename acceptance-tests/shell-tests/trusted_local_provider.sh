@@ -136,7 +136,7 @@ ln -s "$COMMA_TARGET_DIR" "$COMMA_LINK_DIR"
 
 cat > "$INJECTION_SOURCE" <<'CRN'
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 provider aws {

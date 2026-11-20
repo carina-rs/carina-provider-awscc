@@ -41,7 +41,7 @@ Indicates whether a network interface created in this subnet receives an IPv6 ad
 
 ### `availability_zone`
 
-- **Type:** `aws.AvailabilityZone.ZoneName (custom validator)`
+- **Type:** `awscc.AvailabilityZone.ZoneName (custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -49,7 +49,7 @@ The Availability Zone of the subnet. If you update this property, you must also 
 
 ### `availability_zone_id`
 
-- **Type:** `aws.AvailabilityZone.ZoneId (pattern: /^[a-z]+[0-9]+-az[0-9]+$/ (Full))`
+- **Type:** `awscc.AvailabilityZone.ZoneId (pattern: /^[a-z]+[0-9]+-az[0-9]+$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -80,7 +80,7 @@ Indicates the device position for local network interfaces in this subnet. For e
 
 ### `ipv4_ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -105,7 +105,7 @@ The IPv6 CIDR block. If you specify ``AssignIpv6AddressOnCreation``, you must al
 
 ### `ipv6_ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 - **Write-only:** Yes
@@ -138,7 +138,7 @@ Indicates whether instances launched in this subnet receive a public IPv4 addres
 
 ### `outpost_arn`
 
-- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
+- **Type:** `awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -160,7 +160,7 @@ Any tags assigned to the subnet.
 
 ### `vpc_id`
 
-- **Type:** `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -172,9 +172,9 @@ The ID of the VPC the subnet is in. If you update this property, you must also u
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `off` | `aws.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.off` |
-| `block-bidirectional` | `aws.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.block_bidirectional` |
-| `block-ingress` | `aws.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.block_ingress` |
+| `off` | `awscc.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.off` |
+| `block-bidirectional` | `awscc.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.block_bidirectional` |
+| `block-ingress` | `awscc.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.block_ingress` |
 
 Shorthand formats: `off` or `InternetGatewayBlockMode.off`
 
@@ -182,8 +182,8 @@ Shorthand formats: `off` or `InternetGatewayBlockMode.off`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ip-name` | `aws.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType.ip_name` |
-| `resource-name` | `aws.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType.resource_name` |
+| `ip-name` | `awscc.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType.ip_name` |
+| `resource-name` | `awscc.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType.resource_name` |
 
 Shorthand formats: `ip_name` or `HostnameType.ip_name`
 
@@ -225,7 +225,7 @@ Shorthand formats: `ip_name` or `HostnameType.ip_name`
 
 ### `subnet_id`
 
-- **Type:** `aws.ec2.Subnet.Id (pattern: /^subnet-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.Subnet.Id (pattern: /^subnet-[0-9a-f]{8,}$/ (Full))`
 
 
 

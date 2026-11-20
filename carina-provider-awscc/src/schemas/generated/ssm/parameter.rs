@@ -44,7 +44,7 @@ pub fn ssm_parameter_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_arn_attribute());
     #[inline(never)]
     fn build_data_type_attribute() -> AttributeSchema {
-        AttributeSchema::optional("data_type", AttributeType::enum_(carina_core::schema::enum_identity("DataType", Some("aws.ssm.Parameter")), Some(vec!["text".to_string(), "aws:ec2:image".to_string()]), vec![("text".to_string(), "text".to_string()), ("aws:ec2:image".to_string(), "aws_ec2_image".to_string())], None, None))
+        AttributeSchema::optional("data_type", AttributeType::enum_(crate::schemas::namespace::awscc_identity("DataType", &crate::schemas::namespace::AwsccNamespace::new("ssm.Parameter").expect("valid AWSCC namespace")).expect("valid AWSCC identity").into_core(), Some(vec!["text".to_string(), "aws:ec2:image".to_string()]), vec![("text".to_string(), "text".to_string()), ("aws:ec2:image".to_string(), "aws_ec2_image".to_string())], None, None))
                 .with_description("The data type of the parameter, such as ``text`` or ``aws:ec2:image``. The default is ``text``.")
                 .with_provider_name("DataType")
             .build()
@@ -87,7 +87,7 @@ pub fn ssm_parameter_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_tier_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tier", AttributeType::enum_(carina_core::schema::enum_identity("Tier", Some("aws.ssm.Parameter")), Some(vec!["Standard".to_string(), "Advanced".to_string(), "Intelligent-Tiering".to_string()]), vec![("Standard".to_string(), "standard".to_string()), ("Advanced".to_string(), "advanced".to_string()), ("Intelligent-Tiering".to_string(), "intelligent_tiering".to_string())], None, None))
+        AttributeSchema::optional("tier", AttributeType::enum_(crate::schemas::namespace::awscc_identity("Tier", &crate::schemas::namespace::AwsccNamespace::new("ssm.Parameter").expect("valid AWSCC namespace")).expect("valid AWSCC identity").into_core(), Some(vec!["Standard".to_string(), "Advanced".to_string(), "Intelligent-Tiering".to_string()]), vec![("Standard".to_string(), "standard".to_string()), ("Advanced".to_string(), "advanced".to_string()), ("Intelligent-Tiering".to_string(), "intelligent_tiering".to_string())], None, None))
                 .write_only()
                 .with_description("The parameter tier.")
                 .with_provider_name("Tier")
@@ -96,7 +96,7 @@ pub fn ssm_parameter_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tier_attribute());
     #[inline(never)]
     fn build_type_attribute() -> AttributeSchema {
-        AttributeSchema::required("type", AttributeType::enum_(carina_core::schema::enum_identity("Type", Some("aws.ssm.Parameter")), Some(vec!["String".to_string(), "StringList".to_string()]), vec![("String".to_string(), "string".to_string()), ("StringList".to_string(), "string_list".to_string())], None, None))
+        AttributeSchema::required("type", AttributeType::enum_(crate::schemas::namespace::awscc_identity("Type", &crate::schemas::namespace::AwsccNamespace::new("ssm.Parameter").expect("valid AWSCC namespace")).expect("valid AWSCC identity").into_core(), Some(vec!["String".to_string(), "StringList".to_string()]), vec![("String".to_string(), "string".to_string()), ("StringList".to_string(), "string_list".to_string())], None, None))
                 .with_description("The type of parameter. Parameters of type ``SecureString`` are not supported by CFNlong.")
                 .with_provider_name("Type")
             .build()

@@ -89,51 +89,51 @@ Creates a configuration for DNS query logging. After you create a query logging 
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `us-east-1` | `aws.route53.HostedZone.VPCRegion.us_east_1` |
-| `us-east-2` | `aws.route53.HostedZone.VPCRegion.us_east_2` |
-| `us-west-1` | `aws.route53.HostedZone.VPCRegion.us_west_1` |
-| `us-west-2` | `aws.route53.HostedZone.VPCRegion.us_west_2` |
-| `eu-west-1` | `aws.route53.HostedZone.VPCRegion.eu_west_1` |
-| `eu-west-2` | `aws.route53.HostedZone.VPCRegion.eu_west_2` |
-| `eu-west-3` | `aws.route53.HostedZone.VPCRegion.eu_west_3` |
-| `eu-central-1` | `aws.route53.HostedZone.VPCRegion.eu_central_1` |
-| `eu-central-2` | `aws.route53.HostedZone.VPCRegion.eu_central_2` |
-| `ap-east-1` | `aws.route53.HostedZone.VPCRegion.ap_east_1` |
-| `me-south-1` | `aws.route53.HostedZone.VPCRegion.me_south_1` |
-| `us-gov-west-1` | `aws.route53.HostedZone.VPCRegion.us_gov_west_1` |
-| `us-gov-east-1` | `aws.route53.HostedZone.VPCRegion.us_gov_east_1` |
-| `us-iso-east-1` | `aws.route53.HostedZone.VPCRegion.us_iso_east_1` |
-| `us-iso-west-1` | `aws.route53.HostedZone.VPCRegion.us_iso_west_1` |
-| `us-isob-east-1` | `aws.route53.HostedZone.VPCRegion.us_isob_east_1` |
-| `me-central-1` | `aws.route53.HostedZone.VPCRegion.me_central_1` |
-| `ap-southeast-1` | `aws.route53.HostedZone.VPCRegion.ap_southeast_1` |
-| `ap-southeast-2` | `aws.route53.HostedZone.VPCRegion.ap_southeast_2` |
-| `ap-southeast-3` | `aws.route53.HostedZone.VPCRegion.ap_southeast_3` |
-| `ap-south-1` | `aws.route53.HostedZone.VPCRegion.ap_south_1` |
-| `ap-south-2` | `aws.route53.HostedZone.VPCRegion.ap_south_2` |
-| `ap-northeast-1` | `aws.route53.HostedZone.VPCRegion.ap_northeast_1` |
-| `ap-northeast-2` | `aws.route53.HostedZone.VPCRegion.ap_northeast_2` |
-| `ap-northeast-3` | `aws.route53.HostedZone.VPCRegion.ap_northeast_3` |
-| `eu-north-1` | `aws.route53.HostedZone.VPCRegion.eu_north_1` |
-| `sa-east-1` | `aws.route53.HostedZone.VPCRegion.sa_east_1` |
-| `ca-central-1` | `aws.route53.HostedZone.VPCRegion.ca_central_1` |
-| `cn-north-1` | `aws.route53.HostedZone.VPCRegion.cn_north_1` |
-| `cn-northwest-1` | `aws.route53.HostedZone.VPCRegion.cn_northwest_1` |
-| `af-south-1` | `aws.route53.HostedZone.VPCRegion.af_south_1` |
-| `eu-south-1` | `aws.route53.HostedZone.VPCRegion.eu_south_1` |
-| `eu-south-2` | `aws.route53.HostedZone.VPCRegion.eu_south_2` |
-| `ap-southeast-4` | `aws.route53.HostedZone.VPCRegion.ap_southeast_4` |
-| `il-central-1` | `aws.route53.HostedZone.VPCRegion.il_central_1` |
-| `ca-west-1` | `aws.route53.HostedZone.VPCRegion.ca_west_1` |
-| `ap-southeast-5` | `aws.route53.HostedZone.VPCRegion.ap_southeast_5` |
-| `mx-central-1` | `aws.route53.HostedZone.VPCRegion.mx_central_1` |
-| `us-isof-south-1` | `aws.route53.HostedZone.VPCRegion.us_isof_south_1` |
-| `us-isof-east-1` | `aws.route53.HostedZone.VPCRegion.us_isof_east_1` |
-| `ap-southeast-7` | `aws.route53.HostedZone.VPCRegion.ap_southeast_7` |
-| `ap-east-2` | `aws.route53.HostedZone.VPCRegion.ap_east_2` |
-| `eu-isoe-west-1` | `aws.route53.HostedZone.VPCRegion.eu_isoe_west_1` |
-| `ap-southeast-6` | `aws.route53.HostedZone.VPCRegion.ap_southeast_6` |
-| `us-isob-west-1` | `aws.route53.HostedZone.VPCRegion.us_isob_west_1` |
+| `us-east-1` | `awscc.route53.HostedZone.VPCRegion.us_east_1` |
+| `us-east-2` | `awscc.route53.HostedZone.VPCRegion.us_east_2` |
+| `us-west-1` | `awscc.route53.HostedZone.VPCRegion.us_west_1` |
+| `us-west-2` | `awscc.route53.HostedZone.VPCRegion.us_west_2` |
+| `eu-west-1` | `awscc.route53.HostedZone.VPCRegion.eu_west_1` |
+| `eu-west-2` | `awscc.route53.HostedZone.VPCRegion.eu_west_2` |
+| `eu-west-3` | `awscc.route53.HostedZone.VPCRegion.eu_west_3` |
+| `eu-central-1` | `awscc.route53.HostedZone.VPCRegion.eu_central_1` |
+| `eu-central-2` | `awscc.route53.HostedZone.VPCRegion.eu_central_2` |
+| `ap-east-1` | `awscc.route53.HostedZone.VPCRegion.ap_east_1` |
+| `me-south-1` | `awscc.route53.HostedZone.VPCRegion.me_south_1` |
+| `us-gov-west-1` | `awscc.route53.HostedZone.VPCRegion.us_gov_west_1` |
+| `us-gov-east-1` | `awscc.route53.HostedZone.VPCRegion.us_gov_east_1` |
+| `us-iso-east-1` | `awscc.route53.HostedZone.VPCRegion.us_iso_east_1` |
+| `us-iso-west-1` | `awscc.route53.HostedZone.VPCRegion.us_iso_west_1` |
+| `us-isob-east-1` | `awscc.route53.HostedZone.VPCRegion.us_isob_east_1` |
+| `me-central-1` | `awscc.route53.HostedZone.VPCRegion.me_central_1` |
+| `ap-southeast-1` | `awscc.route53.HostedZone.VPCRegion.ap_southeast_1` |
+| `ap-southeast-2` | `awscc.route53.HostedZone.VPCRegion.ap_southeast_2` |
+| `ap-southeast-3` | `awscc.route53.HostedZone.VPCRegion.ap_southeast_3` |
+| `ap-south-1` | `awscc.route53.HostedZone.VPCRegion.ap_south_1` |
+| `ap-south-2` | `awscc.route53.HostedZone.VPCRegion.ap_south_2` |
+| `ap-northeast-1` | `awscc.route53.HostedZone.VPCRegion.ap_northeast_1` |
+| `ap-northeast-2` | `awscc.route53.HostedZone.VPCRegion.ap_northeast_2` |
+| `ap-northeast-3` | `awscc.route53.HostedZone.VPCRegion.ap_northeast_3` |
+| `eu-north-1` | `awscc.route53.HostedZone.VPCRegion.eu_north_1` |
+| `sa-east-1` | `awscc.route53.HostedZone.VPCRegion.sa_east_1` |
+| `ca-central-1` | `awscc.route53.HostedZone.VPCRegion.ca_central_1` |
+| `cn-north-1` | `awscc.route53.HostedZone.VPCRegion.cn_north_1` |
+| `cn-northwest-1` | `awscc.route53.HostedZone.VPCRegion.cn_northwest_1` |
+| `af-south-1` | `awscc.route53.HostedZone.VPCRegion.af_south_1` |
+| `eu-south-1` | `awscc.route53.HostedZone.VPCRegion.eu_south_1` |
+| `eu-south-2` | `awscc.route53.HostedZone.VPCRegion.eu_south_2` |
+| `ap-southeast-4` | `awscc.route53.HostedZone.VPCRegion.ap_southeast_4` |
+| `il-central-1` | `awscc.route53.HostedZone.VPCRegion.il_central_1` |
+| `ca-west-1` | `awscc.route53.HostedZone.VPCRegion.ca_west_1` |
+| `ap-southeast-5` | `awscc.route53.HostedZone.VPCRegion.ap_southeast_5` |
+| `mx-central-1` | `awscc.route53.HostedZone.VPCRegion.mx_central_1` |
+| `us-isof-south-1` | `awscc.route53.HostedZone.VPCRegion.us_isof_south_1` |
+| `us-isof-east-1` | `awscc.route53.HostedZone.VPCRegion.us_isof_east_1` |
+| `ap-southeast-7` | `awscc.route53.HostedZone.VPCRegion.ap_southeast_7` |
+| `ap-east-2` | `awscc.route53.HostedZone.VPCRegion.ap_east_2` |
+| `eu-isoe-west-1` | `awscc.route53.HostedZone.VPCRegion.eu_isoe_west_1` |
+| `ap-southeast-6` | `awscc.route53.HostedZone.VPCRegion.ap_southeast_6` |
+| `us-isob-west-1` | `awscc.route53.HostedZone.VPCRegion.us_isob_west_1` |
 
 Shorthand formats: `us_east_1` or `VPCRegion.us_east_1`
 
@@ -155,20 +155,20 @@ Shorthand formats: `us_east_1` or `VPCRegion.us_east_1`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cloud_watch_logs_log_group_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the CloudWatch Logs log group that Amazon Route 53 is publishing logs to. |
+| `cloud_watch_logs_log_group_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the CloudWatch Logs log group that Amazon Route 53 is publishing logs to. |
 
 ### vp_cs
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `vpc_id` | `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))` | Yes | *Private hosted zones only:* The ID of an Amazon VPC. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
+| `vpc_id` | `awscc.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))` | Yes | *Private hosted zones only:* The ID of an Amazon VPC. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
 | `vpc_region` | [VPCRegion](#vp_csvpc_region-vpcregion) | Yes | *Private hosted zones only:* The region that an Amazon VPC was created in. For public hosted zones, omit ``VPCs``, ``VPCId``, and ``VPCRegion``. |
 
 ## Attribute Reference
 
 ### `id`
 
-- **Type:** `aws.route53.HostedZone.Id (identity constraints: pattern: /^Z[A-Z0-9]+$/ (Full), len: unbounded..=32, member constraints: len: unbounded..=32)`
+- **Type:** `awscc.route53.HostedZone.Id (identity constraints: pattern: /^Z[A-Z0-9]+$/ (Full), len: unbounded..=32, member constraints: len: unbounded..=32)`
 
 
 

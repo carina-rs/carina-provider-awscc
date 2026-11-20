@@ -42,8 +42,8 @@ The list of tags to associate with the schedule group.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ACTIVE` | `aws.scheduler.ScheduleGroup.ScheduleGroupState.active` |
-| `DELETING` | `aws.scheduler.ScheduleGroup.ScheduleGroupState.deleting` |
+| `ACTIVE` | `awscc.scheduler.ScheduleGroup.ScheduleGroupState.active` |
+| `DELETING` | `awscc.scheduler.ScheduleGroup.ScheduleGroupState.deleting` |
 
 Shorthand formats: `active` or `ScheduleGroupState.active`
 
@@ -51,7 +51,7 @@ Shorthand formats: `active` or `ScheduleGroupState.active`
 
 ### `arn`
 
-- **Type:** `aws.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /^arn:aws[a-z-]*:scheduler:[a-z0-9\-]+:\d{12}:schedule-group\/[0-9a-zA-Z-_.]+$/ (Full), len: 1..=1224, custom validator)`
+- **Type:** `awscc.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /^arn:aws[a-z-]*:scheduler:[a-z0-9\-]+:\d{12}:schedule-group\/[0-9a-zA-Z-_.]+$/ (Full), len: 1..=1224, custom validator)`
 
 The Amazon Resource Name (ARN) of the schedule group.
 

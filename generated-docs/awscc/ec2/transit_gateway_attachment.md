@@ -46,7 +46,7 @@ The options for the transit gateway vpc attachment.
 
 ### `subnet_ids`
 
-- **Type:** List\<`aws.ec2.Subnet.Id (pattern: /^subnet-[0-9a-f]{8,}$/ (Full))`\> (unordered)
+- **Type:** List\<`awscc.ec2.Subnet.Id (pattern: /^subnet-[0-9a-f]{8,}$/ (Full))`\> (unordered)
 - **Required:** Yes
 
 ### `tags`
@@ -56,13 +56,13 @@ The options for the transit gateway vpc attachment.
 
 ### `transit_gateway_id`
 
-- **Type:** `aws.ec2.TransitGateway.Id (pattern: /^tgw-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.TransitGateway.Id (pattern: /^tgw-[0-9a-f]{8,}$/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
 ### `vpc_id`
 
-- **Type:** `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -72,8 +72,8 @@ The options for the transit gateway vpc attachment.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `aws.ec2.TransitGatewayAttachment.Options.ApplianceModeSupport.enable` |
-| `disable` | `aws.ec2.TransitGatewayAttachment.Options.ApplianceModeSupport.disable` |
+| `enable` | `awscc.ec2.TransitGatewayAttachment.Options.ApplianceModeSupport.enable` |
+| `disable` | `awscc.ec2.TransitGatewayAttachment.Options.ApplianceModeSupport.disable` |
 
 Shorthand formats: `enable` or `ApplianceModeSupport.enable`
 
@@ -81,8 +81,8 @@ Shorthand formats: `enable` or `ApplianceModeSupport.enable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `aws.ec2.TransitGatewayAttachment.Options.DnsSupport.enable` |
-| `disable` | `aws.ec2.TransitGatewayAttachment.Options.DnsSupport.disable` |
+| `enable` | `awscc.ec2.TransitGatewayAttachment.Options.DnsSupport.enable` |
+| `disable` | `awscc.ec2.TransitGatewayAttachment.Options.DnsSupport.disable` |
 
 Shorthand formats: `enable` or `DnsSupport.enable`
 
@@ -90,8 +90,8 @@ Shorthand formats: `enable` or `DnsSupport.enable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `aws.ec2.TransitGatewayAttachment.Options.Ipv6Support.enable` |
-| `disable` | `aws.ec2.TransitGatewayAttachment.Options.Ipv6Support.disable` |
+| `enable` | `awscc.ec2.TransitGatewayAttachment.Options.Ipv6Support.enable` |
+| `disable` | `awscc.ec2.TransitGatewayAttachment.Options.Ipv6Support.disable` |
 
 Shorthand formats: `enable` or `Ipv6Support.enable`
 
@@ -99,8 +99,8 @@ Shorthand formats: `enable` or `Ipv6Support.enable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `aws.ec2.TransitGatewayAttachment.Options.SecurityGroupReferencingSupport.enable` |
-| `disable` | `aws.ec2.TransitGatewayAttachment.Options.SecurityGroupReferencingSupport.disable` |
+| `enable` | `awscc.ec2.TransitGatewayAttachment.Options.SecurityGroupReferencingSupport.enable` |
+| `disable` | `awscc.ec2.TransitGatewayAttachment.Options.SecurityGroupReferencingSupport.disable` |
 
 Shorthand formats: `enable` or `SecurityGroupReferencingSupport.enable`
 
@@ -119,7 +119,7 @@ Shorthand formats: `enable` or `SecurityGroupReferencingSupport.enable`
 
 ### `id`
 
-- **Type:** `aws.ec2.TransitGatewayAttachment.Id (pattern: /^tgw-attach-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.TransitGatewayAttachment.Id (pattern: /^tgw-attach-[0-9a-f]{8,}$/ (Full))`
 
 ## AWS API narrowings
 

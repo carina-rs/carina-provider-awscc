@@ -101,8 +101,8 @@ The parameter value. If type is ``StringList``, the system returns a comma-separ
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `text` | `aws.ssm.Parameter.DataType.text` |
-| `aws:ec2:image` | `aws.ssm.Parameter.DataType.aws_ec2_image` |
+| `text` | `awscc.ssm.Parameter.DataType.text` |
+| `aws:ec2:image` | `awscc.ssm.Parameter.DataType.aws_ec2_image` |
 
 Shorthand formats: `text` or `DataType.text`
 
@@ -110,9 +110,9 @@ Shorthand formats: `text` or `DataType.text`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Standard` | `aws.ssm.Parameter.Tier.standard` |
-| `Advanced` | `aws.ssm.Parameter.Tier.advanced` |
-| `Intelligent-Tiering` | `aws.ssm.Parameter.Tier.intelligent_tiering` |
+| `Standard` | `awscc.ssm.Parameter.Tier.standard` |
+| `Advanced` | `awscc.ssm.Parameter.Tier.advanced` |
+| `Intelligent-Tiering` | `awscc.ssm.Parameter.Tier.intelligent_tiering` |
 
 Shorthand formats: `standard` or `Tier.standard`
 
@@ -120,8 +120,8 @@ Shorthand formats: `standard` or `Tier.standard`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `String` | `aws.ssm.Parameter.Type.string` |
-| `StringList` | `aws.ssm.Parameter.Type.string_list` |
+| `String` | `awscc.ssm.Parameter.Type.string` |
+| `StringList` | `awscc.ssm.Parameter.Type.string_list` |
 
 Shorthand formats: `string` or `Type.string`
 
@@ -129,7 +129,7 @@ Shorthand formats: `string` or `Type.string`
 
 ### `arn`
 
-- **Type:** `aws.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /arn:aws(-[a-z0-9-]+)*:ssm:[a-z0-9-]+:[0-9]{12}:parameter/.+/ (Full), custom validator)`
+- **Type:** `awscc.Arn (identity constraints: pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), member constraints: pattern: /arn:aws(-[a-z0-9-]+)*:ssm:[a-z0-9-]+:[0-9]{12}:parameter/.+/ (Full), custom validator)`
 
 
 

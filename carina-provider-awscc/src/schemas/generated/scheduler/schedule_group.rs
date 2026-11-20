@@ -55,7 +55,7 @@ pub fn scheduler_schedule_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_name_attribute());
     #[inline(never)]
     fn build_state_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("state", AttributeType::enum_(carina_core::schema::enum_identity("ScheduleGroupState", Some("aws.scheduler.ScheduleGroup")), Some(vec!["ACTIVE".to_string(), "DELETING".to_string()]), vec![("ACTIVE".to_string(), "active".to_string()), ("DELETING".to_string(), "deleting".to_string())], None, None))
+        AttributeSchema::provider_populated("state", AttributeType::enum_(crate::schemas::namespace::awscc_identity("ScheduleGroupState", &crate::schemas::namespace::AwsccNamespace::new("scheduler.ScheduleGroup").expect("valid AWSCC namespace")).expect("valid AWSCC identity").into_core(), Some(vec!["ACTIVE".to_string(), "DELETING".to_string()]), vec![("ACTIVE".to_string(), "active".to_string()), ("DELETING".to_string(), "deleting".to_string())], None, None))
                 .with_provider_name("State")
             .build()
     }

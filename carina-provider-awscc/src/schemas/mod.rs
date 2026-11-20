@@ -2,11 +2,18 @@
 
 pub mod awscc_types;
 pub mod catalog;
+mod catalog_definition;
+mod catalog_scalar;
 pub mod config;
 pub mod generated;
+pub mod namespace;
 pub mod pattern;
 mod scheduler;
 pub mod string_identity;
+pub mod type_helpers;
+
+#[cfg(test)]
+mod namespace_tests;
 
 #[cfg(test)]
 mod documented_narrowings_tests;
@@ -782,17 +789,17 @@ mod tests {
                 super::generated::ec2::flow_log::ec2_flow_log_config().schema,
                 "max_aggregation_interval",
                 61,
-                "aws.ec2.FlowLog.MaxAggregationInterval",
+                "awscc.ec2.FlowLog.MaxAggregationInterval",
                 "Validation failed: Value 61 is not a valid value".to_string(),
             ),
             (
                 super::generated::logs::log_group::logs_log_group_config().schema,
                 "retention_in_days",
                 2,
-                "aws.logs.LogGroup.RetentionInDays",
+                "awscc.logs.LogGroup.RetentionInDays",
                 format!(
                     "Validation failed: Value 2 is not valid; allowed values are: {:?}",
-                    carina_aws_types::AwsType::LogsLogGroupRetentionInDays
+                    crate::schemas::catalog::ScalarType::LogsLogGroupRetentionInDays
                         .allowed_int_values()
                         .unwrap()
                 ),
@@ -834,7 +841,7 @@ mod tests {
 
         let schema = super::generated::logs::log_group::logs_log_group_config().schema;
         let retention = field(&schema, "retention_in_days");
-        for &days in carina_aws_types::AwsType::LogsLogGroupRetentionInDays
+        for &days in crate::schemas::catalog::ScalarType::LogsLogGroupRetentionInDays
             .allowed_int_values()
             .unwrap()
         {
@@ -850,6 +857,7 @@ mod tests {
     #[test]
     fn generated_string_enum_identities_are_unique_within_each_resource() {
         let mut failures = Vec::new();
+        let mut examined = 0;
 
         for validated_schema in super::all_schemas() {
             let schema = validated_schema.as_schema();
@@ -883,6 +891,7 @@ mod tests {
                 );
             }
 
+            examined += collector.first_occurrence_by_identity.len();
             if !collector.duplicates.is_empty() {
                 if collector.duplicates.len() == 20 {
                     collector
@@ -897,6 +906,10 @@ mod tests {
             }
         }
 
+        assert!(
+            examined > 0,
+            "enum duplicate walker must examine AWSCC enums"
+        );
         assert!(
             failures.is_empty(),
             "duplicate generated StringEnum identities:\n{}",
@@ -952,7 +965,7 @@ mod tests {
                 ..
             } => {
                 let identity = identity.to_string();
-                if !identity.starts_with("aws.") {
+                if !identity.starts_with("awscc.") {
                     collector.stack.remove(&ptr);
                     return;
                 }
@@ -960,8 +973,8 @@ mod tests {
                 // to one identity. These IAM identities come from the single
                 // hand-written iam_policy_document() helper and are intentionally
                 // reused across all policy-document fields.
-                if identity == "aws.iam.PolicyDocument.Version"
-                    || identity == "aws.iam.PolicyDocument.Statement.Effect"
+                if identity == "awscc.iam.PolicyDocument.Version"
+                    || identity == "awscc.iam.PolicyDocument.Statement.Effect"
                 {
                     collector.stack.remove(&ptr);
                     return;

@@ -22,7 +22,7 @@ fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
 fn arn_identity_is_provider_scoped() {
     common::assert_arn_identity(
         carina_provider_awscc::schemas::generated::s3::bucket::arn(),
-        "aws.s3.Bucket.Arn",
+        "awscc.s3.Bucket.Arn",
     );
 }
 

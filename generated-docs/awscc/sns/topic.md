@@ -15,7 +15,7 @@ The ``AWS::SNS::Topic`` resource creates a topic to which notifications can be p
 awscc.sns.Topic {
   topic_name        = 'carina-example-application-alerts'
   display_name      = 'Carina application alerts'
-  signature_version = aws.sns.Topic.SignatureVersion.2
+  signature_version = awscc.sns.Topic.SignatureVersion.2
 
   tags = {
     Environment = 'example'
@@ -70,7 +70,7 @@ Set to true to create a FIFO topic.
 
 ### `kms_master_key_id`
 
-- **Type:** `aws.kms.Key.Reference (pattern: /^((arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})|alias/[a-zA-Z0-9:/_-]+))|(alias/[a-zA-Z0-9:/_-]+)|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)`
+- **Type:** `awscc.kms.Key.Reference (pattern: /^((arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):kms:[a-z]{2,4}(-[a-z0-9]+)+-[0-9]+:[0-9]{12}:(key/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|mrk-[0-9a-fA-F]{32})|alias/[a-zA-Z0-9:/_-]+))|(alias/[a-zA-Z0-9:/_-]+)|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})|(mrk-[0-9a-fA-F]{32}))$/ (Full), len: 1..=2048)`
 - **Required:** No
 
 The ID of an AWS managed customer master key (CMK) for SNS or a custom CMK. For more information, see [Key terms](https://docs.aws.amazon.com/sns/latest/dg/sns-server-side-encryption.html#sse-key-terms). For more examples, see ``KeyId`` in the *API Reference*. This property applies only to [server-side-encryption](https://docs.aws.amazon.com/sns/latest/dg/sns-server-side-encryption.html).
@@ -124,11 +124,11 @@ These CloudFormation properties are deliberately omitted for the provider-specif
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `http/s` | `aws.sns.Topic.LoggingConfig.Protocol.http_s` |
-| `sqs` | `aws.sns.Topic.LoggingConfig.Protocol.sqs` |
-| `lambda` | `aws.sns.Topic.LoggingConfig.Protocol.lambda` |
-| `firehose` | `aws.sns.Topic.LoggingConfig.Protocol.firehose` |
-| `application` | `aws.sns.Topic.LoggingConfig.Protocol.application` |
+| `http/s` | `awscc.sns.Topic.LoggingConfig.Protocol.http_s` |
+| `sqs` | `awscc.sns.Topic.LoggingConfig.Protocol.sqs` |
+| `lambda` | `awscc.sns.Topic.LoggingConfig.Protocol.lambda` |
+| `firehose` | `awscc.sns.Topic.LoggingConfig.Protocol.firehose` |
+| `application` | `awscc.sns.Topic.LoggingConfig.Protocol.application` |
 
 Shorthand formats: `http_s` or `Protocol.http_s`
 
@@ -136,8 +136,8 @@ Shorthand formats: `http_s` or `Protocol.http_s`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Topic` | `aws.sns.Topic.FifoThroughputScope.topic` |
-| `MessageGroup` | `aws.sns.Topic.FifoThroughputScope.message_group` |
+| `Topic` | `awscc.sns.Topic.FifoThroughputScope.topic` |
+| `MessageGroup` | `awscc.sns.Topic.FifoThroughputScope.message_group` |
 
 Shorthand formats: `topic` or `FifoThroughputScope.topic`
 
@@ -145,8 +145,8 @@ Shorthand formats: `topic` or `FifoThroughputScope.topic`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `1` | `aws.sns.Topic.SignatureVersion.1` |
-| `2` | `aws.sns.Topic.SignatureVersion.2` |
+| `1` | `awscc.sns.Topic.SignatureVersion.1` |
+| `2` | `awscc.sns.Topic.SignatureVersion.2` |
 
 Use the fully qualified DSL identifiers above; bare numeric values parse as integers.
 
@@ -154,8 +154,8 @@ Use the fully qualified DSL identifiers above; bare numeric values parse as inte
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `PassThrough` | `aws.sns.Topic.TracingConfig.pass_through` |
-| `Active` | `aws.sns.Topic.TracingConfig.active` |
+| `PassThrough` | `awscc.sns.Topic.TracingConfig.pass_through` |
+| `Active` | `awscc.sns.Topic.TracingConfig.active` |
 
 Shorthand formats: `pass_through` or `TracingConfig.pass_through`
 
@@ -171,16 +171,16 @@ Shorthand formats: `pass_through` or `TracingConfig.pass_through`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `failure_feedback_role_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The IAM role ARN to be used when logging failed message deliveries in Amazon CloudWatch. |
+| `failure_feedback_role_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The IAM role ARN to be used when logging failed message deliveries in Amazon CloudWatch. |
 | `protocol` | [Protocol](#delivery_status_loggingprotocol-protocol) | Yes | Indicates one of the supported protocols for the Amazon SNS topic. At least one of the other three ``LoggingConfig`` properties is recommend along with ``Protocol``. |
-| `success_feedback_role_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The IAM role ARN to be used when logging successful message deliveries in Amazon CloudWatch. |
+| `success_feedback_role_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The IAM role ARN to be used when logging successful message deliveries in Amazon CloudWatch. |
 | `success_feedback_sample_rate` | `String (pattern: /^0*(?:100\|[0-9]{1,2})$/ (Full))` | No | The percentage of successful message deliveries to be logged in Amazon CloudWatch. Valid percentage values range from 0 to 100. |
 
 ## Attribute Reference
 
 ### `topic_arn`
 
-- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
+- **Type:** `awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 
 

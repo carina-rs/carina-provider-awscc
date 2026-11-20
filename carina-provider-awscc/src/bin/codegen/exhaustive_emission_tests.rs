@@ -397,7 +397,7 @@ fn boundary_inferred_string(markdown: bool) {
         "properties":{"SubnetId":{"allOf":[{"type":"string"},{"maxLength":16}]}}
     })).unwrap();
     let output = review602_render(&schema, markdown).unwrap();
-    if markdown { assert!(output.contains("aws.ec2.Subnet.Id")); }
+    if markdown { assert!(output.contains("awscc.ec2.Subnet.Id")); }
     else { assert!(output.contains("Some((None, Some(16)))"), "{output}"); }
 }
 boundary_renderers!(boundary_inferred_string_rust, boundary_inferred_string_markdown, boundary_inferred_string);

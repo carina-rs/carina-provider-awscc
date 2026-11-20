@@ -30,7 +30,7 @@ Any tags to assign to the internet gateway.
 
 ### `internet_gateway_id`
 
-- **Type:** `aws.ec2.InternetGateway.Id (pattern: /^igw-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.InternetGateway.Id (pattern: /^igw-[0-9a-f]{8,}$/ (Full))`
 
 
 

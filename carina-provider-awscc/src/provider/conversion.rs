@@ -14,7 +14,7 @@ use carina_core::schema::{
 };
 use serde_json::json;
 
-use carina_aws_types::canonicalize_enum_value;
+use crate::schemas::type_helpers::canonicalize_enum_value;
 
 fn struct_fields_for<'a>(
     schema: &'a CompiledResourceSchema,
@@ -347,7 +347,8 @@ pub(crate) fn aws_value_to_dsl_with_defs(
                     emit_dropped_json(diagnostics, &json!({k: v}));
                 }
                 let key = if is_condition {
-                    carina_aws_types::condition_operator_to_snake(k).unwrap_or_else(|| k.clone())
+                    crate::schemas::type_helpers::condition_operator_to_snake(k)
+                        .unwrap_or_else(|| k.clone())
                 } else {
                     k.clone()
                 };
@@ -630,7 +631,8 @@ pub(crate) fn dsl_value_to_aws_with_defs(
                     ));
                 }
                 let key = if is_condition {
-                    carina_aws_types::condition_operator_to_aws(k).unwrap_or_else(|| k.clone())
+                    crate::schemas::type_helpers::condition_operator_to_aws(k)
+                        .unwrap_or_else(|| k.clone())
                 } else {
                     k.clone()
                 };
@@ -873,9 +875,12 @@ mod tests {
         use carina_core::parser::{TypeExpr, UnloadedSchemaType};
         use carina_core::schema::TypeIdentity;
 
-        let unloaded =
-            UnloadedSchemaType::try_from(TypeIdentity::new(Some("unloaded"), ["Widget"], "Value"))
-                .expect("provider type should retain unloaded evidence");
+        let unloaded = UnloadedSchemaType::try_from(TypeIdentity {
+            provider: Some("unloaded".into()),
+            segments: vec!["Widget".into()],
+            kind: "Value".into(),
+        })
+        .expect("provider type should retain unloaded evidence");
         let unloaded =
             carina_core::validation::lift_type_expr(&TypeExpr::UnloadedSchemaType(unloaded))
                 .expect("unloaded evidence should lift without loading its scalar kind");
@@ -904,10 +909,13 @@ mod tests {
 
     #[test]
     fn reference_leaves_use_string_list_conversion_in_lists_and_unions() {
-        use carina_core::schema::TypeIdentity;
-
         let reference = CompiledAttributeType::reference(
-            TypeIdentity::new(Some("test"), ["Widget"], "Reference"),
+            crate::schemas::namespace::awscc_identity(
+                "Reference",
+                &crate::schemas::namespace::AwsccNamespace::new("test.Widget").unwrap(),
+            )
+            .unwrap()
+            .into_core(),
             None,
             None,
         );
@@ -979,18 +987,11 @@ mod tests {
     }
 
     fn test_enum(
-        name: &str,
         values: Vec<String>,
-        identity: Option<carina_core::schema::TypeIdentity>,
+        identity: crate::schemas::namespace::AwsccIdentity,
         dsl_aliases: Vec<(String, String)>,
     ) -> AttributeType {
-        AttributeType::enum_(
-            identity.unwrap_or_else(|| carina_core::schema::TypeIdentity::bare(name)),
-            Some(values),
-            dsl_aliases,
-            None,
-            None,
-        )
+        AttributeType::enum_(identity.into_core(), Some(values), dsl_aliases, None, None)
     }
 
     fn assert_canonical_enum(value: &Value, identity: &str, api_value: &str) {
@@ -1012,16 +1013,17 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_string_enum_returns_api_canonical_value() {
         let attr_type = test_enum(
-            "ViewerProtocolPolicy",
             vec![
                 "allow-all".to_string(),
                 "redirect-to-https".to_string(),
                 "https-only".to_string(),
             ],
-            Some(carina_core::schema::enum_identity(
+            crate::schemas::namespace::awscc_identity(
                 "ViewerProtocolPolicy",
-                Some("aws.cloudfront.Distribution"),
-            )),
+                &crate::schemas::namespace::AwsccNamespace::new("cloudfront.Distribution")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![(
                 "redirect-to-https".to_string(),
                 "redirect_to_https".to_string(),
@@ -1070,7 +1072,7 @@ mod tests {
     }
 
     // awscc#254 literal reproduction: read the real generated
-    // `aws.cloudfront.Distribution` `distribution_config` from a
+    // `awscc.cloudfront.Distribution` `distribution_config` from a
     // CloudControl-shaped response (PascalCase keys, raw API enum
     // values) and assert the nested enum leaves are persisted as the
     // API-canonical value, then lift to the canonical fully-qualified identifier
@@ -1141,7 +1143,7 @@ mod tests {
         };
         assert_canonical_enum_ref(
             lifted_top.get("price_class"),
-            "aws.cloudfront.Distribution.DistributionConfig.PriceClass",
+            "awscc.cloudfront.Distribution.DistributionConfig.PriceClass",
             "PriceClass_200",
         );
         let Some(Value::Concrete(ConcreteValue::Map(lifted_dcb))) =
@@ -1151,7 +1153,7 @@ mod tests {
         };
         assert_canonical_enum_ref(
             lifted_dcb.get("viewer_protocol_policy"),
-            "aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy",
+            "awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy",
             "redirect-to-https",
         );
     }
@@ -1372,26 +1374,27 @@ mod tests {
         // persisted API value lifts to CanonicalEnum.
         let lifted = carina_core::utils::lift_enum_leaves(&aws_dsl, attr_schema.attr_type())
             .expect("API-canonical state value must lift to CanonicalEnum");
-        assert_canonical_enum(&lifted, "aws.ec2.VpcEndpoint.VpcEndpointType", "Gateway");
+        assert_canonical_enum(&lifted, "awscc.ec2.VpcEndpoint.VpcEndpointType", "Gateway");
     }
 
     #[test]
     fn test_dsl_value_to_aws_keeps_string_literal_at_enum_position() {
         let attr_type = test_enum(
-            "LogGroupClass",
             vec![
                 "STANDARD".to_string(),
                 "INFREQUENT_ACCESS".to_string(),
                 "DELIVERY".to_string(),
             ],
-            Some(carina_core::schema::enum_identity(
+            crate::schemas::namespace::awscc_identity(
                 "LogGroupClass",
-                Some("aws.logs.LogGroup"),
-            )),
+                &crate::schemas::namespace::AwsccNamespace::new("logs.LogGroup")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let value = Value::Concrete(ConcreteValue::String(
-            "aws.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS"
+            "awscc.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS"
                 .to_string()
                 .into(),
         ));
@@ -1409,21 +1412,21 @@ mod tests {
 
         assert_eq!(
             result,
-            Some(json!("aws.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS"))
+            Some(json!("awscc.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS"))
         );
     }
 
     #[test]
     fn test_dsl_value_to_aws_passes_through_validator_only_string() {
         let attr_type = AttributeType::enum_(
-            carina_aws_types::AwsType::Region.identity(),
+            crate::schemas::catalog::ScalarType::Region.identity(),
             None,
             vec![],
             Some(legacy_validator(|_| Ok(()))),
             None,
         );
         let value = Value::Concrete(ConcreteValue::String(
-            "aws.Region.ap_northeast_1".to_string().into(),
+            "awscc.Region.ap_northeast_1".to_string().into(),
         ));
         let schema = test_config_type(attr_type);
         let attr_type = &schema.parts()["test_value"];
@@ -1437,20 +1440,20 @@ mod tests {
             &std::collections::BTreeMap::new(),
         );
 
-        assert_eq!(result, Some(json!("aws.Region.ap_northeast_1")));
+        assert_eq!(result, Some(json!("awscc.Region.ap_northeast_1")));
     }
 
     #[test]
     #[should_panic(expected = "unresolved enum identifier must not reach AWS value conversion")]
     fn test_dsl_value_to_aws_rejects_unresolved_enum_identifier() {
         let attr_type = AttributeType::enum_(
-            carina_aws_types::AwsType::Region.identity(),
+            crate::schemas::catalog::ScalarType::Region.identity(),
             None,
             vec![],
             Some(legacy_validator(|_| Ok(()))),
             None,
         );
-        let raw = "aws.Region.ap_northeast_1";
+        let raw = "awscc.Region.ap_northeast_1";
         let value = Value::Concrete(ConcreteValue::enum_identifier(raw));
         let schema = test_config_type(attr_type);
         let attr_type = &schema.parts()["test_value"];
@@ -1468,12 +1471,13 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_list_string_enum() {
         let inner = test_enum(
-            "AllowedMethod",
             vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
-            Some(carina_core::schema::enum_identity(
+            crate::schemas::namespace::awscc_identity(
                 "AllowedMethod",
-                Some("aws.s3.Bucket"),
-            )),
+                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let enum_schema = test_rootless_type(inner.clone());
@@ -1506,12 +1510,13 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_list_string_enum() {
         let inner = test_enum(
-            "AllowedMethod",
             vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
-            Some(carina_core::schema::enum_identity(
+            crate::schemas::namespace::awscc_identity(
                 "AllowedMethod",
-                Some("aws.s3.Bucket"),
-            )),
+                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let attr_type = AttributeType::list(inner);
@@ -1540,12 +1545,13 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_list_string_enum_roundtrip() {
         let inner = test_enum(
-            "AllowedMethod",
             vec!["GET".to_string(), "PUT".to_string()],
-            Some(carina_core::schema::enum_identity(
+            crate::schemas::namespace::awscc_identity(
                 "AllowedMethod",
-                Some("aws.s3.Bucket"),
-            )),
+                &crate::schemas::namespace::AwsccNamespace::new("s3.Bucket")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let attr_type = AttributeType::list(inner);
@@ -1579,18 +1585,19 @@ mod tests {
     fn test_dsl_value_to_aws_union_keeps_string_literal() {
         let attr_type = AttributeType::union(vec![
             test_enum(
-                "Protocol",
                 vec!["tcp".to_string(), "udp".to_string()],
-                Some(carina_core::schema::enum_identity(
+                crate::schemas::namespace::awscc_identity(
                     "Protocol",
-                    Some("aws.ec2.Sg"),
-                )),
+                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
                 vec![],
             ),
             AttributeType::string(),
         ]);
         let value = Value::Concrete(ConcreteValue::String(
-            "aws.ec2.Sg.Protocol.tcp".to_string().into(),
+            "awscc.ec2.Sg.Protocol.tcp".to_string().into(),
         ));
         let schema = test_config_type(attr_type);
         let attr_type = &schema.parts()["test_value"];
@@ -1604,7 +1611,7 @@ mod tests {
             &std::collections::BTreeMap::new(),
         );
 
-        assert_eq!(result, Some(json!("aws.ec2.Sg.Protocol.tcp")));
+        assert_eq!(result, Some(json!("awscc.ec2.Sg.Protocol.tcp")));
     }
 
     #[test]
@@ -1649,12 +1656,13 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_map_recurses_into_values() {
         let inner_type = test_enum(
-            "Status",
             vec!["Active".to_string(), "Inactive".to_string()],
-            Some(carina_core::schema::enum_identity(
+            crate::schemas::namespace::awscc_identity(
                 "Status",
-                Some("aws.test.resource"),
-            )),
+                &crate::schemas::namespace::AwsccNamespace::new("test.resource")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let enum_schema = test_rootless_type(inner_type.clone());
@@ -1737,12 +1745,13 @@ mod tests {
     fn test_aws_value_to_dsl_union_with_string_enum() {
         let attr_type = AttributeType::union(vec![
             test_enum(
-                "Protocol",
                 vec!["tcp".to_string(), "udp".to_string()],
-                Some(carina_core::schema::enum_identity(
+                crate::schemas::namespace::awscc_identity(
                     "Protocol",
-                    Some("aws.ec2.Sg"),
-                )),
+                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
                 vec![],
             ),
             AttributeType::string(),
@@ -1772,12 +1781,13 @@ mod tests {
     fn test_aws_value_to_dsl_union_fallback() {
         let attr_type = AttributeType::union(vec![
             test_enum(
-                "Protocol",
                 vec!["tcp".to_string(), "udp".to_string()],
-                Some(carina_core::schema::enum_identity(
+                crate::schemas::namespace::awscc_identity(
                     "Protocol",
-                    Some("aws.ec2.Sg"),
-                )),
+                    &crate::schemas::namespace::AwsccNamespace::new("ec2.Sg")
+                        .expect("valid AWSCC namespace"),
+                )
+                .expect("valid AWSCC identity"),
                 vec![],
             ),
             AttributeType::int(),
@@ -1800,7 +1810,7 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_iam_policy_document_uses_pascal_case() {
-        use carina_aws_types::iam_policy_document;
+        use crate::schemas::type_helpers::policy_seed::iam_policy_document;
 
         let attr_type = iam_policy_document();
         let value = Value::Concrete(ConcreteValue::Map(
@@ -1895,7 +1905,7 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_iam_policy_document_serializes_string_list_principal() {
-        use carina_aws_types::iam_policy_document;
+        use crate::schemas::type_helpers::policy_seed::iam_policy_document;
 
         let attr_type = iam_policy_document();
         let value = Value::Concrete(ConcreteValue::Map(
@@ -1975,7 +1985,7 @@ mod tests {
     /// proves the Cloud Control payload uses their API spellings.
     #[test]
     fn test_dsl_value_to_aws_iam_policy_document_serializes_canonical_enums() {
-        use carina_aws_types::iam_policy_document;
+        use crate::schemas::type_helpers::policy_seed::iam_policy_document;
 
         let attr_type = iam_policy_document();
         let raw_value = Value::Concrete(ConcreteValue::Map(
@@ -2052,7 +2062,7 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_iam_policy_document_uses_snake_case() {
-        use carina_aws_types::iam_policy_document;
+        use crate::schemas::type_helpers::policy_seed::iam_policy_document;
 
         let attr_type = iam_policy_document();
         let aws_json = json!({
@@ -2131,7 +2141,7 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_iam_policy_document_parses_json_string_like_object() {
-        use carina_aws_types::iam_policy_document;
+        use crate::schemas::type_helpers::policy_seed::iam_policy_document;
 
         let attr_type = iam_policy_document();
         let aws_object = json!({
@@ -2173,7 +2183,7 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_iam_policy_document_keeps_invalid_json_string() {
-        use carina_aws_types::iam_policy_document;
+        use crate::schemas::type_helpers::policy_seed::iam_policy_document;
 
         let attr_type = iam_policy_document();
         let invalid_policy = r#"{"Version":"2012-10-17""#;
@@ -2200,7 +2210,7 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_iam_policy_document_canonicalizes_scalar_action_to_string_list() {
-        use carina_aws_types::iam_policy_document;
+        use crate::schemas::type_helpers::policy_seed::iam_policy_document;
 
         let attr_type = iam_policy_document();
         let aws_json = json!({
@@ -2252,7 +2262,7 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_iam_policy_document_canonicalizes_list_action_to_string_list() {
-        use carina_aws_types::iam_policy_document;
+        use crate::schemas::type_helpers::policy_seed::iam_policy_document;
 
         let attr_type = iam_policy_document();
         let aws_json = json!({
@@ -2313,7 +2323,8 @@ mod tests {
     /// CanonicalEnum. This pins the awscc-owned half of that contract.
     #[test]
     fn test_aws313_iam_policy_doc_read_is_api_canonical_and_lifts() {
-        use carina_aws_types::iam_policy_document;
+        // Preserve this regression's original list-shaped Statement grammar.
+        use crate::schemas::type_helpers::policy_seed::iam_policy_document;
 
         let attr_type = iam_policy_document();
 
@@ -2387,7 +2398,7 @@ mod tests {
         };
         assert_canonical_enum_ref(
             lifted_map.get("version"),
-            "aws.iam.PolicyDocument.Version",
+            "awscc.iam.PolicyDocument.Version",
             "2012-10-17",
         );
         let Some(Value::Concrete(ConcreteValue::List(stmts))) = lifted_map.get("statement") else {
@@ -2398,7 +2409,7 @@ mod tests {
         };
         assert_canonical_enum_ref(
             stmt.get("effect"),
-            "aws.iam.PolicyDocument.Statement.Effect",
+            "awscc.iam.PolicyDocument.Statement.Effect",
             "Allow",
         );
     }
@@ -2407,7 +2418,7 @@ mod tests {
     // is persisted as the hyphen API form, not a DSL string.
     #[test]
     fn test_aws_value_to_dsl_region_in_struct_is_api_canonical() {
-        use carina_aws_types::aws_region;
+        use crate::schemas::catalog::aws_region;
 
         let fields = vec![
             StructField::required("region_name", aws_region())
@@ -2444,12 +2455,13 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_enum_value_with_dot() {
         let attr_type = test_enum(
-            "Type",
             vec!["ipsec.1".to_string()],
-            Some(carina_core::schema::enum_identity(
+            crate::schemas::namespace::awscc_identity(
                 "Type",
-                Some("aws.ec2.VpnGateway"),
-            )),
+                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let json_val = json!("ipsec.1");
@@ -2479,16 +2491,17 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_keeps_namespaced_dotted_string_literal() {
         let attr_type = test_enum(
-            "Type",
             vec!["ipsec.1".to_string()],
-            Some(carina_core::schema::enum_identity(
+            crate::schemas::namespace::awscc_identity(
                 "Type",
-                Some("aws.ec2.VpnGateway"),
-            )),
+                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let value = Value::Concrete(ConcreteValue::String(
-            "aws.ec2.VpnGateway.Type.ipsec.1".to_string().into(),
+            "awscc.ec2.VpnGateway.Type.ipsec.1".to_string().into(),
         ));
 
         let schema = test_config_type(attr_type);
@@ -2503,18 +2516,19 @@ mod tests {
             &std::collections::BTreeMap::new(),
         );
 
-        assert_eq!(result, Some(json!("aws.ec2.VpnGateway.Type.ipsec.1")));
+        assert_eq!(result, Some(json!("awscc.ec2.VpnGateway.Type.ipsec.1")));
     }
 
     #[test]
     fn test_dsl_value_to_aws_enum_plain_dot_value() {
         let attr_type = test_enum(
-            "Type",
             vec!["ipsec.1".to_string()],
-            Some(carina_core::schema::enum_identity(
+            crate::schemas::namespace::awscc_identity(
                 "Type",
-                Some("aws.ec2.VpnGateway"),
-            )),
+                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
         let value = Value::Concrete(ConcreteValue::String("ipsec.1".to_string().into()));
@@ -2537,12 +2551,13 @@ mod tests {
     #[test]
     fn test_enum_round_trip_with_dotted_value() {
         let attr_type = test_enum(
-            "Type",
             vec!["ipsec.1".to_string()],
-            Some(carina_core::schema::enum_identity(
+            crate::schemas::namespace::awscc_identity(
                 "Type",
-                Some("aws.ec2.VpnGateway"),
-            )),
+                &crate::schemas::namespace::AwsccNamespace::new("ec2.VpnGateway")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity"),
             vec![],
         );
 
@@ -2627,7 +2642,13 @@ mod tests {
     #[test]
     fn test_value_to_json_canonical_enum_uses_api_value() {
         let attr_type = AttributeType::enum_(
-            carina_core::schema::enum_identity("Effect", Some("aws.iam.PolicyDocument")),
+            crate::schemas::namespace::awscc_identity(
+                "Effect",
+                &crate::schemas::namespace::AwsccNamespace::new("iam.PolicyDocument")
+                    .expect("valid AWSCC namespace"),
+            )
+            .expect("valid AWSCC identity")
+            .into_core(),
             Some(vec!["Allow".to_string(), "Deny".to_string()]),
             vec![
                 ("Allow".to_string(), "allow".to_string()),
@@ -2986,7 +3007,7 @@ mod tests {
         // Parser-level enum values are still EnumIdentifier before the host
         // resolves them at the provider boundary.
         let snake_case_value: Value = Value::Concrete(ConcreteValue::enum_identifier(
-            "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced",
+            "awscc.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced",
         ));
         let validated_schema = config.schema.clone();
         let ownership_type = validated_schema
@@ -3006,7 +3027,7 @@ mod tests {
         // rejected. State JSON still flows through `aws_value_to_dsl`
         // separately, so this only gates DSL-source values.
         let pascal_value: Value = Value::Concrete(ConcreteValue::enum_identifier(
-            "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.BucketOwnerEnforced",
+            "awscc.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.BucketOwnerEnforced",
         ));
         assert!(
             ownership_type.validate(&pascal_value).is_err(),
@@ -3022,7 +3043,7 @@ mod tests {
             .expect("object ownership enum fixture must remain present");
         assert_canonical_enum(
             &canonical_value,
-            "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership",
+            "awscc.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership",
             "BucketOwnerEnforced",
         );
         let aws_json = dsl_value_to_aws_with_defs(
@@ -3057,7 +3078,7 @@ mod tests {
             .expect("API-canonical state value must lift");
         assert_canonical_enum(
             &lifted,
-            "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership",
+            "awscc.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership",
             "BucketOwnerEnforced",
         );
     }
@@ -3118,7 +3139,12 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_custom_without_to_dsl_passes_through() {
         let attr_type = AttributeType::refined_string_with_validator(
-            carina_core::schema::TypeIdentity::bare("DnsName"),
+            crate::schemas::namespace::awscc_identity(
+                "DnsName",
+                &crate::schemas::namespace::AwsccNamespace::new("test").unwrap(),
+            )
+            .unwrap()
+            .into_core(),
             None,
             None,
             legacy_validator(|_| Ok(())),

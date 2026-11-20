@@ -5,14 +5,14 @@
 #        destroy cleans up the versioned bucket.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 awscc.s3.Bucket {
   bucket_name_prefix = 'carina-acc-test-'
 
   versioning_configuration = {
-    status = aws.s3.Bucket.VersioningConfiguration.Status.enabled
+    status = awscc.s3.Bucket.VersioningConfiguration.Status.enabled
   }
 
   directives {

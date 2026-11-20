@@ -11,7 +11,7 @@
 # SNS Topic and Subscription - Basic test
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 let topic = awscc.sns.Topic {

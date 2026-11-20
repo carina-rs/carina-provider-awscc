@@ -9,7 +9,7 @@ provider awscc {
 awscc.wafv2.WebAcl {
   name        = 'carina-example-web-acl'
   description = 'Regional protection for the example workload'
-  scope       = aws.wafv2.WebAcl.Scope.regional
+  scope       = awscc.wafv2.WebAcl.Scope.regional
 
   default_action = {
     allow = {}

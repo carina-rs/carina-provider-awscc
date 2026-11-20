@@ -132,8 +132,8 @@ A complex type that contains zero or more ``Tag`` elements.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `cloudfront-js-1.0` | `aws.cloudfront.Function.FunctionConfig.Runtime.cloudfront_js_1_0` |
-| `cloudfront-js-2.0` | `aws.cloudfront.Function.FunctionConfig.Runtime.cloudfront_js_2_0` |
+| `cloudfront-js-1.0` | `awscc.cloudfront.Function.FunctionConfig.Runtime.cloudfront_js_1_0` |
+| `cloudfront-js-2.0` | `awscc.cloudfront.Function.FunctionConfig.Runtime.cloudfront_js_2_0` |
 
 Shorthand formats: `cloudfront_js_1_0` or `Runtime.cloudfront_js_1_0`
 
@@ -141,8 +141,8 @@ Shorthand formats: `cloudfront_js_1_0` or `Runtime.cloudfront_js_1_0`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `DEVELOPMENT` | `aws.cloudfront.Function.Stage.development` |
-| `LIVE` | `aws.cloudfront.Function.Stage.live` |
+| `DEVELOPMENT` | `awscc.cloudfront.Function.Stage.development` |
+| `LIVE` | `awscc.cloudfront.Function.Stage.live` |
 
 Shorthand formats: `development` or `Stage.development`
 
@@ -160,19 +160,19 @@ Shorthand formats: `development` or `Stage.development`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key_value_store_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the key value store association. |
+| `key_value_store_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | Yes | The Amazon Resource Name (ARN) of the key value store association. |
 
 ### function_metadata
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `function_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function. Provider-populated; cannot be set. |
+| `function_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No | The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function. Provider-populated; cannot be set. |
 
 ## Attribute Reference
 
 ### `function_arn`
 
-- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
+- **Type:** `awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 
 

@@ -12,7 +12,7 @@ use carina_core::provider::{ProviderFactory, provider_custom_types_from_factorie
 use carina_core::resolver::resolve_ref_value_with_config;
 use carina_core::resource::{AuthoredConcreteValue, AuthoredResource, AuthoredValue};
 use carina_core::schema::{
-    RawShape, SchemaKind, StringIdentityParts, StringMemberParts, TypeAssignability, TypeIdentity,
+    RawShape, SchemaKind, StringIdentityParts, StringMemberParts, TypeAssignability,
     ValidatedResourceSchema, builtin_type_registry,
 };
 use carina_core::validation::{
@@ -43,25 +43,25 @@ fn role_and_policy_names_use_shared_identities_and_documented_boundaries() {
         (
             &role,
             "role_name",
-            carina_aws_types::AwsType::IamRoleName,
+            crate::schemas::catalog::ScalarType::IamRoleName,
             64,
         ),
         (
             &policy,
             "role_name",
-            carina_aws_types::AwsType::IamRoleName,
+            crate::schemas::catalog::ScalarType::IamRoleName,
             64,
         ),
         (
             &policy,
             "policy_name",
-            carina_aws_types::AwsType::IamPolicyName,
+            crate::schemas::catalog::ScalarType::IamPolicyName,
             128,
         ),
         (
             &role,
             "policies.policy_name",
-            carina_aws_types::AwsType::IamPolicyName,
+            crate::schemas::catalog::ScalarType::IamPolicyName,
             128,
         ),
     ] {
@@ -93,10 +93,20 @@ fn role_and_policy_names_use_shared_identities_and_documented_boundaries() {
 }
 
 #[test]
-fn role_path_uses_shared_anonymous_path_type_and_keeps_the_root_path() {
+fn role_path_keeps_anonymous_constraints_and_the_root_path() {
     let schema = role_schema();
     let path = field(&schema, "path");
-    let shared = carina_aws_types::iam_path();
+    // Pin the anonymous declaration independently of the generated schema.
+    let expected = carina_core::schema::AttributeType::string_member(
+        carina_core::schema::StringIdentityLayer::new(None, None, None, None),
+        carina_core::schema::StringMemberConstraints::new(
+            Some(carina_core::schema::PatternSpec::new(
+                r"^(?:/|/[\x21-\x7E]+/)\z",
+                carina_core::schema::PatternMatch::Full,
+            )),
+            Some((Some(1), Some(512))),
+        ),
+    );
     let RawShape::String {
         identity_layer:
             StringIdentityParts {
@@ -120,16 +130,16 @@ fn role_path_uses_shared_anonymous_path_type_and_keeps_the_root_path() {
             },
         member_layer:
             StringMemberParts {
-                pattern: shared_pattern,
-                length: shared_length,
+                pattern: expected_pattern,
+                length: expected_length,
             },
-    } = shared.raw_shape()
+    } = expected.raw_shape()
     else {
-        panic!("shared IAM path must keep anonymous constraints in its member layer");
+        panic!("expected IAM path must keep anonymous constraints in its member layer");
     };
     assert!(identity.is_none());
-    assert_eq!(pattern, shared_pattern);
-    assert_eq!(length, shared_length);
+    assert_eq!(pattern, expected_pattern);
+    assert_eq!(length, expected_length);
     for value in [
         "/".to_string(),
         "/carina/app/".to_string(),
@@ -217,7 +227,9 @@ fn oidc_url_reuses_core_https_url_through_the_provider_registry() {
     else {
         panic!("OIDC URL must preserve core HttpsUrl with CFN member length");
     };
-    assert_eq!(identity, &TypeIdentity::bare("HttpsUrl"));
+    assert_eq!(identity.provider, None);
+    assert!(identity.segments.is_empty());
+    assert_eq!(identity.kind, "HttpsUrl");
     let builtin = builtin_type_registry().get(identity).unwrap();
     let RawShape::String {
         identity_layer:
@@ -353,7 +365,7 @@ fn module_name_fixture(declarations: &str, names: [&str; 4]) -> String {
 let role = awscc.iam.Role {{
   role_name = {role_name}
   assume_role_policy_document = {{
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {{
       effect = allow
       principal = {{ service = 'lambda.amazonaws.com' }}
@@ -363,7 +375,7 @@ let role = awscc.iam.Role {{
   policy {{
     policy_name = {inline_policy_name}
     policy_document = {{
-      version = aws.iam.PolicyDocument.Version.2012_10_17
+      version = awscc.iam.PolicyDocument.Version.2012_10_17
       statement {{ effect = allow action = 's3:ListAllMyBuckets' resource = '*' }}
     }}
   }}
@@ -383,10 +395,10 @@ const LITERAL_NAMES: [&str; 4] = [
     "'InlinePolicyName'",
 ];
 const NAME_IDENTITIES: [&str; 4] = [
-    "aws.iam.Role.Name",
-    "aws.iam.Role.Name",
-    "aws.iam.Policy.Name",
-    "aws.iam.Policy.Name",
+    "awscc.iam.Role.Name",
+    "awscc.iam.Role.Name",
+    "awscc.iam.Policy.Name",
+    "awscc.iam.Policy.Name",
 ];
 const PLAIN_STRING_OUTPUT: &str = r#"
 let source = awscc.ssm.Parameter {

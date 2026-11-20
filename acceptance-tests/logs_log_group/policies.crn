@@ -5,7 +5,7 @@
 #        apply, including Cloud Control's omitted-vs-empty-list read behavior.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 let policy_log_group = awscc.logs.LogGroup {
@@ -15,7 +15,7 @@ let policy_log_group = awscc.logs.LogGroup {
   data_protection_policy = {
     name        = 'carina-acc-test-data-protection'
     description = 'Carina acceptance test data protection policy'
-    version     = aws.logs.LogGroup.DataProtectionPolicy.Version.v2021_06_01
+    version     = awscc.logs.LogGroup.DataProtectionPolicy.Version.v2021_06_01
 
     configuration = {
       custom_data_identifier = [{

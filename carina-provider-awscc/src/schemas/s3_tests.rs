@@ -591,7 +591,7 @@ fn inventory_format_preserves_main_identifiers_without_colliding_with_analytics(
         "analytics_configurations.storage_class_analysis.data_export.destination.format",
     );
     let main_identity =
-        "aws.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination.Format";
+        "awscc.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination.Format";
     assert_eq!(
         inventory.as_type().enum_parts().unwrap().0.to_string(),
         main_identity
@@ -607,7 +607,7 @@ fn inventory_format_preserves_main_identifiers_without_colliding_with_analytics(
     }
     analytics
         .validate(&enum_identifier(
-            "aws.s3.Bucket.AnalyticsDestination.Format.csv",
+            "awscc.s3.Bucket.AnalyticsDestination.Format.csv",
         ))
         .unwrap();
 }
@@ -622,7 +622,7 @@ fn notification_events_and_filter_names_have_exact_wire_strings_and_legal_aliase
         .expect("notification events must have one shared definition");
     assert_eq!(
         event_def.enum_parts().unwrap().0.to_string(),
-        "aws.s3.Bucket.NotificationConfiguration.Event"
+        "awscc.s3.Bucket.NotificationConfiguration.Event"
     );
     assert_eq!(EVENTS.len(), 31);
     assert_eq!(
@@ -930,7 +930,7 @@ awscc.s3.Bucket {
     validate_fixtures(&[("s3_live_forms.crn", source)]);
     let qualified_inventory = source.replace(
         "format = parquet",
-        "format = aws.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination.Format.orc",
+        "format = awscc.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination.Format.orc",
     );
     validate_fixtures(&[("s3_qualified_inventory_format.crn", &qualified_inventory)]);
     for (from, to) in [

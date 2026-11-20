@@ -34,7 +34,7 @@ let gateway_attachment = awscc.ec2.VpcGatewayAttachment {
 }
 
 let eip = awscc.ec2.Eip {
-  domain = aws.ec2.Eip.Domain.vpc
+  domain = awscc.ec2.Eip.Domain.vpc
 }
 
 awscc.ec2.NatGateway {
@@ -55,7 +55,7 @@ awscc.ec2.NatGateway {
 
 ### `allocation_id`
 
-- **Type:** `aws.ec2.Eip.AllocationId (pattern: /^eipalloc-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.Eip.AllocationId (pattern: /^eipalloc-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -102,7 +102,7 @@ The private IPv4 address to assign to the NAT gateway. If you don't provide an a
 
 ### `secondary_allocation_ids`
 
-- **Type:** List\<`aws.ec2.Eip.AllocationId (pattern: /^eipalloc-[0-9a-f]{8,}$/ (Full))`\> (unique items, ordered)
+- **Type:** List\<`awscc.ec2.Eip.AllocationId (pattern: /^eipalloc-[0-9a-f]{8,}$/ (Full))`\> (unique items, ordered)
 - **Required:** No
 
 Secondary EIP allocation IDs. For more information, see [Create a NAT gateway](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-working-with.html) in the *Amazon VPC User Guide*.
@@ -123,7 +123,7 @@ Secondary private IPv4 addresses. For more information about secondary addresses
 
 ### `subnet_id`
 
-- **Type:** `aws.ec2.Subnet.Id (pattern: /^subnet-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.Subnet.Id (pattern: /^subnet-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -138,7 +138,7 @@ The tags for the NAT gateway.
 
 ### `vpc_id`
 
-- **Type:** `aws.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.Vpc.Id (pattern: /^vpc-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -150,8 +150,8 @@ The ID of the VPC in which the NAT gateway is located.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `zonal` | `aws.ec2.NatGateway.AvailabilityMode.zonal` |
-| `regional` | `aws.ec2.NatGateway.AvailabilityMode.regional` |
+| `zonal` | `awscc.ec2.NatGateway.AvailabilityMode.zonal` |
+| `regional` | `awscc.ec2.NatGateway.AvailabilityMode.regional` |
 
 Shorthand formats: `zonal` or `AvailabilityMode.zonal`
 
@@ -159,8 +159,8 @@ Shorthand formats: `zonal` or `AvailabilityMode.zonal`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `public` | `aws.ec2.NatGateway.ConnectivityType.public` |
-| `private` | `aws.ec2.NatGateway.ConnectivityType.private` |
+| `public` | `awscc.ec2.NatGateway.ConnectivityType.public` |
+| `private` | `awscc.ec2.NatGateway.ConnectivityType.private` |
 
 Shorthand formats: `public` or `ConnectivityType.public`
 
@@ -170,9 +170,9 @@ Shorthand formats: `public` or `ConnectivityType.public`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `allocation_ids` | List\<`aws.ec2.Eip.AllocationId (pattern: /^eipalloc-[0-9a-f]{8,}$/ (Full))`\> (unique items, unordered) | Yes | The allocation IDs of the Elastic IP addresses (EIPs) to be used for handling outbound NAT traffic in this specific Availability Zone. |
-| `availability_zone` | `aws.AvailabilityZone.ZoneName (custom validator)` | No | For regional NAT gateways only: The Availability Zone where this specific NAT gateway configuration will be active. Each AZ in a regional NAT gateway has its own configuration to handle outbound NAT traffic from that AZ. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region. |
-| `availability_zone_id` | `aws.AvailabilityZone.ZoneId (pattern: /^[a-z]+[0-9]+-az[0-9]+$/ (Full))` | No | For regional NAT gateways only: The ID of the Availability Zone where this specific NAT gateway configuration will be active. Each AZ in a regional NAT gateway has its own configuration to handle outbound NAT traffic from that AZ. Use this instead of AvailabilityZone for consistent identification of AZs across AWS Regions. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region. |
+| `allocation_ids` | List\<`awscc.ec2.Eip.AllocationId (pattern: /^eipalloc-[0-9a-f]{8,}$/ (Full))`\> (unique items, unordered) | Yes | The allocation IDs of the Elastic IP addresses (EIPs) to be used for handling outbound NAT traffic in this specific Availability Zone. |
+| `availability_zone` | `awscc.AvailabilityZone.ZoneName (custom validator)` | No | For regional NAT gateways only: The Availability Zone where this specific NAT gateway configuration will be active. Each AZ in a regional NAT gateway has its own configuration to handle outbound NAT traffic from that AZ. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region. |
+| `availability_zone_id` | `awscc.AvailabilityZone.ZoneId (pattern: /^[a-z]+[0-9]+-az[0-9]+$/ (Full))` | No | For regional NAT gateways only: The ID of the Availability Zone where this specific NAT gateway configuration will be active. Each AZ in a regional NAT gateway has its own configuration to handle outbound NAT traffic from that AZ. Use this instead of AvailabilityZone for consistent identification of AZs across AWS Regions. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region. |
 
 ## Attribute Reference
 
@@ -190,19 +190,19 @@ Shorthand formats: `public` or `ConnectivityType.public`
 
 ### `eni_id`
 
-- **Type:** `aws.ec2.NetworkInterface.Id (pattern: /^eni-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.NetworkInterface.Id (pattern: /^eni-[0-9a-f]{8,}$/ (Full))`
 
 
 
 ### `nat_gateway_id`
 
-- **Type:** `aws.ec2.NatGateway.Id (pattern: /^nat-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.NatGateway.Id (pattern: /^nat-[0-9a-f]{8,}$/ (Full))`
 
 
 
 ### `route_table_id`
 
-- **Type:** `aws.ec2.RouteTable.Id (pattern: /^rtb-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.RouteTable.Id (pattern: /^rtb-[0-9a-f]{8,}$/ (Full))`
 
 
 

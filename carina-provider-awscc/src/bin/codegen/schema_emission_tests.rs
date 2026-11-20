@@ -874,7 +874,7 @@ fn step4_emission_ignores_legacy_tag_carrier_fields() {
         &property,
         "Probe",
         &context,
-        "aws.test.Emission",
+        &AwsccNamespace::new("test.Emission").expect("valid AWSCC namespace"),
         &BTreeMap::new(),
     )
     .unwrap();
@@ -1036,17 +1036,14 @@ fn document_emitter_produces_final_builder_type_spelling() {
             None,
         )
         .unwrap();
-    assert_eq!(emitted.rust, "carina_aws_types::iam_policy_document()");
+    assert_eq!(emitted.rust, "crate::schemas::type_helpers::policy_seed::iam_policy_document()");
 }
 
 #[test]
 fn catalog_integer_enum_lookup_returns_spelling_and_type_from_the_same_row() {
     let flow = AwsccType::Ec2FlowLogMaxAggregationInterval;
-    let retention = carina_aws_types::AwsType::LogsLogGroupRetentionInDays;
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "The expected integer retention declaration carries no partition-bearing ARN (#593)"
-    )]
+    let retention = carina_provider_awscc::schemas::catalog::ScalarType::LogsLogGroupRetentionInDays;
+
     let retention_type = retention.attribute_type();
     for (resource, property, path, values, expected_type) in [
         (
@@ -1211,4 +1208,67 @@ fn object_string_union_order_is_independent() {
             );
         }
     }
+}
+
+
+#[test]
+fn catalog_arn_service_guard_matches_independent_catalog_derivation() {
+    // Derive independently from every row, without filtering through the guard.
+    let actual = AwsccType::ALL
+        .iter()
+        .copied()
+        .map(AwsccType::identity)
+        .chain(
+            StringIdentity::ALL
+                .iter()
+                .copied()
+                .map(StringIdentity::identity),
+        )
+        .chain(
+            carina_provider_awscc::schemas::catalog::ScalarType::ALL
+                .iter()
+                .copied()
+                .map(carina_provider_awscc::schemas::catalog::ScalarType::identity),
+        )
+        .filter(|id| id.kind == "Arn")
+        .filter_map(|id| id.segments.into_iter().next())
+        .chain(["acm", "sqs", "sts"].into_iter().map(str::to_string))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        carina_provider_awscc::schemas::catalog::known_arn_services(),
+        &actual
+    );
+    for service in ["acm", "sqs", "sts"] {
+        assert!(
+            arn_identity(service, "FutureResource").is_err(),
+            "{service} must require an explicit ARN identity"
+        );
+    }
+}
+
+#[test]
+fn codegen_namespace_errors_propagate_without_panicking() {
+    let schema = ParsedCfnSchema::from_json(serde_json::json!({
+        "typeName": "AWS::aws::Vpc",
+        "properties": {"Mode": {"type": "string", "enum": ["on", "off"]}}
+    }))
+    .unwrap();
+    let result = std::panic::catch_unwind(|| generate_schema_code(&schema, &schema.type_name));
+    let error = result
+        .expect("namespace authoring errors must not panic")
+        .unwrap_err();
+    assert!(
+        error
+            .downcast_ref::<carina_provider_awscc::schemas::namespace::InvalidAwsccNamespace>()
+            .is_some(),
+        "{error:#}"
+    );
+    let namespace = AwsccNamespace::new("ec2.Vpc").unwrap();
+    let error = namespace_with_struct_path(&namespace, &["aws".into()]).unwrap_err();
+    assert!(
+        error
+            .downcast_ref::<carina_provider_awscc::schemas::namespace::InvalidAwsccNamespace>()
+            .is_some(),
+        "{error:#}"
+    );
 }

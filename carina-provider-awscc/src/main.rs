@@ -932,7 +932,7 @@ impl CarinaProvider for AwsccProcessProvider {
     fn config_completions(&self) -> HashMap<String, Vec<proto::CompletionValue>> {
         HashMap::from([(
             "region".to_string(),
-            carina_aws_types::region_completions("awscc")
+            carina_provider_awscc::schemas::type_helpers::region_completions()
                 .into_iter()
                 .map(|c| proto::CompletionValue {
                     value: c.value,
@@ -1626,13 +1626,13 @@ mod tests {
         {
             return awscc_type.valid_sample();
         }
-        if let Some(aws_type) = carina_aws_types::AwsType::ALL
+        if let Some(aws_type) = carina_provider_awscc::schemas::catalog::ScalarType::ALL
             .iter()
             .copied()
             .find(|aws_type| aws_type.identity() == *identity)
         {
             let sample = aws_type.valid_sample();
-            // Shared String rows may enforce their grammar entirely through
+            // Local String rows may enforce their grammar entirely through
             // metadata while AWSCC retains callbacks. Validate the sample with
             // AWSCC's identity policy, including its partition decisions.
             if let Some(string_identity) = schemas::string_identity::StringIdentity::ALL
@@ -1658,6 +1658,43 @@ mod tests {
                 );
             }
             return sample;
+        }
+
+        // These AWSCC declarations predate the closed row catalog. Keep their
+        // samples local and verify them against the declaration's complete policy.
+        use carina_provider_awscc::schemas::string_identity::StringIdentity;
+        if let Some(string_identity) = StringIdentity::ALL
+            .iter()
+            .copied()
+            .find(|id| id.identity() == *identity)
+        {
+            let sample = match string_identity {
+                StringIdentity::Arn => Some("arn:aws:s3:::example-bucket"),
+                StringIdentity::IamRoleArn => Some("arn:aws:iam::123456789012:role/example-role"),
+                StringIdentity::IamPolicyArn => {
+                    Some("arn:aws:iam::123456789012:policy/example-policy")
+                }
+                StringIdentity::KmsKeyArn => Some(
+                    "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789abc",
+                ),
+                StringIdentity::KmsKeyId => Some("12345678-1234-1234-1234-123456789abc"),
+                _ => None,
+            };
+            if let Some(sample) = sample {
+                let ty = AttributeType::string_member(
+                    string_identity.identity_layer(),
+                    StringMemberConstraints::new(None, None),
+                );
+                let schema =
+                    ValidatedConfigSchema::validate(BTreeMap::from([("sample".into(), ty)]))
+                        .unwrap();
+                schema
+                    .rootless_type("sample")
+                    .unwrap()
+                    .validate(&bridge_probe(CallbackScalar::String, sample))
+                    .unwrap_or_else(|error| panic!("AWSCC catalog sample for {identity}: {error}"));
+                return sample;
+            }
         }
 
         assert!(
@@ -1908,6 +1945,17 @@ mod tests {
             let serialized = provider_schema_to_json(witness).expect("serialize AWSCC witness");
             assert!(serialized.contains("\"assignability_edges\":[]"));
         }
+    }
+
+    #[test]
+    fn namespace_walk_every_sdk_identity_is_awscc_or_builtin() {
+        let provider = AwsccProcessProvider::new();
+        let cache = ProviderSchemaCache::from_provider(&provider).unwrap();
+        carina_provider_awscc::identity_inventory::Inventory::schemas(
+            cache.schemas(),
+            cache.config(),
+        )
+        .assert_owned();
     }
 
     #[test]

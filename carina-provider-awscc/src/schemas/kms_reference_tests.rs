@@ -77,7 +77,7 @@ impl Coverage {
                     let entry = classification::entry(schema.resource_type(), path).unwrap();
                     assert_eq!(
                         identity,
-                        Some(&carina_aws_types::AwsType::KmsKeyReference.identity()),
+                        Some(&crate::schemas::catalog::ScalarType::KmsKeyReference.identity()),
                         "{}.{path} must be a reference leaf",
                         schema.resource_type()
                     );
@@ -175,7 +175,7 @@ impl Coverage {
                 }
                 None => assert_ne!(
                     identity,
-                    Some(&carina_aws_types::AwsType::KmsKeyReference.identity()),
+                    Some(&crate::schemas::catalog::ScalarType::KmsKeyReference.identity()),
                     "unclassified KMS reference: {}.{path}",
                     schema.resource_type()
                 ),
@@ -316,7 +316,7 @@ fn kms_key_outputs_keep_their_output_types() {
     let key_id = schema.attributes().get("key_id").unwrap();
     assert!(arn.is_read_only() && key_id.is_read_only());
     assert!(
-        matches!(schema.shape_of(arn.attr_type()), Shape::String { identity_layer: StringIdentityParts { identity: Some(identity), .. }, .. } if identity == &carina_aws_types::AwsType::KmsKeyArn.identity())
+        matches!(schema.shape_of(arn.attr_type()), Shape::String { identity_layer: StringIdentityParts { identity: Some(identity), .. }, .. } if identity == &crate::schemas::string_identity::StringIdentity::KmsKeyArn.identity())
     );
     assert!(matches!(
         schema.shape_of(key_id.attr_type()),

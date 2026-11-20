@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeType, CompiledPattern, CustomValidator, IntIdentityParts, RawShape,
-    StringIdentityParts, TypeIdentity, legacy_validator,
+    StringIdentityParts, legacy_validator,
 };
 
 use super::catalog::{self, arn};
@@ -60,11 +60,14 @@ fn generic_arn_preserves_identity_and_validation_semantics() {
     };
     assert_eq!(
         identity,
-        Some(&TypeIdentity {
-            provider: Some("aws".to_string()),
-            segments: Vec::new(),
-            kind: "Arn".to_string(),
-        })
+        Some(
+            &crate::schemas::namespace::awscc_identity(
+                "Arn",
+                &crate::schemas::namespace::AwsccNamespace::root()
+            )
+            .unwrap()
+            .into_core()
+        )
     );
     assert_eq!(length, None);
     let pattern = CompiledPattern::try_new(pattern).unwrap();
@@ -131,127 +134,24 @@ fn crate_source_failures(root: &Path) -> Vec<String> {
     failures
 }
 
-struct SharedType {
-    name: &'static str,
-    constructor: fn() -> AttributeType,
-}
-
-// The identifiers are explicit: adding a shared type requires reviewing its
-// constructor, not inferring safety from its name or its current source uses.
-macro_rules! shared_type_allowlist {
-    (functions: [$($module:ident::$function:ident),* $(,)?], rows: [$($row_module:ident::AwsType::$row:ident),* $(,)?] $(,)?) => {
-        &[
-            $(SharedType {
-                name: stringify!($function),
-                constructor: $module::$function,
-            },)*
-            $(SharedType {
-                name: concat!("AwsType::", stringify!($row)),
-                constructor: || $row_module::AwsType::$row.attribute_type(),
-            },)*
-        ]
-    };
-}
-
-const SHARED_TYPES: &[SharedType] = shared_type_allowlist! {
-    functions: [
-        carina_aws_types::allocation_id,
-        carina_aws_types::availability_zone,
-        carina_aws_types::availability_zone_id,
-        carina_aws_types::aws_account_id,
-        carina_aws_types::aws_region,
-        carina_aws_types::aws_resource_id,
-        carina_aws_types::carrier_gateway_id,
-        carina_aws_types::cloudfront_hosted_zone_id,
-        carina_aws_types::egress_only_internet_gateway_id,
-        carina_aws_types::elbv2_health_check_port,
-        carina_aws_types::elbv2_target_group_grpc_code,
-        carina_aws_types::elbv2_target_group_http_code,
-        carina_aws_types::flow_log_id,
-        carina_aws_types::gateway_id,
-        carina_aws_types::iam_path,
-        carina_aws_types::iam_policy_document,
-        carina_aws_types::iam_policy_name,
-        carina_aws_types::iam_role_id,
-        carina_aws_types::iam_role_name,
-        carina_aws_types::identity_store_id,
-        carina_aws_types::instance_id,
-        carina_aws_types::internet_gateway_id,
-        carina_aws_types::ipam_id,
-        carina_aws_types::ipam_pool_id,
-        // The sole partition-bearing exception is the cross-provider KMS
-        // comparison reference. It remains shared under #541.
-        carina_aws_types::kms_key_reference,
-        carina_aws_types::local_gateway_id,
-        carina_aws_types::logs_log_group_retention_in_days,
-        carina_aws_types::nat_gateway_id,
-        carina_aws_types::network_acl_id,
-        carina_aws_types::network_interface_id,
-        carina_aws_types::prefix_list_id,
-        carina_aws_types::route53_hosted_zone_id,
-        carina_aws_types::route_table_id,
-        carina_aws_types::security_group_id,
-        carina_aws_types::sso_principal_id,
-        carina_aws_types::subnet_id,
-        carina_aws_types::subnet_route_table_association_id,
-        carina_aws_types::tgw_route_table_id,
-        carina_aws_types::transit_gateway_attachment_id,
-        carina_aws_types::transit_gateway_id,
-        carina_aws_types::vpc_cidr_block_association_id,
-        carina_aws_types::vpc_endpoint_id,
-        carina_aws_types::vpc_id,
-        carina_aws_types::vpc_peering_connection_id,
-        carina_aws_types::vpn_gateway_id,
-    ],
-    rows: [],
-};
-
-// These items supply metadata, SDK support or non-type utilities. They are
-// exact paths, not prefixes: new items also require explicit review.
+// Only SDK/runtime support crosses this boundary. Schema types and their
+// helpers are AWSCC-owned (#572). Entries are exact paths, never inferred.
 const SHARED_UTILITIES: &[&str] = &[
+    "AwsCredentialsSource",
+    "HostCredentialsSource",
     "AwsSdkConfig",
     "AwsSdkConfig::for_test",
     "AwsSdkConfig::from_source",
     "AssumeRoleFailure",
-    "AwsType",
-    "AwsType::ALL",
-    "AwsType::Ec2FlowLogMaxAggregationInterval",
-    "AwsType::IamOidcProviderArn",
-    "AwsType::IamPolicyName",
-    "AwsType::IamRoleName",
-    "AwsType::KmsKeyArn",
-    "AwsType::KmsKeyReference",
-    "AwsType::LogsLogGroupRetentionInDays",
-    "AwsType::OrganizationsAccountArn",
-    "AwsType::OrganizationsAccountEmail",
-    "AwsType::OrganizationsOrganizationArn",
-    "AwsType::Region",
-    "AwsType::S3BucketArn",
-    "AwsType::identity",
-    "FinalAttempt",
+    "GuardedAssumeRoleProvider",
     "GuardedAssumeRoleProvider::new",
+    "FinalAttempt",
     "Idempotency",
-    "IdentityDefinition",
-    // Part of the existing #541 KMS reference exception, not another type.
-    "KMS_KEY_REFERENCE_PATTERN",
     "ResendGuard",
     "SendClassification",
     "SendClassification::MaybeSent",
     "Transience",
-    "canonicalize_enum_value",
-    "condition_operator_to_aws",
-    "condition_operator_to_snake",
-    "define_aws_type_catalog",
-    "dsl_enum_value",
-    "find_matching_enum_value",
-    "kms_reference::DescribeKeyClient",
-    "kms_reference::DescribeKeyFailure",
-    "kms_reference::describe_key_failure",
-    "kms_reference::resolve_core_reference_batch",
-    "kms_reference::resolve_guest_reference_batch",
     "load_sdk_config",
-    "region_completions",
-    "validate_iam_policy_document",
 ];
 
 // SDK access is deliberately shared. No other module gets an implicit exemption
@@ -413,11 +313,7 @@ fn shared_item_references(source: &str) -> Vec<(usize, String)> {
 }
 
 fn shared_item_is_allowlisted(name: &str) -> bool {
-    if let Some(row) = name.strip_suffix(".attribute_type") {
-        return SHARED_TYPES.iter().any(|entry| entry.name == row);
-    }
-    SHARED_TYPES.iter().any(|entry| entry.name == name)
-        || SHARED_UTILITIES.contains(&name)
+    SHARED_UTILITIES.contains(&name)
         || SHARED_MODULE_PREFIXES
             .iter()
             .any(|prefix| name == *prefix || name.starts_with(&format!("{prefix}::")))
@@ -466,7 +362,8 @@ fn shared_source_failures(source: &str) -> Vec<(usize, String)> {
             if item == "AwsType" || item.starts_with("AwsType::") {
                 failures.push((
                     offset,
-                    "AwsType imports are forbidden; use the fully qualified row path".to_string(),
+                    "AwsType imports are forbidden; use AWSCC-owned catalog definitions (#572)"
+                        .to_string(),
                 ));
             }
             if item == "*" {
@@ -594,25 +491,30 @@ fn assert_shared_type_has_no_partition_decision(name: &str, ty: &AttributeType) 
 }
 
 #[test]
-fn shared_type_allowlist_has_no_partition_decisions() {
+fn shared_runtime_allowlist_contains_only_explicit_non_type_items() {
     let mut names = std::collections::BTreeSet::new();
-    for entry in SHARED_TYPES {
+    for name in SHARED_UTILITIES {
+        assert!(names.insert(name), "duplicate allowlist entry {name}");
         assert!(
-            names.insert(entry.name),
-            "duplicate allowlist entry {}",
-            entry.name
+            !name.starts_with("AwsType")
+                && !name.starts_with("IdentityDefinition")
+                && !name.starts_with("kms_reference")
         );
-        let ty = (entry.constructor)();
-        if entry.name == "kms_key_reference" {
-            // #541: the one deliberately shared partition-bearing type.
-            assert!(
-                matches!(ty.raw_shape(), RawShape::Reference { pattern: Some(pattern), .. } if pattern.as_str().contains("arn:"))
-            );
-        } else {
-            assert_shared_type_has_no_partition_decision(entry.name, &ty);
-        }
     }
-    assert!(names.contains("kms_key_reference"));
+    assert_eq!(SHARED_MODULE_PREFIXES, &["sdk"]);
+    for name in [
+        "AwsType",
+        "IdentityDefinition",
+        "Partition",
+        "define_aws_type_catalog",
+        "kms_key_reference",
+        "region_completions",
+    ] {
+        assert!(
+            !shared_item_is_allowlisted(name),
+            "schema type/helper must be local: {name}"
+        );
+    }
 }
 
 #[test]
@@ -639,19 +541,13 @@ fn source_scan_requires_explicit_shared_type_allowlist() {
             "{source}"
         );
     }
-    for entry in SHARED_TYPES {
-        let source = if entry.name.starts_with(enum_prefix) {
-            format!("{prefix}{}.attribute_type()", entry.name)
-        } else {
-            format!("{prefix}{}()", entry.name)
-        };
-        let references = shared_item_references(&source);
-        assert!(!references.is_empty(), "{source}");
+    for name in SHARED_UTILITIES {
+        let references = shared_item_references(&format!("{prefix}{name}"));
+        assert!(!references.is_empty());
         assert!(
             references
                 .iter()
-                .all(|(_, item)| shared_item_is_allowlisted(item)),
-            "{source}"
+                .all(|(_, item)| shared_item_is_allowlisted(item))
         );
     }
     // #593: Metadata paths are references even without a constructor call.
@@ -866,16 +762,16 @@ fn source_scan_forbids_aws_type_and_shared_crate_glob_imports() {
 fn source_scan_accepts_qualified_paths_and_unrenamed_imports() {
     let prefix = SHARED_CRATE_PREFIX;
     for source in [
-        format!("{prefix}vpc_id()"),
-        format!("LazyLock::new({prefix}vpc_id)"),
-        format!("let constructor = {prefix}vpc_id as fn() -> AttributeType;"),
-        format!("use {prefix}vpc_id; vpc_id()"),
-        format!("use {prefix}{{vpc_id, subnet_id}};"),
+        format!("{prefix}load_sdk_config()"),
+        format!("LazyLock::new({prefix}load_sdk_config)"),
+        format!("let constructor = {prefix}load_sdk_config as fn() -> AttributeType;"),
+        format!("use {prefix}load_sdk_config; load_sdk_config()"),
+        format!("use {prefix}{{load_sdk_config, ResendGuard}};"),
         format!("use ::{prefix}sdk::{{s3::{{S3Client, types::*}}, sts::StsClient}};"),
-        format!("pub use {{{prefix}vpc_id, std::vec::Vec}};"),
-        format!("{prefix}AwsType::KmsKeyReference.identity()"),
-        format!("let rows = {prefix}AwsType::ALL;"),
-        format!("use std::vec::Vec as Values; {prefix}vpc_id()"),
+        format!("pub use {{{prefix}load_sdk_config, std::vec::Vec}};"),
+        format!("{prefix}AwsSdkConfig::for_test"),
+        format!("let source = {prefix}AwsCredentialsSource;"),
+        format!("use std::vec::Vec as Values; {prefix}load_sdk_config()"),
     ] {
         for source in [source.clone(), format!("let emitted = r#\"{source}\"#;")] {
             let failures = shared_source_failures(&source);
@@ -904,7 +800,11 @@ fn shared_type_audit_rejects_arn_patterns_and_hidden_partition_validators() {
     assert!(
         std::panic::catch_unwind(|| {
             let ty = AttributeType::refined_string_with_validator(
-                TypeIdentity::bare("Hidden"),
+                carina_core::schema::TypeIdentity {
+                    provider: None,
+                    segments: Vec::new(),
+                    kind: "Hidden".into(),
+                },
                 None,
                 None,
                 legacy_validator(|value| {
@@ -925,12 +825,63 @@ fn shared_type_audit_rejects_arn_patterns_and_hidden_partition_validators() {
 }
 
 #[test]
+fn source_scan_rejects_all_shared_type_definitions_for_572() {
+    for item in [
+        "AwsType",
+        "AwsType::ALL",
+        "IdentityDefinition",
+        "define_aws_type_catalog",
+        "vpc_id",
+        "aws_account_id",
+        "aws_region",
+        "region_completions",
+        "iam_policy_document",
+        "validate_iam_policy_document",
+        "dsl_enum_value",
+        "canonicalize_enum_value",
+        "find_matching_enum_value",
+        "condition_operator_to_aws",
+        "condition_operator_to_snake",
+        "kms_key_reference",
+        "KMS_KEY_REFERENCE_PATTERN",
+        "kms_reference::DescribeKeyClient",
+        "kms_reference::DescribeKeyFailure",
+        "kms_reference::describe_key_failure",
+        "kms_reference::resolve_core_reference_batch",
+        "kms_reference::resolve_guest_reference_batch",
+        "Partition",
+        "Partition::from_region",
+        "ConditionOperator",
+        "ConditionOperatorBase",
+        "ConditionQualifier",
+        "MemberIdentityError",
+        "__carina_aws_catalog_identity",
+        "__private::AttributeType",
+        "__private::TypeIdentity",
+    ] {
+        let source = format!("{SHARED_CRATE_PREFIX}{item}");
+        for source in [
+            source.clone(),
+            format!("use {source};"),
+            format!("let helper = {source};"),
+            format!("let emitted = r#\"{source}\"#;"),
+            format!("{source}! {{}}"),
+        ] {
+            assert!(
+                !shared_source_failures(&source).is_empty(),
+                "shared type item is still allowed: {item}: {source}"
+            );
+        }
+    }
+}
+
+#[test]
 fn schema_sources_use_only_allowlisted_shared_types() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let failures = crate_source_failures(root);
     assert!(
         failures.is_empty(),
-        "Shared items must obey the source rules and explicit allowlist:\n{}",
+        "AWSCC owns its awscc schema namespace (#572); use crate::schemas::{{catalog, type_helpers, namespace}}. Shared items are SDK/runtime only and must obey the explicit allowlist:\n{}",
         failures.join("\n")
     );
 }
@@ -990,11 +941,14 @@ fn kms_key_id_accepts_every_awscc_partition() {
     };
     assert_eq!(
         identity,
-        Some(&TypeIdentity {
-            provider: Some("aws".into()),
-            segments: vec!["kms".into(), "Key".into()],
-            kind: "Id".into()
-        })
+        Some(
+            &crate::schemas::namespace::awscc_identity(
+                "Id",
+                &crate::schemas::namespace::AwsccNamespace::new("kms.Key").unwrap()
+            )
+            .unwrap()
+            .into_core()
+        )
     );
     assert_eq!(length, None);
     let pattern = CompiledPattern::try_new(pattern).unwrap();
@@ -1176,14 +1130,14 @@ fn specialized_arn_rows_accept_every_awscc_partition() {
         };
         assert_eq!(
             identity,
-            Some(&TypeIdentity {
-                provider: Some("aws".into()),
-                segments: segments
-                    .iter()
-                    .map(|segment| (*segment).to_string())
-                    .collect(),
-                kind: "Arn".into()
-            })
+            Some(
+                &crate::schemas::namespace::awscc_identity(
+                    "Arn",
+                    &crate::schemas::namespace::AwsccNamespace::new(&segments.join(".")).unwrap()
+                )
+                .unwrap()
+                .into_core()
+            )
         );
         assert_eq!(length, None);
         assert_eq!(
@@ -1372,5 +1326,35 @@ fn sso_arns_keep_pattern_only_metadata_and_resource_language() {
         ] {
             assert!(!pattern.is_match(&invalid), "{invalid}");
         }
+    }
+}
+
+#[test]
+fn shared_schema_public_surface_has_clippy_and_source_scan_bans() {
+    let config = include_str!("../../../clippy.toml");
+    for row in include_str!("../../tests/fixtures/shared_schema_surface_5ad417e.txt").lines() {
+        if row.starts_with('#') || row.is_empty() {
+            continue;
+        }
+        let (kind, path) = row.split_once('\t').expect("surface fixture row");
+        assert!(
+            !shared_source_failures(path).is_empty(),
+            "shared schema API is allowlisted: {path}"
+        );
+        if matches!(kind, "constants" | "aliases") {
+            continue;
+        }
+        let marker = format!("disallowed-{kind} = [");
+        let section = config
+            .split_once(&marker)
+            .expect("Clippy ban section")
+            .1
+            .split_once("\n]")
+            .unwrap()
+            .0;
+        assert!(
+            section.contains(&format!("path = \"{path}\"")),
+            "missing {kind} ban: {path}"
+        );
     }
 }

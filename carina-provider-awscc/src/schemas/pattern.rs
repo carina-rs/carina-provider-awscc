@@ -1,9 +1,9 @@
 //! Pattern approval shared by the generator and AWSCC runtime constructors.
 
-use carina_aws_types::IdentityDefinition;
+use crate::schemas::catalog_definition::IdentityDefinition;
+use crate::schemas::namespace::AwsccIdentity;
 use carina_core::schema::{
     AttributeType, CustomValidator, DslTransform, PatternMatch, PatternReason, PatternSpec,
-    TypeIdentity,
 };
 use regex_syntax::ast::{AssertionKind, Ast, Flag};
 
@@ -161,13 +161,13 @@ pub const SUBSTRING_PATTERN_EXCEPTIONS: &[SubstringPatternException] = &[
 
 /// AWSCC runtime producers accept approval evidence before calling core.
 pub(super) fn refined_string(
-    identity: Option<TypeIdentity>,
+    identity: Option<AwsccIdentity>,
     pattern: Option<ApprovedPattern>,
     length: Option<(Option<u64>, Option<u64>)>,
     to_dsl: Option<DslTransform>,
 ) -> AttributeType {
     AttributeType::refined_string(
-        identity,
+        identity.map(AwsccIdentity::into_core),
         pattern.map(ApprovedPattern::into_spec),
         length,
         to_dsl,
@@ -175,14 +175,14 @@ pub(super) fn refined_string(
 }
 
 pub(super) fn refined_string_with_validator(
-    identity: TypeIdentity,
+    identity: AwsccIdentity,
     pattern: Option<ApprovedPattern>,
     length: Option<(Option<u64>, Option<u64>)>,
     validate: CustomValidator,
     to_dsl: Option<DslTransform>,
 ) -> AttributeType {
     AttributeType::refined_string_with_validator(
-        identity,
+        identity.into_core(),
         pattern.map(ApprovedPattern::into_spec),
         length,
         validate,
@@ -191,7 +191,7 @@ pub(super) fn refined_string_with_validator(
 }
 
 pub(super) fn string_definition_with_validator(
-    identity: TypeIdentity,
+    identity: AwsccIdentity,
     pattern: Option<ApprovedPattern>,
     length: Option<(Option<u64>, Option<u64>)>,
     validator: CustomValidator,

@@ -4,6 +4,6 @@ mod common;
 fn arn_identity_is_provider_scoped() {
     common::assert_arn_identity(
         carina_provider_awscc::schemas::generated::ec2::ipam::arn(),
-        "aws.ec2.Ipam.Arn",
+        "awscc.ec2.Ipam.Arn",
     );
 }

@@ -3,14 +3,14 @@
 # Tests: update versioning from Enabled to Suspended (in-place update)
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 awscc.s3.Bucket {
   bucket_name_prefix = 'carina-acc-test-update-'
 
   versioning_configuration = {
-    status = aws.s3.Bucket.VersioningConfiguration.Status.suspended
+    status = awscc.s3.Bucket.VersioningConfiguration.Status.suspended
   }
 
   directives {

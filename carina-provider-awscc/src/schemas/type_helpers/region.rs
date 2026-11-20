@@ -1,0 +1,93 @@
+use carina_core::schema::CompletionValue;
+
+// ========== Region constants ==========
+
+/// AWS regions with display names. Single source of truth for validation and completions.
+pub const REGIONS: &[(&str, &str)] = &[
+    // Africa
+    ("af-south-1", "Africa (Cape Town)"),
+    // Asia Pacific
+    ("ap-east-1", "Asia Pacific (Hong Kong)"),
+    ("ap-east-2", "Asia Pacific (Malaysia)"),
+    ("ap-northeast-1", "Asia Pacific (Tokyo)"),
+    ("ap-northeast-2", "Asia Pacific (Seoul)"),
+    ("ap-northeast-3", "Asia Pacific (Osaka)"),
+    ("ap-south-1", "Asia Pacific (Mumbai)"),
+    ("ap-south-2", "Asia Pacific (Hyderabad)"),
+    ("ap-southeast-1", "Asia Pacific (Singapore)"),
+    ("ap-southeast-2", "Asia Pacific (Sydney)"),
+    ("ap-southeast-3", "Asia Pacific (Jakarta)"),
+    ("ap-southeast-4", "Asia Pacific (Melbourne)"),
+    ("ap-southeast-5", "Asia Pacific (Auckland)"),
+    ("ap-southeast-6", "Asia Pacific (Thailand)"),
+    ("ap-southeast-7", "Asia Pacific (Taiwan)"),
+    // Canada
+    ("ca-central-1", "Canada (Central)"),
+    ("ca-west-1", "Canada West (Calgary)"),
+    // China
+    ("cn-north-1", "China (Beijing)"),
+    ("cn-northwest-1", "China (Ningxia)"),
+    // Europe
+    ("eu-central-1", "Europe (Frankfurt)"),
+    ("eu-central-2", "Europe (Zurich)"),
+    ("eu-north-1", "Europe (Stockholm)"),
+    ("eu-south-1", "Europe (Milan)"),
+    ("eu-south-2", "Europe (Spain)"),
+    ("eu-west-1", "Europe (Ireland)"),
+    ("eu-west-2", "Europe (London)"),
+    ("eu-west-3", "Europe (Paris)"),
+    // Israel
+    ("il-central-1", "Israel (Tel Aviv)"),
+    // Middle East
+    ("me-central-1", "Middle East (UAE)"),
+    ("me-south-1", "Middle East (Bahrain)"),
+    // Mexico
+    ("mx-central-1", "Mexico (Central)"),
+    // South America
+    ("sa-east-1", "South America (Sao Paulo)"),
+    // US
+    ("us-east-1", "US East (N. Virginia)"),
+    ("us-east-2", "US East (Ohio)"),
+    ("us-gov-east-1", "AWS GovCloud (US-East)"),
+    ("us-gov-west-1", "AWS GovCloud (US-West)"),
+    ("us-west-1", "US West (N. California)"),
+    ("us-west-2", "US West (Oregon)"),
+];
+
+/// Check if a region code is valid.
+pub fn is_valid_region(region: &str) -> bool {
+    REGIONS.iter().any(|(code, _)| *code == region)
+}
+
+/// Format valid region codes as a comma-separated string for error messages.
+pub fn valid_regions_display() -> String {
+    REGIONS
+        .iter()
+        .map(|(code, _)| *code)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Validate an AWS region in provider-facing API spelling.
+pub fn validate_aws_region(region: &str) -> Result<(), String> {
+    if is_valid_region(region) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Invalid region '{}', expected one of: {}",
+            region,
+            valid_regions_display()
+        ))
+    }
+}
+
+/// Complete AWSCC regions using the catalog's fixed identity.
+pub fn region_completions() -> Vec<CompletionValue> {
+    let identity = crate::schemas::catalog::ScalarType::Region.identity();
+    REGIONS
+        .iter()
+        .map(|(code, name)| {
+            CompletionValue::new(format!("{identity}.{}", code.replace('-', "_")), *name)
+        })
+        .collect()
+}

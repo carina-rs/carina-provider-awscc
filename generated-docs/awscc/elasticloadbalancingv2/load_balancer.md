@@ -12,8 +12,8 @@ Specifies an Application Load Balancer, a Network Load Balancer, or a Gateway Lo
 ```crn
 awscc.elasticloadbalancingv2.LoadBalancer {
   name            = 'registry-alb'
-  type            = aws.elasticloadbalancingv2.LoadBalancer.Type.application
-  scheme          = aws.elasticloadbalancingv2.LoadBalancer.Scheme.internet_facing
+  type            = awscc.elasticloadbalancingv2.LoadBalancer.Type.application
+  scheme          = awscc.elasticloadbalancingv2.LoadBalancer.Scheme.internet_facing
   subnets         = ['subnet-aaaa1111', 'subnet-bbbb2222']
   security_groups = ['sg-cccc3333']
 
@@ -58,7 +58,7 @@ The IP address type. Internal load balancers must use ``ipv4``. [Application Loa
 
 ### `ipv4_ipam_pool_id`
 
-- **Type:** `aws.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
+- **Type:** `awscc.ec2.IpamPool.Id (pattern: /^ipam-pool-[0-9a-f]{8,}$/ (Full))`
 - **Required:** No
 
 The ID of the IPv4 IPAM pool.
@@ -135,8 +135,8 @@ The type of load balancer. The default is ``application``.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `on` | `aws.elasticloadbalancingv2.LoadBalancer.EnablePrefixForIpv6SourceNat.on` |
-| `off` | `aws.elasticloadbalancingv2.LoadBalancer.EnablePrefixForIpv6SourceNat.off` |
+| `on` | `awscc.elasticloadbalancingv2.LoadBalancer.EnablePrefixForIpv6SourceNat.on` |
+| `off` | `awscc.elasticloadbalancingv2.LoadBalancer.EnablePrefixForIpv6SourceNat.off` |
 
 Shorthand formats: `on` or `EnablePrefixForIpv6SourceNat.on`
 
@@ -144,8 +144,8 @@ Shorthand formats: `on` or `EnablePrefixForIpv6SourceNat.on`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `on` | `aws.elasticloadbalancingv2.LoadBalancer.EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic.on` |
-| `off` | `aws.elasticloadbalancingv2.LoadBalancer.EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic.off` |
+| `on` | `awscc.elasticloadbalancingv2.LoadBalancer.EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic.on` |
+| `off` | `awscc.elasticloadbalancingv2.LoadBalancer.EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic.off` |
 
 Shorthand formats: `on` or `EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic.on`
 
@@ -153,9 +153,9 @@ Shorthand formats: `on` or `EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ipv4` | `aws.elasticloadbalancingv2.LoadBalancer.IpAddressType.ipv4` |
-| `dualstack` | `aws.elasticloadbalancingv2.LoadBalancer.IpAddressType.dualstack` |
-| `dualstack-without-public-ipv4` | `aws.elasticloadbalancingv2.LoadBalancer.IpAddressType.dualstack_without_public_ipv4` |
+| `ipv4` | `awscc.elasticloadbalancingv2.LoadBalancer.IpAddressType.ipv4` |
+| `dualstack` | `awscc.elasticloadbalancingv2.LoadBalancer.IpAddressType.dualstack` |
+| `dualstack-without-public-ipv4` | `awscc.elasticloadbalancingv2.LoadBalancer.IpAddressType.dualstack_without_public_ipv4` |
 
 Shorthand formats: `ipv4` or `IpAddressType.ipv4`
 
@@ -163,8 +163,8 @@ Shorthand formats: `ipv4` or `IpAddressType.ipv4`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `internet-facing` | `aws.elasticloadbalancingv2.LoadBalancer.Scheme.internet_facing` |
-| `internal` | `aws.elasticloadbalancingv2.LoadBalancer.Scheme.internal` |
+| `internet-facing` | `awscc.elasticloadbalancingv2.LoadBalancer.Scheme.internet_facing` |
+| `internal` | `awscc.elasticloadbalancingv2.LoadBalancer.Scheme.internal` |
 
 Shorthand formats: `internet_facing` or `Scheme.internet_facing`
 
@@ -172,9 +172,9 @@ Shorthand formats: `internet_facing` or `Scheme.internet_facing`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `application` | `aws.elasticloadbalancingv2.LoadBalancer.Type.application` |
-| `network` | `aws.elasticloadbalancingv2.LoadBalancer.Type.network` |
-| `gateway` | `aws.elasticloadbalancingv2.LoadBalancer.Type.gateway` |
+| `application` | `awscc.elasticloadbalancingv2.LoadBalancer.Type.application` |
+| `network` | `awscc.elasticloadbalancingv2.LoadBalancer.Type.network` |
+| `gateway` | `awscc.elasticloadbalancingv2.LoadBalancer.Type.gateway` |
 
 Shorthand formats: `application` or `Type.application`
 
@@ -197,17 +197,17 @@ Shorthand formats: `application` or `Type.application`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `allocation_id` | `aws.ec2.Eip.AllocationId (pattern: /^eipalloc-[0-9a-f]{8,}$/ (Full))` | No | [Network Load Balancers] The allocation ID of the Elastic IP address for an internet-facing load balancer. |
+| `allocation_id` | `awscc.ec2.Eip.AllocationId (pattern: /^eipalloc-[0-9a-f]{8,}$/ (Full))` | No | [Network Load Balancers] The allocation ID of the Elastic IP address for an internet-facing load balancer. |
 | `i_pv6_address` | `Ipv6Address (custom validator)` | No | [Network Load Balancers] The IPv6 address. |
 | `private_i_pv4_address` | `Ipv4Address (custom validator)` | No | [Network Load Balancers] The private IPv4 address for an internal load balancer. |
 | `source_nat_ipv6_prefix` | `String` | No | [Network Load Balancers with UDP listeners] The IPv6 prefix to use for source NAT. Specify an IPv6 prefix (/80 netmask) from the subnet CIDR block or ``auto_assigned`` to use an IPv6 prefix selected at random from the subnet CIDR block. |
-| `subnet_id` | `aws.ec2.Subnet.Id (pattern: /^subnet-[0-9a-f]{8,}$/ (Full))` | Yes | The ID of the subnet. |
+| `subnet_id` | `awscc.ec2.Subnet.Id (pattern: /^subnet-[0-9a-f]{8,}$/ (Full))` | Yes | The ID of the subnet. |
 
 ## Attribute Reference
 
 ### `canonical_hosted_zone_id`
 
-- **Type:** `aws.route53.HostedZone.Id (pattern: /^Z[A-Z0-9]+$/ (Full), len: unbounded..=32)`
+- **Type:** `awscc.route53.HostedZone.Id (pattern: /^Z[A-Z0-9]+$/ (Full), len: unbounded..=32)`
 
 
 
@@ -219,7 +219,7 @@ Shorthand formats: `application` or `Type.application`
 
 ### `load_balancer_arn`
 
-- **Type:** `aws.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
+- **Type:** `awscc.Arn (pattern: /^arn:(?:aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f|aws-eusc):[^:]+:.*$/ (Full), custom validator)`
 
 
 

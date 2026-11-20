@@ -66,8 +66,8 @@ awscc.budgets.Budget {
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `HISTORICAL` | `aws.budgets.Budget.BudgetData.AutoAdjustData.AutoAdjustType.historical` |
-| `FORECAST` | `aws.budgets.Budget.BudgetData.AutoAdjustData.AutoAdjustType.forecast` |
+| `HISTORICAL` | `awscc.budgets.Budget.BudgetData.AutoAdjustData.AutoAdjustType.historical` |
+| `FORECAST` | `awscc.budgets.Budget.BudgetData.AutoAdjustData.AutoAdjustType.forecast` |
 
 Shorthand formats: `historical` or `AutoAdjustType.historical`
 
@@ -75,12 +75,12 @@ Shorthand formats: `historical` or `AutoAdjustType.historical`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `USAGE` | `aws.budgets.Budget.BudgetData.BudgetType.usage` |
-| `COST` | `aws.budgets.Budget.BudgetData.BudgetType.cost` |
-| `RI_UTILIZATION` | `aws.budgets.Budget.BudgetData.BudgetType.ri_utilization` |
-| `RI_COVERAGE` | `aws.budgets.Budget.BudgetData.BudgetType.ri_coverage` |
-| `SAVINGS_PLANS_UTILIZATION` | `aws.budgets.Budget.BudgetData.BudgetType.savings_plans_utilization` |
-| `SAVINGS_PLANS_COVERAGE` | `aws.budgets.Budget.BudgetData.BudgetType.savings_plans_coverage` |
+| `USAGE` | `awscc.budgets.Budget.BudgetData.BudgetType.usage` |
+| `COST` | `awscc.budgets.Budget.BudgetData.BudgetType.cost` |
+| `RI_UTILIZATION` | `awscc.budgets.Budget.BudgetData.BudgetType.ri_utilization` |
+| `RI_COVERAGE` | `awscc.budgets.Budget.BudgetData.BudgetType.ri_coverage` |
+| `SAVINGS_PLANS_UTILIZATION` | `awscc.budgets.Budget.BudgetData.BudgetType.savings_plans_utilization` |
+| `SAVINGS_PLANS_COVERAGE` | `awscc.budgets.Budget.BudgetData.BudgetType.savings_plans_coverage` |
 
 Shorthand formats: `usage` or `BudgetType.usage`
 
@@ -88,14 +88,14 @@ Shorthand formats: `usage` or `BudgetType.usage`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `BlendedCost` | `aws.budgets.Budget.BudgetData.Metrics.blended_cost` |
-| `UnblendedCost` | `aws.budgets.Budget.BudgetData.Metrics.unblended_cost` |
-| `AmortizedCost` | `aws.budgets.Budget.BudgetData.Metrics.amortized_cost` |
-| `NetUnblendedCost` | `aws.budgets.Budget.BudgetData.Metrics.net_unblended_cost` |
-| `NetAmortizedCost` | `aws.budgets.Budget.BudgetData.Metrics.net_amortized_cost` |
-| `UsageQuantity` | `aws.budgets.Budget.BudgetData.Metrics.usage_quantity` |
-| `NormalizedUsageAmount` | `aws.budgets.Budget.BudgetData.Metrics.normalized_usage_amount` |
-| `Hours` | `aws.budgets.Budget.BudgetData.Metrics.hours` |
+| `BlendedCost` | `awscc.budgets.Budget.BudgetData.Metrics.blended_cost` |
+| `UnblendedCost` | `awscc.budgets.Budget.BudgetData.Metrics.unblended_cost` |
+| `AmortizedCost` | `awscc.budgets.Budget.BudgetData.Metrics.amortized_cost` |
+| `NetUnblendedCost` | `awscc.budgets.Budget.BudgetData.Metrics.net_unblended_cost` |
+| `NetAmortizedCost` | `awscc.budgets.Budget.BudgetData.Metrics.net_amortized_cost` |
+| `UsageQuantity` | `awscc.budgets.Budget.BudgetData.Metrics.usage_quantity` |
+| `NormalizedUsageAmount` | `awscc.budgets.Budget.BudgetData.Metrics.normalized_usage_amount` |
+| `Hours` | `awscc.budgets.Budget.BudgetData.Metrics.hours` |
 
 Shorthand formats: `blended_cost` or `Metrics.blended_cost`
 
@@ -103,11 +103,11 @@ Shorthand formats: `blended_cost` or `Metrics.blended_cost`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `DAILY` | `aws.budgets.Budget.BudgetData.TimeUnit.daily` |
-| `MONTHLY` | `aws.budgets.Budget.BudgetData.TimeUnit.monthly` |
-| `QUARTERLY` | `aws.budgets.Budget.BudgetData.TimeUnit.quarterly` |
-| `ANNUALLY` | `aws.budgets.Budget.BudgetData.TimeUnit.annually` |
-| `CUSTOM` | `aws.budgets.Budget.BudgetData.TimeUnit.custom` |
+| `DAILY` | `awscc.budgets.Budget.BudgetData.TimeUnit.daily` |
+| `MONTHLY` | `awscc.budgets.Budget.BudgetData.TimeUnit.monthly` |
+| `QUARTERLY` | `awscc.budgets.Budget.BudgetData.TimeUnit.quarterly` |
+| `ANNUALLY` | `awscc.budgets.Budget.BudgetData.TimeUnit.annually` |
+| `CUSTOM` | `awscc.budgets.Budget.BudgetData.TimeUnit.custom` |
 
 Shorthand formats: `daily` or `TimeUnit.daily`
 
@@ -115,14 +115,14 @@ Shorthand formats: `daily` or `TimeUnit.daily`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `EQUALS` | `aws.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.equals` |
-| `ABSENT` | `aws.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.absent` |
-| `STARTS_WITH` | `aws.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.starts_with` |
-| `ENDS_WITH` | `aws.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.ends_with` |
-| `CONTAINS` | `aws.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.contains` |
-| `GREATER_THAN_OR_EQUAL` | `aws.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.greater_than_or_equal` |
-| `CASE_SENSITIVE` | `aws.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.case_sensitive` |
-| `CASE_INSENSITIVE` | `aws.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.case_insensitive` |
+| `EQUALS` | `awscc.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.equals` |
+| `ABSENT` | `awscc.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.absent` |
+| `STARTS_WITH` | `awscc.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.starts_with` |
+| `ENDS_WITH` | `awscc.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.ends_with` |
+| `CONTAINS` | `awscc.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.contains` |
+| `GREATER_THAN_OR_EQUAL` | `awscc.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.greater_than_or_equal` |
+| `CASE_SENSITIVE` | `awscc.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.case_sensitive` |
+| `CASE_INSENSITIVE` | `awscc.budgets.Budget.BudgetData.Expression.CostCategoryValues.MatchOptions.case_insensitive` |
 
 Shorthand formats: `equals` or `MatchOptions.equals`
 
@@ -130,39 +130,39 @@ Shorthand formats: `equals` or `MatchOptions.equals`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `AZ` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.az` |
-| `INSTANCE_TYPE` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.instance_type` |
-| `LINKED_ACCOUNT` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.linked_account` |
-| `LINKED_ACCOUNT_NAME` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.linked_account_name` |
-| `OPERATION` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.operation` |
-| `PURCHASE_TYPE` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.purchase_type` |
-| `REGION` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.region` |
-| `SERVICE` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.service` |
-| `SERVICE_CODE` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.service_code` |
-| `USAGE_TYPE` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.usage_type` |
-| `USAGE_TYPE_GROUP` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.usage_type_group` |
-| `RECORD_TYPE` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.record_type` |
-| `OPERATING_SYSTEM` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.operating_system` |
-| `TENANCY` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.tenancy` |
-| `SCOPE` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.scope` |
-| `PLATFORM` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.platform` |
-| `SUBSCRIPTION_ID` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.subscription_id` |
-| `LEGAL_ENTITY_NAME` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.legal_entity_name` |
-| `INVOICING_ENTITY` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.invoicing_entity` |
-| `DEPLOYMENT_OPTION` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.deployment_option` |
-| `DATABASE_ENGINE` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.database_engine` |
-| `CACHE_ENGINE` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.cache_engine` |
-| `INSTANCE_TYPE_FAMILY` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.instance_type_family` |
-| `BILLING_ENTITY` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.billing_entity` |
-| `RESERVATION_ID` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.reservation_id` |
-| `RESOURCE_ID` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.resource_id` |
-| `RIGHTSIZING_TYPE` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.rightsizing_type` |
-| `SAVINGS_PLANS_TYPE` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.savings_plans_type` |
-| `SAVINGS_PLAN_ARN` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.savings_plan_arn` |
-| `PAYMENT_OPTION` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.payment_option` |
-| `RESERVATION_MODIFIED` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.reservation_modified` |
-| `TAG_KEY` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.tag_key` |
-| `COST_CATEGORY_NAME` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.cost_category_name` |
+| `AZ` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.az` |
+| `INSTANCE_TYPE` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.instance_type` |
+| `LINKED_ACCOUNT` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.linked_account` |
+| `LINKED_ACCOUNT_NAME` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.linked_account_name` |
+| `OPERATION` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.operation` |
+| `PURCHASE_TYPE` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.purchase_type` |
+| `REGION` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.region` |
+| `SERVICE` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.service` |
+| `SERVICE_CODE` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.service_code` |
+| `USAGE_TYPE` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.usage_type` |
+| `USAGE_TYPE_GROUP` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.usage_type_group` |
+| `RECORD_TYPE` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.record_type` |
+| `OPERATING_SYSTEM` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.operating_system` |
+| `TENANCY` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.tenancy` |
+| `SCOPE` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.scope` |
+| `PLATFORM` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.platform` |
+| `SUBSCRIPTION_ID` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.subscription_id` |
+| `LEGAL_ENTITY_NAME` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.legal_entity_name` |
+| `INVOICING_ENTITY` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.invoicing_entity` |
+| `DEPLOYMENT_OPTION` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.deployment_option` |
+| `DATABASE_ENGINE` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.database_engine` |
+| `CACHE_ENGINE` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.cache_engine` |
+| `INSTANCE_TYPE_FAMILY` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.instance_type_family` |
+| `BILLING_ENTITY` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.billing_entity` |
+| `RESERVATION_ID` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.reservation_id` |
+| `RESOURCE_ID` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.resource_id` |
+| `RIGHTSIZING_TYPE` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.rightsizing_type` |
+| `SAVINGS_PLANS_TYPE` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.savings_plans_type` |
+| `SAVINGS_PLAN_ARN` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.savings_plan_arn` |
+| `PAYMENT_OPTION` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.payment_option` |
+| `RESERVATION_MODIFIED` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.reservation_modified` |
+| `TAG_KEY` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.tag_key` |
+| `COST_CATEGORY_NAME` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.Key.cost_category_name` |
 
 Shorthand formats: `az` or `Key.az`
 
@@ -170,14 +170,14 @@ Shorthand formats: `az` or `Key.az`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `EQUALS` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.equals` |
-| `ABSENT` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.absent` |
-| `STARTS_WITH` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.starts_with` |
-| `ENDS_WITH` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.ends_with` |
-| `CONTAINS` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.contains` |
-| `GREATER_THAN_OR_EQUAL` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.greater_than_or_equal` |
-| `CASE_SENSITIVE` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.case_sensitive` |
-| `CASE_INSENSITIVE` | `aws.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.case_insensitive` |
+| `EQUALS` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.equals` |
+| `ABSENT` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.absent` |
+| `STARTS_WITH` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.starts_with` |
+| `ENDS_WITH` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.ends_with` |
+| `CONTAINS` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.contains` |
+| `GREATER_THAN_OR_EQUAL` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.greater_than_or_equal` |
+| `CASE_SENSITIVE` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.case_sensitive` |
+| `CASE_INSENSITIVE` | `awscc.budgets.Budget.BudgetData.Expression.ExpressionDimensionValues.MatchOptions.case_insensitive` |
 
 Shorthand formats: `equals` or `MatchOptions.equals`
 
@@ -185,14 +185,14 @@ Shorthand formats: `equals` or `MatchOptions.equals`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `EQUALS` | `aws.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.equals` |
-| `ABSENT` | `aws.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.absent` |
-| `STARTS_WITH` | `aws.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.starts_with` |
-| `ENDS_WITH` | `aws.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.ends_with` |
-| `CONTAINS` | `aws.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.contains` |
-| `GREATER_THAN_OR_EQUAL` | `aws.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.greater_than_or_equal` |
-| `CASE_SENSITIVE` | `aws.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.case_sensitive` |
-| `CASE_INSENSITIVE` | `aws.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.case_insensitive` |
+| `EQUALS` | `awscc.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.equals` |
+| `ABSENT` | `awscc.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.absent` |
+| `STARTS_WITH` | `awscc.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.starts_with` |
+| `ENDS_WITH` | `awscc.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.ends_with` |
+| `CONTAINS` | `awscc.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.contains` |
+| `GREATER_THAN_OR_EQUAL` | `awscc.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.greater_than_or_equal` |
+| `CASE_SENSITIVE` | `awscc.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.case_sensitive` |
+| `CASE_INSENSITIVE` | `awscc.budgets.Budget.BudgetData.Expression.TagValues.MatchOptions.case_insensitive` |
 
 Shorthand formats: `equals` or `MatchOptions.equals`
 
@@ -200,9 +200,9 @@ Shorthand formats: `equals` or `MatchOptions.equals`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GREATER_THAN` | `aws.budgets.Budget.NotificationWithSubscribers.Notification.ComparisonOperator.greater_than` |
-| `LESS_THAN` | `aws.budgets.Budget.NotificationWithSubscribers.Notification.ComparisonOperator.less_than` |
-| `EQUAL_TO` | `aws.budgets.Budget.NotificationWithSubscribers.Notification.ComparisonOperator.equal_to` |
+| `GREATER_THAN` | `awscc.budgets.Budget.NotificationWithSubscribers.Notification.ComparisonOperator.greater_than` |
+| `LESS_THAN` | `awscc.budgets.Budget.NotificationWithSubscribers.Notification.ComparisonOperator.less_than` |
+| `EQUAL_TO` | `awscc.budgets.Budget.NotificationWithSubscribers.Notification.ComparisonOperator.equal_to` |
 
 Shorthand formats: `greater_than` or `ComparisonOperator.greater_than`
 
@@ -210,8 +210,8 @@ Shorthand formats: `greater_than` or `ComparisonOperator.greater_than`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ACTUAL` | `aws.budgets.Budget.NotificationWithSubscribers.Notification.NotificationType.actual` |
-| `FORECASTED` | `aws.budgets.Budget.NotificationWithSubscribers.Notification.NotificationType.forecasted` |
+| `ACTUAL` | `awscc.budgets.Budget.NotificationWithSubscribers.Notification.NotificationType.actual` |
+| `FORECASTED` | `awscc.budgets.Budget.NotificationWithSubscribers.Notification.NotificationType.forecasted` |
 
 Shorthand formats: `actual` or `NotificationType.actual`
 
@@ -219,8 +219,8 @@ Shorthand formats: `actual` or `NotificationType.actual`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `PERCENTAGE` | `aws.budgets.Budget.NotificationWithSubscribers.Notification.ThresholdType.percentage` |
-| `ABSOLUTE_VALUE` | `aws.budgets.Budget.NotificationWithSubscribers.Notification.ThresholdType.absolute_value` |
+| `PERCENTAGE` | `awscc.budgets.Budget.NotificationWithSubscribers.Notification.ThresholdType.percentage` |
+| `ABSOLUTE_VALUE` | `awscc.budgets.Budget.NotificationWithSubscribers.Notification.ThresholdType.absolute_value` |
 
 Shorthand formats: `percentage` or `ThresholdType.percentage`
 
@@ -228,8 +228,8 @@ Shorthand formats: `percentage` or `ThresholdType.percentage`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `SNS` | `aws.budgets.Budget.NotificationWithSubscribers.Subscriber.SubscriptionType.sns` |
-| `EMAIL` | `aws.budgets.Budget.NotificationWithSubscribers.Subscriber.SubscriptionType.email` |
+| `SNS` | `awscc.budgets.Budget.NotificationWithSubscribers.Subscriber.SubscriptionType.sns` |
+| `EMAIL` | `awscc.budgets.Budget.NotificationWithSubscribers.Subscriber.SubscriptionType.email` |
 
 Shorthand formats: `sns` or `SubscriptionType.sns`
 
@@ -240,7 +240,7 @@ Shorthand formats: `sns` or `SubscriptionType.sns`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `auto_adjust_data` | [Struct(AutoAdjustData)](#budgetauto_adjust_data) | No |  |
-| `billing_view_arn` | `aws.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No |  |
+| `billing_view_arn` | `awscc.Arn (pattern: /^arn:(?:aws\|aws-cn\|aws-us-gov\|aws-iso\|aws-iso-b\|aws-iso-e\|aws-iso-f\|aws-eusc):[^:]+:.*$/ (Full), custom validator)` | No |  |
 | `budget_limit` | [Struct(Spend)](#spend) | No |  |
 | `budget_name` | `String (pattern: /^[^:\\]+$/ (Full), len: 1..=100)` | No | Create-only. Anonymous identifiers hash only declared identity values. |
 | `budget_type` | [BudgetType](#budgetbudget_type-budgettype) | Yes |  |

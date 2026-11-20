@@ -139,7 +139,7 @@ fn target_group_matcher_codes_validate_every_inline_and_registered_definition() 
     for (name, identity, accepted, rejected) in [
         (
             "http_code",
-            "aws.elasticloadbalancingv2.TargetGroup.HttpCode",
+            "awscc.elasticloadbalancingv2.TargetGroup.HttpCode",
             &[
                 "200",
                 "499",
@@ -176,7 +176,7 @@ fn target_group_matcher_codes_validate_every_inline_and_registered_definition() 
         ),
         (
             "grpc_code",
-            "aws.elasticloadbalancingv2.TargetGroup.GrpcCode",
+            "awscc.elasticloadbalancingv2.TargetGroup.GrpcCode",
             &[
                 "0", "99", "12", "0,1,99", "0-99", "0-5", "0-5,12", "0-0", "99-99",
             ][..],

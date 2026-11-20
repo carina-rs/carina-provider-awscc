@@ -9,7 +9,7 @@
 # a VPC to attach to multiple transit gateways simultaneously.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 let vpc = awscc.ec2.Vpc {

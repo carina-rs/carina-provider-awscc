@@ -30,6 +30,7 @@ carina-docgen = { workspace = true }
 carina-plugin-sdk = { workspace = true }
 carina-provider-protocol = { workspace = true }
 indexmap = "2"
+futures = "0.3"
 aws-credential-types = { version = "1" }
 aws-smithy-async = { version = "1", features = ["rt-tokio"] }
 aws-smithy-runtime-api = "1"
@@ -66,6 +67,8 @@ carina-plugin-sdk = { workspace = true, features = ["test-utils"] }
 carina-provider-resolver = { workspace = true, features = ["test-utils"] }
 tokio = { version = "1", features = ["test-util"] }
 tempfile = "3"
+syn = { version = "3", features = ["full", "visit"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
 winterbaume-core = "0.2"
 winterbaume-cloudcontrol = "1"
 

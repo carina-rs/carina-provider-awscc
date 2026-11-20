@@ -51,7 +51,7 @@ fn account_email_keeps_core_validation_and_adds_documented_length_bounds() {
         RawShape::String { identity_layer: StringIdentityParts { identity: Some(identity),
             length: Some((Some(6), Some(64))),
             validate: Some(_),
-            .. }, .. } if identity.to_string() == "aws.organizations.Account.Email"
+            .. }, .. } if identity.to_string() == "awscc.organizations.Account.Email"
     ));
     assert!(matches!(
         carina_core::schema::types::email().raw_shape(),
@@ -135,7 +135,7 @@ fn role_name_checks_the_whole_value_length_and_reserved_prefix() {
     assert!(matches!(
         role.as_type().raw_shape(),
         RawShape::String { identity_layer: StringIdentityParts { identity: Some(identity), validate: Some(_), .. }, .. }
-            if identity.to_string() == "aws.organizations.Account.RoleName"
+            if identity.to_string() == "awscc.organizations.Account.RoleName"
     ));
 }
 

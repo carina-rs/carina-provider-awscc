@@ -8,7 +8,7 @@
 # replacement coexists, so no temporary name is needed.
 
 provider awscc {
-  region = aws.Region.ap_northeast_1
+  region = awscc.Region.ap_northeast_1
 }
 
 let cbd_vpc = awscc.ec2.Vpc {

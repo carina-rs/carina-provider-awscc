@@ -94,14 +94,14 @@ A response headers policy configuration.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GET` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.get` |
-| `DELETE` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.delete` |
-| `HEAD` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.head` |
-| `OPTIONS` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.options` |
-| `PATCH` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.patch` |
-| `POST` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.post` |
-| `PUT` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.put` |
-| `ALL` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.all` |
+| `GET` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.get` |
+| `DELETE` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.delete` |
+| `HEAD` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.head` |
+| `OPTIONS` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.options` |
+| `PATCH` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.patch` |
+| `POST` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.post` |
+| `PUT` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.put` |
+| `ALL` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.CorsConfig.AccessControlAllowMethods.Items.all` |
 
 Shorthand formats: `get` or `Items.get`
 
@@ -109,8 +109,8 @@ Shorthand formats: `get` or `Items.get`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `DENY` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.FrameOptions.FrameOption.deny` |
-| `SAMEORIGIN` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.FrameOptions.FrameOption.sameorigin` |
+| `DENY` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.FrameOptions.FrameOption.deny` |
+| `SAMEORIGIN` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.FrameOptions.FrameOption.sameorigin` |
 
 Shorthand formats: `deny` or `FrameOption.deny`
 
@@ -118,14 +118,14 @@ Shorthand formats: `deny` or `FrameOption.deny`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `no-referrer` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.no_referrer` |
-| `no-referrer-when-downgrade` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.no_referrer_when_downgrade` |
-| `origin` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.origin` |
-| `origin-when-cross-origin` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.origin_when_cross_origin` |
-| `same-origin` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.same_origin` |
-| `strict-origin` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.strict_origin` |
-| `strict-origin-when-cross-origin` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.strict_origin_when_cross_origin` |
-| `unsafe-url` | `aws.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.unsafe_url` |
+| `no-referrer` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.no_referrer` |
+| `no-referrer-when-downgrade` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.no_referrer_when_downgrade` |
+| `origin` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.origin` |
+| `origin-when-cross-origin` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.origin_when_cross_origin` |
+| `same-origin` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.same_origin` |
+| `strict-origin` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.strict_origin` |
+| `strict-origin-when-cross-origin` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.strict_origin_when_cross_origin` |
+| `unsafe-url` | `awscc.cloudfront.ResponseHeadersPolicy.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ReferrerPolicy.ReferrerPolicy.unsafe_url` |
 
 Shorthand formats: `no_referrer` or `ReferrerPolicy.no_referrer`
 

@@ -129,7 +129,7 @@ fn review_r7_named_string_displays_include_effective_local_constraints() {
         assert!(
             markdown
                 .lines()
-                .any(|line| line.contains("aws.ec2.Vpc.Id") && line.contains("37..=49")),
+                .any(|line| line.contains("awscc.ec2.Vpc.Id") && line.contains("37..=49")),
             "named string lost its local length constraints"
         );
     }
@@ -208,7 +208,7 @@ fn review_r7_named_string_displays_include_pattern_only_constraints() {
     assert!(
         markdown
             .lines()
-            .any(|line| line.contains("aws.ec2.Vpc.Id") && line.contains("pattern"))
+            .any(|line| line.contains("awscc.ec2.Vpc.Id") && line.contains("pattern"))
     );
 }
 
@@ -243,7 +243,7 @@ fn review_r7_top_level_arn_displays_include_local_constraints() {
     assert!(
         markdown
             .lines()
-            .any(|line| line.contains("aws.") && line.contains("37..=49"))
+            .any(|line| line.contains("awscc.iam.Role.Arn") && line.contains("37..=49"))
     );
 }
 
