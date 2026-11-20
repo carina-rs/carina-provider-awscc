@@ -15777,8 +15777,8 @@ mod tests {
         let namespace =
             "awscc.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination";
         let expected = format!(
-            "awscc_identity(\"Format\", &crate::schemas::namespace::AwsccNamespace::new(\"{}\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()",
-            namespace.strip_prefix("awscc.").unwrap()
+            "awscc_identity(\"Format\", &crate::schemas::namespace::AwsccNamespace::new({}).expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()",
+            rust_lit(namespace.strip_prefix("awscc.").unwrap())
         );
         let identities = Regex::new(r#"awscc_identity\("Format", &crate::schemas::namespace::AwsccNamespace::new\("[^"]+"\)\.expect\("valid AWSCC namespace"\)\)\.expect\("valid AWSCC identity"\)\.into_core\(\)"#).unwrap();
         let emitted: Vec<_> = identities.find_iter(&generated).collect();
@@ -18623,7 +18623,10 @@ mod tests {
                 // Markdown keeps the fixture's source resource identity.
                 let namespace = format!("ec2.Route{suffix}");
                 assert!(generated.contains(&format!(
-                    "(\"{property}\", AttributeType::map_with_key(AttributeType::enum_(crate::schemas::namespace::awscc_identity(\"{kind}\", &crate::schemas::namespace::AwsccNamespace::new(\"{namespace}\").expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()"
+                    "({property}, AttributeType::map_with_key(AttributeType::enum_(crate::schemas::namespace::awscc_identity({kind}, &crate::schemas::namespace::AwsccNamespace::new({namespace}).expect(\"valid AWSCC namespace\")).expect(\"valid AWSCC identity\").into_core()",
+                    property = rust_lit(property),
+                    kind = rust_lit(kind),
+                    namespace = rust_lit(&namespace),
                 )), "key enum must preserve its property's identity: {generated}");
                 let namespace = format!("awscc.test.PatternMapKeys{suffix}");
                 for (wire, dsl) in [("ALPHA", "alpha"), ("BETA_2", "beta_2"), ("C3", "c3")] {
