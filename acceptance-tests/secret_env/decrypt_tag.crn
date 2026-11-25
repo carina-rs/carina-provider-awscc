@@ -11,6 +11,6 @@ awscc.ec2.Vpc {
 
   tags = {
     Name         = 'decrypt-test'
-    DecryptedTag = secret(decrypt(encrypted))
+    DecryptedTag = decrypt(encrypted)
   }
 }

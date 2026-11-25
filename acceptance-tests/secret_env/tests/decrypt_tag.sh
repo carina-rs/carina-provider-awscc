@@ -1,9 +1,9 @@
 #!/bin/bash
-# Test: secret(decrypt()) — decrypted value is redacted in public state output
+# Test: decrypt() — decrypted value is redacted in public state output
 # Requires carina-test-000 account with alias/carina-test KMS key
 source "$(dirname "$0")/../../shared/_helpers.sh"
 
-echo "Test: secret(decrypt()) with KMS"
+echo "Test: decrypt() with KMS"
 echo ""
 
 register_acceptance_work_dir "secret_env/decrypt_tag.crn" "$SCRIPT_DIR/decrypt_tag.crn" WORK_DIR
